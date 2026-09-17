@@ -1,0 +1,187 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #e3e6ea;
+  --text: #16181d;
+  --muted: #6b7280;
+  --accent: #2f6fed;
+  --accent-soft: #e8efff;
+  --danger: #c5322b;
+  --grid: #eceef1;
+  --radius: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --surface: #1c1f25;
+    --border: #2c3138;
+    --text: #e7e9ee;
+    --muted: #9aa2ae;
+    --accent: #6c9bff;
+    --accent-soft: #24304a;
+    --danger: #f08a84;
+    --grid: #272b32;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar h1 { font-size: 18px; margin: 0; }
+.topbar-actions { display: flex; gap: 8px; }
+
+main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.panel h2 { font-size: 15px; margin: 0 0 12px; }
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.panel-head h2 { margin: 0; }
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.card .label { color: var(--muted); font-size: 13px; }
+.card .value { font-size: 22px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+.entry-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field-wide { grid-column: 1 / -1; }
+.field label { font-size: 13px; color: var(--muted); }
+
+input[type="date"],
+input[type="number"],
+input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+input:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button, .file-label {
+  font: inherit;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+button.ghost, .file-label {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+button.ghost:hover, .file-label:hover { background: var(--accent-soft); }
+
+.hint { color: var(--muted); font-size: 13px; }
+.muted { color: var(--muted); font-size: 13px; }
+.empty { margin: 8px 0 0; }
+
+.chart { width: 100%; overflow: hidden; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart .chart-empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+
+.table-wrap { overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+th { color: var(--muted); font-size: 12px; font-weight: 600; }
+td.memo { white-space: normal; min-width: 120px; }
+
+.row-actions { display: flex; gap: 6px; }
+.row-actions button { padding: 4px 8px; font-size: 13px; }
+.row-actions .del { color: var(--danger); }
+
+dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 16px;
+  width: min(360px, calc(100vw - 32px));
+}
+dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+dialog h2 { margin: 0 0 12px; font-size: 16px; }
+dialog .field { margin-bottom: 12px; }
+
+@media (max-width: 480px) {
+  main { padding: 12px; }
+  .topbar { padding: 12px; }
+}
