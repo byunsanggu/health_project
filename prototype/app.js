@@ -33,6 +33,7 @@
         todaySets: state.todaySets,
         style: state.style,
         blockHistory: state.blockHistory,
+        timeBudget: state.timeBudget,
         gymBook: state.gymBook,
       },
     });
@@ -57,6 +58,7 @@
       state.scenario = settings.scenario || 'normal';
       state.tab = settings.tab || 'today';
       state.style = settings.style || 'hypertrophy';
+      state.timeBudget = settings.timeBudget || null;
       state.blockHistory = settings.blockHistory || ['hypertrophy'];
       state.gymBook = settings.gymBook || E.createGymBook({
         id: 'my-gym', name: '내 헬스장', equipmentIds: saved.answers.gym.equipmentIds.slice(),
@@ -209,6 +211,9 @@
     style: 'hypertrophy',
     blockHistory: ['hypertrophy'],
     conditioning: null,
+    timeBudget: null,
+    timeFit: null,
+    warmupOpen: {},
     gymQuery: '',
     maxTest: null,
     onboarding: { active: true, step: 0 },
@@ -389,7 +394,7 @@
     });
     state.plan = styled;
 
-    state.session = E.buildSession({
+    var built = E.buildSession({
       template: state.program.templates[todayIndex() % state.program.templates.length],
       date: state.todayDate,
       plan: state.plan,
@@ -400,13 +405,43 @@
       lifter: state.lifter,
     });
 
+    // 오늘 쓸 수 있는 시간이 정해져 있으면 그 안에 들어오게 줄인다.
+    state.timeFit = null;
+    if (state.timeBudget) {
+      var profile = E.styleProfile(state.style);
+      state.timeFit = E.fitToTimeBudget(built, state.timeBudget, {
+        restMultiplier: profile.restMultiplier,
+        allowShortRest: state.style === 'density',
+      });
+      built = state.timeFit.session;
+    }
+    state.session = built;
+
+    var warmed = [];
     state.lifts = state.session.exercises.map(function (item) {
+      // 워밍업은 본세트 중량에 맞춘 램프다. 앞 종목이 데운 부위는 짧게 끝낸다.
+      var firstSet = item.sets[0];
+      var warmup = E.planWarmup({
+        exercise: item.exercise,
+        workingWeightKg: firstSet && firstSet.weightKg ? firstSet.weightKg : 0,
+        workingReps: firstSet ? firstSet.targetReps.max : 10,
+        level: state.lifter.level,
+        alreadyWarmedMuscles: warmed.slice(),
+        loading: item.loading,
+        barKg: item.loading && item.loading.kind === 'barbell' ? item.loading.barKg : undefined,
+      });
+      E.warmedMusclesOf(item.exercise).forEach(function (m) {
+        if (warmed.indexOf(m) < 0) warmed.push(m);
+      });
+
       return {
         exercise: item.exercise,
         substitutedFrom: item.substitutedFrom,
         swapReason: item.swapReason,
         startingLoad: item.startingLoad,
         loading: item.loading,
+        warmup: warmup,
+        decision: null,
         note: item.note,
         ruling: item.painRuling,
         repRange: item.sets[0].targetReps,
@@ -473,6 +508,7 @@
       }
     }
 
+    updateDecision(lift);
     startRest(lift, setIndex);
 
     var report = E.volumeReport(weekSessions(), landmarks, index);
@@ -484,6 +520,53 @@
         ' (MRV ' + status.landmark.mrv + ')');
     }
 
+    render();
+  }
+
+  /** 수행을 보고 세트를 더 할지 여기서 멈출지 정한다. */
+  function updateDecision(lift) {
+    var completed = lift.sets
+      .filter(function (set) { return set.done; })
+      .map(function (set) {
+        return { exerciseId: lift.exercise.id, weightKg: set.weightKg, reps: set.reps, rir: set.rir };
+      });
+
+    var muscle = E.primaryMuscle(lift.exercise);
+    var report = E.volumeReport(weekSessions(), landmarks, index);
+    var status = report.filter(function (row) { return row.muscle === muscle; })[0];
+    var calibration = state.session.rirCalibration;
+
+    lift.decision = E.decideNextSet({
+      completed: completed,
+      plannedSets: lift.sets.length,
+      rule: {
+        repRange: lift.repRange,
+        targetRir: lift.targetRir,
+        rirOffset: calibration && calibration.applied ? calibration.offset : 0,
+      },
+      zone: status ? status.zone : undefined,
+    });
+
+    if (lift.decision.verdict === 'stop' && completed.length < lift.sets.length) {
+      pushLog('세트 조정', '<b>' + lift.exercise.name + '</b> — ' + lift.decision.reason);
+    } else if (lift.decision.verdict === 'continue' && completed.length >= lift.sets.length) {
+      pushLog('세트 조정', '<b>' + lift.exercise.name + '</b> — ' + lift.decision.reason);
+    }
+  }
+
+  function addSet(lift) {
+    var last = lift.sets[lift.sets.length - 1];
+    lift.sets.push({
+      weightKg: last ? last.weightKg : 0,
+      estimated: false,
+      targetReps: lift.repRange,
+      targetRir: lift.targetRir,
+      reps: lift.repRange.max,
+      rir: null,
+      done: false,
+      adjustment: null,
+    });
+    lift.decision = null;
     render();
   }
 
@@ -668,6 +751,10 @@
       text: state.plan.phase === 'deload' ? '디로드' : '축적 ' + state.plan.weekInBlock + '주차',
     });
 
+    var estimate = E.estimateSessionTime(state.session, {
+      restMultiplier: E.styleProfile(state.style).restMultiplier,
+    });
+
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('div', { class: 'title' }, [
         el('h2', { text: state.session.name }),
@@ -675,9 +762,12 @@
       ]),
       el('p', {
         class: 'meta',
-        text: state.session.date + ' · 목표 RIR ' + state.plan.targetRir + ' · ' + state.lifts.length + '개 종목',
+        text: state.session.date + ' · 목표 RIR ' + state.plan.targetRir + ' · ' +
+          state.lifts.length + '개 종목 · 약 ' + estimate.totalMinutes + '분',
       }),
     ]));
+
+    renderTimeBudget(estimate);
 
     state.session.warnings.forEach(function (warning) {
       screen.appendChild(el('div', { class: 'notice' + (warning.medical ? ' stop' : '') }, [
@@ -706,10 +796,14 @@
         ]),
       ]);
 
+      card.appendChild(renderWarmup(lift));
+
       lift.sets.forEach(function (set, setIndex) {
         card.appendChild(renderSetRow(lift, liftIndex, set, setIndex));
       });
 
+      var decision = renderDecision(lift);
+      if (decision) card.appendChild(decision);
       card.appendChild(renderTechniques(lift));
       screen.appendChild(card);
     });
@@ -880,6 +974,120 @@
     ]));
   }
 
+  var TIME_BUDGETS = [30, 45, 60, 90];
+
+  /** 오늘 쓸 수 있는 시간. 현실에서 가장 흔한 제약인데 대부분의 앱이 안 받아준다. */
+  function renderTimeBudget(estimate) {
+    var chips = el('div', { class: 'chip-row' }, []);
+
+    TIME_BUDGETS.concat([null]).forEach(function (minutes) {
+      chips.appendChild(el('button', {
+        type: 'button', class: 'pick',
+        'aria-pressed': String(state.timeBudget === minutes),
+        text: minutes === null ? '제한 없음' : minutes + '분',
+        onclick: function () {
+          state.timeBudget = minutes;
+          rebuildSession();
+          if (state.timeFit && state.timeFit.adjustments.length > 0) {
+            pushLog('시간 예산', '<b>' + minutes + '분</b>에 맞춰 조정했습니다 — ' + state.timeFit.notes[0]);
+          }
+          render();
+        },
+      }));
+    });
+
+    var body = el('div', { class: 'sheet-body' }, [chips]);
+
+    if (state.timeFit) {
+      var fit = state.timeFit;
+      body.appendChild(el('p', {
+        class: 'hint-line' + (fit.fits ? '' : ' warn'),
+        text: Math.round(fit.beforeSeconds / 60) + '분 → ' + Math.round(fit.afterSeconds / 60) + '분' +
+          (fit.fits ? '' : ' (예산 초과)'),
+      }));
+
+      var dropped = fit.adjustments.filter(function (a) { return a.action === 'drop'; });
+      var trimmed = fit.adjustments.filter(function (a) { return a.action === 'trimSets'; });
+      if (dropped.length > 0) {
+        body.appendChild(el('p', { class: 'hint-line', text:
+          '제외: ' + dropped.map(function (a) { return a.name; }).join(', ') }));
+      }
+      if (trimmed.length > 0) {
+        body.appendChild(el('p', { class: 'hint-line', text: '세트 축소 ' + trimmed.length + '건' }));
+      }
+      fit.notes.forEach(function (note) {
+        body.appendChild(el('p', { class: 'hint-line', text: note }));
+      });
+    } else {
+      body.appendChild(el('p', { class: 'hint-line', text:
+        '시간을 고르면 그 안에 들어오게 줄입니다. 고립 운동부터 자르고 메인 복합 동작은 지킵니다.' }));
+    }
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '오늘 쓸 수 있는 시간' }),
+        el('span', { class: 'meta', text: '워밍업 · 휴식 포함' }),
+      ]),
+      body,
+    ]));
+  }
+
+  /** 워밍업 램프 — 본세트 중량에 맞춰 올라간다. 볼륨에는 세지 않는다. */
+  function renderWarmup(lift) {
+    var warmup = lift.warmup;
+    var open = state.warmupOpen[lift.exercise.id] !== false;
+
+    var head = el('button', {
+      type: 'button', class: 'warmup-head', 'aria-expanded': String(open),
+      onclick: function () {
+        state.warmupOpen[lift.exercise.id] = !open;
+        render();
+      },
+    }, [
+      el('span', { class: 'warmup-label', text: '워밍업' }),
+      el('span', { class: 'warmup-summary', text:
+        warmup.sets.length === 0
+          ? '없음'
+          : warmup.sets.length + '세트 · 약 ' + Math.round(warmup.estimatedSeconds / 60) + '분' }),
+      el('span', { class: 'warmup-toggle', text: open ? '접기' : '펼치기' }),
+    ]);
+
+    var wrap = el('div', { class: 'warmup' }, [head]);
+    if (!open) return wrap;
+
+    warmup.sets.forEach(function (set, i) {
+      wrap.appendChild(el('div', { class: 'warmup-set' }, [
+        el('span', { class: 'set-no', text: 'W' + (i + 1) }),
+        el('span', { class: 'warmup-load', text: set.weightKg + 'kg × ' + set.reps + '회' }),
+        el('span', { class: 'warmup-pct', text: Math.round(set.percent * 100) + '%' + (set.note ? ' · ' + set.note : '') }),
+      ]));
+    });
+    wrap.appendChild(el('div', { class: 'warmup-note', text: warmup.note }));
+    return wrap;
+  }
+
+  /** 자동 세트 판단 결과 — 계획보다 잘 나오면 늘리고, 무너지면 멈춘다. */
+  function renderDecision(lift) {
+    if (!lift.decision) return null;
+    var decision = lift.decision;
+    var tone = decision.verdict === 'stop' ? ' stop' : decision.verdict === 'continue' ? ' go' : '';
+
+    var row = el('div', { class: 'decision' + tone }, [
+      el('span', { class: 'decision-label', text:
+        decision.verdict === 'stop' ? '여기까지' : decision.verdict === 'lastSet' ? '마지막 세트' : '계속' }),
+      el('span', { class: 'decision-why', text: decision.reason }),
+    ]);
+
+    var allDone = lift.sets.every(function (set) { return set.done; });
+    if (decision.verdict === 'continue' && allDone) {
+      row.appendChild(el('button', {
+        type: 'button', class: 'pick', text: '한 세트 추가',
+        onclick: function () { addSet(lift); },
+      }));
+    }
+    return row;
+  }
+
   function renderSetRow(lift, liftIndex, set, setIndex) {
     var load = el('div', { class: 'set-load' }, [
       el('span', { text: set.weightKg > 0 ? set.weightKg + '' : '맨몸' }),
@@ -917,7 +1125,11 @@
 
       load.appendChild(reps);
       var chips = el('div', { class: 'rir-row' }, [
-        el('span', { class: 'rir-label', text: 'RIR' }),
+        el('span', {
+          class: 'rir-label',
+          title: 'RIR = 이 세트에서 몇 회 더 할 수 있었는지. 세트마다 기록합니다. 0 = 실패 지점.',
+          text: 'RIR',
+        }),
       ]);
 
       [0, 1, 2, 3, 4].forEach(function (rir) {
