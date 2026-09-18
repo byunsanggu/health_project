@@ -15,11 +15,20 @@ export interface VolumeOptions {
   hypertrophyReps?: { min: number; max: number };
   /** 이 값 미만의 기여도는 볼륨에 세지 않는다(노이즈 컷). */
   minContribution?: number;
+  /**
+   * 한 세션에서 한 부위가 온전히 인정받는 유효 세트 상한.
+   * 이 선을 넘어가면 자극은 거의 안 늘고 피로만 붙는다.
+   */
+  perSessionCap?: number;
+  /** 상한을 넘은 세트에 적용할 가중치. */
+  overCapWeight?: number;
 }
 
 const DEFAULTS: Required<VolumeOptions> = {
   hypertrophyReps: { min: 5, max: 30 },
   minContribution: 0.25,
+  perSessionCap: 9,
+  overCapWeight: 0.5,
 };
 
 /**
@@ -48,8 +57,16 @@ export function setEffectiveness(set: SetLog, options: VolumeOptions = {}): numb
 }
 
 export interface MuscleVolumeDetail {
-  /** 기여도까지 반영한 유효 세트 수 */
+  /** 기여도와 세션 내 수확 체감까지 반영한 유효 세트 수 */
   effectiveSets: number;
+  /** 수확 체감을 적용하기 전의 세트 수 */
+  rawSets: number;
+  /** 한 세션에 몰려서 깎인 세트 수 (rawSets - effectiveSets) */
+  discountedSets: number;
+  /** 그 부위를 자극한 세션 수 — 빈도 판정의 입력 */
+  sessionCount: number;
+  /** 한 세션에서 그 부위에 들어간 최대 세트 수 */
+  maxSetsInOneSession: number;
   /** 주동근으로 수행한 세트 수 (기여도 ≥ 0.85) */
   directSets: number;
   /** 세트 수를 만든 운동 목록 (많이 기여한 순) */
@@ -59,22 +76,39 @@ export interface MuscleVolumeDetail {
 function emptyVolume(): Record<MuscleGroup, MuscleVolumeDetail> {
   const out = {} as Record<MuscleGroup, MuscleVolumeDetail>;
   for (const muscle of MUSCLE_GROUPS) {
-    out[muscle] = { effectiveSets: 0, directSets: 0, topExercises: [] };
+    out[muscle] = {
+      effectiveSets: 0,
+      rawSets: 0,
+      discountedSets: 0,
+      sessionCount: 0,
+      maxSetsInOneSession: 0,
+      directSets: 0,
+      topExercises: [],
+    };
   }
   return out;
 }
 
-/** 세션 묶음을 근육군별 유효 세트로 집계한다. */
+/**
+ * 세션 묶음을 근육군별 유효 세트로 집계한다.
+ *
+ * 세션 경계를 무시하고 전부 더하지 않는다. 가슴 16세트를 하루에 몰아서 한 것과
+ * 이틀에 나눈 것은 같은 자극이 아니다 — 한 세션에서 상한(기본 9세트)을 넘은
+ * 세트는 절반만 인정한다. 빈도가 볼륨 처방에 실제로 영향을 주는 지점이다.
+ */
 export function aggregateVolume(
   sessions: readonly SessionLog[],
   index: ReadonlyMap<string, Exercise>,
   options: VolumeOptions = {},
 ): Record<MuscleGroup, MuscleVolumeDetail> {
-  const { minContribution } = { ...DEFAULTS, ...options };
+  const { minContribution, perSessionCap, overCapWeight } = { ...DEFAULTS, ...options };
   const totals = emptyVolume();
   const perExercise = new Map<MuscleGroup, Map<string, number>>();
 
   for (const session of sessions) {
+    // 이 세션에서 부위별로 몇 세트가 이미 쌓였는지 — 상한 판정의 기준.
+    const inSession = new Map<MuscleGroup, number>();
+
     for (const set of session.sets) {
       const exercise = index.get(set.exerciseId);
       if (!exercise) continue;
@@ -86,9 +120,15 @@ export function aggregateVolume(
         const contribution = exercise.contribution[muscle] ?? 0;
         if (contribution < minContribution) continue;
 
-        const sets = effectiveness * contribution;
+        const raw = effectiveness * contribution;
+        const already = inSession.get(muscle) ?? 0;
+        const room = Math.max(0, perSessionCap - already);
+        const counted = Math.min(raw, room) + Math.max(0, raw - room) * overCapWeight;
+        inSession.set(muscle, already + raw);
+
         const detail = totals[muscle];
-        detail.effectiveSets += sets;
+        detail.effectiveSets += counted;
+        detail.rawSets += raw;
         if (contribution >= 0.85) detail.directSets += effectiveness;
 
         let byExercise = perExercise.get(muscle);
@@ -96,14 +136,22 @@ export function aggregateVolume(
           byExercise = new Map();
           perExercise.set(muscle, byExercise);
         }
-        byExercise.set(exercise.id, (byExercise.get(exercise.id) ?? 0) + sets);
+        byExercise.set(exercise.id, (byExercise.get(exercise.id) ?? 0) + counted);
       }
+    }
+
+    for (const [muscle, sets] of inSession) {
+      const detail = totals[muscle];
+      detail.sessionCount += 1;
+      detail.maxSetsInOneSession = Math.max(detail.maxSetsInOneSession, round1(sets));
     }
   }
 
   for (const muscle of MUSCLE_GROUPS) {
     const detail = totals[muscle];
     detail.effectiveSets = round1(detail.effectiveSets);
+    detail.rawSets = round1(detail.rawSets);
+    detail.discountedSets = round1(detail.rawSets - detail.effectiveSets);
     detail.directSets = round1(detail.directSets);
     detail.topExercises = [...(perExercise.get(muscle) ?? new Map())]
       .map(([exerciseId, sets]) => ({ exerciseId, sets: round1(sets) }))
@@ -112,6 +160,9 @@ export function aggregateVolume(
 
   return totals;
 }
+
+/** 볼륨 집계에서 쓰는 세션당 상한 기본값 — 빈도 권고가 같은 값을 참조한다. */
+export const PER_SESSION_CAP = DEFAULTS.perSessionCap;
 
 export interface MuscleVolumeStatus extends MuscleVolumeDetail {
   muscle: MuscleGroup;

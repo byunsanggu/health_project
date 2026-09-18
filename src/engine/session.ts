@@ -1,7 +1,20 @@
 import { prescribeLoad, roundToIncrement, type LoadRule, type RepRange } from './load.ts';
-import { screenExercise, type PainRuling } from './pain.ts';
+import { findSubstitutes, screenExercise, type PainRuling } from './pain.ts';
 import { aggregateVolume, sessionsInWeek } from './volume.ts';
 import { MUSCLE_GROUPS } from './muscles.ts';
+import {
+  availableEquipmentOf,
+  isAvailableAt,
+  loadingFor,
+  nearestLoadable,
+  platePlan,
+  type GymProfile,
+  type LoadingSpec,
+  type PlatePlan,
+  type SnapDirection,
+} from './gym.ts';
+import { suggestStartingLoad, type LifterProfile, type StartingLoad } from './strength.ts';
+import { withParticle } from './korean.ts';
 import type { WeeklyPlan } from './mesocycle.ts';
 import type {
   Equipment,
@@ -32,14 +45,34 @@ export interface PlannedSet {
   targetRir: number;
 }
 
+export type SwapReason = 'pain' | 'unavailable';
+
 export interface PlannedExercise {
   exercise: Exercise;
   sets: PlannedSet[];
-  /** 통증 게이트로 교체된 경우 원래 종목 */
+  /** 교체된 경우 원래 종목 */
   substitutedFrom?: Exercise;
+  /** 왜 교체됐는지 — 통증 때문인지, 헬스장에 기구가 없어서인지 */
+  swapReason?: SwapReason;
   painRuling: PainRuling;
+  /** 그 헬스장에서 이 종목을 싣는 방식 */
+  loading?: LoadingSpec | null;
+  /** 바에 끼울 플레이트. 스택식이면 null */
+  plates?: PlatePlan | null;
+  /** 첫 수행이라 중량을 추정한 경우의 근거 */
+  startingLoad?: StartingLoad;
   /** 중량/세트 처방 근거 한 줄 */
   note: string;
+}
+
+/** 경고의 성격. UI가 라벨과 색을 고르는 데 쓴다. */
+export type WarningKind = 'plan' | 'pain' | 'equipment';
+
+export interface SessionWarning {
+  kind: WarningKind;
+  text: string;
+  /** 의료 상담을 권해야 하는 수준인가 */
+  medical?: boolean;
 }
 
 export interface PlannedSession {
@@ -48,8 +81,8 @@ export interface PlannedSession {
   phase: WeeklyPlan['phase'];
   targetRir: number;
   exercises: PlannedExercise[];
-  /** 사용자에게 먼저 보여줄 경고 (통증, 디로드 등) */
-  warnings: string[];
+  /** 사용자에게 먼저 보여줄 경고 (통증, 기구, 디로드) */
+  warnings: SessionWarning[];
 }
 
 export interface BuildSessionInput {
@@ -62,8 +95,12 @@ export interface BuildSessionInput {
   index: ReadonlyMap<string, Exercise>;
   /** 오늘 체크인에서 보고된 통증 */
   pain?: readonly PainReport[];
-  /** 오늘 쓸 수 있는 기구 (기구 점유/부재 대응) */
+  /** 오늘 쓸 수 있는 기구 (기구 점유 등 일시적 제약) */
   availableEquipment?: readonly Equipment[];
+  /** 다니는 헬스장. 중량 스냅과 기구 보유 여부가 여기서 나온다 */
+  gym?: GymProfile;
+  /** 첫 수행 종목의 중량을 추정하기 위한 신체 정보 */
+  lifter?: LifterProfile;
 }
 
 /**
@@ -77,58 +114,99 @@ export interface BuildSessionInput {
  */
 export function buildSession(input: BuildSessionInput): PlannedSession {
   const pain = input.pain ?? [];
-  const warnings: string[] = [];
+  const warnings: SessionWarning[] = [];
   const exercises: PlannedExercise[] = [];
 
   if (input.plan.phase === 'deload') {
-    warnings.push(input.plan.summary);
+    warnings.push({ kind: 'plan', text: input.plan.summary });
   }
   if (pain.some((report) => report.score >= 7)) {
-    warnings.push('통증이 7점 이상입니다. 오늘은 해당 부위를 쓰지 않고, 통증이 지속되면 전문의 진료를 받으세요.');
+    warnings.push({
+      kind: 'pain',
+      medical: true,
+      text: '통증이 7점 이상입니다. 오늘은 해당 부위를 쓰지 않고, 통증이 지속되면 전문의 진료를 받으세요.',
+    });
   }
 
   const scaling = volumeScaling(input);
+  const gym = input.gym;
+
+  // 헬스장에 없는 기구는 후보에서 아예 빼고 시작한다.
+  const pool = [...input.index.values()].filter((candidate) => !gym || isAvailableAt(candidate, gym));
+  const availableEquipment = input.availableEquipment ?? (gym ? availableEquipmentOf(gym) : undefined);
 
   for (const slot of input.template.slots) {
     const original = input.index.get(slot.exerciseId);
     if (!original) continue;
 
-    // 1) 통증 게이트
-    const ruling = screenExercise(original, pain, {
-      pool: [...input.index.values()],
-      availableEquipment: input.availableEquipment,
-    });
-
     let exercise = original;
     let substitutedFrom: Exercise | undefined;
+    let swapReason: SwapReason | undefined;
+
+    // 1) 그 헬스장에 기구가 있는가
+    if (gym && !isAvailableAt(original, gym)) {
+      const replacement = findSubstitutes(original, [], { pool, availableEquipment })[0];
+      if (!replacement) {
+        warnings.push({
+          kind: 'equipment',
+          text: `${original.name} — 이 헬스장에 없는 기구이고 대체할 종목도 없어 오늘은 건너뜁니다.`,
+        });
+        continue;
+      }
+      exercise = replacement;
+      substitutedFrom = original;
+      swapReason = 'unavailable';
+      warnings.push({
+        kind: 'equipment',
+        text: `${original.name} 대신 ${withParticle(replacement.name, '을/를')} 넣었습니다. 이 헬스장에 없는 기구입니다.`,
+      });
+    }
+
+    // 2) 통증 게이트
+    const ruling = screenExercise(exercise, pain, { pool, availableEquipment });
 
     if (ruling.action === 'substitute' || ruling.action === 'stop') {
       const replacement = ruling.substitutes[0];
       if (!replacement) {
-        warnings.push(`${original.name}: ${ruling.message}`);
+        warnings.push({ kind: 'pain', text: `${exercise.name} — ${ruling.message}`, medical: ruling.action === 'stop' });
         continue; // 대체가 없으면 오늘은 건너뛴다
       }
+      substitutedFrom = substitutedFrom ?? exercise;
       exercise = replacement;
-      substitutedFrom = original;
-      warnings.push(ruling.message);
+      swapReason = 'pain';
+      warnings.push({ kind: 'pain', text: ruling.message, medical: ruling.action === 'stop' });
     }
 
-    // 2) 세트 수 — 주간 볼륨 처방에 맞춰 조정
+    // 3) 세트 수 — 주간 볼륨 처방에 맞춰 조정
     const setCount = adjustSetCount(slot, exercise, scaling);
 
-    // 3) 중량 — 마지막 수행 기록 기준
+    // 4) 중량 — 마지막 수행 기록 기준, 그 헬스장이 만들 수 있는 값으로 맞춘다
     const lastSession = findLastSession(input.history, exercise.id);
     const rule: LoadRule = { repRange: slot.repRange, targetRir: input.plan.targetRir };
     const prescription = prescribeLoad(exercise, lastSession?.sets, rule);
+    const loading = gym ? loadingFor(exercise, gym) : null;
 
     const multiplier = input.plan.intensityMultiplier * ruling.loadMultiplier;
-    const weightKg =
-      prescription.weightKg === null
-        ? null
-        : roundToIncrement(prescription.weightKg * multiplier, exercise.increment);
+    let weightKg: number | null;
+    let startingLoad: StartingLoad | undefined;
 
-    // 대체 종목은 이력이 없어 중량을 못 정한다. 원래 종목의 마지막 기록을
-    // 참고로 붙여 사용자가 어림잡을 수 있게 한다 — 임의로 환산하면 오히려 위험하다.
+    if (prescription.weightKg === null) {
+      // 첫 수행. 관련 종목 기록이나 체중 기준선에서 출발점을 제안한다.
+      startingLoad = suggestStartingLoad({
+        exercise,
+        repRange: slot.repRange,
+        targetRir: input.plan.targetRir,
+        profile: input.lifter,
+        history: input.history,
+        index: input.index,
+        loading,
+      });
+      weightKg = startingLoad.weightKg;
+    } else {
+      weightKg = snapLoad(prescription.weightKg * multiplier, exercise, loading, multiplier, prescription.change);
+    }
+
+    // 대체 종목은 이력이 없다. 원래 종목의 마지막 기록을 참고로 붙인다.
     const reference =
       prescription.change === 'start' && substitutedFrom
         ? referenceLoad(input.history, substitutedFrom)
@@ -137,8 +215,12 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     exercises.push({
       exercise,
       substitutedFrom,
+      swapReason,
       painRuling: ruling,
-      note: buildNote(prescription.reason, multiplier, ruling, reference),
+      loading,
+      plates: weightKg !== null && loading ? platePlan(weightKg, loading) : null,
+      startingLoad,
+      note: buildNote(prescription.reason, multiplier, ruling, reference, startingLoad),
       sets: Array.from({ length: setCount }, (_, i) => ({
         setNumber: i + 1,
         weightKg,
@@ -237,13 +319,32 @@ function referenceLoad(
   return `참고: ${original.name} ${set.weightKg}kg × ${set.reps}회 (RIR ${set.rir})`;
 }
 
+/**
+ * 처방 중량을 기구가 만들 수 있는 값으로 맞춘다.
+ * 증량 중이면 위로, 감량·통증·디로드 중이면 아래로 붙여 의도한 방향을 잃지 않게 한다.
+ */
+function snapLoad(
+  targetKg: number,
+  exercise: Exercise,
+  loading: LoadingSpec | null,
+  multiplier: number,
+  change: string,
+): number {
+  if (!loading) return roundToIncrement(targetKg, exercise.increment);
+
+  const direction: SnapDirection =
+    multiplier < 1 || change === 'decrease' ? 'down' : change === 'increase' ? 'up' : 'nearest';
+  return nearestLoadable(targetKg, loading, direction);
+}
+
 function buildNote(
   reason: string,
   multiplier: number,
   ruling: PainRuling,
   reference?: string,
+  startingLoad?: StartingLoad,
 ): string {
-  const parts = [reason];
+  const parts = [startingLoad ? startingLoad.rationale : reason];
   if (reference) parts.push(reference);
   if (multiplier < 1) {
     parts.push(`적용 배율 ${Math.round(multiplier * 100)}%`);

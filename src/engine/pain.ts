@@ -1,5 +1,6 @@
 import { EXERCISES } from './exercises.ts';
 import { MUSCLE_GROUPS } from './muscles.ts';
+import { withParticle } from './korean.ts';
 import type { Equipment, Exercise, Joint, PainReport } from './types.ts';
 
 export type PainAction =
@@ -114,7 +115,7 @@ export function screenExercise(
     substitutes,
     message:
       substitutes.length > 0
-        ? `${jointLabel} 통증 ${worst.report.score}점. ${exercise.name} 대신 ${substitutes[0]!.name}을(를) 권합니다.`
+        ? `${jointLabel} 통증 ${worst.report.score}점. ${exercise.name} 대신 ${withParticle(substitutes[0]!.name, '을/를')} 권합니다.`
         : `${jointLabel} 통증 ${worst.report.score}점. 이 종목은 부담이 큽니다. 해당 부위는 오늘 건너뛰세요.`,
   };
 }

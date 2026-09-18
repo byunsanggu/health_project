@@ -7,6 +7,7 @@
  * 실행: node src/demo.ts
  */
 import {
+  DEFAULT_GYM,
   addDays,
   buildExerciseIndex,
   buildSession,
@@ -15,16 +16,20 @@ import {
   volumeReport,
   weekStart,
   type CheckIn,
+  type LifterProfile,
   type PainReport,
   type PlannedSession,
   type SessionLog,
   type SessionTemplate,
   type SetLog,
   type WeeklyPlan,
+  describePlates,
 } from './engine/index.ts';
 
 const index = buildExerciseIndex();
 const landmarks = landmarksFor('intermediate');
+const gym = DEFAULT_GYM;
+const lifter: LifterProfile = { bodyweightKg: 78, level: 'intermediate', sex: 'male' };
 
 const TEMPLATES: SessionTemplate[] = [
   {
@@ -137,7 +142,7 @@ function run(): void {
     trainingDays.forEach((offset, i) => {
       const date = addDays(mondayOf, offset);
       const template = TEMPLATES[i % TEMPLATES.length]!;
-      const planned = buildSession({ template, date, plan, history, index, pain });
+      const planned = buildSession({ template, date, plan, history, index, pain, gym, lifter });
       history.push(performSession(planned, fatigue));
 
       if (i === 0) printSessionSample(planned);
@@ -169,6 +174,7 @@ function coldStartPlan(monday: string): WeeklyPlan {
     fatigue: { score: 0, threshold: 5, deloadRecommended: false, signals: [] },
     volume: [],
     neglected: [],
+    frequency: [],
     summary: '첫 주: 템플릿 그대로 수행하며 기준선을 잡습니다',
   };
 }
@@ -182,18 +188,22 @@ function printWeekHeader(week: number, monday: string, plan: WeeklyPlan): void {
   for (const signal of plan.fatigue.signals) {
     console.log(`  ⚠ ${signal.label} (+${signal.weight})`);
   }
+  for (const item of plan.frequency) {
+    console.log(`  ↹ ${item.label}: ${item.advice}`);
+  }
 }
 
 function printSessionSample(planned: PlannedSession): void {
   console.log(`\n  [${planned.name}] ${planned.date}`);
-  for (const warning of planned.warnings) console.log(`  ⚠ ${warning}`);
+  for (const warning of planned.warnings) console.log(`  ⚠ [${warning.kind}] ${warning.text}`);
   for (const item of planned.exercises) {
     const weight = item.sets[0]?.weightKg;
     const label = item.substitutedFrom ? `${item.exercise.name} (← ${item.substitutedFrom.name})` : item.exercise.name;
     const load = weight === null || weight === undefined ? '중량 미정' : `${weight}kg`;
     const reps = item.sets[0]!.targetReps;
     const repText = reps.min === reps.max ? `${reps.max}회` : `${reps.min}~${reps.max}회`;
-    console.log(`    ${label.padEnd(30)} ${item.sets.length}세트 × ${repText}  ${load}`);
+    const plates = item.plates ? `  (${describePlates(item.plates)})` : '';
+    console.log(`    ${label.padEnd(30)} ${item.sets.length}세트 × ${repText}  ${load}${plates}`);
     if (item.note.includes('참고:')) console.log(`      ${item.note.split(' · ').find((p) => p.startsWith('참고:'))}`);
   }
 }

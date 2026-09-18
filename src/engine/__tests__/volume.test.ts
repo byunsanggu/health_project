@@ -87,8 +87,11 @@ describe('volumeReport', () => {
     const chest = volumeReport([light], landmarks, index).find((r) => r.muscle === 'chest');
     assert.equal(chest?.zone, 'underMev');
 
-    const heavy = session('2026-09-14', sets('pec-deck', 24, { weightKg: 40, reps: 12, rir: 1 }));
-    const overloaded = volumeReport([heavy], landmarks, index).find((r) => r.muscle === 'chest');
+    // 상한에 걸리지 않게 세 번에 나눠 24세트를 수행한 주
+    const heavy = [0, 2, 4].map((offset) =>
+      session('2026-09-1' + (4 + offset), sets('pec-deck', 8, { weightKg: 40, reps: 12, rir: 1 })),
+    );
+    const overloaded = volumeReport(heavy, landmarks, index).find((r) => r.muscle === 'chest');
     assert.equal(overloaded?.zone, 'overMrv');
     assert.ok((overloaded?.mrvRatio ?? 0) > 1);
   });

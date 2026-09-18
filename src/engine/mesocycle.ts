@@ -1,5 +1,6 @@
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO, ZONE_LABELS_KO, zoneOf } from './muscles.ts';
 import { assessFatigue, type FatigueAssessment } from './readiness.ts';
+import { actionableFrequency, frequencyReport, type MuscleFrequency } from './frequency.ts';
 import { addDays, aggregateVolume, sessionsInWeek, weekStart } from './volume.ts';
 import type {
   CheckIn,
@@ -12,6 +13,13 @@ import type {
 
 export type Phase = 'accumulation' | 'deload';
 
+/**
+ * 그 부위에 내린 처방의 성격.
+ * 측정된 볼륨은 소수인데 처방은 정수라 델타만 보면 반올림 노이즈와 구분이 안 된다.
+ * UI와 테스트는 이 값을 본다.
+ */
+export type VolumeAction = 'increase' | 'hold' | 'reduce' | 'split' | 'skip' | 'deload';
+
 export interface MuscleVolumePlan {
   muscle: MuscleGroup;
   label: string;
@@ -20,6 +28,7 @@ export interface MuscleVolumePlan {
   deltaSets: number;
   zone: VolumeZone;
   zoneLabel: string;
+  action: VolumeAction;
   rationale: string;
 }
 
@@ -37,6 +46,8 @@ export interface WeeklyPlan {
   volume: MuscleVolumePlan[];
   /** 최근 4주간 전혀 훈련하지 않은 부위. 프로그램 구멍을 한 번만 알려주기 위한 것. */
   neglected: MuscleGroup[];
+  /** 분배를 손봐야 하는 부위 — 볼륨을 더 넣기 전에 먼저 해결할 것. */
+  frequency: MuscleFrequency[];
   summary: string;
 }
 
@@ -97,6 +108,13 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
   const painful = new Set(input.painfulMuscles ?? []);
   const neglected: MuscleGroup[] = [];
 
+  // 볼륨을 올리기 전에 분배부터 본다. 한 세션에 몰린 부위에 세트를 더 넣으면
+  // 버려지는 세트만 늘어난다 — 먼저 나누고, 그다음에 늘린다.
+  const frequency = frequencyReport(lastWeekSessions, input.index);
+  const concentrated = new Set(
+    frequency.filter((item) => item.verdict === 'concentrated').map((item) => item.muscle),
+  );
+
   const volume: MuscleVolumePlan[] = MUSCLE_GROUPS.map((muscle) => {
     const currentSets = current[muscle].effectiveSets;
     const landmark = input.landmarks[muscle];
@@ -107,8 +125,8 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
     const untrained = trailing[muscle].effectiveSets === 0;
     if (untrained) neglected.push(muscle);
 
-    const { sets, rationale } = untrained
-      ? { sets: 0, rationale: '최근 4주간 훈련 기록이 없습니다. 프로그램에 넣을지 결정하세요' }
+    const { sets, rationale, action } = untrained
+      ? { sets: 0, action: 'skip' as VolumeAction, rationale: '최근 4주간 훈련 기록이 없습니다. 프로그램에 넣을지 결정하세요' }
       : phase === 'deload'
         ? deloadVolume(currentSets, landmark.mev)
         : accumulationVolume({
@@ -117,6 +135,8 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
             landmark,
             fatigueScore: fatigue.score,
             painful: painful.has(muscle),
+            concentrated: concentrated.has(muscle),
+            recommendedSessions: frequency.find((item) => item.muscle === muscle)?.recommendedSessions ?? 2,
           });
 
     return {
@@ -127,6 +147,7 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
       deltaSets: round1(sets - currentSets),
       zone,
       zoneLabel: ZONE_LABELS_KO[zone],
+      action,
       rationale,
     };
   });
@@ -140,16 +161,23 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
     fatigue,
     volume,
     neglected,
-    summary: summarize(phase, nextWeekInBlock, fatigue, volume),
+    frequency: actionableFrequency(frequency),
+    summary: summarize(phase, nextWeekInBlock, fatigue, volume, actionableFrequency(frequency)),
   };
 }
 
-function deloadVolume(currentSets: number, mev: number): { sets: number; rationale: string } {
+interface VolumeDecision {
+  sets: number;
+  action: VolumeAction;
+  rationale: string;
+}
+
+function deloadVolume(currentSets: number, mev: number): VolumeDecision {
   // 절반으로 줄이되 MEV의 절반 아래로는 내리지 않는다 — 완전히 쉬면 복귀가 더 느리다.
   const halved = Math.round(currentSets / 2);
   const floor = Math.max(2, Math.round(mev / 2));
   const sets = Math.max(floor, halved);
-  return { sets, rationale: `디로드: ${currentSets}세트 → ${sets}세트 (중량은 90% 유지)` };
+  return { sets, action: 'deload', rationale: `디로드: ${currentSets}세트 → ${sets}세트 (중량은 90% 유지)` };
 }
 
 function accumulationVolume(args: {
@@ -158,12 +186,25 @@ function accumulationVolume(args: {
   landmark: { mev: number; mav: number; mrv: number };
   fatigueScore: number;
   painful: boolean;
-}): { sets: number; rationale: string } {
-  const { currentSets, zone, landmark, fatigueScore, painful } = args;
+  concentrated: boolean;
+  recommendedSessions: number;
+}): VolumeDecision {
+  const { currentSets, zone, landmark, fatigueScore, painful, concentrated } = args;
+
+  // MEV 미만이면 늘리는 게 먼저고, MRV 초과면 줄이는 게 먼저다.
+  // 분배 조정은 그 사이 구간에서만 우선순위를 갖는다.
+  if (concentrated && zone !== 'underMev' && zone !== 'overMrv') {
+    return {
+      sets: Math.round(currentSets),
+      action: 'split',
+      rationale: `볼륨이 한 세션에 몰려 있습니다. 세트를 늘리기 전에 주 ${args.recommendedSessions}회로 나누세요`,
+    };
+  }
 
   if (painful) {
     return {
       sets: Math.round(currentSets),
+      action: 'hold',
       rationale: '통증이 보고된 부위입니다. 볼륨을 올리지 않고 유지합니다',
     };
   }
@@ -175,26 +216,31 @@ function accumulationVolume(args: {
     case 'underMev':
       return {
         sets: landmark.mev,
+        action: 'increase',
         rationale: `MEV(${landmark.mev}세트) 미만입니다. 자극 최소선까지 올립니다`,
       };
     case 'mevToMav':
       return {
         sets: Math.min(landmark.mav, Math.round(currentSets) + step),
+        action: 'increase',
         rationale: `적정 구간입니다. ${step}세트 추가해 MAV(${landmark.mav}세트)로 접근합니다`,
       };
     case 'mavToMrv':
       return fatigueScore >= 3
         ? {
             sets: Math.round(currentSets),
+            action: 'hold',
             rationale: '고강도 구간이고 피로 신호가 있어 이번 주는 유지합니다',
           }
         : {
             sets: Math.min(landmark.mrv, Math.round(currentSets) + 1),
+            action: 'increase',
             rationale: `고강도 구간입니다. 1세트만 추가합니다 (MRV ${landmark.mrv}세트)`,
           };
     case 'overMrv':
       return {
         sets: landmark.mrv,
+        action: 'reduce',
         rationale: `MRV를 넘겼습니다. ${landmark.mrv}세트로 되돌립니다`,
       };
   }
@@ -205,6 +251,7 @@ function summarize(
   weekInBlock: number,
   fatigue: FatigueAssessment,
   volume: readonly MuscleVolumePlan[],
+  frequency: readonly MuscleFrequency[],
 ): string {
   if (phase === 'deload') {
     const top = fatigue.signals
@@ -215,8 +262,8 @@ function summarize(
     return `디로드 주간입니다. 볼륨을 절반으로 줄이고 중량은 90%로 유지합니다. 근거: ${top.join(' / ')}`;
   }
 
-  const increased = volume.filter((item) => item.deltaSets > 0);
-  const reduced = volume.filter((item) => item.deltaSets < 0);
+  const increased = volume.filter((item) => item.action === 'increase');
+  const reduced = volume.filter((item) => item.action === 'reduce');
   const parts = [`축적 ${weekInBlock}주차`];
 
   if (increased.length > 0) {
@@ -232,6 +279,14 @@ function summarize(
   }
   if (increased.length === 0 && reduced.length === 0) {
     parts.push('볼륨 유지');
+  }
+  if (frequency.length > 0) {
+    parts.push(
+      `분배 조정: ${frequency
+        .slice(0, 3)
+        .map((item) => `${item.label} 주 ${item.recommendedSessions}회`)
+        .join(', ')}`,
+    );
   }
   return parts.join(' · ');
 }

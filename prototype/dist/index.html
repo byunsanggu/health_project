@@ -153,18 +153,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tabbar {
   flex: none;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   border-top: 1px solid var(--line-soft);
   background: var(--surface);
 }
 .tabbar button {
   border: 0;
   background: none;
-  padding: 11px 4px 13px;
+  padding: 11px 2px 13px;
   display: grid;
   gap: 3px;
   justify-items: center;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
   border-top: 2px solid transparent;
   margin-top: -1px;
@@ -275,6 +275,63 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .chip:hover { border-color: var(--accent); color: var(--accent); }
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .chip.fail[aria-pressed="true"] { background: var(--zone-over); border-color: var(--zone-over); color: #fff; }
+
+.plates {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: .02em;
+}
+.est-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-weight: 500;
+}
+
+.freq { display: grid; gap: 3px; }
+.freq-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.freq-top .name { font-size: 13px; font-weight: 500; }
+.freq-top .num { font-family: var(--mono); font-size: 12px; color: var(--zone-hard); font-variant-numeric: tabular-nums; }
+.freq-advice { font-size: 12px; color: var(--muted); }
+
+.segmented { display: flex; gap: 6px; flex-wrap: wrap; }
+.segmented button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 6px 11px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.segmented button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 500;
+}
+
+.toggle-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.toggle {
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.toggle[aria-pressed="true"] {
+  background: var(--surface);
+  border-color: var(--zone-ok);
+  color: var(--zone-ok);
+  text-decoration: none;
+}
+
+.hint-line { margin: 0; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .set-result { font-size: 11.5px; color: var(--muted); font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .set-result em { font-style: normal; color: var(--accent); font-weight: 500; }
@@ -454,7 +511,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
   <header class="masthead">
     <p class="eyebrow">프로토타입 · 실제 엔진 구동</p>
     <h1>볼륨 코치</h1>
-    <p>RIR을 한 번 탭하면 부위별 주간 볼륨과 피로도를 다시 계산해, 다음 주 훈련량과 디로드 시점을 스스로 조절합니다. 아래 화면은 목업이 아니라 저장소의 트레이닝 엔진이 그대로 돌아가는 것입니다.</p>
+    <p>RIR을 한 번 탭하면 부위별 주간 볼륨과 피로도를 다시 계산해, 다음 주 훈련량과 디로드 시점을 스스로 조절합니다. 처방 중량은 등록한 헬스장 기구가 실제로 만들 수 있는 값으로만 나옵니다. 아래 화면은 목업이 아니라 저장소의 트레이닝 엔진이 그대로 돌아가는 것입니다.</p>
   </header>
 
   <div class="device">
@@ -474,6 +531,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
           <li><b>오늘</b> 탭에서 세트의 RIR을 탭해 보세요. 다음 세트 중량이 즉시 조정되고, 그 이유가 아래 로그에 남습니다.</li>
           <li><b>볼륨</b> 탭의 게이지는 부위별 주간 유효 세트입니다. 눈금은 MEV(최소 자극) · MAV(적응 최대) · MRV(회복 한계)이고, 빗금 구간이 레드라인입니다.</li>
           <li><b>체크인</b> 탭에서 어깨 통증을 3점 이상으로 올리면, 오늘 세션의 종목이 자동으로 대체됩니다.</li>
+          <li><b>헬스장</b> 탭에서 바 무게나 스택 간격을 바꾸면 처방 중량이 그 기구가 만들 수 있는 값으로 다시 맞춰집니다. 기구를 끄면 해당 종목이 대체됩니다.</li>
         </ol>
       </div>
     </section>
@@ -487,11 +545,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
     <section>
       <h2>엔진 파이프라인</h2>
       <ol class="pipeline">
-        <li><b>기록</b> 세트마다 중량 · 반복 · RIR</li>
-        <li><b>집계</b> RIR과 부위 기여도로 유효 세트 환산</li>
-        <li><b>판정</b> 피로 신호 7종을 가중 합산</li>
-        <li><b>처방</b> 구간별 볼륨 증감, 임계 초과 시 디로드</li>
-        <li><b>세션</b> 통증 게이트 → 세트 수 → 중량 순서로 구성</li>
+        <li><span><b>기록</b> 세트마다 중량 · 반복 · RIR</span></li>
+        <li><span><b>집계</b> RIR · 부위 기여도 · 세션당 상한으로 유효 세트 환산</span></li>
+        <li><span><b>판정</b> 피로 신호 7종을 가중 합산</span></li>
+        <li><span><b>처방</b> 구간별 볼륨 증감, 임계 초과 시 디로드</span></li>
+        <li><span><b>세션</b> 기구 보유 → 통증 게이트 → 세트 수 → 중량 순서로 구성</span></li>
+        <li><span><b>스냅</b> 처방 중량을 그 기구가 만들 수 있는 값으로 조정</span></li>
       </ol>
     </section>
 
@@ -507,7 +566,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
   </div>
 </div>
 
-<script>"use strict";var FitEngine=(()=>{var V=Object.defineProperty;var te=Object.getOwnPropertyDescriptor;var re=Object.getOwnPropertyNames;var se=Object.prototype.hasOwnProperty;var oe=(e,n)=>{for(var s in n)V(e,s,{get:n[s],enumerable:!0})},ie=(e,n,s,r)=>{if(n&&typeof n=="object"||typeof n=="function")for(let t of re(n))!se.call(e,t)&&t!==s&&V(e,t,{get:()=>n[t],enumerable:!(r=te(n,t))||r.enumerable});return e};var ae=e=>ie(V({},"__esModule",{value:!0}),e);var We={};oe(We,{EXERCISES:()=>j,JOINT_LABELS_KO:()=>X,MUSCLE_GROUPS:()=>d,MUSCLE_LABELS_KO:()=>L,ZONE_LABELS_KO:()=>q,addDays:()=>R,adjustWithinSession:()=>xe,aggregateVolume:()=>S,assessFatigue:()=>G,bestE1rmByExercise:()=>T,buildExerciseIndex:()=>pe,buildSession:()=>Ie,calibrateLandmarks:()=>me,detailsToVolumeMap:()=>Se,droppedLifts:()=>J,estimate1RM:()=>C,exerciseById:()=>de,findExercises:()=>ge,findSubstitutes:()=>Y,groupByWeek:()=>he,landmarksFor:()=>ue,planNextWeek:()=>Me,prescribeLoad:()=>K,primaryMuscle:()=>ee,roundToIncrement:()=>y,screenExercise:()=>$,screenSession:()=>De,sessionsInWeek:()=>E,setEffectiveness:()=>z,similarity:()=>Q,toVolumeMap:()=>ve,topWorkingSet:()=>Z,volumeReport:()=>be,weekStart:()=>x,zoneOf:()=>P});var d=["chest","back","frontDelt","sideDelt","rearDelt","traps","biceps","triceps","forearms","quads","hamstrings","glutes","calves","abs"],L={chest:"\uAC00\uC2B4",back:"\uB4F1",frontDelt:"\uC804\uBA74 \uC0BC\uAC01\uADFC",sideDelt:"\uCE21\uBA74 \uC0BC\uAC01\uADFC",rearDelt:"\uD6C4\uBA74 \uC0BC\uAC01\uADFC",traps:"\uC2B9\uBAA8\uADFC",biceps:"\uC774\uB450",triceps:"\uC0BC\uB450",forearms:"\uC804\uC644",quads:"\uB300\uD1F4\uC0AC\uB450",hamstrings:"\uD584\uC2A4\uD2B8\uB9C1",glutes:"\uB454\uADFC",calves:"\uC885\uC544\uB9AC",abs:"\uBCF5\uADFC"},le={chest:{mev:10,mav:16,mrv:22},back:{mev:10,mav:18,mrv:25},frontDelt:{mev:0,mav:8,mrv:12},sideDelt:{mev:8,mav:16,mrv:26},rearDelt:{mev:6,mav:12,mrv:20},traps:{mev:4,mav:12,mrv:20},biceps:{mev:8,mav:14,mrv:20},triceps:{mev:6,mav:14,mrv:20},forearms:{mev:2,mav:8,mrv:16},quads:{mev:8,mav:16,mrv:20},hamstrings:{mev:6,mav:12,mrv:20},glutes:{mev:4,mav:12,mrv:16},calves:{mev:8,mav:16,mrv:20},abs:{mev:0,mav:12,mrv:25}},ce={beginner:{mev:.7,mav:.7,mrv:.75},intermediate:{mev:1,mav:1,mrv:1},advanced:{mev:1.2,mav:1.15,mrv:1.1}};function U(e){let n=Math.max(0,Math.round(e.mev)),s=Math.max(n,Math.round(e.mav)),r=Math.max(s+1,Math.round(e.mrv));return{mev:n,mav:s,mrv:r}}function ue(e){let n=ce[e],s={};for(let r of d){let t=le[r];s[r]=U({mev:t.mev*n.mev,mav:t.mav*n.mav,mrv:t.mrv*n.mrv})}return s}function me(e,n,s=.3){let r=(o,i)=>o*(1-s)+i*s,t={...e};for(let o of n){let i=t[o.muscle];t[o.muscle]=U({mev:o.observedMev===void 0?i.mev:r(i.mev,o.observedMev),mav:i.mav,mrv:o.observedMrv===void 0?i.mrv:r(i.mrv,o.observedMrv)})}return t}function P(e,n){return e<n.mev?"underMev":e<=n.mav?"mevToMav":e<=n.mrv?"mavToMrv":"overMrv"}var q={underMev:"\uBD80\uC871",mevToMav:"\uC801\uC815",mavToMrv:"\uACE0\uAC15\uB3C4",overMrv:"\uCD08\uACFC"};var j=[{id:"barbell-bench-press",name:"\uBC14\uBCA8 \uBCA4\uCE58\uD504\uB808\uC2A4",nameEn:"Barbell Bench Press",equipment:"barbell",pattern:"horizontalPush",increment:2.5,contribution:{chest:1,triceps:.5,frontDelt:.5},jointStress:{shoulder:.8,elbow:.4,wrist:.4}},{id:"dumbbell-bench-press",name:"\uB364\uBCA8 \uBCA4\uCE58\uD504\uB808\uC2A4",nameEn:"Dumbbell Bench Press",equipment:"dumbbell",pattern:"horizontalPush",increment:2,contribution:{chest:1,triceps:.4,frontDelt:.5},jointStress:{shoulder:.6,elbow:.3,wrist:.3}},{id:"machine-chest-press",name:"\uBA38\uC2E0 \uCCB4\uC2A4\uD2B8\uD504\uB808\uC2A4",nameEn:"Machine Chest Press",equipment:"machine",pattern:"horizontalPush",increment:5,contribution:{chest:1,triceps:.4,frontDelt:.4},jointStress:{shoulder:.4,elbow:.25}},{id:"incline-dumbbell-press",name:"\uC778\uD074\uB77C\uC778 \uB364\uBCA8\uD504\uB808\uC2A4",nameEn:"Incline Dumbbell Press",equipment:"dumbbell",pattern:"horizontalPush",increment:2,contribution:{chest:.9,frontDelt:.7,triceps:.4},jointStress:{shoulder:.65,elbow:.3,wrist:.3}},{id:"push-up",name:"\uD478\uC2DC\uC5C5",nameEn:"Push-Up",equipment:"bodyweight",pattern:"horizontalPush",increment:0,contribution:{chest:.8,triceps:.5,frontDelt:.4,abs:.25},jointStress:{shoulder:.45,elbow:.3,wrist:.6}},{id:"cable-fly",name:"\uCF00\uC774\uBE14 \uD50C\uB77C\uC774",nameEn:"Cable Fly",equipment:"cable",pattern:"isolation",increment:2.5,contribution:{chest:1,frontDelt:.25},jointStress:{shoulder:.5,elbow:.15}},{id:"pec-deck",name:"\uD399\uB371 \uD50C\uB77C\uC774",nameEn:"Pec Deck",equipment:"machine",pattern:"isolation",increment:5,contribution:{chest:1},jointStress:{shoulder:.4,elbow:.1}},{id:"barbell-overhead-press",name:"\uBC14\uBCA8 \uC624\uBC84\uD5E4\uB4DC\uD504\uB808\uC2A4",nameEn:"Barbell Overhead Press",equipment:"barbell",pattern:"verticalPush",increment:2.5,contribution:{frontDelt:1,sideDelt:.5,triceps:.5,abs:.25,traps:.25},jointStress:{shoulder:.9,elbow:.4,wrist:.4,lowBack:.4}},{id:"landmine-press",name:"\uB79C\uB4DC\uB9C8\uC778 \uD504\uB808\uC2A4",nameEn:"Landmine Press",equipment:"barbell",pattern:"verticalPush",increment:2.5,contribution:{frontDelt:.9,chest:.4,triceps:.4,abs:.3},jointStress:{shoulder:.35,elbow:.25,lowBack:.25}},{id:"seated-dumbbell-press",name:"\uC2DC\uD2F0\uB4DC \uB364\uBCA8 \uC204\uB354\uD504\uB808\uC2A4",nameEn:"Seated Dumbbell Shoulder Press",equipment:"dumbbell",pattern:"verticalPush",increment:2,contribution:{frontDelt:1,sideDelt:.5,triceps:.4},jointStress:{shoulder:.65,elbow:.3,wrist:.3}},{id:"machine-shoulder-press",name:"\uBA38\uC2E0 \uC204\uB354\uD504\uB808\uC2A4",nameEn:"Machine Shoulder Press",equipment:"machine",pattern:"verticalPush",increment:5,contribution:{frontDelt:1,sideDelt:.4,triceps:.4},jointStress:{shoulder:.45,elbow:.25}},{id:"pull-up",name:"\uD480\uC5C5",nameEn:"Pull-Up",equipment:"bodyweight",pattern:"verticalPull",increment:2.5,contribution:{back:1,biceps:.5,rearDelt:.3,forearms:.4,abs:.25},jointStress:{shoulder:.6,elbow:.4,wrist:.3}},{id:"lat-pulldown",name:"\uB7AB \uD480\uB2E4\uC6B4",nameEn:"Lat Pulldown",equipment:"cable",pattern:"verticalPull",increment:5,contribution:{back:1,biceps:.5,rearDelt:.25,forearms:.3},jointStress:{shoulder:.4,elbow:.3}},{id:"neutral-grip-pulldown",name:"\uC911\uB9BD\uADF8\uB9BD \uD480\uB2E4\uC6B4",nameEn:"Neutral-Grip Pulldown",equipment:"cable",pattern:"verticalPull",increment:5,contribution:{back:1,biceps:.5,forearms:.3},jointStress:{shoulder:.25,elbow:.25}},{id:"barbell-row",name:"\uBC14\uBCA8 \uB85C\uC6B0",nameEn:"Barbell Row",equipment:"barbell",pattern:"horizontalPull",increment:2.5,contribution:{back:1,rearDelt:.5,biceps:.4,traps:.4,hamstrings:.25},jointStress:{lowBack:.8,shoulder:.4,elbow:.3}},{id:"chest-supported-row",name:"\uCCB4\uC2A4\uD2B8 \uC11C\uD3EC\uD2F0\uB4DC \uB85C\uC6B0",nameEn:"Chest-Supported Row",equipment:"machine",pattern:"horizontalPull",increment:5,contribution:{back:1,rearDelt:.5,biceps:.4,traps:.4},jointStress:{lowBack:.1,shoulder:.3,elbow:.3}},{id:"seated-cable-row",name:"\uC2DC\uD2F0\uB4DC \uCF00\uC774\uBE14 \uB85C\uC6B0",nameEn:"Seated Cable Row",equipment:"cable",pattern:"horizontalPull",increment:5,contribution:{back:1,rearDelt:.4,biceps:.4,traps:.3},jointStress:{lowBack:.3,shoulder:.3,elbow:.3}},{id:"face-pull",name:"\uD398\uC774\uC2A4 \uD480",nameEn:"Face Pull",equipment:"cable",pattern:"isolation",increment:2.5,contribution:{rearDelt:1,traps:.5,back:.25},jointStress:{shoulder:.25,elbow:.2}},{id:"reverse-pec-deck",name:"\uB9AC\uBC84\uC2A4 \uD399\uB371",nameEn:"Reverse Pec Deck",equipment:"machine",pattern:"isolation",increment:5,contribution:{rearDelt:1,traps:.3},jointStress:{shoulder:.2}},{id:"back-squat",name:"\uBC31 \uC2A4\uCFFC\uD2B8",nameEn:"Back Squat",equipment:"barbell",pattern:"squat",increment:5,contribution:{quads:1,glutes:.7,hamstrings:.3,abs:.4,calves:.25},jointStress:{knee:.75,lowBack:.7,hip:.5,ankle:.5,shoulder:.3}},{id:"hack-squat",name:"\uD575 \uC2A4\uCFFC\uD2B8",nameEn:"Hack Squat",equipment:"machine",pattern:"squat",increment:10,contribution:{quads:1,glutes:.5,hamstrings:.25},jointStress:{knee:.7,lowBack:.2,hip:.35,ankle:.4}},{id:"leg-press",name:"\uB808\uADF8\uD504\uB808\uC2A4",nameEn:"Leg Press",equipment:"machine",pattern:"squat",increment:10,contribution:{quads:1,glutes:.6,hamstrings:.25},jointStress:{knee:.5,lowBack:.15,hip:.3}},{id:"goblet-squat",name:"\uACE0\uBE14\uB9BF \uC2A4\uCFFC\uD2B8",nameEn:"Goblet Squat",equipment:"dumbbell",pattern:"squat",increment:2,contribution:{quads:.9,glutes:.5,abs:.4},jointStress:{knee:.5,lowBack:.3,hip:.35,ankle:.4}},{id:"walking-lunge",name:"\uC6CC\uD0B9 \uB7F0\uC9C0",nameEn:"Walking Lunge",equipment:"dumbbell",pattern:"lunge",increment:2,unilateral:!0,contribution:{quads:.8,glutes:.9,hamstrings:.4,calves:.25},jointStress:{knee:.6,hip:.4,lowBack:.25,ankle:.4}},{id:"leg-extension",name:"\uB808\uADF8 \uC775\uC2A4\uD150\uC158",nameEn:"Leg Extension",equipment:"machine",pattern:"isolation",increment:5,contribution:{quads:1},jointStress:{knee:.55}},{id:"conventional-deadlift",name:"\uCEE8\uBCA4\uC154\uB110 \uB370\uB4DC\uB9AC\uD504\uD2B8",nameEn:"Conventional Deadlift",equipment:"barbell",pattern:"hinge",increment:5,contribution:{hamstrings:.9,glutes:1,back:.7,traps:.5,forearms:.5,quads:.3},jointStress:{lowBack:.95,hip:.6,knee:.35,wrist:.3}},{id:"romanian-deadlift",name:"\uB8E8\uB9C8\uB2C8\uC548 \uB370\uB4DC\uB9AC\uD504\uD2B8",nameEn:"Romanian Deadlift",equipment:"barbell",pattern:"hinge",increment:2.5,contribution:{hamstrings:1,glutes:.8,back:.4,forearms:.4},jointStress:{lowBack:.8,hip:.5,knee:.15}},{id:"hip-thrust",name:"\uD799 \uC4F0\uB7EC\uC2A4\uD2B8",nameEn:"Hip Thrust",equipment:"barbell",pattern:"hinge",increment:5,contribution:{glutes:1,hamstrings:.5,quads:.25},jointStress:{hip:.35,lowBack:.25,knee:.2}},{id:"lying-leg-curl",name:"\uB77C\uC789 \uB808\uADF8\uCEEC",nameEn:"Lying Leg Curl",equipment:"machine",pattern:"isolation",increment:5,contribution:{hamstrings:1,calves:.25},jointStress:{knee:.35,lowBack:.15}},{id:"back-extension",name:"\uBC31 \uC775\uC2A4\uD150\uC158",nameEn:"Back Extension",equipment:"bodyweight",pattern:"hinge",increment:2.5,contribution:{glutes:.7,hamstrings:.7,back:.5},jointStress:{lowBack:.45,hip:.3}},{id:"lateral-raise",name:"\uB808\uD130\uB7F4 \uB808\uC774\uC988",nameEn:"Lateral Raise",equipment:"dumbbell",pattern:"isolation",increment:1,contribution:{sideDelt:1,traps:.25},jointStress:{shoulder:.4,elbow:.15}},{id:"cable-lateral-raise",name:"\uCF00\uC774\uBE14 \uB808\uD130\uB7F4 \uB808\uC774\uC988",nameEn:"Cable Lateral Raise",equipment:"cable",pattern:"isolation",increment:2.5,unilateral:!0,contribution:{sideDelt:1},jointStress:{shoulder:.3}},{id:"barbell-curl",name:"\uBC14\uBCA8 \uCEEC",nameEn:"Barbell Curl",equipment:"barbell",pattern:"isolation",increment:2.5,contribution:{biceps:1,forearms:.4},jointStress:{elbow:.45,wrist:.45}},{id:"incline-dumbbell-curl",name:"\uC778\uD074\uB77C\uC778 \uB364\uBCA8\uCEEC",nameEn:"Incline Dumbbell Curl",equipment:"dumbbell",pattern:"isolation",increment:1,contribution:{biceps:1,forearms:.3},jointStress:{elbow:.35,shoulder:.25,wrist:.2}},{id:"hammer-curl",name:"\uD574\uBA38 \uCEEC",nameEn:"Hammer Curl",equipment:"dumbbell",pattern:"isolation",increment:1,contribution:{biceps:.8,forearms:.8},jointStress:{elbow:.3,wrist:.15}},{id:"triceps-pushdown",name:"\uD2B8\uB77C\uC774\uC149\uC2A4 \uD478\uC2DC\uB2E4\uC6B4",nameEn:"Triceps Pushdown",equipment:"cable",pattern:"isolation",increment:2.5,contribution:{triceps:1},jointStress:{elbow:.35,wrist:.2}},{id:"overhead-cable-extension",name:"\uC624\uBC84\uD5E4\uB4DC \uCF00\uC774\uBE14 \uC775\uC2A4\uD150\uC158",nameEn:"Overhead Cable Extension",equipment:"cable",pattern:"isolation",increment:2.5,contribution:{triceps:1},jointStress:{elbow:.45,shoulder:.35}},{id:"standing-calf-raise",name:"\uC2A4\uD0E0\uB529 \uCE74\uD504\uB808\uC774\uC988",nameEn:"Standing Calf Raise",equipment:"machine",pattern:"isolation",increment:5,contribution:{calves:1},jointStress:{ankle:.4,knee:.15}},{id:"hanging-leg-raise",name:"\uD589\uC789 \uB808\uADF8\uB808\uC774\uC988",nameEn:"Hanging Leg Raise",equipment:"bodyweight",pattern:"core",increment:2.5,contribution:{abs:1,forearms:.3},jointStress:{shoulder:.3,lowBack:.25}},{id:"cable-crunch",name:"\uCF00\uC774\uBE14 \uD06C\uB7F0\uCE58",nameEn:"Cable Crunch",equipment:"cable",pattern:"core",increment:2.5,contribution:{abs:1},jointStress:{lowBack:.3}},{id:"plank",name:"\uD50C\uB7AD\uD06C",nameEn:"Plank",equipment:"bodyweight",pattern:"core",increment:0,contribution:{abs:.8,glutes:.25},jointStress:{shoulder:.2,lowBack:.15}}],_=new Map(j.map(e=>[e.id,e]));function de(e){return _.get(e)}function pe(e=[]){let n=new Map(_);for(let s of e)n.set(s.id,s);return n}function ge(e,n=j){let s=e.minContribution??.5;return n.filter(r=>{if(e.muscle&&(r.contribution[e.muscle]??0)<s||e.pattern&&r.pattern!==e.pattern||e.availableEquipment&&!e.availableEquipment.includes(r.equipment))return!1;if(e.avoidJoints){for(let t of e.avoidJoints)if((r.jointStress[t.joint]??0)>t.maxStress)return!1}return!0})}var F={hypertrophyReps:{min:5,max:30},minContribution:.25};function z(e,n={}){if(e.warmup||e.reps<=0)return 0;let{hypertrophyReps:s}={...F,...n},r;return e.rir<=3?r=1:e.rir<=4?r=.7:r=.3,e.reps<s.min?r*=.8:e.reps>s.max&&(r*=.6),r}function fe(){let e={};for(let n of d)e[n]={effectiveSets:0,directSets:0,topExercises:[]};return e}function S(e,n,s={}){let{minContribution:r}={...F,...s},t=fe(),o=new Map;for(let i of e)for(let a of i.sets){let l=n.get(a.exerciseId);if(!l)continue;let c=z(a,s);if(c!==0)for(let b of d){let p=l.contribution[b]??0;if(p<r)continue;let g=c*p,u=t[b];u.effectiveSets+=g,p>=.85&&(u.directSets+=c);let f=o.get(b);f||(f=new Map,o.set(b,f)),f.set(l.id,(f.get(l.id)??0)+g)}}for(let i of d){let a=t[i];a.effectiveSets=D(a.effectiveSets),a.directSets=D(a.directSets),a.topExercises=[...o.get(i)??new Map].map(([l,c])=>({exerciseId:l,sets:D(c)})).sort((l,c)=>c.sets-l.sets)}return t}function be(e,n,s,r={}){let t=S(e,s,r);return d.map(o=>{let i=t[o],a=n[o],l=P(i.effectiveSets,a);return{muscle:o,...i,landmark:a,zone:l,zoneLabel:q[l],mrvRatio:D(i.effectiveSets/a.mrv*10)/10}})}function D(e){return Math.round(e*10)/10}function x(e){let n=new Date(`${e}T00:00:00Z`),s=n.getUTCDay(),r=s===0?6:s-1;return n.setUTCDate(n.getUTCDate()-r),n.toISOString().slice(0,10)}function R(e,n){let s=new Date(`${e}T00:00:00Z`);return s.setUTCDate(s.getUTCDate()+n),s.toISOString().slice(0,10)}function he(e){let n=new Map;for(let s of e){let r=x(s.date),t=n.get(r);t?t.push(s):n.set(r,[s])}return new Map([...n].sort(([s],[r])=>s<r?-1:1))}function E(e,n){let s=x(n),r=R(s,6);return e.filter(t=>t.date>=s&&t.date<=r)}function ve(e){let n={};for(let s of e)n[s.muscle]=s.effectiveSets;return n}function Se(e){let n={};for(let s of d)n[s]=e[s].effectiveSets;return n}function C(e){let n=e.reps+Math.max(0,e.rir);return n<=1?e.weightKg:h(e.weightKg*(1+n/30))}function y(e,n){return n<=0?h(e):h(Math.round(e/n)*n)}function Z(e,n){let s=e.filter(r=>r.exerciseId===n&&!r.warmup&&r.reps>0);if(s.length!==0)return s.reduce((r,t)=>t.weightKg>r.weightKg||t.weightKg===r.weightKg&&t.reps>r.reps?t:r)}function K(e,n,s){let r={exerciseId:e.id,targetReps:s.repRange,targetRir:s.targetRir},t=n?Z(n,e.id):void 0;if(!t)return{...r,weightKg:null,change:"start",deltaKg:0,reason:`\uCCAB \uC218\uD589\uC785\uB2C8\uB2E4. ${s.repRange.min}~${s.repRange.max}\uD68C\uB97C RIR ${s.targetRir}\uB85C \uB9C8\uCE60 \uC218 \uC788\uB294 \uC911\uB7C9\uC73C\uB85C \uC2DC\uC791\uD558\uC138\uC694.`};let o=e.increment,i=t.reps>=s.repRange.max,a=t.reps<s.repRange.min,l=t.rir-s.targetRir;if(i&&l>=0){let c=l>=2?o*2:o;return{...r,weightKg:y(t.weightKg+c,o),change:"increase",deltaKg:h(c),reason:`${t.reps}\uD68C \xD7 RIR ${t.rir}\uB85C \uBAA9\uD45C \uC0C1\uB2E8\uC5D0 \uC5EC\uC720 \uC788\uAC8C \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4. ${h(c)}kg \uC62C\uB9BD\uB2C8\uB2E4.`}}if(i)return{...r,weightKg:t.weightKg,change:"hold",deltaKg:0,reason:`\uBAA9\uD45C \uBC18\uBCF5\uC740 \uCC44\uC6E0\uC9C0\uB9CC RIR ${t.rir}\uB85C \uC5EC\uC720\uAC00 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4. \uAC19\uC740 \uC911\uB7C9\uC5D0\uC11C RIR ${s.targetRir}\uC774 \uB420 \uB54C\uAE4C\uC9C0 \uC720\uC9C0\uD569\uB2C8\uB2E4.`};if(l>=2)return{...r,weightKg:y(t.weightKg+o,o),change:"increase",deltaKg:h(o),reason:`RIR ${t.rir}\uB85C \uBAA9\uD45C(${s.targetRir})\uBCF4\uB2E4 \uAC00\uBCBC\uC6E0\uC2B5\uB2C8\uB2E4. ${h(o)}kg \uC62C\uB9BD\uB2C8\uB2E4.`};if(a){let c=y(t.weightKg*.9,o);return{...r,weightKg:c,change:"decrease",deltaKg:h(c-t.weightKg),reason:`${t.reps}\uD68C\uB85C \uBAA9\uD45C \uD558\uB2E8(${s.repRange.min}\uD68C)\uC5D0 \uBABB \uBBF8\uCCE4\uC2B5\uB2C8\uB2E4. 10% \uB0AE\uCDB0 \uBC18\uBCF5 \uC218\uBD80\uD130 \uD68C\uBCF5\uD569\uB2C8\uB2E4.`}}return{...r,weightKg:t.weightKg,targetReps:{min:Math.min(t.reps+1,s.repRange.max),max:s.repRange.max},change:"hold",deltaKg:0,reason:`\uAC19\uC740 \uC911\uB7C9\uC73C\uB85C ${Math.min(t.reps+1,s.repRange.max)}\uD68C\uB97C \uB178\uB9BD\uB2C8\uB2E4.`}}function xe(e,n,s){let r=e.increment,t=n.rir-s.targetRir;if(t>=2&&n.reps>=s.repRange.min){let o=r*(t>=3?2:1);return{weightKg:y(n.weightKg+o,r),deltaKg:h(o),reason:`RIR ${n.rir}\uB85C \uC5EC\uC720\uAC00 \uB9CE\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uC138\uD2B8 ${h(o)}kg \uC62C\uB9BD\uB2C8\uB2E4.`}}if(n.rir<=0&&n.reps<s.repRange.min){let o=y(n.weightKg*.9,r);return{weightKg:o,deltaKg:h(o-n.weightKg),reason:"\uC2E4\uD328 \uC9C0\uC810\uC5D0\uC11C \uBAA9\uD45C \uBC18\uBCF5\uC744 \uBABB \uCC44\uC6E0\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uC138\uD2B8 10% \uB0AE\uCDA5\uB2C8\uB2E4."}}return{weightKg:n.weightKg,deltaKg:0,reason:"\uC911\uB7C9 \uC720\uC9C0\uD569\uB2C8\uB2E4."}}function h(e){return Math.round(e*10)/10}var O=5;function G(e){let n=[],s=e.accumulationWeeks??5,r=e.index,t=E(e.sessions,e.asOf),o=R(x(e.asOf),-1),i=E(e.sessions,o),a=e.lastWeekPhase!=="deload",l=a?J(t,i,.02):[];l.length>=2&&n.push({id:"performanceDrop",label:`${l.length}\uAC1C \uC885\uBAA9\uC758 \uCD94\uC815 1RM\uC774 \uC9C0\uB09C\uC8FC\uBCF4\uB2E4 \uB5A8\uC5B4\uC84C\uC2B5\uB2C8\uB2E4 (${l.slice(0,3).map(m=>r.get(m)?.name??m).join(", ")}${l.length>3?" \uC678":""})`,weight:3});let c=a?N(t):null,b=a?N(i):null;c!==null&&b!==null&&b-c>=1&&n.push({id:"rirDrift",label:`\uD3C9\uADE0 RIR\uC774 ${b.toFixed(1)} \u2192 ${c.toFixed(1)}\uB85C \uB5A8\uC5B4\uC84C\uC2B5\uB2C8\uB2E4. \uAC19\uC740 \uC911\uB7C9\uC774 \uB354 \uBB34\uAC81\uAC8C \uB290\uAEF4\uC9C0\uB294 \uC0C1\uD0DC\uC785\uB2C8\uB2E4`,weight:2});let p=S(t,e.index),g=d.filter(m=>p[m].effectiveSets>e.landmarks[m].mrv);if(g.length>0){let m=Math.max(...g.map(M=>p[M].effectiveSets/e.landmarks[M].mrv));n.push({id:"volumeOverMrv",label:`${g.map(M=>L[M]).join(", ")} \uBCFC\uB968\uC774 \uD68C\uBCF5 \uAC00\uB2A5 \uBC94\uC704(MRV)\uB97C \uB118\uC5C8\uC2B5\uB2C8\uB2E4`,weight:g.length>=3?O:g.length+(m>=1.25?1:0)})}let u=ke(e.checkIns??[],e.asOf,7),f=u.filter(m=>(m.pain??[]).some(M=>M.score>=3));f.length>=2&&n.push({id:"jointPain",label:`\uCD5C\uADFC 7\uC77C \uC911 ${f.length}\uC77C\uC5D0 3\uC810 \uC774\uC0C1 \uAD00\uC808 \uD1B5\uC99D\uC774 \uBCF4\uACE0\uB410\uC2B5\uB2C8\uB2E4`,weight:3});let v=I(u.map(m=>m.sleepHours).filter(W)),k=I(u.map(m=>m.soreness).filter(W));(v!==null&&v<6||k!==null&&k>=7)&&n.push({id:"poorRecovery",label:v!==null&&v<6?`\uCD5C\uADFC 7\uC77C \uD3C9\uADE0 \uC218\uBA74\uC774 ${v.toFixed(1)}\uC2DC\uAC04\uC73C\uB85C \uD68C\uBCF5\uC5D0 \uBD80\uC871\uD569\uB2C8\uB2E4`:`\uADFC\uC721\uD1B5\uC774 \uD3C9\uADE0 ${k?.toFixed(1)}\uC810\uC73C\uB85C \uB192\uAC8C \uC720\uC9C0\uB418\uACE0 \uC788\uC2B5\uB2C8\uB2E4`,weight:2});let w=I(u.map(m=>m.motivation).filter(W));w!==null&&w<=3&&n.push({id:"lowMotivation",label:"\uC6B4\uB3D9 \uC758\uC695\uC774 \uC9C0\uC18D\uC801\uC73C\uB85C \uB0AE\uC2B5\uB2C8\uB2E4. \uC911\uCD94 \uD53C\uB85C\uC758 \uD754\uD55C \uC2E0\uD638\uC785\uB2C8\uB2E4",weight:1}),e.weekInBlock>=s&&n.push({id:"blockComplete",label:`\uB514\uB85C\uB4DC \uC5C6\uC774 ${e.weekInBlock}\uC8FC\uC9F8\uC785\uB2C8\uB2E4. \uACC4\uD68D\uB41C \uCD95\uC801 \uAE30\uAC04(${s}\uC8FC)\uC744 \uCC44\uC6E0\uC2B5\uB2C8\uB2E4`,weight:2});let B=n.reduce((m,M)=>m+M.weight,0);return{score:B,threshold:O,deloadRecommended:B>=O,signals:n}}function J(e,n,s=.02){let r=T(e),t=T(n),o=[];for(let[i,a]of t){let l=r.get(i);l!==void 0&&l<a*(1-s)&&o.push(i)}return o}function T(e){let n=new Map;for(let s of e)for(let r of s.sets){if(r.warmup||r.reps<=0)continue;let t=C(r),o=n.get(r.exerciseId);(o===void 0||t>o)&&n.set(r.exerciseId,t)}return n}function N(e){let n=[];for(let s of e)for(let r of s.sets)!r.warmup&&r.reps>0&&n.push(r.rir);return I(n)}function ke(e,n,s){let r=R(n,-(s-1));return e.filter(t=>t.date>=r&&t.date<=n)}function I(e){return e.length===0?null:e.reduce((n,s)=>n+s,0)/e.length}function W(e){return typeof e=="number"&&Number.isFinite(e)}function we(e){return e<=1?3:e<=3?2:1}function Me(e){let n=G({sessions:e.sessions,checkIns:e.checkIns,index:e.index,landmarks:e.landmarks,asOf:e.asOf,weekInBlock:e.weekInBlock,accumulationWeeks:e.accumulationWeeks,lastWeekPhase:e.lastWeekPhase}),s=e.lastWeekPhase==="deload",r=n.deloadRecommended&&!s?"deload":"accumulation",t=r==="deload"?0:e.weekInBlock+1,o=E(e.sessions,e.asOf),i=S(o,e.index),a=S(Le(e.sessions,e.asOf),e.index),l=new Set(e.painfulMuscles??[]),c=[],b=d.map(p=>{let g=i[p].effectiveSets,u=e.landmarks[p],f=P(g,u),v=a[p].effectiveSets===0;v&&c.push(p);let{sets:k,rationale:w}=v?{sets:0,rationale:"\uCD5C\uADFC 4\uC8FC\uAC04 \uD6C8\uB828 \uAE30\uB85D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uD504\uB85C\uADF8\uB7A8\uC5D0 \uB123\uC744\uC9C0 \uACB0\uC815\uD558\uC138\uC694"}:r==="deload"?Re(g,u.mev):Ee({currentSets:g,zone:f,landmark:u,fatigueScore:n.score,painful:l.has(p)});return{muscle:p,label:L[p],currentSets:g,prescribedSets:k,deltaSets:qe(k-g),zone:f,zoneLabel:q[f],rationale:w}});return{weekStart:Pe(e.asOf),phase:r,weekInBlock:t,targetRir:r==="deload"?4:we(t),intensityMultiplier:r==="deload"?.9:1,fatigue:n,volume:b,neglected:c,summary:ye(r,t,n,b)}}function Re(e,n){let s=Math.round(e/2),r=Math.max(2,Math.round(n/2)),t=Math.max(r,s);return{sets:t,rationale:`\uB514\uB85C\uB4DC: ${e}\uC138\uD2B8 \u2192 ${t}\uC138\uD2B8 (\uC911\uB7C9\uC740 90% \uC720\uC9C0)`}}function Ee(e){let{currentSets:n,zone:s,landmark:r,fatigueScore:t,painful:o}=e;if(o)return{sets:Math.round(n),rationale:"\uD1B5\uC99D\uC774 \uBCF4\uACE0\uB41C \uBD80\uC704\uC785\uB2C8\uB2E4. \uBCFC\uB968\uC744 \uC62C\uB9AC\uC9C0 \uC54A\uACE0 \uC720\uC9C0\uD569\uB2C8\uB2E4"};let i=t>=3?1:2;switch(s){case"underMev":return{sets:r.mev,rationale:`MEV(${r.mev}\uC138\uD2B8) \uBBF8\uB9CC\uC785\uB2C8\uB2E4. \uC790\uADF9 \uCD5C\uC18C\uC120\uAE4C\uC9C0 \uC62C\uB9BD\uB2C8\uB2E4`};case"mevToMav":return{sets:Math.min(r.mav,Math.round(n)+i),rationale:`\uC801\uC815 \uAD6C\uAC04\uC785\uB2C8\uB2E4. ${i}\uC138\uD2B8 \uCD94\uAC00\uD574 MAV(${r.mav}\uC138\uD2B8)\uB85C \uC811\uADFC\uD569\uB2C8\uB2E4`};case"mavToMrv":return t>=3?{sets:Math.round(n),rationale:"\uACE0\uAC15\uB3C4 \uAD6C\uAC04\uC774\uACE0 \uD53C\uB85C \uC2E0\uD638\uAC00 \uC788\uC5B4 \uC774\uBC88 \uC8FC\uB294 \uC720\uC9C0\uD569\uB2C8\uB2E4"}:{sets:Math.min(r.mrv,Math.round(n)+1),rationale:`\uACE0\uAC15\uB3C4 \uAD6C\uAC04\uC785\uB2C8\uB2E4. 1\uC138\uD2B8\uB9CC \uCD94\uAC00\uD569\uB2C8\uB2E4 (MRV ${r.mrv}\uC138\uD2B8)`};case"overMrv":return{sets:r.mrv,rationale:`MRV\uB97C \uB118\uACBC\uC2B5\uB2C8\uB2E4. ${r.mrv}\uC138\uD2B8\uB85C \uB418\uB3CC\uB9BD\uB2C8\uB2E4`}}}function ye(e,n,s,r){if(e==="deload")return`\uB514\uB85C\uB4DC \uC8FC\uAC04\uC785\uB2C8\uB2E4. \uBCFC\uB968\uC744 \uC808\uBC18\uC73C\uB85C \uC904\uC774\uACE0 \uC911\uB7C9\uC740 90%\uB85C \uC720\uC9C0\uD569\uB2C8\uB2E4. \uADFC\uAC70: ${s.signals.slice().sort((l,c)=>c.weight-l.weight).slice(0,2).map(l=>l.label).join(" / ")}`;let t=r.filter(a=>a.deltaSets>0),o=r.filter(a=>a.deltaSets<0),i=[`\uCD95\uC801 ${n}\uC8FC\uCC28`];return t.length>0&&i.push(`\uBCFC\uB968 \uC99D\uAC00: ${t.slice(0,4).map(a=>`${a.label} +${a.deltaSets}`).join(", ")}`),o.length>0&&i.push(`\uC870\uC815: ${o.map(a=>`${a.label} ${a.deltaSets}`).join(", ")}`),t.length===0&&o.length===0&&i.push("\uBCFC\uB968 \uC720\uC9C0"),i.join(" \xB7 ")}function Le(e,n){let s=R(x(n),-21),r=R(x(n),6);return e.filter(t=>t.date>=s&&t.date<=r)}function Pe(e){let n=new Date(`${x(e)}T00:00:00Z`);return n.setUTCDate(n.getUTCDate()+7),n.toISOString().slice(0,10)}function qe(e){return Math.round(e*10)/10}var X={neck:"\uBAA9",shoulder:"\uC5B4\uAE68",elbow:"\uD314\uAFC8\uCE58",wrist:"\uC190\uBAA9",lowBack:"\uD5C8\uB9AC",hip:"\uACE0\uAD00\uC808",knee:"\uBB34\uB98E",ankle:"\uBC1C\uBAA9"};function $(e,n,s={}){let r={exerciseId:e.id,loadMultiplier:1,substitutes:[]},t=null;for(let a of n){if(a.score<=0)continue;let l=e.jointStress[a.joint]??0;if(l<=0)continue;let c=A(a.score,l);c!=="allow"&&(!t||H(c)>H(t.action))&&(t={report:a,stress:l,action:c})}if(!t)return{...r,action:"allow",message:"\uD1B5\uC99D \uAD00\uB828 \uC81C\uD55C \uC5C6\uC74C"};let o=X[t.report.joint];if(t.action==="reduceLoad")return{...r,action:"reduceLoad",joint:t.report.joint,painScore:t.report.score,loadMultiplier:.9,message:`${o} \uD1B5\uC99D ${t.report.score}\uC810. \uC911\uB7C9\uC744 10% \uB0AE\uCD94\uACE0 \uD1B5\uC99D\uC774 \uB098\uD0C0\uB098\uC9C0 \uC54A\uB294 \uAC00\uB3D9 \uBC94\uC704\uC5D0\uC11C\uB9CC \uC218\uD589\uD558\uC138\uC694.`};let i=Y(e,n,s);return t.action==="stop"?{...r,action:"stop",joint:t.report.joint,painScore:t.report.score,substitutes:i,message:`${o} \uD1B5\uC99D ${t.report.score}\uC810\uC73C\uB85C \uB192\uC2B5\uB2C8\uB2E4. \uC624\uB298\uC740 ${o}\uC5D0 \uBD80\uD558\uAC00 \uC2E4\uB9AC\uB294 \uB3D9\uC791\uC744 \uB123\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uD1B5\uC99D\uC774 \uC9C0\uC18D\uB418\uBA74 \uC804\uBB38\uC758 \uC9C4\uB8CC\uB97C \uBC1B\uC73C\uC138\uC694.`}:{...r,action:"substitute",joint:t.report.joint,painScore:t.report.score,substitutes:i,message:i.length>0?`${o} \uD1B5\uC99D ${t.report.score}\uC810. ${e.name} \uB300\uC2E0 ${i[0].name}\uC744(\uB97C) \uAD8C\uD569\uB2C8\uB2E4.`:`${o} \uD1B5\uC99D ${t.report.score}\uC810. \uC774 \uC885\uBAA9\uC740 \uBD80\uB2F4\uC774 \uD07D\uB2C8\uB2E4. \uD574\uB2F9 \uBD80\uC704\uB294 \uC624\uB298 \uAC74\uB108\uB6F0\uC138\uC694.`}}function A(e,n){return e>=7?n>.3?"stop":"allow":e>=3?n>=.6?"substitute":n>=.3?"reduceLoad":"allow":n>=.6?"reduceLoad":"allow"}function H(e){switch(e){case"allow":return 0;case"reduceLoad":return 1;case"substitute":return 2;case"stop":return 3}}var je=.5;function Y(e,n,s={}){let r=s.pool??j,t=s.substituteLimit??3;return r.filter(i=>i.id!==e.id).filter(i=>!s.availableEquipment||s.availableEquipment.includes(i.equipment)).filter(i=>{for(let a of n){if(a.score<=0)continue;let l=i.jointStress[a.joint]??0;if(A(a.score,l)==="substitute"||A(a.score,l)==="stop")return!1}return!0}).map(i=>({candidate:i,score:Q(e,i)-Be(i,n)})).filter(i=>i.score>=je).sort((i,a)=>a.score-i.score).slice(0,t).map(i=>i.candidate)}function Q(e,n){let s=0,r=0,t=0;for(let o of d){let i=e.contribution[o]??0,a=n.contribution[o]??0;s+=i*a,r+=i*i,t+=a*a}return r===0||t===0?0:s/Math.sqrt(r*t)}function Be(e,n){let s=0;for(let r of n){if(r.score<=0)continue;let t=e.jointStress[r.joint]??0;s+=t*(r.score/10)}return s}function De(e,n,s={}){let r=e.map(t=>$(t,n,s));return{rulings:r,keep:r.filter(t=>t.action==="allow"||t.action==="reduceLoad"),swap:r.filter(t=>t.action==="substitute"),drop:r.filter(t=>t.action==="stop"),medicalAdvisory:n.some(t=>t.score>=7)}}function Ie(e){let n=e.pain??[],s=[],r=[];e.plan.phase==="deload"&&s.push(e.plan.summary),n.some(o=>o.score>=7)&&s.push("\uD1B5\uC99D\uC774 7\uC810 \uC774\uC0C1\uC785\uB2C8\uB2E4. \uC624\uB298\uC740 \uD574\uB2F9 \uBD80\uC704\uB97C \uC4F0\uC9C0 \uC54A\uACE0, \uD1B5\uC99D\uC774 \uC9C0\uC18D\uB418\uBA74 \uC804\uBB38\uC758 \uC9C4\uB8CC\uB97C \uBC1B\uC73C\uC138\uC694.");let t=$e(e);for(let o of e.template.slots){let i=e.index.get(o.exerciseId);if(!i)continue;let a=$(i,n,{pool:[...e.index.values()],availableEquipment:e.availableEquipment}),l=i,c;if(a.action==="substitute"||a.action==="stop"){let w=a.substitutes[0];if(!w){s.push(`${i.name}: ${a.message}`);continue}l=w,c=i,s.push(a.message)}let b=Ve(o,l,t),p=ne(e.history,l.id),g={repRange:o.repRange,targetRir:e.plan.targetRir},u=K(l,p?.sets,g),f=e.plan.intensityMultiplier*a.loadMultiplier,v=u.weightKg===null?null:y(u.weightKg*f,l.increment),k=u.change==="start"&&c?Ke(e.history,c):void 0;r.push({exercise:l,substitutedFrom:c,painRuling:a,note:Oe(u.reason,f,a,k),sets:Array.from({length:b},(w,B)=>({setNumber:B+1,weightKg:v,targetReps:u.targetReps,targetRir:e.plan.targetRir}))})}return{date:e.date,name:e.template.name,phase:e.plan.phase,targetRir:e.plan.targetRir,exercises:r,warnings:s}}function $e(e){let n=E(e.history,Ce(e.history)??e.date),s=S(n,e.index),r=new Map;for(let t of e.plan.volume){let o=s[t.muscle]?.effectiveSets??0;r.set(t.muscle,o<=0?1:t.prescribedSets/o)}for(let t of d)r.has(t)||r.set(t,1);return r}function Ve(e,n,s){let r=ee(n),t=r?s.get(r)??1:1,o=Math.round(e.sets*t),i=Math.min(e.sets+2,Math.max(e.sets-2,o));return Math.max(1,i)}function ee(e){let n,s=0;for(let r of d){let t=e.contribution[r]??0;t>s&&(n=r,s=t)}return n}function ne(e,n){let s;for(let r of e)r.sets.some(o=>o.exerciseId===n&&!o.warmup)&&(!s||r.date>s.date)&&(s=r);return s}function Ce(e){let n;for(let s of e)(!n||s.date>n)&&(n=s.date);return n}function Ke(e,n){let s=ne(e,n.id);if(!s)return;let r=s.sets.find(t=>t.exerciseId===n.id&&!t.warmup);if(r)return`\uCC38\uACE0: ${n.name} ${r.weightKg}kg \xD7 ${r.reps}\uD68C (RIR ${r.rir})`}function Oe(e,n,s,r){let t=[e];return r&&t.push(r),n<1&&t.push(`\uC801\uC6A9 \uBC30\uC728 ${Math.round(n*100)}%`),s.action==="reduceLoad"&&t.push(s.message),t.join(" \xB7 ")}return ae(We);})();
+<script>"use strict";var FitEngine=(()=>{var N=Object.defineProperty;var Ie=Object.getOwnPropertyDescriptor;var $e=Object.getOwnPropertyNames;var Ce=Object.prototype.hasOwnProperty;var De=(e,n)=>{for(var r in n)N(e,r,{get:n[r],enumerable:!0})},Be=(e,n,r,t)=>{if(n&&typeof n=="object"||typeof n=="function")for(let o of $e(n))!Ce.call(e,o)&&o!==r&&N(e,o,{get:()=>n[o],enumerable:!(t=Ie(n,o))||t.enumerable});return e};var Oe=e=>Be(N({},"__esModule",{value:!0}),e);var Pn={};De(Pn,{ANCHOR_FACTORS:()=>ce,DEFAULT_GYM:()=>W,EXERCISES:()=>j,JOINT_LABELS_KO:()=>ke,MUSCLE_GROUPS:()=>f,MUSCLE_LABELS_KO:()=>I,PER_SESSION_CAP:()=>Z,ZONE_LABELS_KO:()=>A,actionableFrequency:()=>V,addDays:()=>R,adjustWithinSession:()=>Xe,aggregateVolume:()=>k,assessFatigue:()=>ne,availableEquipmentOf:()=>ie,bestE1rmByExercise:()=>ee,buildExerciseIndex:()=>_e,buildSession:()=>wn,calibrateFromSet:()=>xn,calibrateLandmarks:()=>Te,describePlates:()=>gn,detailsToVolumeMap:()=>Ze,droppedLifts:()=>ve,estimate1RM:()=>D,exerciseById:()=>Ge,findExercises:()=>We,findSubstitutes:()=>_,frequencyReport:()=>J,groupByWeek:()=>Ne,hasFinalConsonant:()=>me,isAvailableAt:()=>U,landmarksFor:()=>Ve,loadableWeights:()=>se,loadingFor:()=>oe,nearestLoadable:()=>q,particle:()=>de,planNextWeek:()=>en,platePlan:()=>ae,prescribeLoad:()=>X,primaryMuscle:()=>Ee,recommendedSessions:()=>he,roundToIncrement:()=>E,screenExercise:()=>G,screenSession:()=>un,sessionsInWeek:()=>M,setEffectiveness:()=>be,similarity:()=>ye,stepAround:()=>pn,suggestStartingLoad:()=>le,toVolumeMap:()=>ze,topWorkingSet:()=>Se,volumeReport:()=>He,weekStart:()=>L,withParticle:()=>B,workingWeightFor:()=>ue,zoneOf:()=>O});function me(e){let n=e.trim();if(n.length===0)return null;let r=n.charCodeAt(n.length-1);return r<44032||r>55203?null:(r-44032)%28!==0}var Ae={"\uC744/\uB97C":["\uC744","\uB97C"],"\uC740/\uB294":["\uC740","\uB294"],"\uC774/\uAC00":["\uC774","\uAC00"],"\uACFC/\uC640":["\uACFC","\uC640"],"\uC73C\uB85C/\uB85C":["\uC73C\uB85C","\uB85C"],"\uC774\uB2E4/\uB2E4":["\uC774\uB2E4","\uB2E4"]};function de(e,n){let[r,t]=Ae[n],o=me(e);return o===null||n==="\uC73C\uB85C/\uB85C"&&o&&(e.trim().charCodeAt(e.trim().length-1)-44032)%28===8?t:o?r:t}function B(e,n){return e+de(e,n)}var f=["chest","back","frontDelt","sideDelt","rearDelt","traps","biceps","triceps","forearms","quads","hamstrings","glutes","calves","abs"],I={chest:"\uAC00\uC2B4",back:"\uB4F1",frontDelt:"\uC804\uBA74 \uC0BC\uAC01\uADFC",sideDelt:"\uCE21\uBA74 \uC0BC\uAC01\uADFC",rearDelt:"\uD6C4\uBA74 \uC0BC\uAC01\uADFC",traps:"\uC2B9\uBAA8\uADFC",biceps:"\uC774\uB450",triceps:"\uC0BC\uB450",forearms:"\uC804\uC644",quads:"\uB300\uD1F4\uC0AC\uB450",hamstrings:"\uD584\uC2A4\uD2B8\uB9C1",glutes:"\uB454\uADFC",calves:"\uC885\uC544\uB9AC",abs:"\uBCF5\uADFC"},je={chest:{mev:10,mav:16,mrv:22},back:{mev:10,mav:18,mrv:25},frontDelt:{mev:0,mav:8,mrv:12},sideDelt:{mev:8,mav:16,mrv:26},rearDelt:{mev:6,mav:12,mrv:20},traps:{mev:4,mav:12,mrv:20},biceps:{mev:8,mav:14,mrv:20},triceps:{mev:6,mav:14,mrv:20},forearms:{mev:2,mav:8,mrv:16},quads:{mev:8,mav:16,mrv:20},hamstrings:{mev:6,mav:12,mrv:20},glutes:{mev:4,mav:12,mrv:16},calves:{mev:8,mav:16,mrv:20},abs:{mev:0,mav:12,mrv:25}},Fe={beginner:{mev:.7,mav:.7,mrv:.75},intermediate:{mev:1,mav:1,mrv:1},advanced:{mev:1.2,mav:1.15,mrv:1.1}};function pe(e){let n=Math.max(0,Math.round(e.mev)),r=Math.max(n,Math.round(e.mav)),t=Math.max(r+1,Math.round(e.mrv));return{mev:n,mav:r,mrv:t}}function Ve(e){let n=Fe[e],r={};for(let t of f){let o=je[t];r[t]=pe({mev:o.mev*n.mev,mav:o.mav*n.mav,mrv:o.mrv*n.mrv})}return r}function Te(e,n,r=.3){let t=(i,s)=>i*(1-r)+s*r,o={...e};for(let i of n){let s=o[i.muscle];o[i.muscle]=pe({mev:i.observedMev===void 0?s.mev:t(s.mev,i.observedMev),mav:s.mav,mrv:i.observedMrv===void 0?s.mrv:t(s.mrv,i.observedMrv)})}return o}function O(e,n){return e<n.mev?"underMev":e<=n.mav?"mevToMav":e<=n.mrv?"mavToMrv":"overMrv"}var A={underMev:"\uBD80\uC871",mevToMav:"\uC801\uC815",mavToMrv:"\uACE0\uAC15\uB3C4",overMrv:"\uCD08\uACFC"};var j=[{id:"barbell-bench-press",name:"\uBC14\uBCA8 \uBCA4\uCE58\uD504\uB808\uC2A4",nameEn:"Barbell Bench Press",equipment:"barbell",pattern:"horizontalPush",increment:2.5,contribution:{chest:1,triceps:.5,frontDelt:.5},jointStress:{shoulder:.8,elbow:.4,wrist:.4}},{id:"dumbbell-bench-press",name:"\uB364\uBCA8 \uBCA4\uCE58\uD504\uB808\uC2A4",nameEn:"Dumbbell Bench Press",equipment:"dumbbell",pattern:"horizontalPush",increment:2,contribution:{chest:1,triceps:.4,frontDelt:.5},jointStress:{shoulder:.6,elbow:.3,wrist:.3}},{id:"machine-chest-press",name:"\uBA38\uC2E0 \uCCB4\uC2A4\uD2B8\uD504\uB808\uC2A4",nameEn:"Machine Chest Press",equipment:"machine",pattern:"horizontalPush",increment:5,contribution:{chest:1,triceps:.4,frontDelt:.4},jointStress:{shoulder:.4,elbow:.25}},{id:"incline-dumbbell-press",name:"\uC778\uD074\uB77C\uC778 \uB364\uBCA8\uD504\uB808\uC2A4",nameEn:"Incline Dumbbell Press",equipment:"dumbbell",pattern:"horizontalPush",increment:2,contribution:{chest:.9,frontDelt:.7,triceps:.4},jointStress:{shoulder:.65,elbow:.3,wrist:.3}},{id:"push-up",name:"\uD478\uC2DC\uC5C5",nameEn:"Push-Up",equipment:"bodyweight",pattern:"horizontalPush",increment:0,contribution:{chest:.8,triceps:.5,frontDelt:.4,abs:.25},jointStress:{shoulder:.45,elbow:.3,wrist:.6}},{id:"cable-fly",name:"\uCF00\uC774\uBE14 \uD50C\uB77C\uC774",nameEn:"Cable Fly",equipment:"cable",pattern:"isolation",increment:2.5,contribution:{chest:1,frontDelt:.25},jointStress:{shoulder:.5,elbow:.15}},{id:"pec-deck",name:"\uD399\uB371 \uD50C\uB77C\uC774",nameEn:"Pec Deck",equipment:"machine",pattern:"isolation",increment:5,contribution:{chest:1},jointStress:{shoulder:.4,elbow:.1}},{id:"barbell-overhead-press",name:"\uBC14\uBCA8 \uC624\uBC84\uD5E4\uB4DC\uD504\uB808\uC2A4",nameEn:"Barbell Overhead Press",equipment:"barbell",pattern:"verticalPush",increment:2.5,contribution:{frontDelt:1,sideDelt:.5,triceps:.5,abs:.25,traps:.25},jointStress:{shoulder:.9,elbow:.4,wrist:.4,lowBack:.4}},{id:"landmine-press",name:"\uB79C\uB4DC\uB9C8\uC778 \uD504\uB808\uC2A4",nameEn:"Landmine Press",equipment:"barbell",pattern:"verticalPush",increment:2.5,contribution:{frontDelt:.9,chest:.4,triceps:.4,abs:.3},jointStress:{shoulder:.35,elbow:.25,lowBack:.25}},{id:"seated-dumbbell-press",name:"\uC2DC\uD2F0\uB4DC \uB364\uBCA8 \uC204\uB354\uD504\uB808\uC2A4",nameEn:"Seated Dumbbell Shoulder Press",equipment:"dumbbell",pattern:"verticalPush",increment:2,contribution:{frontDelt:1,sideDelt:.5,triceps:.4},jointStress:{shoulder:.65,elbow:.3,wrist:.3}},{id:"machine-shoulder-press",name:"\uBA38\uC2E0 \uC204\uB354\uD504\uB808\uC2A4",nameEn:"Machine Shoulder Press",equipment:"machine",pattern:"verticalPush",increment:5,contribution:{frontDelt:1,sideDelt:.4,triceps:.4},jointStress:{shoulder:.45,elbow:.25}},{id:"pull-up",name:"\uD480\uC5C5",nameEn:"Pull-Up",equipment:"bodyweight",pattern:"verticalPull",increment:2.5,contribution:{back:1,biceps:.5,rearDelt:.3,forearms:.4,abs:.25},jointStress:{shoulder:.6,elbow:.4,wrist:.3}},{id:"lat-pulldown",name:"\uB7AB \uD480\uB2E4\uC6B4",nameEn:"Lat Pulldown",equipment:"cable",pattern:"verticalPull",increment:5,contribution:{back:1,biceps:.5,rearDelt:.25,forearms:.3},jointStress:{shoulder:.4,elbow:.3}},{id:"neutral-grip-pulldown",name:"\uC911\uB9BD\uADF8\uB9BD \uD480\uB2E4\uC6B4",nameEn:"Neutral-Grip Pulldown",equipment:"cable",pattern:"verticalPull",increment:5,contribution:{back:1,biceps:.5,forearms:.3},jointStress:{shoulder:.25,elbow:.25}},{id:"barbell-row",name:"\uBC14\uBCA8 \uB85C\uC6B0",nameEn:"Barbell Row",equipment:"barbell",pattern:"horizontalPull",increment:2.5,contribution:{back:1,rearDelt:.5,biceps:.4,traps:.4,hamstrings:.25},jointStress:{lowBack:.8,shoulder:.4,elbow:.3}},{id:"chest-supported-row",name:"\uCCB4\uC2A4\uD2B8 \uC11C\uD3EC\uD2F0\uB4DC \uB85C\uC6B0",nameEn:"Chest-Supported Row",equipment:"machine",pattern:"horizontalPull",increment:5,contribution:{back:1,rearDelt:.5,biceps:.4,traps:.4},jointStress:{lowBack:.1,shoulder:.3,elbow:.3}},{id:"seated-cable-row",name:"\uC2DC\uD2F0\uB4DC \uCF00\uC774\uBE14 \uB85C\uC6B0",nameEn:"Seated Cable Row",equipment:"cable",pattern:"horizontalPull",increment:5,contribution:{back:1,rearDelt:.4,biceps:.4,traps:.3},jointStress:{lowBack:.3,shoulder:.3,elbow:.3}},{id:"face-pull",name:"\uD398\uC774\uC2A4 \uD480",nameEn:"Face Pull",equipment:"cable",pattern:"isolation",increment:2.5,contribution:{rearDelt:1,traps:.5,back:.25},jointStress:{shoulder:.25,elbow:.2}},{id:"reverse-pec-deck",name:"\uB9AC\uBC84\uC2A4 \uD399\uB371",nameEn:"Reverse Pec Deck",equipment:"machine",pattern:"isolation",increment:5,contribution:{rearDelt:1,traps:.3},jointStress:{shoulder:.2}},{id:"back-squat",name:"\uBC31 \uC2A4\uCFFC\uD2B8",nameEn:"Back Squat",equipment:"barbell",pattern:"squat",increment:5,contribution:{quads:1,glutes:.7,hamstrings:.3,abs:.4,calves:.25},jointStress:{knee:.75,lowBack:.7,hip:.5,ankle:.5,shoulder:.3}},{id:"hack-squat",name:"\uD575 \uC2A4\uCFFC\uD2B8",nameEn:"Hack Squat",equipment:"machine",pattern:"squat",increment:10,contribution:{quads:1,glutes:.5,hamstrings:.25},jointStress:{knee:.7,lowBack:.2,hip:.35,ankle:.4}},{id:"leg-press",name:"\uB808\uADF8\uD504\uB808\uC2A4",nameEn:"Leg Press",equipment:"machine",pattern:"squat",increment:10,contribution:{quads:1,glutes:.6,hamstrings:.25},jointStress:{knee:.5,lowBack:.15,hip:.3}},{id:"goblet-squat",name:"\uACE0\uBE14\uB9BF \uC2A4\uCFFC\uD2B8",nameEn:"Goblet Squat",equipment:"dumbbell",pattern:"squat",increment:2,contribution:{quads:.9,glutes:.5,abs:.4},jointStress:{knee:.5,lowBack:.3,hip:.35,ankle:.4}},{id:"walking-lunge",name:"\uC6CC\uD0B9 \uB7F0\uC9C0",nameEn:"Walking Lunge",equipment:"dumbbell",pattern:"lunge",increment:2,unilateral:!0,contribution:{quads:.8,glutes:.9,hamstrings:.4,calves:.25},jointStress:{knee:.6,hip:.4,lowBack:.25,ankle:.4}},{id:"leg-extension",name:"\uB808\uADF8 \uC775\uC2A4\uD150\uC158",nameEn:"Leg Extension",equipment:"machine",pattern:"isolation",increment:5,contribution:{quads:1},jointStress:{knee:.55}},{id:"conventional-deadlift",name:"\uCEE8\uBCA4\uC154\uB110 \uB370\uB4DC\uB9AC\uD504\uD2B8",nameEn:"Conventional Deadlift",equipment:"barbell",pattern:"hinge",increment:5,contribution:{hamstrings:.9,glutes:1,back:.7,traps:.5,forearms:.5,quads:.3},jointStress:{lowBack:.95,hip:.6,knee:.35,wrist:.3}},{id:"romanian-deadlift",name:"\uB8E8\uB9C8\uB2C8\uC548 \uB370\uB4DC\uB9AC\uD504\uD2B8",nameEn:"Romanian Deadlift",equipment:"barbell",pattern:"hinge",increment:2.5,contribution:{hamstrings:1,glutes:.8,back:.4,forearms:.4},jointStress:{lowBack:.8,hip:.5,knee:.15}},{id:"hip-thrust",name:"\uD799 \uC4F0\uB7EC\uC2A4\uD2B8",nameEn:"Hip Thrust",equipment:"barbell",pattern:"hinge",increment:5,contribution:{glutes:1,hamstrings:.5,quads:.25},jointStress:{hip:.35,lowBack:.25,knee:.2}},{id:"lying-leg-curl",name:"\uB77C\uC789 \uB808\uADF8\uCEEC",nameEn:"Lying Leg Curl",equipment:"machine",pattern:"isolation",increment:5,contribution:{hamstrings:1,calves:.25},jointStress:{knee:.35,lowBack:.15}},{id:"back-extension",name:"\uBC31 \uC775\uC2A4\uD150\uC158",nameEn:"Back Extension",equipment:"bodyweight",pattern:"hinge",increment:2.5,contribution:{glutes:.7,hamstrings:.7,back:.5},jointStress:{lowBack:.45,hip:.3}},{id:"lateral-raise",name:"\uB808\uD130\uB7F4 \uB808\uC774\uC988",nameEn:"Lateral Raise",equipment:"dumbbell",pattern:"isolation",increment:1,contribution:{sideDelt:1,traps:.25},jointStress:{shoulder:.4,elbow:.15}},{id:"cable-lateral-raise",name:"\uCF00\uC774\uBE14 \uB808\uD130\uB7F4 \uB808\uC774\uC988",nameEn:"Cable Lateral Raise",equipment:"cable",pattern:"isolation",increment:2.5,unilateral:!0,contribution:{sideDelt:1},jointStress:{shoulder:.3}},{id:"barbell-curl",name:"\uBC14\uBCA8 \uCEEC",nameEn:"Barbell Curl",equipment:"barbell",pattern:"isolation",increment:2.5,contribution:{biceps:1,forearms:.4},jointStress:{elbow:.45,wrist:.45}},{id:"incline-dumbbell-curl",name:"\uC778\uD074\uB77C\uC778 \uB364\uBCA8\uCEEC",nameEn:"Incline Dumbbell Curl",equipment:"dumbbell",pattern:"isolation",increment:1,contribution:{biceps:1,forearms:.3},jointStress:{elbow:.35,shoulder:.25,wrist:.2}},{id:"hammer-curl",name:"\uD574\uBA38 \uCEEC",nameEn:"Hammer Curl",equipment:"dumbbell",pattern:"isolation",increment:1,contribution:{biceps:.8,forearms:.8},jointStress:{elbow:.3,wrist:.15}},{id:"triceps-pushdown",name:"\uD2B8\uB77C\uC774\uC149\uC2A4 \uD478\uC2DC\uB2E4\uC6B4",nameEn:"Triceps Pushdown",equipment:"cable",pattern:"isolation",increment:2.5,contribution:{triceps:1},jointStress:{elbow:.35,wrist:.2}},{id:"overhead-cable-extension",name:"\uC624\uBC84\uD5E4\uB4DC \uCF00\uC774\uBE14 \uC775\uC2A4\uD150\uC158",nameEn:"Overhead Cable Extension",equipment:"cable",pattern:"isolation",increment:2.5,contribution:{triceps:1},jointStress:{elbow:.45,shoulder:.35}},{id:"standing-calf-raise",name:"\uC2A4\uD0E0\uB529 \uCE74\uD504\uB808\uC774\uC988",nameEn:"Standing Calf Raise",equipment:"machine",pattern:"isolation",increment:5,contribution:{calves:1},jointStress:{ankle:.4,knee:.15}},{id:"hanging-leg-raise",name:"\uD589\uC789 \uB808\uADF8\uB808\uC774\uC988",nameEn:"Hanging Leg Raise",equipment:"bodyweight",pattern:"core",increment:2.5,contribution:{abs:1,forearms:.3},jointStress:{shoulder:.3,lowBack:.25}},{id:"cable-crunch",name:"\uCF00\uC774\uBE14 \uD06C\uB7F0\uCE58",nameEn:"Cable Crunch",equipment:"cable",pattern:"core",increment:2.5,contribution:{abs:1},jointStress:{lowBack:.3}},{id:"plank",name:"\uD50C\uB7AD\uD06C",nameEn:"Plank",equipment:"bodyweight",pattern:"core",increment:0,contribution:{abs:.8,glutes:.25},jointStress:{shoulder:.2,lowBack:.15}}],ge=new Map(j.map(e=>[e.id,e]));function Ge(e){return ge.get(e)}function _e(e=[]){let n=new Map(ge);for(let r of e)n.set(r.id,r);return n}function We(e,n=j){let r=e.minContribution??.5;return n.filter(t=>{if(e.muscle&&(t.contribution[e.muscle]??0)<r||e.pattern&&t.pattern!==e.pattern||e.availableEquipment&&!e.availableEquipment.includes(t.equipment))return!1;if(e.avoidJoints){for(let o of e.avoidJoints)if((t.jointStress[o.joint]??0)>o.maxStress)return!1}return!0})}var z={hypertrophyReps:{min:5,max:30},minContribution:.25,perSessionCap:9,overCapWeight:.5};function be(e,n={}){if(e.warmup||e.reps<=0)return 0;let{hypertrophyReps:r}={...z,...n},t;return e.rir<=3?t=1:e.rir<=4?t=.7:t=.3,e.reps<r.min?t*=.8:e.reps>r.max&&(t*=.6),t}function Ue(){let e={};for(let n of f)e[n]={effectiveSets:0,rawSets:0,discountedSets:0,sessionCount:0,maxSetsInOneSession:0,directSets:0,topExercises:[]};return e}function k(e,n,r={}){let{minContribution:t,perSessionCap:o,overCapWeight:i}={...z,...r},s=Ue(),a=new Map;for(let c of e){let l=new Map;for(let u of c.sets){let p=n.get(u.exerciseId);if(!p)continue;let b=be(u,r);if(b!==0)for(let m of f){let x=p.contribution[m]??0;if(x<t)continue;let h=b*x,w=l.get(m)??0,S=Math.max(0,o-w),v=Math.min(h,S)+Math.max(0,h-S)*i;l.set(m,w+h);let d=s[m];d.effectiveSets+=v,d.rawSets+=h,x>=.85&&(d.directSets+=b);let g=a.get(m);g||(g=new Map,a.set(m,g)),g.set(p.id,(g.get(p.id)??0)+v)}}for(let[u,p]of l){let b=s[u];b.sessionCount+=1,b.maxSetsInOneSession=Math.max(b.maxSetsInOneSession,$(p))}}for(let c of f){let l=s[c];l.effectiveSets=$(l.effectiveSets),l.rawSets=$(l.rawSets),l.discountedSets=$(l.rawSets-l.effectiveSets),l.directSets=$(l.directSets),l.topExercises=[...a.get(c)??new Map].map(([u,p])=>({exerciseId:u,sets:$(p)})).sort((u,p)=>p.sets-u.sets)}return s}var Z=z.perSessionCap;function He(e,n,r,t={}){let o=k(e,r,t);return f.map(i=>{let s=o[i],a=n[i],c=O(s.effectiveSets,a);return{muscle:i,...s,landmark:a,zone:c,zoneLabel:A[c],mrvRatio:$(s.effectiveSets/a.mrv*10)/10}})}function $(e){return Math.round(e*10)/10}function L(e){let n=new Date(`${e}T00:00:00Z`),r=n.getUTCDay(),t=r===0?6:r-1;return n.setUTCDate(n.getUTCDate()-t),n.toISOString().slice(0,10)}function R(e,n){let r=new Date(`${e}T00:00:00Z`);return r.setUTCDate(r.getUTCDate()+n),r.toISOString().slice(0,10)}function Ne(e){let n=new Map;for(let r of e){let t=L(r.date),o=n.get(t);o?o.push(r):n.set(t,[r])}return new Map([...n].sort(([r],[t])=>r<t?-1:1))}function M(e,n){let r=L(n),t=R(r,6);return e.filter(o=>o.date>=r&&o.date<=t)}function ze(e){let n={};for(let r of e)n[r.muscle]=r.effectiveSets;return n}function Ze(e){let n={};for(let r of f)n[r]=e[r].effectiveSets;return n}var fe={minSetsForSplit:4,discountTolerance:.4};function he(e,n={}){let r=n.perSessionCap??Z,t=n.minSetsForSplit??fe.minSetsForSplit;return e<=0?0:e<t?1:Math.min(4,Math.max(2,Math.ceil(e/r)))}function J(e,n,r={}){let t=k(e,n,r),o=r.discountTolerance??fe.discountTolerance;return f.map(i=>{let s=t[i],a=he(s.rawSets,r),c=I[i],l,u;return s.sessionCount===0?(l="idle",u="\uC774\uBC88 \uC8FC\uC5D0 \uD6C8\uB828\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4"):s.discountedSets>o?(l="concentrated",u=`\uD55C \uC138\uC158\uC5D0 ${s.maxSetsInOneSession}\uC138\uD2B8\uAC00 \uBAB0\uB824 ${s.discountedSets}\uC138\uD2B8\uAC00 \uC790\uADF9\uC73C\uB85C \uC774\uC5B4\uC9C0\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uAC19\uC740 \uBCFC\uB968\uC744 \uC8FC ${a}\uD68C\uB85C \uB098\uB204\uBA74 \uADF8\uB300\uB85C \uC778\uC815\uB429\uB2C8\uB2E4`):s.sessionCount<a?(l="insufficient",u=`\uC8FC ${s.sessionCount}\uD68C\uB85C ${s.effectiveSets}\uC138\uD2B8\uB97C \uC18C\uD654\uD558\uACE0 \uC788\uC2B5\uB2C8\uB2E4. \uC8FC ${a}\uD68C\uB85C \uB098\uB204\uB294 \uD3B8\uC774 \uD68C\uBCF5\uACFC \uC790\uADF9 \uBAA8\uB450\uC5D0 \uC720\uB9AC\uD569\uB2C8\uB2E4`):(l="ok",u=`\uC8FC ${s.sessionCount}\uD68C \xB7 \uC138\uC158\uB2F9 \uD3C9\uADE0 ${Je(s.effectiveSets/s.sessionCount)}\uC138\uD2B8`),{muscle:i,label:c,sessionCount:s.sessionCount,effectiveSets:s.effectiveSets,rawSets:s.rawSets,discountedSets:s.discountedSets,maxSetsInOneSession:s.maxSetsInOneSession,recommendedSessions:a,verdict:l,advice:u}})}function V(e){let n={concentrated:0,insufficient:1,ok:2,idle:3};return e.filter(r=>r.verdict==="concentrated"||r.verdict==="insufficient").sort((r,t)=>n[r.verdict]-n[t.verdict]||t.discountedSets-r.discountedSets)}function Je(e){return Math.round(e*10)/10}function D(e){let n=e.reps+Math.max(0,e.rir);return n<=1?e.weightKg:y(e.weightKg*(1+n/30))}function E(e,n){return n<=0?y(e):y(Math.round(e/n)*n)}function Se(e,n){let r=e.filter(t=>t.exerciseId===n&&!t.warmup&&t.reps>0);if(r.length!==0)return r.reduce((t,o)=>o.weightKg>t.weightKg||o.weightKg===t.weightKg&&o.reps>t.reps?o:t)}function X(e,n,r){let t={exerciseId:e.id,targetReps:r.repRange,targetRir:r.targetRir},o=n?Se(n,e.id):void 0;if(!o)return{...t,weightKg:null,change:"start",deltaKg:0,reason:`\uCCAB \uC218\uD589\uC785\uB2C8\uB2E4. ${r.repRange.min}~${r.repRange.max}\uD68C\uB97C RIR ${r.targetRir}\uB85C \uB9C8\uCE60 \uC218 \uC788\uB294 \uC911\uB7C9\uC73C\uB85C \uC2DC\uC791\uD558\uC138\uC694.`};let i=e.increment,s=o.reps>=r.repRange.max,a=o.reps<r.repRange.min,c=o.rir-r.targetRir;if(s&&c>=0){let l=c>=2?i*2:i;return{...t,weightKg:E(o.weightKg+l,i),change:"increase",deltaKg:y(l),reason:`${o.reps}\uD68C \xD7 RIR ${o.rir}\uB85C \uBAA9\uD45C \uC0C1\uB2E8\uC5D0 \uC5EC\uC720 \uC788\uAC8C \uB3C4\uB2EC\uD588\uC2B5\uB2C8\uB2E4. ${y(l)}kg \uC62C\uB9BD\uB2C8\uB2E4.`}}if(s)return{...t,weightKg:o.weightKg,change:"hold",deltaKg:0,reason:`\uBAA9\uD45C \uBC18\uBCF5\uC740 \uCC44\uC6E0\uC9C0\uB9CC RIR ${o.rir}\uB85C \uC5EC\uC720\uAC00 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4. \uAC19\uC740 \uC911\uB7C9\uC5D0\uC11C RIR ${r.targetRir}\uC774 \uB420 \uB54C\uAE4C\uC9C0 \uC720\uC9C0\uD569\uB2C8\uB2E4.`};if(c>=2)return{...t,weightKg:E(o.weightKg+i,i),change:"increase",deltaKg:y(i),reason:`RIR ${o.rir}\uB85C \uBAA9\uD45C(${r.targetRir})\uBCF4\uB2E4 \uAC00\uBCBC\uC6E0\uC2B5\uB2C8\uB2E4. ${y(i)}kg \uC62C\uB9BD\uB2C8\uB2E4.`};if(a){let l=E(o.weightKg*.9,i);return{...t,weightKg:l,change:"decrease",deltaKg:y(l-o.weightKg),reason:`${o.reps}\uD68C\uB85C \uBAA9\uD45C \uD558\uB2E8(${r.repRange.min}\uD68C)\uC5D0 \uBABB \uBBF8\uCCE4\uC2B5\uB2C8\uB2E4. 10% \uB0AE\uCDB0 \uBC18\uBCF5 \uC218\uBD80\uD130 \uD68C\uBCF5\uD569\uB2C8\uB2E4.`}}return{...t,weightKg:o.weightKg,targetReps:{min:Math.min(o.reps+1,r.repRange.max),max:r.repRange.max},change:"hold",deltaKg:0,reason:`\uAC19\uC740 \uC911\uB7C9\uC73C\uB85C ${Math.min(o.reps+1,r.repRange.max)}\uD68C\uB97C \uB178\uB9BD\uB2C8\uB2E4.`}}function Xe(e,n,r){let t=e.increment,o=n.rir-r.targetRir;if(o>=2&&n.reps>=r.repRange.min){let i=t*(o>=3?2:1);return{weightKg:E(n.weightKg+i,t),deltaKg:y(i),reason:`RIR ${n.rir}\uB85C \uC5EC\uC720\uAC00 \uB9CE\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uC138\uD2B8 ${y(i)}kg \uC62C\uB9BD\uB2C8\uB2E4.`}}if(n.rir<=0&&n.reps<r.repRange.min){let i=E(n.weightKg*.9,t);return{weightKg:i,deltaKg:y(i-n.weightKg),reason:"\uC2E4\uD328 \uC9C0\uC810\uC5D0\uC11C \uBAA9\uD45C \uBC18\uBCF5\uC744 \uBABB \uCC44\uC6E0\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uC138\uD2B8 10% \uB0AE\uCDA5\uB2C8\uB2E4."}}return{weightKg:n.weightKg,deltaKg:0,reason:"\uC911\uB7C9 \uC720\uC9C0\uD569\uB2C8\uB2E4."}}function y(e){return Math.round(e*10)/10}var Y=5;function ne(e){let n=[],r=e.accumulationWeeks??5,t=e.index,o=M(e.sessions,e.asOf),i=R(L(e.asOf),-1),s=M(e.sessions,i),a=e.lastWeekPhase!=="deload",c=a?ve(o,s,.02):[];c.length>=2&&n.push({id:"performanceDrop",label:`${c.length}\uAC1C \uC885\uBAA9\uC758 \uCD94\uC815 1RM\uC774 \uC9C0\uB09C\uC8FC\uBCF4\uB2E4 \uB5A8\uC5B4\uC84C\uC2B5\uB2C8\uB2E4 (${c.slice(0,3).map(d=>t.get(d)?.name??d).join(", ")}${c.length>3?" \uC678":""})`,weight:3});let l=a?xe(o):null,u=a?xe(s):null;l!==null&&u!==null&&u-l>=1&&n.push({id:"rirDrift",label:`\uD3C9\uADE0 RIR\uC774 ${u.toFixed(1)} \u2192 ${l.toFixed(1)}\uB85C \uB5A8\uC5B4\uC84C\uC2B5\uB2C8\uB2E4. \uAC19\uC740 \uC911\uB7C9\uC774 \uB354 \uBB34\uAC81\uAC8C \uB290\uAEF4\uC9C0\uB294 \uC0C1\uD0DC\uC785\uB2C8\uB2E4`,weight:2});let p=k(o,e.index),b=f.filter(d=>p[d].effectiveSets>e.landmarks[d].mrv);if(b.length>0){let d=Math.max(...b.map(g=>p[g].effectiveSets/e.landmarks[g].mrv));n.push({id:"volumeOverMrv",label:`${b.map(g=>I[g]).join(", ")} \uBCFC\uB968\uC774 \uD68C\uBCF5 \uAC00\uB2A5 \uBC94\uC704(MRV)\uB97C \uB118\uC5C8\uC2B5\uB2C8\uB2E4`,weight:b.length>=3?Y:b.length+(d>=1.25?1:0)})}let m=Ye(e.checkIns??[],e.asOf,7),x=m.filter(d=>(d.pain??[]).some(g=>g.score>=3));x.length>=2&&n.push({id:"jointPain",label:`\uCD5C\uADFC 7\uC77C \uC911 ${x.length}\uC77C\uC5D0 3\uC810 \uC774\uC0C1 \uAD00\uC808 \uD1B5\uC99D\uC774 \uBCF4\uACE0\uB410\uC2B5\uB2C8\uB2E4`,weight:3});let h=T(m.map(d=>d.sleepHours).filter(Q)),w=T(m.map(d=>d.soreness).filter(Q));(h!==null&&h<6||w!==null&&w>=7)&&n.push({id:"poorRecovery",label:h!==null&&h<6?`\uCD5C\uADFC 7\uC77C \uD3C9\uADE0 \uC218\uBA74\uC774 ${h.toFixed(1)}\uC2DC\uAC04\uC73C\uB85C \uD68C\uBCF5\uC5D0 \uBD80\uC871\uD569\uB2C8\uB2E4`:`\uADFC\uC721\uD1B5\uC774 \uD3C9\uADE0 ${w?.toFixed(1)}\uC810\uC73C\uB85C \uB192\uAC8C \uC720\uC9C0\uB418\uACE0 \uC788\uC2B5\uB2C8\uB2E4`,weight:2});let S=T(m.map(d=>d.motivation).filter(Q));S!==null&&S<=3&&n.push({id:"lowMotivation",label:"\uC6B4\uB3D9 \uC758\uC695\uC774 \uC9C0\uC18D\uC801\uC73C\uB85C \uB0AE\uC2B5\uB2C8\uB2E4. \uC911\uCD94 \uD53C\uB85C\uC758 \uD754\uD55C \uC2E0\uD638\uC785\uB2C8\uB2E4",weight:1}),e.weekInBlock>=r&&n.push({id:"blockComplete",label:`\uB514\uB85C\uB4DC \uC5C6\uC774 ${e.weekInBlock}\uC8FC\uC9F8\uC785\uB2C8\uB2E4. \uACC4\uD68D\uB41C \uCD95\uC801 \uAE30\uAC04(${r}\uC8FC)\uC744 \uCC44\uC6E0\uC2B5\uB2C8\uB2E4`,weight:2});let v=n.reduce((d,g)=>d+g.weight,0);return{score:v,threshold:Y,deloadRecommended:v>=Y,signals:n}}function ve(e,n,r=.02){let t=ee(e),o=ee(n),i=[];for(let[s,a]of o){let c=t.get(s);c!==void 0&&c<a*(1-r)&&i.push(s)}return i}function ee(e){let n=new Map;for(let r of e)for(let t of r.sets){if(t.warmup||t.reps<=0)continue;let o=D(t),i=n.get(t.exerciseId);(i===void 0||o>i)&&n.set(t.exerciseId,o)}return n}function xe(e){let n=[];for(let r of e)for(let t of r.sets)!t.warmup&&t.reps>0&&n.push(t.rir);return T(n)}function Ye(e,n,r){let t=R(n,-(r-1));return e.filter(o=>o.date>=t&&o.date<=n)}function T(e){return e.length===0?null:e.reduce((n,r)=>n+r,0)/e.length}function Q(e){return typeof e=="number"&&Number.isFinite(e)}function Qe(e){return e<=1?3:e<=3?2:1}function en(e){let n=ne({sessions:e.sessions,checkIns:e.checkIns,index:e.index,landmarks:e.landmarks,asOf:e.asOf,weekInBlock:e.weekInBlock,accumulationWeeks:e.accumulationWeeks,lastWeekPhase:e.lastWeekPhase}),r=e.lastWeekPhase==="deload",t=n.deloadRecommended&&!r?"deload":"accumulation",o=t==="deload"?0:e.weekInBlock+1,i=M(e.sessions,e.asOf),s=k(i,e.index),a=k(on(e.sessions,e.asOf),e.index),c=new Set(e.painfulMuscles??[]),l=[],u=J(i,e.index),p=new Set(u.filter(m=>m.verdict==="concentrated").map(m=>m.muscle)),b=f.map(m=>{let x=s[m].effectiveSets,h=e.landmarks[m],w=O(x,h),S=a[m].effectiveSets===0;S&&l.push(m);let{sets:v,rationale:d,action:g}=S?{sets:0,action:"skip",rationale:"\uCD5C\uADFC 4\uC8FC\uAC04 \uD6C8\uB828 \uAE30\uB85D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uD504\uB85C\uADF8\uB7A8\uC5D0 \uB123\uC744\uC9C0 \uACB0\uC815\uD558\uC138\uC694"}:t==="deload"?nn(x,h.mev):tn({currentSets:x,zone:w,landmark:h,fatigueScore:n.score,painful:c.has(m),concentrated:p.has(m),recommendedSessions:u.find(C=>C.muscle===m)?.recommendedSessions??2});return{muscle:m,label:I[m],currentSets:x,prescribedSets:v,deltaSets:an(v-x),zone:w,zoneLabel:A[w],action:g,rationale:d}});return{weekStart:sn(e.asOf),phase:t,weekInBlock:o,targetRir:t==="deload"?4:Qe(o),intensityMultiplier:t==="deload"?.9:1,fatigue:n,volume:b,neglected:l,frequency:V(u),summary:rn(t,o,n,b,V(u))}}function nn(e,n){let r=Math.round(e/2),t=Math.max(2,Math.round(n/2)),o=Math.max(t,r);return{sets:o,action:"deload",rationale:`\uB514\uB85C\uB4DC: ${e}\uC138\uD2B8 \u2192 ${o}\uC138\uD2B8 (\uC911\uB7C9\uC740 90% \uC720\uC9C0)`}}function tn(e){let{currentSets:n,zone:r,landmark:t,fatigueScore:o,painful:i,concentrated:s}=e;if(s&&r!=="underMev"&&r!=="overMrv")return{sets:Math.round(n),action:"split",rationale:`\uBCFC\uB968\uC774 \uD55C \uC138\uC158\uC5D0 \uBAB0\uB824 \uC788\uC2B5\uB2C8\uB2E4. \uC138\uD2B8\uB97C \uB298\uB9AC\uAE30 \uC804\uC5D0 \uC8FC ${e.recommendedSessions}\uD68C\uB85C \uB098\uB204\uC138\uC694`};if(i)return{sets:Math.round(n),action:"hold",rationale:"\uD1B5\uC99D\uC774 \uBCF4\uACE0\uB41C \uBD80\uC704\uC785\uB2C8\uB2E4. \uBCFC\uB968\uC744 \uC62C\uB9AC\uC9C0 \uC54A\uACE0 \uC720\uC9C0\uD569\uB2C8\uB2E4"};let a=o>=3?1:2;switch(r){case"underMev":return{sets:t.mev,action:"increase",rationale:`MEV(${t.mev}\uC138\uD2B8) \uBBF8\uB9CC\uC785\uB2C8\uB2E4. \uC790\uADF9 \uCD5C\uC18C\uC120\uAE4C\uC9C0 \uC62C\uB9BD\uB2C8\uB2E4`};case"mevToMav":return{sets:Math.min(t.mav,Math.round(n)+a),action:"increase",rationale:`\uC801\uC815 \uAD6C\uAC04\uC785\uB2C8\uB2E4. ${a}\uC138\uD2B8 \uCD94\uAC00\uD574 MAV(${t.mav}\uC138\uD2B8)\uB85C \uC811\uADFC\uD569\uB2C8\uB2E4`};case"mavToMrv":return o>=3?{sets:Math.round(n),action:"hold",rationale:"\uACE0\uAC15\uB3C4 \uAD6C\uAC04\uC774\uACE0 \uD53C\uB85C \uC2E0\uD638\uAC00 \uC788\uC5B4 \uC774\uBC88 \uC8FC\uB294 \uC720\uC9C0\uD569\uB2C8\uB2E4"}:{sets:Math.min(t.mrv,Math.round(n)+1),action:"increase",rationale:`\uACE0\uAC15\uB3C4 \uAD6C\uAC04\uC785\uB2C8\uB2E4. 1\uC138\uD2B8\uB9CC \uCD94\uAC00\uD569\uB2C8\uB2E4 (MRV ${t.mrv}\uC138\uD2B8)`};case"overMrv":return{sets:t.mrv,action:"reduce",rationale:`MRV\uB97C \uB118\uACBC\uC2B5\uB2C8\uB2E4. ${t.mrv}\uC138\uD2B8\uB85C \uB418\uB3CC\uB9BD\uB2C8\uB2E4`}}}function rn(e,n,r,t,o){if(e==="deload")return`\uB514\uB85C\uB4DC \uC8FC\uAC04\uC785\uB2C8\uB2E4. \uBCFC\uB968\uC744 \uC808\uBC18\uC73C\uB85C \uC904\uC774\uACE0 \uC911\uB7C9\uC740 90%\uB85C \uC720\uC9C0\uD569\uB2C8\uB2E4. \uADFC\uAC70: ${r.signals.slice().sort((l,u)=>u.weight-l.weight).slice(0,2).map(l=>l.label).join(" / ")}`;let i=t.filter(c=>c.action==="increase"),s=t.filter(c=>c.action==="reduce"),a=[`\uCD95\uC801 ${n}\uC8FC\uCC28`];return i.length>0&&a.push(`\uBCFC\uB968 \uC99D\uAC00: ${i.slice(0,4).map(c=>`${c.label} +${c.deltaSets}`).join(", ")}`),s.length>0&&a.push(`\uC870\uC815: ${s.map(c=>`${c.label} ${c.deltaSets}`).join(", ")}`),i.length===0&&s.length===0&&a.push("\uBCFC\uB968 \uC720\uC9C0"),o.length>0&&a.push(`\uBD84\uBC30 \uC870\uC815: ${o.slice(0,3).map(c=>`${c.label} \uC8FC ${c.recommendedSessions}\uD68C`).join(", ")}`),a.join(" \xB7 ")}function on(e,n){let r=R(L(n),-21),t=R(L(n),6);return e.filter(o=>o.date>=r&&o.date<=t)}function sn(e){let n=new Date(`${L(e)}T00:00:00Z`);return n.setUTCDate(n.getUTCDate()+7),n.toISOString().slice(0,10)}function an(e){return Math.round(e*10)/10}var ke={neck:"\uBAA9",shoulder:"\uC5B4\uAE68",elbow:"\uD314\uAFC8\uCE58",wrist:"\uC190\uBAA9",lowBack:"\uD5C8\uB9AC",hip:"\uACE0\uAD00\uC808",knee:"\uBB34\uB98E",ankle:"\uBC1C\uBAA9"};function G(e,n,r={}){let t={exerciseId:e.id,loadMultiplier:1,substitutes:[]},o=null;for(let a of n){if(a.score<=0)continue;let c=e.jointStress[a.joint]??0;if(c<=0)continue;let l=te(a.score,c);l!=="allow"&&(!o||we(l)>we(o.action))&&(o={report:a,stress:c,action:l})}if(!o)return{...t,action:"allow",message:"\uD1B5\uC99D \uAD00\uB828 \uC81C\uD55C \uC5C6\uC74C"};let i=ke[o.report.joint];if(o.action==="reduceLoad")return{...t,action:"reduceLoad",joint:o.report.joint,painScore:o.report.score,loadMultiplier:.9,message:`${i} \uD1B5\uC99D ${o.report.score}\uC810. \uC911\uB7C9\uC744 10% \uB0AE\uCD94\uACE0 \uD1B5\uC99D\uC774 \uB098\uD0C0\uB098\uC9C0 \uC54A\uB294 \uAC00\uB3D9 \uBC94\uC704\uC5D0\uC11C\uB9CC \uC218\uD589\uD558\uC138\uC694.`};let s=_(e,n,r);return o.action==="stop"?{...t,action:"stop",joint:o.report.joint,painScore:o.report.score,substitutes:s,message:`${i} \uD1B5\uC99D ${o.report.score}\uC810\uC73C\uB85C \uB192\uC2B5\uB2C8\uB2E4. \uC624\uB298\uC740 ${i}\uC5D0 \uBD80\uD558\uAC00 \uC2E4\uB9AC\uB294 \uB3D9\uC791\uC744 \uB123\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uD1B5\uC99D\uC774 \uC9C0\uC18D\uB418\uBA74 \uC804\uBB38\uC758 \uC9C4\uB8CC\uB97C \uBC1B\uC73C\uC138\uC694.`}:{...t,action:"substitute",joint:o.report.joint,painScore:o.report.score,substitutes:s,message:s.length>0?`${i} \uD1B5\uC99D ${o.report.score}\uC810. ${e.name} \uB300\uC2E0 ${B(s[0].name,"\uC744/\uB97C")} \uAD8C\uD569\uB2C8\uB2E4.`:`${i} \uD1B5\uC99D ${o.report.score}\uC810. \uC774 \uC885\uBAA9\uC740 \uBD80\uB2F4\uC774 \uD07D\uB2C8\uB2E4. \uD574\uB2F9 \uBD80\uC704\uB294 \uC624\uB298 \uAC74\uB108\uB6F0\uC138\uC694.`}}function te(e,n){return e>=7?n>.3?"stop":"allow":e>=3?n>=.6?"substitute":n>=.3?"reduceLoad":"allow":n>=.6?"reduceLoad":"allow"}function we(e){switch(e){case"allow":return 0;case"reduceLoad":return 1;case"substitute":return 2;case"stop":return 3}}var cn=.5;function _(e,n,r={}){let t=r.pool??j,o=r.substituteLimit??3;return t.filter(s=>s.id!==e.id).filter(s=>!r.availableEquipment||r.availableEquipment.includes(s.equipment)).filter(s=>{for(let a of n){if(a.score<=0)continue;let c=s.jointStress[a.joint]??0;if(te(a.score,c)==="substitute"||te(a.score,c)==="stop")return!1}return!0}).map(s=>({candidate:s,score:ye(e,s)-ln(s,n)})).filter(s=>s.score>=cn).sort((s,a)=>a.score-s.score).slice(0,o).map(s=>s.candidate)}function ye(e,n){let r=0,t=0,o=0;for(let i of f){let s=e.contribution[i]??0,a=n.contribution[i]??0;r+=s*a,t+=s*s,o+=a*a}return t===0||o===0?0:r/Math.sqrt(t*o)}function ln(e,n){let r=0;for(let t of n){if(t.score<=0)continue;let o=e.jointStress[t.joint]??0;r+=o*(t.score/10)}return r}function un(e,n,r={}){let t=e.map(o=>G(o,n,r));return{rulings:t,keep:t.filter(o=>o.action==="allow"||o.action==="reduceLoad"),swap:t.filter(o=>o.action==="substitute"),drop:t.filter(o=>o.action==="stop"),medicalAdvisory:n.some(o=>o.score>=7)}}var W={id:"default",name:"\uC77C\uBC18 \uD5EC\uC2A4\uC7A5",defaults:{barbell:{kind:"barbell",barKg:20,plates:[25,20,15,10,5,2.5,1.25],collarKg:0},dumbbell:{kind:"dumbbell",availableKg:[2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,45,50]},stack:{kind:"stack",minKg:5,stepKg:5,maxKg:100,addOnKg:[2.5]},plateLoaded:{kind:"plateLoaded",carriageKg:25,plates:[25,20,15,10,5,2.5],sides:2},bodyweight:{kind:"bodyweight",addedKg:[2.5,5,10,15,20]}},overrides:{"barbell-curl":{kind:"barbell",barKg:10,plates:[10,5,2.5,1.25]},"leg-press":{kind:"plateLoaded",carriageKg:20,plates:[25,20,15,10,5],sides:2},"hack-squat":{kind:"plateLoaded",carriageKg:30,plates:[25,20,15,10,5],sides:2}}},mn={barbell:"barbell",dumbbell:"dumbbell",machine:"stack",cable:"stack",smith:"barbell",bodyweight:"bodyweight",band:null};function oe(e,n=W){let r=n.overrides?.[e.id];if(r==="unavailable"||(n.missingEquipment??[]).includes(e.equipment))return null;if(r)return r;let t=mn[e.equipment];return t?n.defaults[t]:null}var dn=["barbell","dumbbell","machine","cable","smith","bodyweight","band"];function ie(e=W){let n=new Set(e.missingEquipment??[]);return dn.filter(r=>!n.has(r))}function U(e,n=W){return n.overrides?.[e.id]==="unavailable"?!1:!(n.missingEquipment??[]).includes(e.equipment)}var Le={barbell:300,plateLoaded:500},Me=4,P=e=>Math.round(e*Me),F=e=>e/Me;function re(e,n){let r=e.filter(s=>s>0).sort((s,a)=>a-s);if(r.length===0)return[0];let t=P(r.reduce((s,a)=>s+a*(n?.[a]??6),0)),o=new Uint8Array(t+1);o[0]=1;for(let s of r){let a=P(s),c=n?.[s]??6;for(let l=0;l<c;l+=1)for(let u=t;u>=a;u-=1)o[u-a]&&(o[u]=1)}let i=[];for(let s=0;s<=t;s+=1)o[s]&&i.push(F(s));return i}function Re(e){let n=new Set;for(let r=e.minKg;r<=e.maxKg+1e-9;r+=e.stepKg){n.add(F(P(r)));for(let t of e.addOnKg??[])r+t<=e.maxKg+t&&n.add(F(P(r+t)))}return[...n].sort((r,t)=>r-t)}function se(e){switch(e.kind){case"barbell":{let n=(e.collarKg??0)*2,r=e.maxTotalKg??Le.barbell;return re(e.plates,e.plateCounts).map(t=>F(P(e.barKg+t*2+(t>0?n:0)))).filter(t=>t<=r)}case"plateLoaded":{let n=e.sides??2,r=e.maxTotalKg??Le.plateLoaded;return re(e.plates,e.plateCounts).map(t=>F(P(e.carriageKg+t*n))).filter(t=>t<=r)}case"dumbbell":return[...e.availableKg].sort((n,r)=>n-r);case"stack":return Re(e);case"bodyweight":{let n=re(e.addedKg??[],void 0),r=e.assist?Re(e.assist).map(t=>-t):[];return[...new Set([...r,...n])].sort((t,o)=>t-o)}}}function q(e,n,r="nearest"){let t=se(n);if(t.length===0)return e;if(r==="down"){let o=t.filter(i=>i<=e+1e-9);return o.length>0?o[o.length-1]:t[0]}if(r==="up"){let o=t.filter(i=>i>=e-1e-9);return o.length>0?o[0]:t[t.length-1]}return t.reduce((o,i)=>Math.abs(i-e)<Math.abs(o-e)?i:o)}function pn(e,n){let r=se(n),t=q(e,n),o=r.find(i=>i>t+1e-9);return o===void 0?0:Math.round((o-t)*100)/100}function ae(e,n){if(n.kind!=="barbell"&&n.kind!=="plateLoaded")return null;let r=n.kind==="barbell"?n.barKg:n.carriageKg,t=n.kind==="barbell"?2:n.sides??2,o=q(e,n),i=P((o-r)/t);if(i<0)return{baseKg:r,perSide:[],totalKg:r};let s={...n.plateCounts??{}},a=[];for(let c of[...n.plates].sort((l,u)=>u-l)){let l=P(c),u=s[c]??6;for(;i>=l&&u>0;)a.push(c),i-=l,u-=1}return{baseKg:r,perSide:a,totalKg:o}}function gn(e){return e?e.perSide.length===0?`\uBE48 \uBC14 ${e.baseKg}kg`:`${e.baseKg}kg + \uD55C\uCABD ${e.perSide.join(" \xB7 ")}`:""}var ce={"barbell-bench-press":{anchor:"bench",factor:1},"dumbbell-bench-press":{anchor:"bench",factor:.36,perHand:!0},"incline-dumbbell-press":{anchor:"bench",factor:.32,perHand:!0},"machine-chest-press":{anchor:"bench",factor:.8},"pec-deck":{anchor:"bench",factor:.45},"cable-fly":{anchor:"bench",factor:.22,perHand:!0},"barbell-overhead-press":{anchor:"overheadPress",factor:1},"seated-dumbbell-press":{anchor:"overheadPress",factor:.4,perHand:!0},"machine-shoulder-press":{anchor:"overheadPress",factor:.85},"landmine-press":{anchor:"overheadPress",factor:.75},"lateral-raise":{anchor:"overheadPress",factor:.13,perHand:!0},"cable-lateral-raise":{anchor:"overheadPress",factor:.12,perHand:!0},"barbell-row":{anchor:"row",factor:1},"chest-supported-row":{anchor:"row",factor:.9},"seated-cable-row":{anchor:"row",factor:.95},"lat-pulldown":{anchor:"row",factor:.9},"neutral-grip-pulldown":{anchor:"row",factor:.9},"face-pull":{anchor:"row",factor:.25},"reverse-pec-deck":{anchor:"row",factor:.3},"back-squat":{anchor:"squat",factor:1},"hack-squat":{anchor:"squat",factor:1.1},"leg-press":{anchor:"squat",factor:1.9},"goblet-squat":{anchor:"squat",factor:.25},"walking-lunge":{anchor:"squat",factor:.22,perHand:!0},"leg-extension":{anchor:"squat",factor:.45},"standing-calf-raise":{anchor:"squat",factor:.7},"conventional-deadlift":{anchor:"deadlift",factor:1},"romanian-deadlift":{anchor:"deadlift",factor:.7},"hip-thrust":{anchor:"deadlift",factor:.9},"lying-leg-curl":{anchor:"deadlift",factor:.3},"barbell-curl":{anchor:"bench",factor:.35},"incline-dumbbell-curl":{anchor:"bench",factor:.13,perHand:!0},"hammer-curl":{anchor:"bench",factor:.16,perHand:!0},"triceps-pushdown":{anchor:"bench",factor:.42},"overhead-cable-extension":{anchor:"bench",factor:.3},"cable-crunch":{anchor:"bench",factor:.45}},bn={bench:{beginner:.75,intermediate:1,advanced:1.35},squat:{beginner:1,intermediate:1.4,advanced:1.85},deadlift:{beginner:1.25,intermediate:1.75,advanced:2.2},overheadPress:{beginner:.45,intermediate:.6,advanced:.8},row:{beginner:.65,intermediate:.9,advanced:1.15}},fn={bench:.6,overheadPress:.6,row:.65,squat:.72,deadlift:.72};function le(e){let n=ce[e.exercise.id],r={exerciseId:e.exercise.id,needsCalibration:!0};if(!n)return{...r,weightKg:null,method:"unknown",confidence:"low",rationale:"\uD658\uC0B0 \uAE30\uC900\uC774 \uC5C6\uB294 \uC885\uBAA9\uC785\uB2C8\uB2E4. \uAC00\uBCCD\uAC8C \uC2DC\uC791\uD574 \uCCAB \uC138\uD2B8\uC5D0\uC11C \uB9DE\uCDB0 \uB098\uAC00\uC138\uC694."};let t=hn(n.anchor,e.history??[],e.index),o=t?.value??Sn(n.anchor,e.profile);if(o===null)return{...r,weightKg:null,method:"unknown",confidence:"low",rationale:"\uAE30\uC900\uC73C\uB85C \uC0BC\uC744 \uAE30\uB85D\uB3C4 \uCCB4\uC911 \uC815\uBCF4\uB3C4 \uC5C6\uC2B5\uB2C8\uB2E4. \uD0D0\uC0C9 \uC138\uD2B8\uBD80\uD130 \uC2DC\uC791\uD558\uC138\uC694."};let i=o*n.factor,a=ue(i,e.repRange.max,e.targetRir)*.9,c=e.loading?q(a,e.loading,"down"):H(a,.5),l=t?`${t.label} \uAE30\uB85D\uC5D0\uC11C \uD658\uC0B0\uD55C \uAC12\uC785\uB2C8\uB2E4. ${e.repRange.max}\uD68C \xD7 RIR ${e.targetRir} \uAE30\uC900\uC73C\uB85C \uBCF4\uC218\uC801\uC73C\uB85C \uC7A1\uC558\uC2B5\uB2C8\uB2E4.`:`\uCCB4\uC911 ${e.profile?.bodyweightKg}kg \xB7 ${vn(e.profile?.level)} \uAE30\uC900\uC120\uC5D0\uC11C \uD658\uC0B0\uD588\uC2B5\uB2C8\uB2E4. \uCCAB \uC138\uD2B8\uC5D0\uC11C \uBC18\uB4DC\uC2DC \uD655\uC778\uD558\uC138\uC694.`;return{...r,weightKg:c,method:t?"related-lift":"bodyweight-ratio",confidence:t?"medium":"low",rationale:l}}function hn(e,n,r){let t=null;for(let o of n)for(let i of o.sets){if(i.warmup||i.reps<=0)continue;let s=ce[i.exerciseId];if(!s||s.anchor!==e)continue;let a=D(i)/s.factor;(!t||s.factor>t.factor)&&(t={value:a,factor:s.factor,exerciseId:i.exerciseId})}return t?{value:t.value,label:r?.get(t.exerciseId)?.name??t.exerciseId}:null}function Sn(e,n){if(!n||!n.bodyweightKg)return null;let r=bn[e][n.level],t=n.sex==="female"?fn[e]:1;return n.bodyweightKg*r*t}function ue(e,n,r){let t=n+Math.max(0,r);return e/(1+t/30)}function xn(e,n,r){let t=D(e),o=ue(t,n.repRange.max,n.targetRir),i=r?q(o,r,"down"):H(o,.5);return{weightKg:i,estimated1RM:H(t,.5),rationale:`${e.weightKg}kg \xD7 ${e.reps}\uD68C (RIR ${e.rir}) \u2192 \uCD94\uC815 1RM ${H(t,.5)}kg. ${n.repRange.max}\uD68C \xD7 RIR ${n.targetRir} \uC791\uC5C5 \uC911\uB7C9\uC740 ${i}kg\uC785\uB2C8\uB2E4.`}}function H(e,n){return Math.round(e/n)*n}function vn(e){return e==="advanced"?"\uACE0\uAE09":e==="intermediate"?"\uC911\uAE09":"\uCD08\uAE09"}function wn(e){let n=e.pain??[],r=[],t=[];e.plan.phase==="deload"&&r.push({kind:"plan",text:e.plan.summary}),n.some(c=>c.score>=7)&&r.push({kind:"pain",medical:!0,text:"\uD1B5\uC99D\uC774 7\uC810 \uC774\uC0C1\uC785\uB2C8\uB2E4. \uC624\uB298\uC740 \uD574\uB2F9 \uBD80\uC704\uB97C \uC4F0\uC9C0 \uC54A\uACE0, \uD1B5\uC99D\uC774 \uC9C0\uC18D\uB418\uBA74 \uC804\uBB38\uC758 \uC9C4\uB8CC\uB97C \uBC1B\uC73C\uC138\uC694."});let o=kn(e),i=e.gym,s=[...e.index.values()].filter(c=>!i||U(c,i)),a=e.availableEquipment??(i?ie(i):void 0);for(let c of e.template.slots){let l=e.index.get(c.exerciseId);if(!l)continue;let u=l,p,b;if(i&&!U(l,i)){let K=_(l,[],{pool:s,availableEquipment:a})[0];if(!K){r.push({kind:"equipment",text:`${l.name} \u2014 \uC774 \uD5EC\uC2A4\uC7A5\uC5D0 \uC5C6\uB294 \uAE30\uAD6C\uC774\uACE0 \uB300\uCCB4\uD560 \uC885\uBAA9\uB3C4 \uC5C6\uC5B4 \uC624\uB298\uC740 \uAC74\uB108\uB701\uB2C8\uB2E4.`});continue}u=K,p=l,b="unavailable",r.push({kind:"equipment",text:`${l.name} \uB300\uC2E0 ${B(K.name,"\uC744/\uB97C")} \uB123\uC5C8\uC2B5\uB2C8\uB2E4. \uC774 \uD5EC\uC2A4\uC7A5\uC5D0 \uC5C6\uB294 \uAE30\uAD6C\uC785\uB2C8\uB2E4.`})}let m=G(u,n,{pool:s,availableEquipment:a});if(m.action==="substitute"||m.action==="stop"){let K=m.substitutes[0];if(!K){r.push({kind:"pain",text:`${u.name} \u2014 ${m.message}`,medical:m.action==="stop"});continue}p=p??u,u=K,b="pain",r.push({kind:"pain",text:m.message,medical:m.action==="stop"})}let x=yn(c,u,o),h=Pe(e.history,u.id),w={repRange:c.repRange,targetRir:e.plan.targetRir},S=X(u,h?.sets,w),v=i?oe(u,i):null,d=e.plan.intensityMultiplier*m.loadMultiplier,g,C;S.weightKg===null?(C=le({exercise:u,repRange:c.repRange,targetRir:e.plan.targetRir,profile:e.lifter,history:e.history,index:e.index,loading:v}),g=C.weightKg):g=Mn(S.weightKg*d,u,v,d,S.change);let qe=S.change==="start"&&p?Rn(e.history,p):void 0;t.push({exercise:u,substitutedFrom:p,swapReason:b,painRuling:m,loading:v,plates:g!==null&&v?ae(g,v):null,startingLoad:C,note:En(S.reason,d,m,qe,C),sets:Array.from({length:x},(K,Ke)=>({setNumber:Ke+1,weightKg:g,targetReps:S.targetReps,targetRir:e.plan.targetRir}))})}return{date:e.date,name:e.template.name,phase:e.plan.phase,targetRir:e.plan.targetRir,exercises:t,warnings:r}}function kn(e){let n=M(e.history,Ln(e.history)??e.date),r=k(n,e.index),t=new Map;for(let o of e.plan.volume){let i=r[o.muscle]?.effectiveSets??0;t.set(o.muscle,i<=0?1:o.prescribedSets/i)}for(let o of f)t.has(o)||t.set(o,1);return t}function yn(e,n,r){let t=Ee(n),o=t?r.get(t)??1:1,i=Math.round(e.sets*o),s=Math.min(e.sets+2,Math.max(e.sets-2,i));return Math.max(1,s)}function Ee(e){let n,r=0;for(let t of f){let o=e.contribution[t]??0;o>r&&(n=t,r=o)}return n}function Pe(e,n){let r;for(let t of e)t.sets.some(i=>i.exerciseId===n&&!i.warmup)&&(!r||t.date>r.date)&&(r=t);return r}function Ln(e){let n;for(let r of e)(!n||r.date>n)&&(n=r.date);return n}function Rn(e,n){let r=Pe(e,n.id);if(!r)return;let t=r.sets.find(o=>o.exerciseId===n.id&&!o.warmup);if(t)return`\uCC38\uACE0: ${n.name} ${t.weightKg}kg \xD7 ${t.reps}\uD68C (RIR ${t.rir})`}function Mn(e,n,r,t,o){if(!r)return E(e,n.increment);let i=t<1||o==="decrease"?"down":o==="increase"?"up":"nearest";return q(e,r,i)}function En(e,n,r,t,o){let i=[o?o.rationale:e];return t&&i.push(t),n<1&&i.push(`\uC801\uC6A9 \uBC30\uC728 ${Math.round(n*100)}%`),r.action==="reduceLoad"&&i.push(r.message),i.join(" \xB7 ")}return Oe(Pn);})();
 </script>
 <script>/* 볼륨 코치 프로토타입 — 저장소의 트레이닝 엔진(FitEngine)을 그대로 구동한다. */
 (function () {
@@ -611,14 +670,19 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
     },
   ];
 
+  var WARNING_LABELS = { plan: '주간 처방', pain: '통증 게이트', equipment: '기구' };
+
   var TABS = [
     { id: 'today', label: '오늘', icon: 'M4 7h2v10H4zM18 7h2v10h-2zM7 10h10v4H7z' },
     { id: 'volume', label: '볼륨', icon: 'M4 19h16M6 16V9M11 16V5M16 16v-6' },
     { id: 'week', label: '주간', icon: 'M4 6h16M4 12h16M4 18h9' },
     { id: 'checkin', label: '체크인', icon: 'M5 12l4 4 10-10' },
+    { id: 'gym', label: '헬스장', icon: 'M4 9v6M8 7v10M16 7v10M20 9v6M8 12h8' },
   ];
 
   var state = {
+    gym: JSON.parse(JSON.stringify(E.DEFAULT_GYM)),
+    lifter: { bodyweightKg: 78, level: 'intermediate', sex: 'male' },
     scenario: 'normal',
     tab: 'today',
     pain: JOINTS.map(function (joint) { return { joint: joint, score: 0 }; }),
@@ -706,6 +770,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
           history: history,
           index: index,
           pain: [],
+          gym: state.gym,
+          lifter: state.lifter,
         });
         history.push(perform(planned, scenario.decay * (week + 1)));
         checkIns.push({
@@ -730,6 +796,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
       fatigue: { score: 0, threshold: 5, deloadRecommended: false, signals: [] },
       volume: [],
       neglected: [],
+      frequency: [],
       summary: '첫 주: 템플릿 그대로 수행하며 기준선을 잡습니다',
     };
   }
@@ -773,7 +840,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
       pushLog('주간 처방', state.plan.phase === 'deload'
         ? '피로 점수 ' + state.plan.fatigue.score + '점 → <b>디로드</b> 처방. ' + state.plan.summary
         : '피로 점수 ' + state.plan.fatigue.score + '점 → <b>축적 ' + state.plan.weekInBlock + '주차</b>. 목표 RIR ' + state.plan.targetRir);
-      state.session.warnings.forEach(function (warning) { pushLog('통증 게이트', warning); });
+      state.session.warnings.forEach(function (warning) {
+        pushLog(WARNING_LABELS[warning.kind] || '알림', warning.text);
+      });
     }
   }
 
@@ -802,12 +871,17 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
       history: state.history,
       index: index,
       pain: activePain(),
+      gym: state.gym,
+      lifter: state.lifter,
     });
 
     state.lifts = state.session.exercises.map(function (item) {
       return {
         exercise: item.exercise,
         substitutedFrom: item.substitutedFrom,
+        swapReason: item.swapReason,
+        startingLoad: item.startingLoad,
+        loading: item.loading,
         note: item.note,
         ruling: item.painRuling,
         repRange: item.sets[0].targetReps,
@@ -864,7 +938,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
     var next = lift.sets[setIndex + 1];
     if (next && !next.done) {
       var adjustment = E.adjustWithinSession(lift.exercise, logged, rule);
-      next.weightKg = adjustment.weightKg;
+      next.weightKg = lift.loading
+        ? E.nearestLoadable(adjustment.weightKg, lift.loading, adjustment.deltaKg > 0 ? 'up' : adjustment.deltaKg < 0 ? 'down' : 'nearest')
+        : adjustment.weightKg;
       next.estimated = false;
       if (adjustment.deltaKg !== 0) {
         next.adjustment = adjustment;
@@ -964,6 +1040,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
     if (state.tab === 'today') renderToday();
     else if (state.tab === 'volume') renderVolume();
     else if (state.tab === 'week') renderWeek();
+    else if (state.tab === 'gym') renderGym();
     else renderCheckin();
   }
 
@@ -986,9 +1063,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
     ]));
 
     state.session.warnings.forEach(function (warning) {
-      screen.appendChild(el('div', { class: 'notice' + (warning.indexOf('전문의') >= 0 ? ' stop' : '') }, [
-        el('div', { class: 'label', text: warning.indexOf('디로드') === 0 ? '주간 처방' : '통증 게이트' }),
-        el('div', { text: warning }),
+      screen.appendChild(el('div', { class: 'notice' + (warning.medical ? ' stop' : '') }, [
+        el('div', { class: 'label', text: WARNING_LABELS[warning.kind] || '알림' }),
+        el('div', { text: warning.text }),
       ]));
     });
 
@@ -996,6 +1073,13 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
       var nameRow = el('div', { class: 'lift-name' }, [el('span', { text: lift.exercise.name })]);
       if (lift.substitutedFrom) {
         nameRow.appendChild(el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name }));
+      }
+
+      if (lift.startingLoad && lift.startingLoad.needsCalibration) {
+        nameRow.appendChild(el('span', {
+          class: 'est-tag',
+          text: lift.startingLoad.method === 'related-lift' ? '환산 추정' : '기준선 추정',
+        }));
       }
 
       var card = el('div', { class: 'lift' }, [
@@ -1023,10 +1107,14 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
           ? set.targetReps.max + '회'
           : set.targetReps.min + '–' + set.targetReps.max + '회'),
       }),
-      set.estimated ? el('span', { class: 'target', text: '· 시작 중량 예시' }) : null,
     ]);
 
     var main = el('div', { class: 'set-main' }, [load]);
+
+    var plates = set.weightKg > 0 && lift.loading ? E.platePlan(set.weightKg, lift.loading) : null;
+    if (plates) {
+      main.appendChild(el('div', { class: 'plates', text: E.describePlates(plates) }));
+    }
 
     if (set.done) {
       main.appendChild(el('div', { class: 'set-result' }, [
@@ -1202,6 +1290,27 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
       el('div', { class: 'sheet-body' }, [list]),
     ]));
 
+    if (plan.frequency.length > 0) {
+      var freqBody = el('div', { class: 'sheet-body' }, []);
+      plan.frequency.forEach(function (item) {
+        freqBody.appendChild(el('div', { class: 'freq' }, [
+          el('div', { class: 'freq-top' }, [
+            el('span', { class: 'name', text: item.label }),
+            el('span', { class: 'num', text: '주 ' + item.sessionCount + '회 → ' + item.recommendedSessions + '회' }),
+          ]),
+          el('div', { class: 'freq-advice', text: item.advice }),
+        ]));
+      });
+
+      screen.appendChild(el('div', { class: 'sheet' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: '분배 조정' }),
+          el('span', { class: 'meta', text: '볼륨보다 먼저' }),
+        ]),
+        freqBody,
+      ]));
+    }
+
     if (plan.neglected.length > 0) {
       screen.appendChild(el('div', { class: 'notice' }, [
         el('div', { class: 'label', text: '프로그램 구멍' }),
@@ -1268,11 +1377,195 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
     ]));
   }
 
+  /* 헬스장 */
+  var BAR_OPTIONS = [
+    { kg: 20, label: '20kg 올림픽' },
+    { kg: 15, label: '15kg 여성용' },
+  ];
+  var STACK_OPTIONS = [
+    { step: 5, label: '5kg' },
+    { step: 2.5, label: '2.5kg' },
+  ];
+  var TOGGLE_EQUIPMENT = [
+    { id: 'smith', label: '스미스머신' },
+    { id: 'cable', label: '케이블' },
+    { id: 'machine', label: '머신' },
+  ];
+  var LEVELS = [
+    { id: 'beginner', label: '초급' },
+    { id: 'intermediate', label: '중급' },
+    { id: 'advanced', label: '고급' },
+  ];
+
+  function applyGymChange(message) {
+    loadScenario(state.scenario, true);
+    pushLog('기구 설정', message);
+    render();
+  }
+
+  function renderGym() {
+    var gym = state.gym;
+    var bench = index.get('barbell-bench-press');
+    var benchSpec = E.loadingFor(bench, gym);
+
+    screen.appendChild(el('div', { class: 'session-head' }, [
+      el('h2', { text: '내 헬스장' }),
+      el('p', { class: 'meta', text: '기구가 만들 수 있는 중량만 처방합니다' }),
+    ]));
+
+    // 바 무게
+    var barBody = el('div', { class: 'sheet-body' }, [
+      segmented(BAR_OPTIONS.map(function (option) {
+        return {
+          label: option.label,
+          active: gym.defaults.barbell.barKg === option.kg,
+          onSelect: function () {
+            gym.defaults.barbell.barKg = option.kg;
+            applyGymChange('바 무게를 ' + option.kg + 'kg으로 변경했습니다. 바벨 종목 처방이 다시 계산됩니다');
+          },
+        };
+      })),
+      el('p', { class: 'hint-line', text: '벤치프레스에서 만들 수 있는 중량: ' + sampleWeights(benchSpec) }),
+    ]);
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '바벨' }),
+        el('span', { class: 'meta', text: '빈 바 무게' }),
+      ]),
+      barBody,
+    ]));
+
+    // 스택 간격
+    var stackSpec = E.loadingFor(index.get('triceps-pushdown'), gym);
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '머신 · 케이블' }),
+        el('span', { class: 'meta', text: '스택 간격' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        segmented(STACK_OPTIONS.map(function (option) {
+          return {
+            label: option.label,
+            active: gym.defaults.stack.stepKg === option.step,
+            onSelect: function () {
+              gym.defaults.stack.stepKg = option.step;
+              applyGymChange('스택 간격을 ' + option.step + 'kg으로 변경했습니다');
+            },
+          };
+        })),
+        el('p', { class: 'hint-line', text: '만들 수 있는 중량: ' + sampleWeights(stackSpec) }),
+      ]),
+    ]));
+
+    // 없는 기구
+    var missing = gym.missingEquipment || [];
+    var toggles = el('div', { class: 'toggle-row' }, []);
+    TOGGLE_EQUIPMENT.forEach(function (item) {
+      var has = missing.indexOf(item.id) === -1;
+      toggles.appendChild(el('button', {
+        type: 'button',
+        class: 'toggle',
+        'aria-pressed': String(has),
+        text: item.label,
+        onclick: function () {
+          gym.missingEquipment = has
+            ? missing.concat([item.id])
+            : missing.filter(function (id) { return id !== item.id; });
+          applyGymChange(item.label + (has ? '이(가) 없는 것으로 설정했습니다. 해당 종목은 대체됩니다' : '을(를) 보유로 되돌렸습니다'));
+        },
+      }));
+    });
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '보유 기구' }),
+        el('span', { class: 'meta', text: '켜진 것이 보유' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        toggles,
+        el('p', { class: 'hint-line', text: '없는 기구를 끄면 오늘 세션의 해당 종목이 자동으로 대체됩니다.' }),
+      ]),
+    ]));
+
+    // 신체 정보 — 첫 수행 종목의 시작 중량 추정에 쓰인다
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '내 정보' }),
+        el('span', { class: 'meta', text: '첫 중량 추정용' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        sliderRow({
+          name: '체중 (kg)',
+          value: state.lifter.bodyweightKg,
+          min: 40,
+          max: 130,
+          id: 'lifter-bw',
+          marks: ['40', '70', '100', '130'],
+          onInput: function (value) {
+            state.lifter.bodyweightKg = value;
+            loadScenario(state.scenario, true);
+            render();
+          },
+        }),
+        segmented(LEVELS.map(function (level) {
+          return {
+            label: level.label,
+            active: state.lifter.level === level.id,
+            onSelect: function () {
+              state.lifter.level = level.id;
+              applyGymChange('경력을 ' + level.label + '으로 변경했습니다. 기준선 추정치가 달라집니다');
+            },
+          };
+        })),
+        el('p', { class: 'hint-line', text: startingLoadPreview() }),
+      ]),
+    ]));
+
+    screen.appendChild(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '추정은 출발점일 뿐' }),
+      el('div', { text: '처음 하는 종목은 체중·경력 기준선이나 이미 하는 종목에서 환산해 제안합니다. 첫 세트의 RIR을 입력하면 실측으로 대체됩니다.' }),
+    ]));
+  }
+
+  function sampleWeights(spec) {
+    if (!spec) return '없음';
+    var all = E.loadableWeights(spec);
+    return all.slice(0, 5).join(' · ') + ' … ' + all[all.length - 1] + 'kg';
+  }
+
+  function startingLoadPreview() {
+    var squat = index.get('back-squat');
+    var suggestion = E.suggestStartingLoad({
+      exercise: squat,
+      repRange: { min: 8, max: 12 },
+      targetRir: 3,
+      profile: state.lifter,
+      loading: E.loadingFor(squat, state.gym),
+    });
+    return suggestion.weightKg === null
+      ? '기록이 없으면 탐색 세트부터 시작합니다.'
+      : '기록이 전혀 없을 때 백 스쿼트 제안 중량: ' + suggestion.weightKg + 'kg';
+  }
+
+  function segmented(options) {
+    var row = el('div', { class: 'segmented' }, []);
+    options.forEach(function (option) {
+      row.appendChild(el('button', {
+        type: 'button',
+        'aria-pressed': String(option.active),
+        text: option.label,
+        onclick: option.onSelect,
+      }));
+    });
+    return row;
+  }
+
   function sliderRow(config) {
     var output = el('span', { class: 'score', text: String(config.value) });
     var input = el('input', {
       type: 'range',
-      min: '0',
+      min: String(config.min === undefined ? 0 : config.min),
       max: String(config.max),
       step: '1',
       value: String(config.value),
@@ -1290,12 +1583,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
         output,
       ]),
       input,
-      el('div', { class: 'scale-marks' }, [
-        el('span', { text: '0' }),
-        el('span', { text: '3' }),
-        el('span', { text: '7' }),
-        el('span', { text: '10' }),
-      ]),
+      el('div', { class: 'scale-marks' },
+        (config.marks || ['0', '3', '7', '10']).map(function (mark) {
+          return el('span', { text: mark });
+        })),
     ]);
   }
 
@@ -1304,7 +1595,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
     clearTimeout(painLogTimer);
     painLogTimer = setTimeout(function () {
       var swapped = state.session.exercises.filter(function (item) { return item.substitutedFrom; });
-      var dropped = state.session.warnings.filter(function (w) { return w.indexOf('전문의') >= 0; });
+      var dropped = state.session.warnings.filter(function (w) { return w.medical; });
       var label = E.JOINT_LABELS_KO[joint] + ' 통증 ' + score + '점';
 
       if (swapped.length > 0) {

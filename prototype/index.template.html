@@ -153,18 +153,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tabbar {
   flex: none;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   border-top: 1px solid var(--line-soft);
   background: var(--surface);
 }
 .tabbar button {
   border: 0;
   background: none;
-  padding: 11px 4px 13px;
+  padding: 11px 2px 13px;
   display: grid;
   gap: 3px;
   justify-items: center;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
   border-top: 2px solid transparent;
   margin-top: -1px;
@@ -275,6 +275,63 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .chip:hover { border-color: var(--accent); color: var(--accent); }
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .chip.fail[aria-pressed="true"] { background: var(--zone-over); border-color: var(--zone-over); color: #fff; }
+
+.plates {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: .02em;
+}
+.est-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-weight: 500;
+}
+
+.freq { display: grid; gap: 3px; }
+.freq-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.freq-top .name { font-size: 13px; font-weight: 500; }
+.freq-top .num { font-family: var(--mono); font-size: 12px; color: var(--zone-hard); font-variant-numeric: tabular-nums; }
+.freq-advice { font-size: 12px; color: var(--muted); }
+
+.segmented { display: flex; gap: 6px; flex-wrap: wrap; }
+.segmented button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 6px 11px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.segmented button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 500;
+}
+
+.toggle-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.toggle {
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.toggle[aria-pressed="true"] {
+  background: var(--surface);
+  border-color: var(--zone-ok);
+  color: var(--zone-ok);
+  text-decoration: none;
+}
+
+.hint-line { margin: 0; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .set-result { font-size: 11.5px; color: var(--muted); font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .set-result em { font-style: normal; color: var(--accent); font-weight: 500; }
@@ -454,7 +511,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
   <header class="masthead">
     <p class="eyebrow">프로토타입 · 실제 엔진 구동</p>
     <h1>볼륨 코치</h1>
-    <p>RIR을 한 번 탭하면 부위별 주간 볼륨과 피로도를 다시 계산해, 다음 주 훈련량과 디로드 시점을 스스로 조절합니다. 아래 화면은 목업이 아니라 저장소의 트레이닝 엔진이 그대로 돌아가는 것입니다.</p>
+    <p>RIR을 한 번 탭하면 부위별 주간 볼륨과 피로도를 다시 계산해, 다음 주 훈련량과 디로드 시점을 스스로 조절합니다. 처방 중량은 등록한 헬스장 기구가 실제로 만들 수 있는 값으로만 나옵니다. 아래 화면은 목업이 아니라 저장소의 트레이닝 엔진이 그대로 돌아가는 것입니다.</p>
   </header>
 
   <div class="device">
@@ -474,6 +531,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
           <li><b>오늘</b> 탭에서 세트의 RIR을 탭해 보세요. 다음 세트 중량이 즉시 조정되고, 그 이유가 아래 로그에 남습니다.</li>
           <li><b>볼륨</b> 탭의 게이지는 부위별 주간 유효 세트입니다. 눈금은 MEV(최소 자극) · MAV(적응 최대) · MRV(회복 한계)이고, 빗금 구간이 레드라인입니다.</li>
           <li><b>체크인</b> 탭에서 어깨 통증을 3점 이상으로 올리면, 오늘 세션의 종목이 자동으로 대체됩니다.</li>
+          <li><b>헬스장</b> 탭에서 바 무게나 스택 간격을 바꾸면 처방 중량이 그 기구가 만들 수 있는 값으로 다시 맞춰집니다. 기구를 끄면 해당 종목이 대체됩니다.</li>
         </ol>
       </div>
     </section>
@@ -487,11 +545,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
     <section>
       <h2>엔진 파이프라인</h2>
       <ol class="pipeline">
-        <li><b>기록</b> 세트마다 중량 · 반복 · RIR</li>
-        <li><b>집계</b> RIR과 부위 기여도로 유효 세트 환산</li>
-        <li><b>판정</b> 피로 신호 7종을 가중 합산</li>
-        <li><b>처방</b> 구간별 볼륨 증감, 임계 초과 시 디로드</li>
-        <li><b>세션</b> 통증 게이트 → 세트 수 → 중량 순서로 구성</li>
+        <li><span><b>기록</b> 세트마다 중량 · 반복 · RIR</span></li>
+        <li><span><b>집계</b> RIR · 부위 기여도 · 세션당 상한으로 유효 세트 환산</span></li>
+        <li><span><b>판정</b> 피로 신호 7종을 가중 합산</span></li>
+        <li><span><b>처방</b> 구간별 볼륨 증감, 임계 초과 시 디로드</span></li>
+        <li><span><b>세션</b> 기구 보유 → 통증 게이트 → 세트 수 → 중량 순서로 구성</span></li>
+        <li><span><b>스냅</b> 처방 중량을 그 기구가 만들 수 있는 값으로 조정</span></li>
       </ol>
     </section>
 

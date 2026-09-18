@@ -100,14 +100,19 @@
     },
   ];
 
+  var WARNING_LABELS = { plan: '주간 처방', pain: '통증 게이트', equipment: '기구' };
+
   var TABS = [
     { id: 'today', label: '오늘', icon: 'M4 7h2v10H4zM18 7h2v10h-2zM7 10h10v4H7z' },
     { id: 'volume', label: '볼륨', icon: 'M4 19h16M6 16V9M11 16V5M16 16v-6' },
     { id: 'week', label: '주간', icon: 'M4 6h16M4 12h16M4 18h9' },
     { id: 'checkin', label: '체크인', icon: 'M5 12l4 4 10-10' },
+    { id: 'gym', label: '헬스장', icon: 'M4 9v6M8 7v10M16 7v10M20 9v6M8 12h8' },
   ];
 
   var state = {
+    gym: JSON.parse(JSON.stringify(E.DEFAULT_GYM)),
+    lifter: { bodyweightKg: 78, level: 'intermediate', sex: 'male' },
     scenario: 'normal',
     tab: 'today',
     pain: JOINTS.map(function (joint) { return { joint: joint, score: 0 }; }),
@@ -195,6 +200,8 @@
           history: history,
           index: index,
           pain: [],
+          gym: state.gym,
+          lifter: state.lifter,
         });
         history.push(perform(planned, scenario.decay * (week + 1)));
         checkIns.push({
@@ -219,6 +226,7 @@
       fatigue: { score: 0, threshold: 5, deloadRecommended: false, signals: [] },
       volume: [],
       neglected: [],
+      frequency: [],
       summary: '첫 주: 템플릿 그대로 수행하며 기준선을 잡습니다',
     };
   }
@@ -262,7 +270,9 @@
       pushLog('주간 처방', state.plan.phase === 'deload'
         ? '피로 점수 ' + state.plan.fatigue.score + '점 → <b>디로드</b> 처방. ' + state.plan.summary
         : '피로 점수 ' + state.plan.fatigue.score + '점 → <b>축적 ' + state.plan.weekInBlock + '주차</b>. 목표 RIR ' + state.plan.targetRir);
-      state.session.warnings.forEach(function (warning) { pushLog('통증 게이트', warning); });
+      state.session.warnings.forEach(function (warning) {
+        pushLog(WARNING_LABELS[warning.kind] || '알림', warning.text);
+      });
     }
   }
 
@@ -291,12 +301,17 @@
       history: state.history,
       index: index,
       pain: activePain(),
+      gym: state.gym,
+      lifter: state.lifter,
     });
 
     state.lifts = state.session.exercises.map(function (item) {
       return {
         exercise: item.exercise,
         substitutedFrom: item.substitutedFrom,
+        swapReason: item.swapReason,
+        startingLoad: item.startingLoad,
+        loading: item.loading,
         note: item.note,
         ruling: item.painRuling,
         repRange: item.sets[0].targetReps,
@@ -353,7 +368,9 @@
     var next = lift.sets[setIndex + 1];
     if (next && !next.done) {
       var adjustment = E.adjustWithinSession(lift.exercise, logged, rule);
-      next.weightKg = adjustment.weightKg;
+      next.weightKg = lift.loading
+        ? E.nearestLoadable(adjustment.weightKg, lift.loading, adjustment.deltaKg > 0 ? 'up' : adjustment.deltaKg < 0 ? 'down' : 'nearest')
+        : adjustment.weightKg;
       next.estimated = false;
       if (adjustment.deltaKg !== 0) {
         next.adjustment = adjustment;
@@ -453,6 +470,7 @@
     if (state.tab === 'today') renderToday();
     else if (state.tab === 'volume') renderVolume();
     else if (state.tab === 'week') renderWeek();
+    else if (state.tab === 'gym') renderGym();
     else renderCheckin();
   }
 
@@ -475,9 +493,9 @@
     ]));
 
     state.session.warnings.forEach(function (warning) {
-      screen.appendChild(el('div', { class: 'notice' + (warning.indexOf('전문의') >= 0 ? ' stop' : '') }, [
-        el('div', { class: 'label', text: warning.indexOf('디로드') === 0 ? '주간 처방' : '통증 게이트' }),
-        el('div', { text: warning }),
+      screen.appendChild(el('div', { class: 'notice' + (warning.medical ? ' stop' : '') }, [
+        el('div', { class: 'label', text: WARNING_LABELS[warning.kind] || '알림' }),
+        el('div', { text: warning.text }),
       ]));
     });
 
@@ -485,6 +503,13 @@
       var nameRow = el('div', { class: 'lift-name' }, [el('span', { text: lift.exercise.name })]);
       if (lift.substitutedFrom) {
         nameRow.appendChild(el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name }));
+      }
+
+      if (lift.startingLoad && lift.startingLoad.needsCalibration) {
+        nameRow.appendChild(el('span', {
+          class: 'est-tag',
+          text: lift.startingLoad.method === 'related-lift' ? '환산 추정' : '기준선 추정',
+        }));
       }
 
       var card = el('div', { class: 'lift' }, [
@@ -512,10 +537,14 @@
           ? set.targetReps.max + '회'
           : set.targetReps.min + '–' + set.targetReps.max + '회'),
       }),
-      set.estimated ? el('span', { class: 'target', text: '· 시작 중량 예시' }) : null,
     ]);
 
     var main = el('div', { class: 'set-main' }, [load]);
+
+    var plates = set.weightKg > 0 && lift.loading ? E.platePlan(set.weightKg, lift.loading) : null;
+    if (plates) {
+      main.appendChild(el('div', { class: 'plates', text: E.describePlates(plates) }));
+    }
 
     if (set.done) {
       main.appendChild(el('div', { class: 'set-result' }, [
@@ -691,6 +720,27 @@
       el('div', { class: 'sheet-body' }, [list]),
     ]));
 
+    if (plan.frequency.length > 0) {
+      var freqBody = el('div', { class: 'sheet-body' }, []);
+      plan.frequency.forEach(function (item) {
+        freqBody.appendChild(el('div', { class: 'freq' }, [
+          el('div', { class: 'freq-top' }, [
+            el('span', { class: 'name', text: item.label }),
+            el('span', { class: 'num', text: '주 ' + item.sessionCount + '회 → ' + item.recommendedSessions + '회' }),
+          ]),
+          el('div', { class: 'freq-advice', text: item.advice }),
+        ]));
+      });
+
+      screen.appendChild(el('div', { class: 'sheet' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: '분배 조정' }),
+          el('span', { class: 'meta', text: '볼륨보다 먼저' }),
+        ]),
+        freqBody,
+      ]));
+    }
+
     if (plan.neglected.length > 0) {
       screen.appendChild(el('div', { class: 'notice' }, [
         el('div', { class: 'label', text: '프로그램 구멍' }),
@@ -757,11 +807,195 @@
     ]));
   }
 
+  /* 헬스장 */
+  var BAR_OPTIONS = [
+    { kg: 20, label: '20kg 올림픽' },
+    { kg: 15, label: '15kg 여성용' },
+  ];
+  var STACK_OPTIONS = [
+    { step: 5, label: '5kg' },
+    { step: 2.5, label: '2.5kg' },
+  ];
+  var TOGGLE_EQUIPMENT = [
+    { id: 'smith', label: '스미스머신' },
+    { id: 'cable', label: '케이블' },
+    { id: 'machine', label: '머신' },
+  ];
+  var LEVELS = [
+    { id: 'beginner', label: '초급' },
+    { id: 'intermediate', label: '중급' },
+    { id: 'advanced', label: '고급' },
+  ];
+
+  function applyGymChange(message) {
+    loadScenario(state.scenario, true);
+    pushLog('기구 설정', message);
+    render();
+  }
+
+  function renderGym() {
+    var gym = state.gym;
+    var bench = index.get('barbell-bench-press');
+    var benchSpec = E.loadingFor(bench, gym);
+
+    screen.appendChild(el('div', { class: 'session-head' }, [
+      el('h2', { text: '내 헬스장' }),
+      el('p', { class: 'meta', text: '기구가 만들 수 있는 중량만 처방합니다' }),
+    ]));
+
+    // 바 무게
+    var barBody = el('div', { class: 'sheet-body' }, [
+      segmented(BAR_OPTIONS.map(function (option) {
+        return {
+          label: option.label,
+          active: gym.defaults.barbell.barKg === option.kg,
+          onSelect: function () {
+            gym.defaults.barbell.barKg = option.kg;
+            applyGymChange('바 무게를 ' + option.kg + 'kg으로 변경했습니다. 바벨 종목 처방이 다시 계산됩니다');
+          },
+        };
+      })),
+      el('p', { class: 'hint-line', text: '벤치프레스에서 만들 수 있는 중량: ' + sampleWeights(benchSpec) }),
+    ]);
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '바벨' }),
+        el('span', { class: 'meta', text: '빈 바 무게' }),
+      ]),
+      barBody,
+    ]));
+
+    // 스택 간격
+    var stackSpec = E.loadingFor(index.get('triceps-pushdown'), gym);
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '머신 · 케이블' }),
+        el('span', { class: 'meta', text: '스택 간격' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        segmented(STACK_OPTIONS.map(function (option) {
+          return {
+            label: option.label,
+            active: gym.defaults.stack.stepKg === option.step,
+            onSelect: function () {
+              gym.defaults.stack.stepKg = option.step;
+              applyGymChange('스택 간격을 ' + option.step + 'kg으로 변경했습니다');
+            },
+          };
+        })),
+        el('p', { class: 'hint-line', text: '만들 수 있는 중량: ' + sampleWeights(stackSpec) }),
+      ]),
+    ]));
+
+    // 없는 기구
+    var missing = gym.missingEquipment || [];
+    var toggles = el('div', { class: 'toggle-row' }, []);
+    TOGGLE_EQUIPMENT.forEach(function (item) {
+      var has = missing.indexOf(item.id) === -1;
+      toggles.appendChild(el('button', {
+        type: 'button',
+        class: 'toggle',
+        'aria-pressed': String(has),
+        text: item.label,
+        onclick: function () {
+          gym.missingEquipment = has
+            ? missing.concat([item.id])
+            : missing.filter(function (id) { return id !== item.id; });
+          applyGymChange(item.label + (has ? '이(가) 없는 것으로 설정했습니다. 해당 종목은 대체됩니다' : '을(를) 보유로 되돌렸습니다'));
+        },
+      }));
+    });
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '보유 기구' }),
+        el('span', { class: 'meta', text: '켜진 것이 보유' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        toggles,
+        el('p', { class: 'hint-line', text: '없는 기구를 끄면 오늘 세션의 해당 종목이 자동으로 대체됩니다.' }),
+      ]),
+    ]));
+
+    // 신체 정보 — 첫 수행 종목의 시작 중량 추정에 쓰인다
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '내 정보' }),
+        el('span', { class: 'meta', text: '첫 중량 추정용' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        sliderRow({
+          name: '체중 (kg)',
+          value: state.lifter.bodyweightKg,
+          min: 40,
+          max: 130,
+          id: 'lifter-bw',
+          marks: ['40', '70', '100', '130'],
+          onInput: function (value) {
+            state.lifter.bodyweightKg = value;
+            loadScenario(state.scenario, true);
+            render();
+          },
+        }),
+        segmented(LEVELS.map(function (level) {
+          return {
+            label: level.label,
+            active: state.lifter.level === level.id,
+            onSelect: function () {
+              state.lifter.level = level.id;
+              applyGymChange('경력을 ' + level.label + '으로 변경했습니다. 기준선 추정치가 달라집니다');
+            },
+          };
+        })),
+        el('p', { class: 'hint-line', text: startingLoadPreview() }),
+      ]),
+    ]));
+
+    screen.appendChild(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '추정은 출발점일 뿐' }),
+      el('div', { text: '처음 하는 종목은 체중·경력 기준선이나 이미 하는 종목에서 환산해 제안합니다. 첫 세트의 RIR을 입력하면 실측으로 대체됩니다.' }),
+    ]));
+  }
+
+  function sampleWeights(spec) {
+    if (!spec) return '없음';
+    var all = E.loadableWeights(spec);
+    return all.slice(0, 5).join(' · ') + ' … ' + all[all.length - 1] + 'kg';
+  }
+
+  function startingLoadPreview() {
+    var squat = index.get('back-squat');
+    var suggestion = E.suggestStartingLoad({
+      exercise: squat,
+      repRange: { min: 8, max: 12 },
+      targetRir: 3,
+      profile: state.lifter,
+      loading: E.loadingFor(squat, state.gym),
+    });
+    return suggestion.weightKg === null
+      ? '기록이 없으면 탐색 세트부터 시작합니다.'
+      : '기록이 전혀 없을 때 백 스쿼트 제안 중량: ' + suggestion.weightKg + 'kg';
+  }
+
+  function segmented(options) {
+    var row = el('div', { class: 'segmented' }, []);
+    options.forEach(function (option) {
+      row.appendChild(el('button', {
+        type: 'button',
+        'aria-pressed': String(option.active),
+        text: option.label,
+        onclick: option.onSelect,
+      }));
+    });
+    return row;
+  }
+
   function sliderRow(config) {
     var output = el('span', { class: 'score', text: String(config.value) });
     var input = el('input', {
       type: 'range',
-      min: '0',
+      min: String(config.min === undefined ? 0 : config.min),
       max: String(config.max),
       step: '1',
       value: String(config.value),
@@ -779,12 +1013,10 @@
         output,
       ]),
       input,
-      el('div', { class: 'scale-marks' }, [
-        el('span', { text: '0' }),
-        el('span', { text: '3' }),
-        el('span', { text: '7' }),
-        el('span', { text: '10' }),
-      ]),
+      el('div', { class: 'scale-marks' },
+        (config.marks || ['0', '3', '7', '10']).map(function (mark) {
+          return el('span', { text: mark });
+        })),
     ]);
   }
 
@@ -793,7 +1025,7 @@
     clearTimeout(painLogTimer);
     painLogTimer = setTimeout(function () {
       var swapped = state.session.exercises.filter(function (item) { return item.substitutedFrom; });
-      var dropped = state.session.warnings.filter(function (w) { return w.indexOf('전문의') >= 0; });
+      var dropped = state.session.warnings.filter(function (w) { return w.medical; });
       var label = E.JOINT_LABELS_KO[joint] + ' 통증 ' + score + '점';
 
       if (swapped.length > 0) {

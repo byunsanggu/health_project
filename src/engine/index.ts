@@ -7,11 +7,15 @@
  * 모든 함수는 순수 함수다. 저장소/네트워크/UI 의존성이 없어 앱·서버·테스트에서 동일하게 쓴다.
  */
 export * from './types.ts';
+export * from './korean.ts';
 export * from './muscles.ts';
 export * from './exercises.ts';
 export * from './volume.ts';
+export * from './frequency.ts';
 export * from './load.ts';
 export * from './readiness.ts';
 export * from './mesocycle.ts';
 export * from './pain.ts';
+export * from './gym.ts';
+export * from './strength.ts';
 export * from './session.ts';
