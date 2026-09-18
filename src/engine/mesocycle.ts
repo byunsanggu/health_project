@@ -65,6 +65,8 @@ export interface PlanInput {
   painfulMuscles?: readonly MuscleGroup[];
   /** 방금 끝낸 주가 디로드였는지. 디로드 다음 주는 무조건 훈련으로 복귀한다. */
   lastWeekPhase?: Phase;
+  /** RIR 신고 보정값. 볼륨 집계와 빈도 판정에 함께 적용한다 */
+  rirOffset?: number;
 }
 
 /**
@@ -103,14 +105,15 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
   const nextWeekInBlock = phase === 'deload' ? 0 : input.weekInBlock + 1;
 
   const lastWeekSessions = sessionsInWeek(input.sessions, input.asOf);
-  const current = aggregateVolume(lastWeekSessions, input.index);
-  const trailing = aggregateVolume(trailingSessions(input.sessions, input.asOf), input.index);
+  const volumeOptions = { rirOffset: input.rirOffset ?? 0 };
+  const current = aggregateVolume(lastWeekSessions, input.index, volumeOptions);
+  const trailing = aggregateVolume(trailingSessions(input.sessions, input.asOf), input.index, volumeOptions);
   const painful = new Set(input.painfulMuscles ?? []);
   const neglected: MuscleGroup[] = [];
 
   // 볼륨을 올리기 전에 분배부터 본다. 한 세션에 몰린 부위에 세트를 더 넣으면
   // 버려지는 세트만 늘어난다 — 먼저 나누고, 그다음에 늘린다.
-  const frequency = frequencyReport(lastWeekSessions, input.index);
+  const frequency = frequencyReport(lastWeekSessions, input.index, volumeOptions);
   const concentrated = new Set(
     frequency.filter((item) => item.verdict === 'concentrated').map((item) => item.muscle),
   );

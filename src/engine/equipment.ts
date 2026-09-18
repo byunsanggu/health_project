@@ -101,6 +101,21 @@ export const EQUIPMENT_CATALOG: readonly EquipmentItem[] = [
   { id: 'leg-extension-machine', name: '레그 익스텐션', category: 'machine', common: true },
   { id: 'leg-curl-machine', name: '레그컬', category: 'machine', common: true },
   { id: 'calf-raise-machine', name: '카프레이즈 머신', category: 'machine', common: true },
+  { id: 'seated-calf-machine', name: '시티드 카프레이즈', category: 'machine' },
+  { id: 'dip-station', name: '딥스 바', category: 'rack', common: true },
+  { id: 'preacher-bench', name: '프리처 벤치', category: 'bench', common: true },
+  { id: 'ab-wheel', name: '앱 휠', category: 'bodyweight', common: true },
+  { id: 't-bar-row-machine', name: 'T바 로우', category: 'machine' },
+  { id: 'assisted-pull-up-machine', name: '어시스트 풀업 머신', category: 'machine' },
+  { id: 'lateral-raise-machine', name: '레터럴 레이즈 머신', category: 'machine' },
+  { id: 'hip-thrust-machine', name: '힙 쓰러스트 머신', category: 'machine' },
+  {
+    id: 'smith-machine', name: '스미스머신', category: 'rack', common: true,
+    measurement: {
+      field: 'barKg', label: '바 자체 무게', default: 15, options: [0, 7, 15, 20],
+      hint: '기구마다 다릅니다. 카운터웨이트가 있으면 0에 가깝습니다',
+    },
+  },
 ];
 
 const CATALOG_BY_ID = new Map(EQUIPMENT_CATALOG.map((item) => [item.id, item]));
@@ -161,6 +176,57 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'hanging-leg-raise': ['pull-up-bar'],
   'cable-crunch': ['cable-station'],
   'plank': ['floor'],
+
+  // 확장 (2차)
+  'incline-barbell-press': ['barbell-set', 'bench-incline'],
+  'decline-barbell-press': ['barbell-set', 'bench-flat'],
+  'chest-dip': ['dip-station'],
+  'smith-bench-press': ['smith-machine', 'bench-flat'],
+  'low-to-high-cable-fly': ['cable-station'],
+  'floor-press': ['barbell-set', 'floor'],
+
+  'chin-up': ['pull-up-bar'],
+  'one-arm-dumbbell-row': ['dumbbells', 'bench-flat'],
+  't-bar-row': ['t-bar-row-machine'],
+  'pendlay-row': ['barbell-set'],
+  'straight-arm-pulldown': ['cable-station'],
+  'assisted-pull-up': ['assisted-pull-up-machine'],
+
+  'arnold-press': ['dumbbells', 'bench-incline'],
+  'machine-lateral-raise': ['lateral-raise-machine'],
+  'front-raise': ['dumbbells'],
+  'cable-rear-delt-fly': ['cable-station'],
+  'barbell-shrug': ['barbell-set'],
+  'dumbbell-shrug': ['dumbbells'],
+
+  'preacher-curl': ['preacher-bench', 'ez-bar'],
+  'cable-curl': ['cable-station'],
+  'concentration-curl': ['dumbbells'],
+
+  'close-grip-bench-press': ['barbell-set', 'bench-flat'],
+  'skull-crusher': ['ez-bar', 'bench-flat'],
+  'triceps-dip': ['dip-station'],
+  'triceps-kickback': ['dumbbells'],
+
+  'front-squat': ['barbell-set', 'power-rack'],
+  'bulgarian-split-squat': ['dumbbells', 'bench-flat'],
+  'step-up': ['dumbbells', 'bench-flat'],
+  'smith-squat': ['smith-machine'],
+
+  'sumo-deadlift': ['barbell-set'],
+  'stiff-leg-deadlift': ['barbell-set'],
+  'good-morning': ['barbell-set', 'power-rack'],
+  'cable-pull-through': ['cable-station'],
+  'seated-leg-curl': ['leg-curl-machine'],
+  'machine-hip-thrust': ['hip-thrust-machine'],
+
+  'seated-calf-raise': ['seated-calf-machine'],
+  'leg-press-calf-raise': ['leg-press-machine'],
+  'ab-wheel-rollout': ['ab-wheel'],
+  'side-plank': ['floor'],
+  'dead-bug': ['floor'],
+  'wrist-curl': ['dumbbells'],
+  'farmers-walk': ['dumbbells'],
 };
 
 export function requirementsMet(exerciseId: string, selected: ReadonlySet<string>): boolean {
@@ -301,6 +367,12 @@ export function gymFromCatalog(selection: GymSelection): GymProfile {
       plates,
       sides: 2,
     };
+  }
+  if (selected.has('smith-machine')) {
+    const smithBar = value('smith-machine', 'barKg') ?? 15;
+    for (const exerciseId of ['smith-bench-press', 'smith-squat']) {
+      overrides[exerciseId] = { kind: 'barbell', barKg: smithBar, plates };
+    }
   }
   if (selected.has('hack-squat-machine')) {
     overrides['hack-squat'] = {

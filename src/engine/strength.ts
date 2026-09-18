@@ -1,4 +1,5 @@
 import { estimate1RM } from './load.ts';
+import { workingWeight } from './repmax.ts';
 import { nearestLoadable, type LoadingSpec } from './gym.ts';
 import { LEVEL_LABELS_KO } from './levels.ts';
 import type { Exercise, SessionLog, TrainingLevel } from './types.ts';
@@ -70,6 +71,48 @@ export const ANCHOR_FACTORS: Record<string, AnchorFactor> = {
   'triceps-pushdown': { anchor: 'bench', factor: 0.42 },
   'overhead-cable-extension': { anchor: 'bench', factor: 0.3 },
   'cable-crunch': { anchor: 'bench', factor: 0.45 },
+
+  // 확장 (2차)
+  'incline-barbell-press': { anchor: 'bench', factor: 0.85 },
+  'decline-barbell-press': { anchor: 'bench', factor: 1.05 },
+  'smith-bench-press': { anchor: 'bench', factor: 1.0 },
+  'floor-press': { anchor: 'bench', factor: 0.9 },
+  'low-to-high-cable-fly': { anchor: 'bench', factor: 0.2, perHand: true },
+  'close-grip-bench-press': { anchor: 'bench', factor: 0.85 },
+  'skull-crusher': { anchor: 'bench', factor: 0.3 },
+  'triceps-kickback': { anchor: 'bench', factor: 0.1, perHand: true },
+  'preacher-curl': { anchor: 'bench', factor: 0.28 },
+  'cable-curl': { anchor: 'bench', factor: 0.35 },
+  'concentration-curl': { anchor: 'bench', factor: 0.12, perHand: true },
+  'wrist-curl': { anchor: 'bench', factor: 0.12, perHand: true },
+
+  'arnold-press': { anchor: 'overheadPress', factor: 0.36, perHand: true },
+  'machine-lateral-raise': { anchor: 'overheadPress', factor: 0.35 },
+  'front-raise': { anchor: 'overheadPress', factor: 0.14, perHand: true },
+  'cable-rear-delt-fly': { anchor: 'overheadPress', factor: 0.12, perHand: true },
+
+  'one-arm-dumbbell-row': { anchor: 'row', factor: 0.4, perHand: true },
+  't-bar-row': { anchor: 'row', factor: 0.95 },
+  'pendlay-row': { anchor: 'row', factor: 0.95 },
+  'straight-arm-pulldown': { anchor: 'row', factor: 0.3 },
+  'assisted-pull-up': { anchor: 'row', factor: 0.6 },
+  'barbell-shrug': { anchor: 'row', factor: 1.2 },
+  'dumbbell-shrug': { anchor: 'row', factor: 0.45, perHand: true },
+  'farmers-walk': { anchor: 'row', factor: 0.5, perHand: true },
+
+  'front-squat': { anchor: 'squat', factor: 0.82 },
+  'smith-squat': { anchor: 'squat', factor: 0.95 },
+  'bulgarian-split-squat': { anchor: 'squat', factor: 0.2, perHand: true },
+  'step-up': { anchor: 'squat', factor: 0.18, perHand: true },
+  'seated-calf-raise': { anchor: 'squat', factor: 0.45 },
+  'leg-press-calf-raise': { anchor: 'squat', factor: 1.2 },
+
+  'sumo-deadlift': { anchor: 'deadlift', factor: 1.0 },
+  'stiff-leg-deadlift': { anchor: 'deadlift', factor: 0.65 },
+  'good-morning': { anchor: 'deadlift', factor: 0.45 },
+  'cable-pull-through': { anchor: 'deadlift', factor: 0.35 },
+  'seated-leg-curl': { anchor: 'deadlift', factor: 0.3 },
+  'machine-hip-thrust': { anchor: 'deadlift', factor: 0.9 },
 };
 
 /**

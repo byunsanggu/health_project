@@ -76,11 +76,20 @@ describe('coverageReport', () => {
     assert.ok(gaps.every((gap) => gap.suggestion || gap.possibleOptions === 0));
   });
 
-  it('기구를 다 갖춰도 직접 종목이 없는 부위는 구멍으로 치지 않는다', () => {
-    const traps = coverageReport(EQUIPMENT_CATALOG.map((item) => item.id))
+  it('운동 DB에 선택지가 하나뿐인 부위는 그 하나로 충분하다고 본다', () => {
+    // 승모근 종목을 하나만 남긴 풀에서는 그 하나를 갖추면 구멍이 아니다.
+    const pool = EXERCISES.filter((e) => e.id !== 'dumbbell-shrug');
+    const traps = coverageReport(EQUIPMENT_CATALOG.map((item) => item.id), pool)
       .find((item) => item.muscle === 'traps')!;
-    assert.equal(traps.possibleOptions, 0);
-    assert.equal(traps.sufficient, true, '사용자가 해결할 수 없는 건 구멍이 아니다');
+
+    assert.equal(traps.possibleOptions, 1);
+    assert.equal(traps.directOptions, 1);
+    assert.equal(traps.sufficient, true, '사용자가 더 할 수 있는 게 없으면 구멍이 아니다');
+  });
+
+  it('DB 확장으로 승모근 구멍이 메워졌다', () => {
+    const traps = coverageReport(COMMON_EQUIPMENT_IDS).find((item) => item.muscle === 'traps')!;
+    assert.ok(traps.directOptions >= 2, '슈러그 계열이 들어왔다');
   });
 
   it('기본 구성이면 남는 구멍이 거의 없다', () => {

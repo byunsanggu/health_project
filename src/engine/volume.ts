@@ -22,6 +22,11 @@ export interface VolumeOptions {
   perSessionCap?: number;
   /** 상한을 넘은 세트에 적용할 가중치. */
   overCapWeight?: number;
+  /**
+   * 신고 RIR에 더할 보정값 (rirCalibration 의 offset).
+   * 순환 참조를 피하려고 객체가 아니라 숫자만 받는다.
+   */
+  rirOffset?: number;
 }
 
 const DEFAULTS: Required<VolumeOptions> = {
@@ -29,7 +34,13 @@ const DEFAULTS: Required<VolumeOptions> = {
   minContribution: 0.25,
   perSessionCap: 9,
   overCapWeight: 0.5,
+  rirOffset: 0,
 };
+
+/** 신고값에 보정을 적용한 RIR. 0~5 밖으로는 나가지 않는다. */
+export function effectiveRir(reported: number, offset = 0): number {
+  return Math.min(5, Math.max(0, reported + offset));
+}
 
 /**
  * 세트 하나가 근비대 자극으로서 얼마나 "유효"한지 0~1로 환산한다.
@@ -41,12 +52,13 @@ export function setEffectiveness(set: SetLog, options: VolumeOptions = {}): numb
   if (set.warmup) return 0;
   if (set.reps <= 0) return 0;
 
-  const { hypertrophyReps } = { ...DEFAULTS, ...options };
+  const { hypertrophyReps, rirOffset } = { ...DEFAULTS, ...options };
+  const rir = effectiveRir(set.rir, rirOffset);
 
   // RIR 가중 — 실패에서 멀어질수록 자극이 급격히 떨어진다.
   let weight: number;
-  if (set.rir <= 3) weight = 1;
-  else if (set.rir <= 4) weight = 0.7;
+  if (rir <= 3) weight = 1;
+  else if (rir <= 4) weight = 0.7;
   else weight = 0.3;
 
   // 반복 범위 가중 — 저반복은 근력, 초고반복은 국소 지구력 쪽 자극이 커진다.

@@ -15,6 +15,7 @@ import {
 } from './gym.ts';
 import { suggestStartingLoad, type LifterProfile, type StartingLoad } from './strength.ts';
 import { withParticle } from './korean.ts';
+import { NO_CALIBRATION, calibrateRir, type RirCalibration } from './rirCalibration.ts';
 import type { WeeklyPlan } from './mesocycle.ts';
 import type {
   Equipment,
@@ -83,6 +84,8 @@ export interface PlannedSession {
   exercises: PlannedExercise[];
   /** 사용자에게 먼저 보여줄 경고 (통증, 기구, 디로드) */
   warnings: SessionWarning[];
+  /** 이 세션의 중량 처방에 적용된 RIR 신뢰도 보정 */
+  rirCalibration: RirCalibration;
 }
 
 export interface BuildSessionInput {
@@ -101,6 +104,8 @@ export interface BuildSessionInput {
   gym?: GymProfile;
   /** 첫 수행 종목의 중량을 추정하기 위한 신체 정보 */
   lifter?: LifterProfile;
+  /** 미리 계산한 RIR 보정. 없으면 이력에서 직접 구한다 */
+  rirCalibration?: RirCalibration;
 }
 
 /**
@@ -130,6 +135,10 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
 
   const scaling = volumeScaling(input);
   const gym = input.gym;
+  const calibration =
+    input.rirCalibration ??
+    (input.history.length > 0 ? calibrateRir(input.history, { asOf: input.date }) : NO_CALIBRATION);
+  const rirOffset = calibration.applied ? calibration.offset : 0;
 
   // 헬스장에 없는 기구는 후보에서 아예 빼고 시작한다.
   const pool = [...input.index.values()].filter((candidate) => !gym || isAvailableAt(candidate, gym));
@@ -182,7 +191,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
 
     // 4) 중량 — 마지막 수행 기록 기준, 그 헬스장이 만들 수 있는 값으로 맞춘다
     const lastSession = findLastSession(input.history, exercise.id);
-    const rule: LoadRule = { repRange: slot.repRange, targetRir: input.plan.targetRir };
+    const rule: LoadRule = { repRange: slot.repRange, targetRir: input.plan.targetRir, rirOffset };
     const prescription = prescribeLoad(exercise, lastSession?.sets, rule);
     const loading = gym ? loadingFor(exercise, gym) : null;
 
@@ -237,6 +246,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     targetRir: input.plan.targetRir,
     exercises,
     warnings,
+    rirCalibration: calibration,
   };
 }
 

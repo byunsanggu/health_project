@@ -9,6 +9,11 @@ export interface LoadRule {
   repRange: RepRange;
   /** 이 종목에서 남겨야 할 RIR. 축적기에는 1~3, 디로드에는 4를 쓴다. */
   targetRir: number;
+  /**
+   * 신고 RIR에 더할 보정값.
+   * 실제보다 RIR을 높게 부르는 사람에게 그대로 증량하면 실패 지점을 넘긴다.
+   */
+  rirOffset?: number;
 }
 
 export type LoadChange = 'start' | 'increase' | 'hold' | 'decrease';
@@ -84,9 +89,10 @@ export function prescribeLoad(
   }
 
   const step = exercise.increment;
+  const observedRir = correctRir(last.rir, rule.rirOffset);
   const reachedTop = last.reps >= rule.repRange.max;
   const belowBottom = last.reps < rule.repRange.min;
-  const rirSurplus = last.rir - rule.targetRir;
+  const rirSurplus = observedRir - rule.targetRir;
 
   // 1) 반복 상단 + RIR 여유 → 증량. 여유가 2 이상이면 두 칸.
   if (reachedTop && rirSurplus >= 0) {
@@ -96,7 +102,7 @@ export function prescribeLoad(
       weightKg: roundToIncrement(last.weightKg + jump, step),
       change: 'increase',
       deltaKg: round1(jump),
-      reason: `${last.reps}회 × RIR ${last.rir}로 목표 상단에 여유 있게 도달했습니다. ${round1(jump)}kg 올립니다.`,
+      reason: `${last.reps}회 × RIR ${describeRir(last.rir, observedRir)}로 목표 상단에 여유 있게 도달했습니다. ${round1(jump)}kg 올립니다.`,
     };
   }
 
@@ -107,7 +113,7 @@ export function prescribeLoad(
       weightKg: last.weightKg,
       change: 'hold',
       deltaKg: 0,
-      reason: `목표 반복은 채웠지만 RIR ${last.rir}로 여유가 없었습니다. 같은 중량에서 RIR ${rule.targetRir}이 될 때까지 유지합니다.`,
+      reason: `목표 반복은 채웠지만 RIR ${describeRir(last.rir, observedRir)}로 여유가 없었습니다. 같은 중량에서 RIR ${rule.targetRir}이 될 때까지 유지합니다.`,
     };
   }
 
@@ -118,7 +124,7 @@ export function prescribeLoad(
       weightKg: roundToIncrement(last.weightKg + step, step),
       change: 'increase',
       deltaKg: round1(step),
-      reason: `RIR ${last.rir}로 목표(${rule.targetRir})보다 가벼웠습니다. ${round1(step)}kg 올립니다.`,
+      reason: `RIR ${describeRir(last.rir, observedRir)}로 목표(${rule.targetRir})보다 가벼웠습니다. ${round1(step)}kg 올립니다.`,
     };
   }
 
@@ -161,18 +167,19 @@ export function adjustWithinSession(
   rule: LoadRule,
 ): WithinSessionAdjustment {
   const step = exercise.increment;
-  const surplus = lastSet.rir - rule.targetRir;
+  const observedRir = correctRir(lastSet.rir, rule.rirOffset);
+  const surplus = observedRir - rule.targetRir;
 
   if (surplus >= 2 && lastSet.reps >= rule.repRange.min) {
     const jump = step * (surplus >= 3 ? 2 : 1);
     return {
       weightKg: roundToIncrement(lastSet.weightKg + jump, step),
       deltaKg: round1(jump),
-      reason: `RIR ${lastSet.rir}로 여유가 많습니다. 다음 세트 ${round1(jump)}kg 올립니다.`,
+      reason: `RIR ${describeRir(lastSet.rir, observedRir)}로 여유가 많습니다. 다음 세트 ${round1(jump)}kg 올립니다.`,
     };
   }
 
-  if (lastSet.rir <= 0 && lastSet.reps < rule.repRange.min) {
+  if (observedRir <= 0 && lastSet.reps < rule.repRange.min) {
     const reduced = roundToIncrement(lastSet.weightKg * 0.9, step);
     return {
       weightKg: reduced,
@@ -186,6 +193,15 @@ export function adjustWithinSession(
     deltaKg: 0,
     reason: '중량 유지합니다.',
   };
+}
+
+function correctRir(reported: number, offset = 0): number {
+  return Math.min(5, Math.max(0, reported + offset));
+}
+
+/** 보정이 들어갔으면 사용자에게 그 사실을 숨기지 않는다. */
+function describeRir(reported: number, corrected: number): string {
+  return reported === corrected ? String(reported) : `${reported}→${round1(corrected)}(보정)`;
 }
 
 function round1(value: number): number {

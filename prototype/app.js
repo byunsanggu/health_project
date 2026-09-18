@@ -6,6 +6,88 @@
   var index = E.buildExerciseIndex();
   var landmarks = E.landmarksFor('intermediate');
 
+  /** 헬스장 지하에는 신호가 없다. 로컬이 원본이고 서버는 나중에 붙는다. */
+  var storage = E.createStore(browserAdapter(), { namespace: 'volume-coach.proto' });
+
+  function browserAdapter() {
+    try {
+      var probe = '__probe__';
+      window.localStorage.setItem(probe, '1');
+      window.localStorage.removeItem(probe);
+      return window.localStorage;
+    } catch (err) {
+      // 시크릿 창이나 저장소가 막힌 환경 — 이번 세션만 메모리에 남는다.
+      return E.memoryAdapter();
+    }
+  }
+
+  function persist() {
+    storage.patch({
+      answers: state.answers,
+      program: state.program,
+      lifter: state.lifter,
+      settings: {
+        scenario: state.scenario,
+        onboarded: !state.onboarding.active,
+        tab: state.tab,
+        todaySets: state.todaySets,
+      },
+    });
+  }
+
+  /**
+   * 저장된 설정으로 복원한다.
+   * 시드 이력은 시나리오에서 다시 만들지만, 사용자가 고른 것과 오늘 기록한
+   * 세트는 되살려야 한다 — 앱을 껐다 켰다고 오늘 한 운동이 사라지면 안 된다.
+   */
+  function restore() {
+    var saved = storage.load();
+    var settings = saved.settings || {};
+    if (!settings.onboarded || !saved.answers || !saved.program) return false;
+
+    try {
+      state.answers = saved.answers;
+      state.program = saved.program;
+      state.lifter = saved.lifter || state.lifter;
+      state.gym = E.gymFromCatalog(saved.answers.gym);
+      state.onboarding = { active: false, step: 0 };
+      state.scenario = settings.scenario || 'normal';
+      state.tab = settings.tab || 'today';
+
+      loadScenario(state.scenario, true);
+
+      // 오늘 기록한 세트를 되살리고, 해당 세트를 완료 상태로 표시한다.
+      var todaySets = Array.isArray(settings.todaySets) ? settings.todaySets : [];
+      if (todaySets.length > 0) {
+        state.todaySets = todaySets;
+
+        // 값이 똑같은 세트가 여러 개일 수 있으므로 종목별 큐에서 순서대로 꺼낸다.
+        var queues = {};
+        todaySets.forEach(function (logged) {
+          (queues[logged.exerciseId] = queues[logged.exerciseId] || []).push(logged);
+        });
+
+        state.lifts.forEach(function (lift) {
+          var queue = queues[lift.exercise.id] || [];
+          lift.sets.forEach(function (set) {
+            var logged = queue.shift();
+            if (!logged) return;
+            set.done = true;
+            set.rir = logged.rir;
+            set.reps = logged.reps;
+            set.weightKg = logged.weightKg;
+          });
+        });
+        pushLog('복원', '저장된 기록에서 오늘 <b>' + todaySets.length + '세트</b>를 되살렸습니다.');
+      }
+      return true;
+    } catch (err) {
+      // 저장 형식이 바뀌었거나 깨졌으면 처음부터 시작한다.
+      storage.reset();
+      return false;
+    }
+  }
+
   /** 온보딩 전 기본값 — 완료되면 생성된 프로그램으로 교체된다. */
   var DEFAULT_ANSWERS = {
     selfReportedLevel: 'intermediate',
@@ -89,6 +171,7 @@
     { id: 'volume', label: '볼륨', icon: 'M4 19h16M6 16V9M11 16V5M16 16v-6' },
     { id: 'week', label: '주간', icon: 'M4 6h16M4 12h16M4 18h9' },
     { id: 'checkin', label: '체크인', icon: 'M5 12l4 4 10-10' },
+    { id: 'progress', label: '진행', icon: 'M4 18l5-6 4 3 7-8' },
     { id: 'gym', label: '헬스장', icon: 'M4 9v6M8 7v10M16 7v10M20 9v6M8 12h8' },
   ];
 
@@ -107,6 +190,9 @@
     lifts: [],
     todaySets: [],
     log: [],
+    rest: null,
+    restTicker: null,
+    progressExerciseId: null,
     monday: E.weekStart(todayISO()),
     todayDate: null,
     program: null,
@@ -243,6 +329,7 @@
     state.soreness = scenario.soreness;
 
     state.todayDate = E.addDays(state.monday, trainingDays()[todayIndex()]);
+    stopRest();
     var seeded = seedHistory(scenario);
     state.history = seeded.history;
     state.checkIns = seeded.checkIns;
@@ -364,6 +451,8 @@
       }
     }
 
+    startRest(lift, setIndex);
+
     var report = E.volumeReport(weekSessions(), landmarks, index);
     var muscle = E.primaryMuscle(lift.exercise);
     var status = report.filter(function (row) { return row.muscle === muscle; })[0];
@@ -374,6 +463,85 @@
     }
 
     render();
+  }
+
+  /* ── 휴식 타이머 ───────────────────────────────── */
+
+  function startRest(lift, setIndex) {
+    var isLast = setIndex === lift.sets.length - 1;
+    var prescription = E.restFor({
+      exercise: lift.exercise,
+      reps: lift.sets[setIndex].reps,
+      targetRir: lift.targetRir,
+      isLastSet: isLast,
+    });
+
+    state.rest = {
+      exerciseName: lift.exercise.name,
+      setNumber: setIndex + 1,
+      total: prescription.seconds,
+      endsAt: Date.now() + prescription.seconds * 1000,
+      reason: prescription.reason,
+    };
+
+    if (state.restTicker) clearInterval(state.restTicker);
+    // 1초마다 전체를 다시 그리면 입력이 끊긴다. 숫자 노드만 직접 갱신한다.
+    state.restTicker = setInterval(tickRest, 250);
+    renderRest();
+  }
+
+  function restRemaining() {
+    if (!state.rest) return 0;
+    return Math.max(0, Math.ceil((state.rest.endsAt - Date.now()) / 1000));
+  }
+
+  function tickRest() {
+    if (!state.rest) return stopRest();
+    var node = document.getElementById('rest-remaining');
+    var bar = document.getElementById('rest-bar');
+    var remaining = restRemaining();
+
+    if (node) node.textContent = E.formatDuration(remaining);
+    if (bar) bar.style.width = (100 - (remaining / state.rest.total) * 100) + '%';
+
+    if (remaining <= 0) {
+      pushLog('휴식 완료', '<b>' + state.rest.exerciseName + '</b> ' + state.rest.setNumber +
+        '세트 후 휴식이 끝났습니다. 다음 세트를 시작하세요.');
+      stopRest();
+      renderLog();
+    }
+  }
+
+  function stopRest() {
+    if (state.restTicker) clearInterval(state.restTicker);
+    state.restTicker = null;
+    state.rest = null;
+    renderRest();
+  }
+
+  function renderRest() {
+    var host = document.getElementById('rest-host');
+    if (!host) return;
+    host.textContent = '';
+    host.hidden = !state.rest;
+    if (!state.rest) return;
+
+    var remaining = restRemaining();
+    host.appendChild(el('div', { class: 'rest-bar-track' }, [
+      el('div', {
+        class: 'rest-bar-fill',
+        id: 'rest-bar',
+        style: 'width:' + (100 - (remaining / state.rest.total) * 100) + '%',
+      }),
+    ]));
+    host.appendChild(el('div', { class: 'rest-body' }, [
+      el('div', { class: 'rest-info' }, [
+        el('span', { class: 'rest-label', text: '휴식' }),
+        el('span', { class: 'rest-time', id: 'rest-remaining', text: E.formatDuration(remaining) }),
+      ]),
+      el('div', { class: 'rest-why', text: state.rest.reason }),
+      el('button', { type: 'button', class: 'rest-skip', text: '건너뛰기', onclick: stopRest }),
+    ]));
   }
 
   function setReps(liftIndex, setIndex, delta) {
@@ -425,8 +593,10 @@
       renderStatus();
       renderScreen();
     }
+    renderRest();
     renderLog();
     renderScenarios();
+    persist();
   }
 
   function renderStatus() {
@@ -464,6 +634,7 @@
     if (state.tab === 'today') renderToday();
     else if (state.tab === 'volume') renderVolume();
     else if (state.tab === 'week') renderWeek();
+    else if (state.tab === 'progress') renderProgress();
     else if (state.tab === 'gym') renderGym();
     else renderCheckin();
   }
@@ -714,6 +885,71 @@
       el('div', { class: 'sheet-body' }, [list]),
     ]));
 
+    // RIR 신뢰도 — 엔진 전체가 이 신고값 위에 서 있다
+    var calibration = state.session.rirCalibration;
+    var calBody = el('div', { class: 'sheet-body' }, [
+      el('div', { class: 'reliability' }, [
+        el('div', { class: 'reliability-track' }, [
+          el('div', {
+            class: 'reliability-fill' + (calibration.reliability >= 0.85 ? ' good' : ''),
+            style: 'width:' + Math.round(calibration.reliability * 100) + '%',
+          }),
+        ]),
+        el('span', { class: 'num', text: Math.round(calibration.reliability * 100) + '%' }),
+      ]),
+      el('p', { class: 'hint-line', text: calibration.note }),
+    ]);
+    calibration.signals.forEach(function (signal) {
+      calBody.appendChild(el('p', { class: 'hint-line warn', text: '⚠ ' + signal }));
+    });
+    if (calibration.applied) {
+      calBody.appendChild(el('p', {
+        class: 'hint-line',
+        text: '적용 보정: 신고 RIR ' + (calibration.offset > 0 ? '+' : '') + calibration.offset +
+          ' · 기준 실패 세트 ' + calibration.anchorCount + '개',
+      }));
+    }
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: 'RIR 신뢰도' }),
+        el('span', { class: 'meta', text: calibration.confidence }),
+      ]),
+      calBody,
+    ]));
+
+    // 이번 주 일정
+    var schedule = E.buildSchedule({
+      templates: state.program.templates,
+      daysPerWeek: state.program.daysPerWeek,
+      level: state.lifter.level,
+      index: index,
+    });
+    var days = el('div', { class: 'week-strip' }, []);
+    E.WEEKDAY_LABELS_KO.forEach(function (label, weekday) {
+      var planned = schedule.sessions.filter(function (s) { return s.weekday === weekday; })[0];
+      days.appendChild(el('div', { class: 'day' + (planned ? ' on' : '') }, [
+        el('span', { class: 'day-label', text: label }),
+        el('span', { class: 'day-name', text: planned ? planned.templateName : '휴식' }),
+      ]));
+    });
+
+    var scheduleBody = el('div', { class: 'sheet-body' }, [days]);
+    schedule.notes.forEach(function (note) {
+      scheduleBody.appendChild(el('p', { class: 'hint-line', text: note }));
+    });
+    schedule.warnings.forEach(function (warning) {
+      scheduleBody.appendChild(el('p', { class: 'hint-line warn', text: '⚠ ' + warning }));
+    });
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '이번 주 일정' }),
+        el('span', { class: 'meta', text: '주 ' + schedule.daysPerWeek + '회' }),
+      ]),
+      scheduleBody,
+    ]));
+
     if (plan.frequency.length > 0) {
       var freqBody = el('div', { class: 'sheet-body' }, []);
       plan.frequency.forEach(function (item) {
@@ -744,6 +980,204 @@
         }),
       ]));
     }
+  }
+
+  /* 진행 */
+  function renderProgress() {
+    var calibration = state.session.rirCalibration;
+    var options = { rirOffset: calibration.applied ? calibration.offset : 0 };
+    var history = weekSessions().length > 0 ? state.history.concat(
+      state.todaySets.length > 0 ? [{ date: state.todayDate, sets: state.todaySets }] : []
+    ) : state.history;
+
+    var lifts = E.liftProgress(history, index, options);
+    var records = E.personalRecords(history, index, options);
+
+    screen.appendChild(el('div', { class: 'session-head' }, [
+      el('h2', { text: '진행' }),
+      el('p', { class: 'meta', text: '추정 1RM · 주간 볼륨 · 개인 기록' }),
+    ]));
+
+    if (lifts.length === 0) {
+      screen.appendChild(el('div', { class: 'notice' }, [
+        el('div', { text: '같은 종목을 두 번 이상 수행하면 추이가 나타납니다.' }),
+      ]));
+      return;
+    }
+
+    if (!state.progressExerciseId || !lifts.some(function (l) { return l.exerciseId === state.progressExerciseId; })) {
+      // 오늘 세션의 첫 종목을 기본으로 둔다. 기록 수로만 고르면 보조 운동이 앞에 온다.
+      var todayFirst = state.lifts[0] && state.lifts[0].exercise.id;
+      var preferred = lifts.filter(function (l) { return l.exerciseId === todayFirst; })[0];
+      state.progressExerciseId = (preferred || lifts[0]).exerciseId;
+    }
+    var selected = lifts.filter(function (l) { return l.exerciseId === state.progressExerciseId; })[0];
+
+    var todayIds = state.lifts.map(function (l) { return l.exercise.id; });
+    var ordered = lifts.slice().sort(function (a, b) {
+      var ai = todayIds.indexOf(a.exerciseId), bi = todayIds.indexOf(b.exerciseId);
+      if (ai !== bi) return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      return b.sessionCount - a.sessionCount;
+    });
+
+    var chips = el('div', { class: 'chip-row' }, []);
+    ordered.slice(0, 6).forEach(function (lift) {
+      chips.appendChild(el('button', {
+        type: 'button',
+        class: 'pick',
+        'aria-pressed': String(lift.exerciseId === state.progressExerciseId),
+        text: lift.name,
+        onclick: function () { state.progressExerciseId = lift.exerciseId; render(); },
+      }));
+    });
+
+    var trendClass = selected.trend === 'up' ? 'zone-text-ok' : selected.trend === 'down' ? 'zone-text-over' : 'zone-text-low';
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '추정 1RM' }),
+        el('span', {
+          class: 'num ' + trendClass,
+          text: (selected.changePercent > 0 ? '+' : '') + selected.changePercent + '%',
+        }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        chips,
+        lineChart(selected),
+        el('p', { class: 'hint-line', text:
+          selected.name + ' · ' + selected.sessionCount + '회 기록 · 최고 ' + selected.best + 'kg' }),
+      ]),
+    ]));
+
+    // 주간 볼륨 추이 — 주동근 기준
+    var muscle = E.primaryMuscle(index.get(selected.exerciseId));
+    var trend = E.volumeTrend(history, index, muscle, options);
+    if (trend.length >= 2) {
+      screen.appendChild(el('div', { class: 'sheet' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: E.MUSCLE_LABELS_KO[muscle] + ' 주간 볼륨' }),
+          el('span', { class: 'meta', text: '유효 세트' }),
+        ]),
+        el('div', { class: 'sheet-body' }, [volumeChart(trend, landmarks[muscle])]),
+      ]));
+    }
+
+    var prList = el('div', { class: 'delta-list' }, []);
+    records.slice(0, 6).forEach(function (record) {
+      prList.appendChild(el('div', { class: 'delta' }, [
+        el('span', { text: record.name + (record.isRecent ? ' ●' : '') }),
+        el('span', { class: 'num', text: record.weightKg + 'kg × ' + record.reps + '회' }),
+        el('span', { class: 'num', text: record.estimated1RM + 'kg' }),
+      ]));
+    });
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '개인 기록' }),
+        el('span', { class: 'meta', text: '● 최근' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [prList]),
+    ]));
+  }
+
+  var SVG = 'http://www.w3.org/2000/svg';
+  function svg(tag, attrs, children) {
+    var node = document.createElementNS(SVG, tag);
+    Object.keys(attrs || {}).forEach(function (key) {
+      if (key === 'text') node.textContent = attrs[key];
+      else node.setAttribute(key, attrs[key]);
+    });
+    (children || []).forEach(function (child) { if (child) node.appendChild(child); });
+    return node;
+  }
+
+  /** 추정 1RM 추이 — 단일 계열이라 범례 없이 제목이 계열을 말한다. */
+  function lineChart(lift) {
+    var W = 320, H = 130, pad = { top: 12, right: 52, bottom: 20, left: 34 };
+    var values = lift.points.map(function (p) { return p.value; });
+    var min = Math.min.apply(null, values), max = Math.max.apply(null, values);
+    if (max - min < 2) { min -= 1; max += 1; }
+
+    var x = function (i) { return pad.left + (W - pad.left - pad.right) * (lift.points.length === 1 ? 0.5 : i / (lift.points.length - 1)); };
+    var y = function (v) { return pad.top + (H - pad.top - pad.bottom) * (1 - (v - min) / (max - min)); };
+
+    var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img',
+      'aria-label': lift.name + ' 추정 1RM 추이' });
+
+    // 격자는 뒤로 물러나 있어야 한다
+    [0, 0.5, 1].forEach(function (t) {
+      var gy = pad.top + (H - pad.top - pad.bottom) * t;
+      root.appendChild(svg('line', { x1: pad.left, y1: gy, x2: W - pad.right, y2: gy,
+        stroke: 'var(--grid)', 'stroke-width': 1 }));
+      root.appendChild(svg('text', { x: pad.left - 5, y: gy + 3.5, 'text-anchor': 'end',
+        'font-size': 8.5, fill: 'var(--muted)', text: String(Math.round(max - (max - min) * t)) }));
+    });
+
+    var d = lift.points.map(function (p, i) { return (i ? 'L' : 'M') + x(i) + ' ' + y(p.value); }).join(' ');
+    root.appendChild(svg('path', { d: d, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2,
+      'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+
+    lift.points.forEach(function (p, i) {
+      var isLast = i === lift.points.length - 1;
+      var dot = svg('circle', { cx: x(i), cy: y(p.value), r: isLast ? 4.5 : 3,
+        fill: 'var(--accent)', stroke: 'var(--surface)', 'stroke-width': 2 });
+      dot.appendChild(svg('title', { text: p.date + ' · ' + p.value + 'kg' }));
+      root.appendChild(dot);
+    });
+
+    // 끝점만 직접 라벨링한다 — 모든 점에 숫자를 붙이면 읽을 수 없다
+    var last = lift.points[lift.points.length - 1];
+    root.appendChild(svg('text', { x: x(lift.points.length - 1) + 7, y: y(last.value) + 3.5,
+      'font-size': 10, 'font-weight': 600, fill: 'var(--ink)', text: last.value + 'kg' }));
+
+    root.appendChild(svg('text', { x: pad.left, y: H - 5, 'font-size': 8.5, fill: 'var(--muted)',
+      text: lift.points[0].date.slice(5).replace('-', '/') }));
+    root.appendChild(svg('text', { x: W - pad.right, y: H - 5, 'text-anchor': 'end',
+      'font-size': 8.5, fill: 'var(--muted)', text: last.date.slice(5).replace('-', '/') }));
+
+    return el('div', { class: 'chart' }, [root]);
+  }
+
+  /** 주간 볼륨 추이 — MEV/MRV 기준선을 함께 그려 색에만 기대지 않는다. */
+  function volumeChart(points, landmark) {
+    var W = 320, H = 120, pad = { top: 10, right: 30, bottom: 20, left: 30 };
+    var max = Math.max(landmark.mrv * 1.1, Math.max.apply(null, points.map(function (p) { return p.sets; })));
+    var plotW = W - pad.left - pad.right, plotH = H - pad.top - pad.bottom;
+    var slot = plotW / points.length;
+    var barW = Math.max(6, slot * 0.6);
+    var y = function (v) { return pad.top + plotH * (1 - v / max); };
+
+    var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': '주간 볼륨 추이' });
+
+    [{ v: landmark.mev, label: 'MEV' }, { v: landmark.mrv, label: 'MRV' }].forEach(function (mark) {
+      root.appendChild(svg('line', { x1: pad.left, y1: y(mark.v), x2: W - pad.right, y2: y(mark.v),
+        stroke: 'var(--line)', 'stroke-width': 1, 'stroke-dasharray': '3 3' }));
+      root.appendChild(svg('text', { x: W - pad.right + 3, y: y(mark.v) + 3,
+        'font-size': 8, fill: 'var(--muted)', text: mark.label }));
+    });
+
+    points.forEach(function (point, i) {
+      var zone = point.sets < landmark.mev ? 'low' : point.sets <= landmark.mav ? 'ok'
+        : point.sets <= landmark.mrv ? 'hard' : 'over';
+      var height = Math.max(0, plotH - (y(point.sets) - pad.top));
+      var rect = svg('rect', {
+        x: pad.left + slot * i + (slot - barW) / 2, y: y(point.sets),
+        width: barW, height: height, rx: 3, fill: 'var(--zone-' + zone + ')',
+      });
+      rect.appendChild(svg('title', { text: point.weekStart + ' 주 · ' + point.sets + '세트' }));
+      root.appendChild(rect);
+    });
+
+    var lastPoint = points[points.length - 1];
+    root.appendChild(svg('text', {
+      x: pad.left + slot * (points.length - 1) + slot / 2, y: y(lastPoint.sets) - 4,
+      'text-anchor': 'middle', 'font-size': 9.5, 'font-weight': 600, fill: 'var(--ink)',
+      text: String(lastPoint.sets),
+    }));
+    root.appendChild(svg('text', { x: pad.left, y: H - 5, 'font-size': 8.5, fill: 'var(--muted)',
+      text: points[0].weekStart.slice(5).replace('-', '/') }));
+    root.appendChild(svg('text', { x: W - pad.right, y: H - 5, 'text-anchor': 'end',
+      'font-size': 8.5, fill: 'var(--muted)', text: lastPoint.weekStart.slice(5).replace('-', '/') }));
+
+    return el('div', { class: 'chart' }, [root]);
   }
 
   /* 체크인 */
@@ -1089,6 +1523,8 @@
   ];
 
   function startOnboarding() {
+    storage.reset();
+    state.todaySets = [];
     state.answers = JSON.parse(JSON.stringify(DEFAULT_ANSWERS));
     state.answers.gym.measurements = {};
     state.onboarding = { active: true, step: 0 };
@@ -1388,6 +1824,7 @@
   state.answers = JSON.parse(JSON.stringify(DEFAULT_ANSWERS));
   state.answers.gym.measurements = {};
   state.program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
-  loadScenario('normal', true);
+
+  if (!restore()) loadScenario('normal', true);
   render();
 })();

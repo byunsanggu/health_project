@@ -93,7 +93,25 @@ export interface SetLog {
   warmup?: boolean;
 }
 
-export interface SessionLog {
+/**
+ * 오프라인 우선 동기화를 위한 공통 필드.
+ *
+ * 헬스장 지하에는 신호가 없다. 로컬이 원본이고 서버는 사본이라는 전제로
+ * 설계해야 하는데, 나중에 붙이면 이미 쌓인 기록을 전부 손봐야 한다.
+ * 그래서 처음부터 모든 기록이 자기 신원과 수정 시각을 갖는다.
+ */
+export interface Syncable {
+  /** 기기 간에 겹치지 않는 식별자 */
+  id?: string;
+  /** 마지막 수정 시각 (ISO). 충돌 시 이 값으로 승자를 정한다 */
+  updatedAt?: string;
+  /** 어느 기기에서 쓴 기록인가. updatedAt 이 같을 때 순서를 가른다 */
+  deviceId?: string;
+  /** 삭제 표시. 실제로 지우면 다른 기기가 되살린다 */
+  deleted?: boolean;
+}
+
+export interface SessionLog extends Syncable {
   /** YYYY-MM-DD */
   date: string;
   sets: SetLog[];
@@ -106,7 +124,7 @@ export interface PainReport {
 }
 
 /** 운동 시작 전 30초 체크인. 디로드 판정의 보조 신호. */
-export interface CheckIn {
+export interface CheckIn extends Syncable {
   date: string;
   sleepHours?: number;
   /** 전신 근육통 0~10 */
