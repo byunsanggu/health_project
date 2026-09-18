@@ -1,0 +1,21 @@
+{
+  "name": "@fit/engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "적응형 볼륨 주기화 트레이닝 엔진",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@types/node": "^22.20.3"
+  }
+}
