@@ -1,0 +1,511 @@
+<title>볼륨 코치</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<style>
+:root {
+  --ground: #e9ebef;
+  --surface: #ffffff;
+  --surface-2: #f4f5f8;
+  --line: #d3d7de;
+  --line-soft: #e4e7ec;
+  --ink: #14161b;
+  --muted: #656c7a;
+  --accent: #4540c9;
+  --accent-soft: #e7e6fa;
+  --accent-ink: #ffffff;
+  --zone-low: #7a8290;
+  --zone-ok: #17784f;
+  --zone-hard: #a66a00;
+  --zone-over: #c0392b;
+  --bezel: #c9cdd6;
+  --shadow: 0 1px 2px rgba(20, 22, 27, .06), 0 12px 32px rgba(20, 22, 27, .10);
+  --sans: "IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0f1116;
+    --surface: #181b21;
+    --surface-2: #1f232a;
+    --line: #2b3038;
+    --line-soft: #23272e;
+    --ink: #e7e9ee;
+    --muted: #949bab;
+    --accent: #8b87ff;
+    --accent-soft: #262346;
+    --accent-ink: #14161b;
+    --zone-low: #8a92a1;
+    --zone-ok: #34b37c;
+    --zone-hard: #d79a2e;
+    --zone-over: #e4695b;
+    --bezel: #2f343d;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 16px 40px rgba(0, 0, 0, .45);
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0f1116;
+  --surface: #181b21;
+  --surface-2: #1f232a;
+  --line: #2b3038;
+  --line-soft: #23272e;
+  --ink: #e7e9ee;
+  --muted: #949bab;
+  --accent: #8b87ff;
+  --accent-soft: #262346;
+  --accent-ink: #14161b;
+  --zone-low: #8a92a1;
+  --zone-ok: #34b37c;
+  --zone-hard: #d79a2e;
+  --zone-over: #e4695b;
+  --bezel: #2f343d;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 16px 40px rgba(0, 0, 0, .45);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; cursor: pointer; }
+:where(button, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding-inline: 16px;
+  padding-block: 28px 48px;
+  display: grid;
+  gap: 28px;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 940px) {
+  .wrap {
+    grid-template-columns: 392px minmax(0, 1fr);
+    align-items: start;
+    gap: 40px;
+    padding-block: 40px 56px;
+  }
+}
+
+/* ── 머리말 ───────────────────────────────────────── */
+.masthead { grid-column: 1 / -1; display: grid; gap: 10px; max-width: 62ch; }
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.masthead h1 {
+  margin: 0;
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 600;
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+.masthead p { margin: 0; color: var(--muted); }
+
+/* ── 폰 ──────────────────────────────────────────── */
+.device {
+  background: var(--surface);
+  border: 1px solid var(--bezel);
+  border-radius: 30px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: min(76vh, 700px);
+  min-height: 520px;
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+}
+@media (max-width: 939px) { .device { position: static; height: 640px; } }
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: .04em;
+  flex: none;
+}
+.statusbar strong { color: var(--ink); font-weight: 600; letter-spacing: 0; font-family: var(--sans); font-size: 13px; }
+
+.screen { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 16px 16px 24px; }
+.screen > * + * { margin-top: 14px; }
+
+.tabbar {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+.tabbar button {
+  border: 0;
+  background: none;
+  padding: 11px 4px 13px;
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 2px solid transparent;
+  margin-top: -1px;
+}
+.tabbar button[aria-selected="true"] { color: var(--accent); border-top-color: var(--accent); font-weight: 600; }
+.tabbar .glyph { width: 18px; height: 18px; display: block; }
+
+/* ── 앱 내부 공통 ────────────────────────────────── */
+.sheet { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.sheet-head {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sheet-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.sheet-body { padding: 13px; display: grid; gap: 11px; }
+
+.session-head { display: grid; gap: 6px; }
+.session-head .title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.session-head h2 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+.meta { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .02em; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.badge.accum { color: var(--zone-ok); }
+.badge.deload { color: var(--zone-hard); }
+
+.notice {
+  display: grid;
+  gap: 3px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--zone-hard);
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+.notice.stop { border-left-color: var(--zone-over); }
+.notice .label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* 운동 카드 */
+.lift { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.lift-head { padding: 11px 13px 9px; display: grid; gap: 3px; }
+.lift-name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-weight: 600; font-size: 14.5px; }
+.swap-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--zone-hard);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-weight: 500;
+}
+.lift-note { font-size: 12px; color: var(--muted); }
+
+.setrow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 13px;
+  border-top: 1px solid var(--line-soft);
+  align-items: start;
+}
+.setrow.done { background: var(--surface-2); }
+.set-no { font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 4px; }
+.set-main { display: grid; gap: 7px; min-width: 0; }
+.set-load { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--mono); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.set-load .unit { font-size: 11px; color: var(--muted); font-weight: 400; }
+.set-load .target { font-size: 11px; color: var(--muted); font-weight: 400; letter-spacing: .02em; }
+
+.reps { margin-left: auto; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.reps button { border: 0; background: var(--surface-2); width: 26px; height: 26px; line-height: 1; color: var(--muted); font-size: 15px; }
+.reps button:hover { color: var(--ink); }
+.reps output { font-family: var(--mono); font-size: 13px; min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.rir-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rir-label { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+.chip {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 7px;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 7px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip.fail[aria-pressed="true"] { background: var(--zone-over); border-color: var(--zone-over); color: #fff; }
+
+.set-result { font-size: 11.5px; color: var(--muted); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.set-result em { font-style: normal; color: var(--accent); font-weight: 500; }
+
+/* 볼륨 게이지 */
+.gauge-row { display: grid; gap: 5px; }
+.gauge-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.gauge-top .name { font-size: 13px; font-weight: 500; }
+.gauge-top .value { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.gauge-top .value span { font-size: 10.5px; color: var(--muted); }
+.gauge {
+  position: relative;
+  height: 20px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.gauge .redline {
+  position: absolute;
+  inset-block: 0;
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--zone-over) 26%, transparent) 4px 8px);
+}
+.gauge .fill { position: absolute; inset-block: 2px; left: 2px; border-radius: 3px; transition: width .28s ease, background-color .28s ease; }
+.gauge .tick { position: absolute; inset-block: 0; width: 1px; background: var(--line); }
+.gauge-axis { position: relative; height: 13px; }
+.gauge-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  top: 1px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.gauge-axis span:first-child { transform: none; }
+.zone-low { background: var(--zone-low); }
+.zone-ok { background: var(--zone-ok); }
+.zone-hard { background: var(--zone-hard); }
+.zone-over { background: var(--zone-over); }
+.zone-text-low { color: var(--zone-low); }
+.zone-text-ok { color: var(--zone-ok); }
+.zone-text-hard { color: var(--zone-hard); }
+.zone-text-over { color: var(--zone-over); }
+
+/* 피로 미터 */
+.fatigue { display: grid; gap: 7px; }
+.fatigue-bar { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+.fatigue-bar i { height: 7px; border-radius: 2px; background: var(--line); }
+.fatigue-bar i.on { background: var(--zone-hard); }
+.fatigue-bar i.over { background: var(--zone-over); }
+.signal { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; align-items: start; font-size: 12.5px; padding: 8px 0; border-top: 1px solid var(--line-soft); }
+.signal:first-of-type { border-top: 0; padding-top: 0; }
+.signal .w { font-family: var(--mono); font-size: 11px; color: var(--zone-hard); padding-top: 2px; }
+
+.delta-list { display: grid; gap: 0; }
+.delta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+}
+.delta:first-child { border-top: 0; }
+.delta .num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.delta .up { color: var(--zone-ok); }
+.delta .down { color: var(--zone-over); }
+.delta .flat { color: var(--muted); }
+
+/* 체크인 */
+.slider-row { display: grid; gap: 5px; }
+.slider-top { display: flex; align-items: baseline; justify-content: space-between; }
+.slider-top .name { font-size: 13px; }
+.slider-top .score { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
+.scale-marks { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
+
+.verdict { font-size: 12px; color: var(--muted); display: grid; gap: 4px; }
+.verdict b { color: var(--ink); font-weight: 500; }
+
+/* ── 우측 패널 ───────────────────────────────────── */
+.panel { display: grid; gap: 22px; min-width: 0; }
+.panel section { display: grid; gap: 10px; }
+.panel h2 {
+  margin: 0;
+  font-size: 12px;
+  font-family: var(--mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.scenarios { display: flex; gap: 8px; flex-wrap: wrap; }
+.scenario {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 9px;
+  padding: 8px 13px;
+  font-size: 13px;
+  text-align: left;
+}
+.scenario:hover { border-color: var(--accent); }
+.scenario[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+
+.readme { display: grid; gap: 9px; }
+.readme li { margin: 0; }
+.readme ol { margin: 0; padding-left: 18px; display: grid; gap: 7px; color: var(--muted); }
+.readme ol b { color: var(--ink); font-weight: 500; }
+
+.pipeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.pipeline li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 9px 13px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.pipeline li:first-child { border-top: 0; }
+.pipeline li::before {
+  content: counter(step);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+}
+.pipeline b { color: var(--ink); font-weight: 500; margin-right: 5px; }
+
+.log { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); overflow: hidden; }
+.log-item { padding: 10px 13px; border-top: 1px solid var(--line-soft); display: grid; gap: 3px; }
+.log-item:first-child { border-top: 0; }
+.log-item .kind {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.log-item .body { font-size: 12.5px; }
+.log-item .body b { font-weight: 500; }
+.log-empty { padding: 14px 13px; color: var(--muted); font-size: 12.5px; }
+
+.disclaimer {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  color: var(--muted);
+  font-size: 11.5px;
+  display: grid;
+  gap: 5px;
+  max-width: 70ch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">프로토타입 · 실제 엔진 구동</p>
+    <h1>볼륨 코치</h1>
+    <p>RIR을 한 번 탭하면 부위별 주간 볼륨과 피로도를 다시 계산해, 다음 주 훈련량과 디로드 시점을 스스로 조절합니다. 아래 화면은 목업이 아니라 저장소의 트레이닝 엔진이 그대로 돌아가는 것입니다.</p>
+  </header>
+
+  <div class="device">
+    <div class="statusbar">
+      <strong>볼륨 코치</strong>
+      <span id="status-meta">—</span>
+    </div>
+    <div class="screen" id="screen"></div>
+    <nav class="tabbar" id="tabbar" role="tablist" aria-label="화면 전환"></nav>
+  </div>
+
+  <div class="panel">
+    <section>
+      <h2>무엇을 보면 되나</h2>
+      <div class="readme">
+        <ol>
+          <li><b>오늘</b> 탭에서 세트의 RIR을 탭해 보세요. 다음 세트 중량이 즉시 조정되고, 그 이유가 아래 로그에 남습니다.</li>
+          <li><b>볼륨</b> 탭의 게이지는 부위별 주간 유효 세트입니다. 눈금은 MEV(최소 자극) · MAV(적응 최대) · MRV(회복 한계)이고, 빗금 구간이 레드라인입니다.</li>
+          <li><b>체크인</b> 탭에서 어깨 통증을 3점 이상으로 올리면, 오늘 세션의 종목이 자동으로 대체됩니다.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section>
+      <h2>시나리오</h2>
+      <div class="scenarios" id="scenarios"></div>
+      <p class="meta" id="scenario-note"></p>
+    </section>
+
+    <section>
+      <h2>엔진 파이프라인</h2>
+      <ol class="pipeline">
+        <li><b>기록</b> 세트마다 중량 · 반복 · RIR</li>
+        <li><b>집계</b> RIR과 부위 기여도로 유효 세트 환산</li>
+        <li><b>판정</b> 피로 신호 7종을 가중 합산</li>
+        <li><b>처방</b> 구간별 볼륨 증감, 임계 초과 시 디로드</li>
+        <li><b>세션</b> 통증 게이트 → 세트 수 → 중량 순서로 구성</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>엔진 판단 로그</h2>
+      <div class="log" id="log"></div>
+    </section>
+  </div>
+
+  <div class="disclaimer">
+    <p>이 페이지는 제품 프로토타입이며 의료기기가 아닙니다. 제공하는 정보는 의학적 진단·처방·치료를 대신하지 않습니다. 통증이 지속되면 전문의 진료를 받으세요.</p>
+    <p>표시된 훈련 기록은 엔진 동작을 보여주기 위해 생성한 예시 데이터입니다. 운동 명칭은 일반 명칭이며, 부위 기여도·관절 스트레스·볼륨 랜드마크는 공개 문헌과 코칭 판단으로 직접 작성했습니다.</p>
+  </div>
+</div>
+
+<script>/*ENGINE_BUNDLE*/</script>
+<script>/*APP_SCRIPT*/</script>
