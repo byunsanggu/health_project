@@ -37,4 +37,5 @@ export * from './rest.ts';
 export * from './warmup.ts';
 export * from './autoregulation.ts';
 export * from './timeBudget.ts';
+export * from './occupancy.ts';
 export * from './onboarding.ts';

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 볼륨 게이지가 아이콘이다 — 이 앱이 무엇을 재는지 한 눈에. -->
+  <rect width="512" height="512" rx="112" fill="#4540c9"/>
+  <g fill="#ffffff">
+    <rect x="112" y="300" width="52" height="92" rx="12"/>
+    <rect x="186" y="238" width="52" height="154" rx="12"/>
+    <rect x="260" y="168" width="52" height="224" rx="12"/>
+  </g>
+  <!-- MRV 레드라인 -->
+  <rect x="334" y="120" width="52" height="272" rx="12" fill="#ff8f7d"/>
+  <rect x="96" y="128" width="320" height="8" rx="4" fill="#ffffff" opacity="0.45"/>
+</svg>

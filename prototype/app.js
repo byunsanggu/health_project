@@ -6,6 +6,128 @@
   var index = E.buildExerciseIndex();
   var baseLandmarks = E.landmarksFor('intermediate');
 
+  /* ── PWA · 알림 · 화면 유지 ─────────────────────── */
+
+  /**
+   * 설치와 알림 상태.
+   *
+   * 프로토타입을 링크로 여는 동안에는 아무것도 안 되는 게 정상이다 —
+   * 서비스 워커는 출처마다 스코프가 다르고, iOS는 홈 화면에 추가해야만
+   * 알림을 허용한다. 그래서 상태를 감추지 않고 그대로 보여준다.
+   */
+  var pwa = {
+    worker: null,
+    swError: null,
+    installEvent: null,
+    installed: false,
+    wakeLock: null,
+    notified: false,
+  };
+
+  function supportsNotifications() {
+    return typeof Notification !== 'undefined' && 'serviceWorker' in navigator;
+  }
+
+  function notificationState() {
+    if (!supportsNotifications()) return 'unsupported';
+    return Notification.permission;
+  }
+
+  function isStandalone() {
+    try {
+      return window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  function registerWorker() {
+    pwa.installed = isStandalone();
+    if (!('serviceWorker' in navigator)) {
+      pwa.swError = '이 브라우저는 오프라인 설치를 지원하지 않습니다.';
+      return;
+    }
+    navigator.serviceWorker.register('sw.js', { scope: './' }).then(function (registration) {
+      pwa.worker = registration;
+      render();
+    }, function (err) {
+      // 아티팩트처럼 워커를 못 붙이는 곳도 있다. 앱은 그대로 돌아간다.
+      pwa.swError = String(err && err.message ? err.message : err);
+      render();
+    });
+
+    navigator.serviceWorker.addEventListener('message', function (event) {
+      var data = event.data || {};
+      if (data.type !== 'rest:action') return;
+      if (data.action === 'extend') extendRest(30);
+      else stopRest();
+      render();
+    });
+  }
+
+  window.addEventListener('beforeinstallprompt', function (event) {
+    event.preventDefault();
+    pwa.installEvent = event;
+    render();
+  });
+
+  window.addEventListener('appinstalled', function () {
+    pwa.installEvent = null;
+    pwa.installed = true;
+    render();
+  });
+
+  function promptInstall() {
+    if (!pwa.installEvent) return;
+    pwa.installEvent.prompt();
+    pwa.installEvent.userChoice.then(function () {
+      pwa.installEvent = null;
+      render();
+    });
+  }
+
+  function askNotificationPermission() {
+    if (!supportsNotifications()) return;
+    Notification.requestPermission().then(function () { render(); });
+  }
+
+  /**
+   * 화면 꺼짐 방지.
+   *
+   * 휴식 중에 화면이 꺼지면 남은 시간을 볼 수 없다. 세트 사이에만 잡고
+   * 끝나면 바로 놓는다 — 계속 잡고 있으면 배터리를 먹는다.
+   */
+  function acquireWakeLock() {
+    if (!navigator.wakeLock || pwa.wakeLock || document.visibilityState !== 'visible') return;
+    navigator.wakeLock.request('screen').then(function (lock) {
+      pwa.wakeLock = lock;
+      lock.addEventListener('release', function () { pwa.wakeLock = null; });
+    }, function () { /* 배터리 절약 모드 등에서 거부된다 */ });
+  }
+
+  function releaseWakeLock() {
+    if (!pwa.wakeLock) return;
+    pwa.wakeLock.release().catch(function () {});
+    pwa.wakeLock = null;
+  }
+
+  function notifyWorker(message) {
+    var target = pwa.worker && (pwa.worker.active || navigator.serviceWorker.controller);
+    if (target) target.postMessage(message);
+  }
+
+  function buzz(pattern) {
+    try {
+      if (navigator.vibrate) navigator.vibrate(pattern);
+    } catch (err) { /* 데스크톱에는 진동이 없다 */ }
+  }
+
   /** 헬스장 지하에는 신호가 없다. 로컬이 원본이고 서버는 나중에 붙는다. */
   var storage = E.createStore(browserAdapter(), { namespace: 'volume-coach.proto' });
 
@@ -213,6 +335,8 @@
     summary: null,
     demo: null,
     sessionStartedAt: null,
+    busyEquipment: [],
+    occupied: {},
     style: 'hypertrophy',
     blockHistory: ['hypertrophy'],
     conditioning: null,
@@ -368,6 +492,8 @@
     state.todaySets = [];
     state.summary = null;
     state.sessionStartedAt = null;
+    state.busyEquipment = [];
+    state.occupied = {};
     refreshLandmarks();
     if (!silent) state.log = [];
 
@@ -628,6 +754,25 @@
     if (state.restTicker) clearInterval(state.restTicker);
     // 1초마다 전체를 다시 그리면 입력이 끊긴다. 숫자 노드만 직접 갱신한다.
     state.restTicker = setInterval(tickRest, 250);
+
+    // 화면은 켜두고, 알림은 워커에 맡긴다 — 주머니에 넣어도 손목까지 간다.
+    acquireWakeLock();
+    notifyWorker({
+      type: 'rest:start',
+      endsAt: state.rest.endsAt,
+      body: lift.exercise.name + ' ' + (setIndex + 2 <= lift.sets.length
+        ? (setIndex + 2) + '세트를 시작하세요.'
+        : '다음 종목으로 넘어가세요.'),
+    });
+    renderRest();
+  }
+
+  /** 알림에서 "+30초"를 눌렀을 때. 타이머를 다시 예약한다. */
+  function extendRest(seconds) {
+    if (!state.rest) return;
+    state.rest.endsAt += seconds * 1000;
+    state.rest.total += seconds;
+    notifyWorker({ type: 'rest:start', endsAt: state.rest.endsAt, body: '연장한 휴식이 끝났습니다.' });
     renderRest();
   }
 
@@ -648,6 +793,7 @@
     if (remaining <= 0) {
       pushLog('휴식 완료', '<b>' + state.rest.exerciseName + '</b> ' + state.rest.setNumber +
         '세트 후 휴식이 끝났습니다. 다음 세트를 시작하세요.');
+      buzz([220, 120, 220]);
       stopRest();
       renderLog();
     }
@@ -657,8 +803,28 @@
     if (state.restTicker) clearInterval(state.restTicker);
     state.restTicker = null;
     state.rest = null;
+    releaseWakeLock();
+    notifyWorker({ type: 'rest:stop' });
     renderRest();
   }
+
+  /*
+   * 화면이 꺼지면 페이지 타이머는 느려지거나 멈춘다. 그래서 남은 시간을
+   * 세는 대신 끝나는 시각을 저장해두고, 돌아올 때 그 시각과 대조한다.
+   * 이렇게 하면 몇 분을 잠가뒀다 열어도 숫자가 틀리지 않는다.
+   */
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') {
+      releaseWakeLock();
+      return;
+    }
+    if (!state.rest) return;
+    if (restRemaining() <= 0) tickRest();
+    else {
+      acquireWakeLock();
+      renderRest();
+    }
+  });
 
   function renderRest() {
     var host = document.getElementById('rest-host');
@@ -681,8 +847,19 @@
         el('span', { class: 'rest-time', id: 'rest-remaining', text: E.formatDuration(remaining) }),
       ]),
       el('div', { class: 'rest-why', text: state.rest.reason }),
+      el('button', { type: 'button', class: 'rest-skip', text: '+30초', onclick: function () { extendRest(30); } }),
       el('button', { type: 'button', class: 'rest-skip', text: '건너뛰기', onclick: stopRest }),
     ]));
+
+    // 알림 권한은 여기서 묻는다 — 필요한 순간에 물어야 의미가 전달된다.
+    if (notificationState() === 'default') {
+      host.appendChild(el('button', {
+        type: 'button',
+        class: 'rest-ask',
+        text: '알림을 켜면 폰을 넣어둬도 손목에서 끝나는 걸 알려줍니다 — 켜기',
+        onclick: askNotificationPermission,
+      }));
+    }
   }
 
   function setReps(liftIndex, setIndex, delta) {
@@ -912,6 +1089,200 @@
       (summary.records.length > 0 ? ' · 개인 기록 ' + summary.records.length + '건' : ''));
   }
 
+  /* ── 기구 점유 ─────────────────────────────────── */
+
+  /**
+   * "스쿼트랙에 사람 있어요."
+   *
+   * 앱이 이걸 모르면 사용자는 앱을 끄고 아무거나 한다. 엔진은 세 가지 중
+   * 하나를 고른다 — 순서를 바꾸거나, 대체하거나, 기다리거나. 순서를 바꾸는
+   * 쪽이 항상 먼저다. 대체하면 자극이 달라지지만 미루면 잃는 게 없다.
+   */
+  function openOccupancy(exercise) {
+    var planned = state.lifts.map(function (lift) {
+      return { exercise: lift.exercise, sets: lift.sets, painRuling: lift.ruling, note: lift.note };
+    });
+
+    var plan = E.planAroundOccupied({
+      exercises: planned,
+      exerciseId: exercise.id,
+      completed: state.lifts
+        .filter(function (lift) { return lift.sets.every(function (set) { return set.done; }); })
+        .map(function (lift) { return lift.exercise.id; }),
+      gym: state.gym,
+      pain: activePain(),
+      busyEquipment: state.busyEquipment,
+    });
+
+    var ACTION = { reorder: '순서 바꾸기', substitute: '대체하기', wait: '기다리기' };
+    var body = [];
+
+    body.push(el('div', { class: 'verdict-head ' + plan.action }, [
+      el('span', { class: 'verdict-tag', text: ACTION[plan.action] }),
+      plan.now ? el('span', { class: 'verdict-now', text: '→ ' + plan.now.name }) : null,
+    ]));
+    body.push(el('p', { class: 'asset-note', text: plan.reason }));
+
+    if (plan.action === 'reorder' && plan.now) {
+      body.push(el('button', {
+        type: 'button',
+        class: 'finish',
+        text: plan.now.name + ' 먼저 하기',
+        onclick: function () { applyOccupancy(exercise, plan.now, 'reorder'); },
+      }));
+    } else if (plan.action === 'substitute' && plan.now) {
+      body.push(el('button', {
+        type: 'button',
+        class: 'finish',
+        text: withParticleJs(plan.now.name, '으로/로') + ' 바꾸기',
+        onclick: function () { applyOccupancy(exercise, plan.now, 'substitute'); },
+      }));
+    }
+
+    if (plan.options.length > 0) {
+      body.push(el('div', { class: 'list-label', text: '직접 고르기' }));
+      body.push(el('div', { class: 'summary-list' }, plan.options.map(function (option) {
+        return el('button', {
+          type: 'button',
+          class: 'option-row',
+          onclick: function () { applyOccupancy(exercise, option.exercise, 'substitute'); },
+        }, [
+          el('span', { class: 'name', text: option.exercise.name }),
+          el('span', { class: 'detail', text: option.note }),
+        ]);
+      })));
+    }
+
+    // 한 대가 아니라 구역 전체가 붐빌 때가 있다.
+    body.push(el('div', { class: 'list-label', text: '지금 붐비는 기구' }));
+    var EQUIPMENT = [
+      { id: 'barbell', label: '바벨 · 랙' },
+      { id: 'smith', label: '스미스' },
+      { id: 'machine', label: '머신' },
+      { id: 'cable', label: '케이블' },
+      { id: 'dumbbell', label: '덤벨' },
+    ];
+    body.push(el('div', { class: 'chip-row' }, EQUIPMENT.map(function (item) {
+      var on = state.busyEquipment.indexOf(item.id) >= 0;
+      return el('button', {
+        type: 'button',
+        class: 'pick',
+        'aria-pressed': String(on),
+        text: item.label,
+        onclick: function () {
+          state.busyEquipment = on
+            ? state.busyEquipment.filter(function (id) { return id !== item.id; })
+            : state.busyEquipment.concat([item.id]);
+          openOccupancy(exercise);
+        },
+      });
+    })));
+
+    openModal(exercise.name, '기구 사용 중', body);
+  }
+
+  /** 고른 대안을 오늘 세션에 반영한다. */
+  function applyOccupancy(blocked, replacement, action) {
+    modal.close();
+    var from = state.lifts.findIndex(function (lift) { return lift.exercise.id === blocked.id; });
+    if (from < 0) return;
+
+    if (action === 'reorder') {
+      var to = state.lifts.findIndex(function (lift) { return lift.exercise.id === replacement.id; });
+      if (to < 0) return;
+      // 막힌 종목을 당겨온 종목 자리로 민다. 세트 기록은 그대로 따라간다.
+      var moved = state.lifts.splice(from, 1)[0];
+      state.lifts.splice(to, 0, moved);
+      state.occupied[blocked.id] = 'deferred';
+      pushLog('기구 점유', '<b>' + replacement.name + '</b>을(를) 먼저 합니다. ' +
+        blocked.name + '은(는) 비는 대로 돌아와서 합니다.');
+    } else {
+      var swapped = buildReplacementLift(state.lifts[from], replacement);
+      if (!swapped) return;
+      state.lifts[from] = swapped;
+      state.occupied[blocked.id] = 'substituted';
+      pushLog('기구 점유', '<b>' + blocked.name + '</b> 기구가 사용 중 → <b>' +
+        replacement.name + '</b>(으)로 대체했습니다.');
+    }
+    render();
+  }
+
+  /**
+   * 대체 종목의 세트를 다시 만든다.
+   * 세트 수와 반복 범위는 그대로 두고, 중량만 그 종목 기준으로 다시 잡는다.
+   */
+  function buildReplacementLift(original, exercise) {
+    var loading = E.loadingFor(exercise, state.gym);
+    var startingLoad = E.suggestStartingLoad({
+      exercise: exercise,
+      history: state.history,
+      index: index,
+      repRange: original.repRange,
+      targetRir: original.targetRir,
+      loading: loading,
+      profile: state.lifter,
+    });
+
+    var prescription = E.prescribeLoad(exercise, lastSetsFor(exercise.id), {
+      repRange: original.repRange,
+      targetRir: original.targetRir,
+      rirOffset: rirOptions().rirOffset,
+    });
+
+    var weight = prescription.weightKg !== null
+      ? prescription.weightKg
+      : (startingLoad.weightKg !== null ? startingLoad.weightKg : 20);
+    if (loading) weight = E.nearestLoadable(weight, loading, 'down');
+
+    return {
+      exercise: exercise,
+      substitutedFrom: original.exercise,
+      swapReason: 'occupied',
+      startingLoad: startingLoad.weightKg !== null && prescription.weightKg === null ? startingLoad : undefined,
+      loading: loading,
+      warmup: E.planWarmup({
+        exercise: exercise,
+        workingWeightKg: weight,
+        workingReps: original.repRange.max,
+        level: state.lifter.level,
+        alreadyWarmedMuscles: [],
+        loading: loading,
+        barKg: loading && loading.kind === 'barbell' ? loading.barKg : undefined,
+      }),
+      decision: null,
+      note: prescription.reason,
+      ruling: original.ruling,
+      repRange: original.repRange,
+      targetRir: original.targetRir,
+      sets: original.sets.map(function (set, order) {
+        return {
+          weightKg: weight,
+          estimated: prescription.weightKg === null,
+          targetReps: original.repRange,
+          targetRir: original.targetRir,
+          reps: original.repRange.max,
+          rir: null,
+          done: false,
+          adjustment: null,
+        };
+      }),
+    };
+  }
+
+  /** 그 종목을 마지막으로 한 세션의 세트들. 중량 처방의 기준이 된다. */
+  function lastSetsFor(exerciseId) {
+    for (var i = state.history.length - 1; i >= 0; i -= 1) {
+      var sets = state.history[i].sets;
+      if (sets.some(function (set) { return set.exerciseId === exerciseId; })) return sets;
+    }
+    return undefined;
+  }
+
+  /** 엔진의 조사 규칙을 화면 문구에도 쓴다. */
+  function withParticleJs(word, pair) {
+    return E.withParticle(word, pair);
+  }
+
   /* ── 동작 시연 ─────────────────────────────────── */
 
   /**
@@ -1053,6 +1424,9 @@
       if (lift.substitutedFrom) {
         nameRow.appendChild(el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name }));
       }
+      if (state.occupied[lift.exercise.id] === 'deferred') {
+        nameRow.appendChild(el('span', { class: 'occupied-tag', text: '뒤로 미룸' }));
+      }
 
       if (lift.startingLoad && lift.startingLoad.needsCalibration) {
         nameRow.appendChild(el('span', {
@@ -1068,6 +1442,15 @@
         text: '시연',
         'aria-label': lift.exercise.name + ' 동작 시연 보기',
         onclick: function () { openDemo(lift.exercise); },
+      }));
+
+      // 헬스장에서 계획이 깨지는 가장 흔한 이유 — 기구에 사람이 있다.
+      nameRow.appendChild(el('button', {
+        type: 'button',
+        class: 'demo-open busy',
+        text: '사람 있어요',
+        'aria-label': lift.exercise.name + ' 기구가 사용 중일 때 대안 보기',
+        onclick: function () { openOccupancy(lift.exercise); },
       }));
 
       var card = el('div', { class: 'lift' }, [
@@ -2062,6 +2445,107 @@
       el('div', { class: 'label', text: '판정 기준' }),
       el('div', { text: '3점 이상이면 해당 관절 부담이 큰 종목을 대체하고, 7점 이상이면 그 관절을 쓰는 동작을 오늘 세션에서 제외합니다.' }),
     ]));
+
+    renderAppStatus();
+  }
+
+  /**
+   * 설치 · 알림 · 시계 상태.
+   *
+   * 되는 척하지 않는다. 아티팩트 링크로 열면 서비스 워커가 안 붙고, iOS는
+   * 홈 화면에 추가해야 알림이 열린다. 안 되는 이유와 되게 하는 방법을
+   * 그대로 적는다.
+   */
+  function renderAppStatus() {
+    var rows = [];
+
+    var installState = pwa.installed
+      ? { tone: 'ok', text: '홈 화면에 설치됨 — 오프라인에서도 열립니다' }
+      : pwa.installEvent
+        ? { tone: 'todo', text: '아직 브라우저에서 보고 있습니다' }
+        : isIOS()
+          ? { tone: 'todo', text: '공유 버튼 → "홈 화면에 추가"를 눌러 설치합니다' }
+          : { tone: 'todo', text: '브라우저 메뉴에서 "앱 설치"를 누르면 설치됩니다' };
+
+    var installRow = el('div', { class: 'status-row' }, [
+      el('span', { class: 'status-key', text: '설치' }),
+      el('span', { class: 'status-val ' + installState.tone, text: installState.text }),
+    ]);
+    if (pwa.installEvent) {
+      installRow.appendChild(el('button', {
+        type: 'button', class: 'pick', text: '설치하기', onclick: promptInstall,
+      }));
+    }
+    rows.push(installRow);
+
+    var offline = pwa.worker
+      ? { tone: 'ok', text: '오프라인 준비됨 — 지하에서도 그대로 돕니다' }
+      : { tone: 'warn', text: pwa.swError
+          ? '이 주소에서는 오프라인 캐시를 붙일 수 없습니다 (' + pwa.swError.slice(0, 60) + ')'
+          : '서비스 워커를 등록하는 중입니다' };
+    rows.push(el('div', { class: 'status-row' }, [
+      el('span', { class: 'status-key', text: '오프라인' }),
+      el('span', { class: 'status-val ' + offline.tone, text: offline.text }),
+    ]));
+
+    var permission = notificationState();
+    var notifyText = {
+      granted: '켜짐 — 휴식이 끝나면 알려줍니다',
+      denied: '거부됨 — 브라우저 사이트 설정에서 다시 허용해야 합니다',
+      default: '아직 묻지 않았습니다',
+      unsupported: '이 브라우저는 웹 알림을 지원하지 않습니다',
+    }[permission];
+    var notifyRow = el('div', { class: 'status-row' }, [
+      el('span', { class: 'status-key', text: '알림' }),
+      el('span', {
+        class: 'status-val ' + (permission === 'granted' ? 'ok' : permission === 'denied' ? 'warn' : 'todo'),
+        text: notifyText,
+      }),
+    ]);
+    if (permission === 'default') {
+      notifyRow.appendChild(el('button', {
+        type: 'button', class: 'pick', text: '켜기', onclick: askNotificationPermission,
+      }));
+    }
+    rows.push(notifyRow);
+
+    rows.push(el('div', { class: 'status-row' }, [
+      el('span', { class: 'status-key', text: '화면' }),
+      el('span', {
+        class: 'status-val ' + (navigator.wakeLock ? 'ok' : 'todo'),
+        text: navigator.wakeLock
+          ? '휴식 중에는 화면이 꺼지지 않습니다'
+          : '이 브라우저는 화면 유지를 지원하지 않습니다',
+      }),
+    ]));
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '앱 · 알림' }),
+        el('span', { class: 'meta', text: 'PWA' }),
+      ]),
+      el('div', { class: 'sheet-body' }, rows),
+    ]));
+
+    screen.appendChild(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '애플워치 · 갤럭시워치' }),
+      el('div', {
+        text: '두 시계 모두 폰 알림을 그대로 손목에 띄웁니다. 휴식 종료 알림도 같이 갑니다 — ' +
+          '갤럭시워치(Wear OS)에서는 "다음 세트 · +30초"를 손목에서 바로 누를 수 있고, ' +
+          '애플워치는 알림을 펼쳤을 때 보입니다. ' +
+          'iOS는 홈 화면에 추가한 뒤에만 웹 알림이 열립니다(16.4 이상).',
+      }),
+    ]));
+
+    screen.appendChild(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '한계' }),
+      el('div', {
+        text: '폰 화면을 끈 채로 오래 두면 브라우저가 타이머를 재우기 때문에, 알림이 몇 초 늦거나 ' +
+          '뜨지 않을 수 있습니다. 앱으로 돌아오면 남은 시간은 항상 정확합니다 — 시간을 세는 게 아니라 ' +
+          '끝나는 시각을 기억하기 때문입니다. 손목 알림을 100% 보장하려면 서버에서 예약 푸시를 ' +
+          '보내야 하고, 받는 쪽 준비는 이미 돼 있습니다.',
+      }),
+    ]));
   }
 
   /* 헬스장 */
@@ -2702,5 +3186,6 @@
   state.program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
 
   if (!restore()) loadScenario('normal', true);
+  registerWorker();
   render();
 })();

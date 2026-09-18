@@ -1,0 +1,25 @@
+{
+  "name": "볼륨 코치",
+  "short_name": "볼륨 코치",
+  "description": "부위별 주간 볼륨과 피로도를 보고 다음 주 훈련량을 조절하는 트레이닝 코치",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#e9ebef",
+  "theme_color": "#4540c9",
+  "categories": ["health", "fitness", "lifestyle"],
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "오늘 훈련", "short_name": "오늘", "url": "./index.html?tab=today" },
+    { "name": "주간 볼륨", "short_name": "볼륨", "url": "./index.html?tab=volume" }
+  ]
+}

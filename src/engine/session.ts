@@ -46,7 +46,7 @@ export interface PlannedSet {
   targetRir: number;
 }
 
-export type SwapReason = 'pain' | 'unavailable';
+export type SwapReason = 'pain' | 'unavailable' | 'occupied';
 
 export interface PlannedExercise {
   exercise: Exercise;
