@@ -33,7 +33,7 @@ export type Joint =
   | 'knee'
   | 'ankle';
 
-export type TrainingLevel = 'beginner' | 'intermediate' | 'advanced';
+export type TrainingLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert';
 
 export type Equipment =
   | 'barbell'

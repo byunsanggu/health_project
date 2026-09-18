@@ -6,44 +6,25 @@
   var index = E.buildExerciseIndex();
   var landmarks = E.landmarksFor('intermediate');
 
-  var TEMPLATES = [
-    {
-      name: '상체 A',
-      slots: [
-        { exerciseId: 'barbell-bench-press', sets: 4, repRange: { min: 6, max: 10 } },
-        { exerciseId: 'lat-pulldown', sets: 4, repRange: { min: 8, max: 12 } },
-        { exerciseId: 'seated-dumbbell-press', sets: 3, repRange: { min: 8, max: 12 } },
-        { exerciseId: 'barbell-curl', sets: 3, repRange: { min: 8, max: 12 } },
-      ],
-    },
-    {
-      name: '하체 A',
-      slots: [
-        { exerciseId: 'back-squat', sets: 4, repRange: { min: 5, max: 8 } },
-        { exerciseId: 'romanian-deadlift', sets: 3, repRange: { min: 8, max: 12 } },
-        { exerciseId: 'leg-press', sets: 3, repRange: { min: 10, max: 15 } },
-        { exerciseId: 'standing-calf-raise', sets: 3, repRange: { min: 10, max: 15 } },
-      ],
-    },
-    {
-      name: '상체 B',
-      slots: [
-        { exerciseId: 'chest-supported-row', sets: 4, repRange: { min: 8, max: 12 } },
-        { exerciseId: 'incline-dumbbell-press', sets: 3, repRange: { min: 8, max: 12 } },
-        { exerciseId: 'lateral-raise', sets: 4, repRange: { min: 12, max: 20 } },
-        { exerciseId: 'triceps-pushdown', sets: 3, repRange: { min: 10, max: 15 } },
-      ],
-    },
-    {
-      name: '하체 B',
-      slots: [
-        { exerciseId: 'hip-thrust', sets: 4, repRange: { min: 8, max: 12 } },
-        { exerciseId: 'lying-leg-curl', sets: 3, repRange: { min: 10, max: 15 } },
-        { exerciseId: 'walking-lunge', sets: 3, repRange: { min: 10, max: 15 } },
-        { exerciseId: 'cable-crunch', sets: 3, repRange: { min: 12, max: 20 } },
-      ],
-    },
-  ];
+  /** 온보딩 전 기본값 — 완료되면 생성된 프로그램으로 교체된다. */
+  var DEFAULT_ANSWERS = {
+    selfReportedLevel: 'intermediate',
+    monthsTraining: 18,
+    bodyweightKg: 78,
+    sex: 'male',
+    daysPerWeek: 4,
+    goal: 'hypertrophy',
+    gym: { equipmentIds: E.COMMON_EQUIPMENT_IDS.slice() },
+  };
+
+  /** 주당 일수별 훈련 요일 (월=0). */
+  var WEEK_OFFSETS = {
+    2: [0, 3],
+    3: [0, 2, 4],
+    4: [0, 1, 3, 4],
+    5: [0, 1, 2, 4, 5],
+    6: [0, 1, 2, 3, 4, 5],
+  };
 
   var START_WEIGHT = {
     'barbell-bench-press': 80, 'lat-pulldown': 65, 'seated-dumbbell-press': 22,
@@ -59,14 +40,15 @@
     'hanging-leg-raise': 0, 'cable-lateral-raise': 7, 'conventional-deadlift': 130,
   };
 
-  /** 주 4회 분할. 마지막 칸이 '오늘'이고, 앞 세 번은 이미 수행한 것으로 시드한다. */
-  var WEEK_DAYS = [
-    { offset: 0, template: 0 },
-    { offset: 1, template: 1 },
-    { offset: 3, template: 3 },
-    { offset: 4, template: 2 },
-  ];
-  var TODAY_SLOT = WEEK_DAYS[WEEK_DAYS.length - 1];
+  function trainingDays() {
+    return WEEK_OFFSETS[state.program.daysPerWeek] || WEEK_OFFSETS[4];
+  }
+
+  /** 오늘은 이번 주의 마지막 훈련일이고, 그 앞 세션들은 이미 수행한 것으로 시드한다. */
+  function todayIndex() {
+    return trainingDays().length - 1;
+  }
+
   var JOINTS = ['shoulder', 'lowBack', 'knee', 'elbow'];
 
   var SCENARIOS = [
@@ -127,8 +109,10 @@
     log: [],
     monday: E.weekStart(todayISO()),
     todayDate: null,
+    program: null,
+    answers: null,
+    onboarding: { active: true, step: 0 },
   };
-  state.todayDate = E.addDays(state.monday, TODAY_SLOT.offset);
 
   /* ── 시드 데이터 ───────────────────────────────── */
 
@@ -185,11 +169,12 @@
           });
 
       // 이번 주(week 2)는 오늘 세션을 남겨둔다.
-      var days = week === 2 ? WEEK_DAYS.slice(0, -1) : WEEK_DAYS;
+      var offsets = trainingDays();
+      var days = week === 2 ? offsets.slice(0, -1) : offsets;
 
-      days.forEach(function (day) {
-        var date = E.addDays(monday, day.offset);
-        var template = TEMPLATES[day.template];
+      days.forEach(function (offset, dayIndex) {
+        var date = E.addDays(monday, offset);
+        var template = state.program.templates[dayIndex % state.program.templates.length];
         var slots = scenario.heavy
           ? template.slots.map(function (slot) { return Object.assign({}, slot, { sets: slot.sets + 2 }); })
           : template.slots;
@@ -257,6 +242,7 @@
     state.sleepHours = scenario.sleep;
     state.soreness = scenario.soreness;
 
+    state.todayDate = E.addDays(state.monday, trainingDays()[todayIndex()]);
     var seeded = seedHistory(scenario);
     state.history = seeded.history;
     state.checkIns = seeded.checkIns;
@@ -295,7 +281,7 @@
     state.lifts.forEach(function (lift) { previous[lift.exercise.id] = lift.sets; });
 
     state.session = E.buildSession({
-      template: TEMPLATES[TODAY_SLOT.template],
+      template: state.program.templates[todayIndex() % state.program.templates.length],
       date: state.todayDate,
       plan: state.plan,
       history: state.history,
@@ -427,9 +413,18 @@
   }
 
   function render() {
-    renderTabs();
-    renderStatus();
-    renderScreen();
+    var onboarding = state.onboarding.active;
+    tabbar.hidden = onboarding;
+
+    screen.textContent = '';
+    if (onboarding) {
+      statusMeta.textContent = '초기 설정';
+      renderOnboarding();
+    } else {
+      renderTabs();
+      renderStatus();
+      renderScreen();
+    }
     renderLog();
     renderScenarios();
   }
@@ -466,7 +461,6 @@
   }
 
   function renderScreen() {
-    screen.textContent = '';
     if (state.tab === 'today') renderToday();
     else if (state.tab === 'volume') renderVolume();
     else if (state.tab === 'week') renderWeek();
@@ -952,6 +946,10 @@
       ]),
     ]));
 
+    screen.appendChild(el('div', { class: 'wizard-nav' }, [
+      el('button', { type: 'button', class: 'ghost', text: '초기 설정 다시 하기', onclick: startOnboarding }),
+    ]));
+
     screen.appendChild(el('div', { class: 'notice' }, [
       el('div', { class: 'label', text: '추정은 출발점일 뿐' }),
       el('div', { text: '처음 하는 종목은 체중·경력 기준선이나 이미 하는 종목에서 환산해 제안합니다. 첫 세트의 RIR을 입력하면 실측으로 대체됩니다.' }),
@@ -1073,7 +1071,323 @@
     });
   }
 
+  /* ── 온보딩 ────────────────────────────────────── */
+
+  var GOALS = [
+    { id: 'hypertrophy', label: '근비대', hint: '근육량을 늘립니다' },
+    { id: 'strength', label: '근력', hint: '드는 무게를 올립니다' },
+    { id: 'fatLoss', label: '체지방 감량', hint: '근육을 지키며 체중을 줄입니다' },
+    { id: 'general', label: '건강 유지', hint: '무리 없이 꾸준히' },
+  ];
+
+  var STEPS = [
+    { id: 'level', title: '경력', render: stepLevel },
+    { id: 'profile', title: '내 정보', render: stepProfile },
+    { id: 'gym', title: '헬스장 기구', render: stepGym },
+    { id: 'measure', title: '실측', render: stepMeasure },
+    { id: 'result', title: '프로그램', render: stepResult },
+  ];
+
+  function startOnboarding() {
+    state.answers = JSON.parse(JSON.stringify(DEFAULT_ANSWERS));
+    state.answers.gym.measurements = {};
+    state.onboarding = { active: true, step: 0 };
+    render();
+  }
+
+  function completeOnboarding() {
+    var result = E.runOnboarding(state.answers);
+    state.gym = result.gym;
+    state.lifter = result.lifter;
+    state.program = result.program;
+    state.onboarding = { active: false, step: 0, result: result };
+    state.tab = 'today';
+    loadScenario('normal');
+    result.notes.forEach(function (note) { pushLog('온보딩', note); });
+    render();
+  }
+
+  function renderOnboarding() {
+    var step = STEPS[state.onboarding.step];
+
+    var dots = el('div', { class: 'steps' }, []);
+    STEPS.forEach(function (item, i) {
+      dots.appendChild(el('span', {
+        class: 'step' + (i === state.onboarding.step ? ' on' : i < state.onboarding.step ? ' done' : ''),
+        text: item.title,
+      }));
+    });
+
+    screen.appendChild(el('div', { class: 'session-head' }, [
+      el('h2', { text: step.title }),
+      dots,
+    ]));
+
+    step.render();
+
+    var isLast = state.onboarding.step === STEPS.length - 1;
+    var nav = el('div', { class: 'wizard-nav' }, []);
+    if (state.onboarding.step > 0) {
+      nav.appendChild(el('button', {
+        type: 'button', class: 'ghost', text: '이전',
+        onclick: function () { state.onboarding.step -= 1; render(); },
+      }));
+    }
+    nav.appendChild(el('button', {
+      type: 'button', class: 'primary', text: isLast ? '이 프로그램으로 시작' : '다음',
+      onclick: function () {
+        if (isLast) completeOnboarding();
+        else { state.onboarding.step += 1; render(); }
+      },
+    }));
+    screen.appendChild(nav);
+  }
+
+  function stepLevel() {
+    var body = el('div', { class: 'sheet-body' }, []);
+    E.TRAINING_LEVELS.forEach(function (level) {
+      var profile = E.levelProfile(level);
+      body.appendChild(el('button', {
+        type: 'button',
+        class: 'choice',
+        'aria-pressed': String(state.answers.selfReportedLevel === level),
+        onclick: function () { state.answers.selfReportedLevel = level; render(); },
+      }, [
+        el('span', { class: 'choice-title', text: profile.label }),
+        el('span', { class: 'choice-hint', text: profile.description }),
+      ]));
+    });
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [el('h3', { text: '어느 단계라고 생각하세요?' })]),
+      body,
+    ]));
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '꾸준히 훈련한 기간' }),
+        el('span', { class: 'meta', text: '단계 검증에 씁니다' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        sliderRow({
+          name: '개월 수', value: state.answers.monthsTraining, min: 0, max: 84,
+          id: 'months', marks: ['0', '24', '48', '84'],
+          onInput: function (value) { state.answers.monthsTraining = value; renderPreviewNote(); },
+        }),
+        el('p', { class: 'hint-line', id: 'level-preview', text: levelPreview() }),
+      ]),
+    ]));
+  }
+
+  function levelPreview() {
+    var check = E.assessLevel({
+      selfReported: state.answers.selfReportedLevel,
+      monthsTraining: state.answers.monthsTraining,
+    });
+    return check.adjusted
+      ? '→ ' + E.LEVEL_LABELS_KO[check.level] + ' 볼륨으로 시작합니다. ' + check.note
+      : '→ ' + E.LEVEL_LABELS_KO[check.level] + ' 기준으로 시작합니다.';
+  }
+
+  function renderPreviewNote() {
+    var node = document.getElementById('level-preview');
+    if (node) node.textContent = levelPreview();
+  }
+
+  function stepProfile() {
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '신체' }),
+        el('span', { class: 'meta', text: '첫 중량 추정용' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        sliderRow({
+          name: '체중 (kg)', value: state.answers.bodyweightKg, min: 40, max: 130,
+          id: 'bw', marks: ['40', '70', '100', '130'],
+          onInput: function (value) { state.answers.bodyweightKg = value; },
+        }),
+        segmented([
+          { label: '남성', active: state.answers.sex === 'male', onSelect: function () { state.answers.sex = 'male'; render(); } },
+          { label: '여성', active: state.answers.sex === 'female', onSelect: function () { state.answers.sex = 'female'; render(); } },
+        ]),
+      ]),
+    ]));
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '주당 훈련 일수' }),
+        el('span', { class: 'meta', text: '분할이 달라집니다' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        segmented([2, 3, 4, 5, 6].map(function (days) {
+          return {
+            label: days + '일',
+            active: state.answers.daysPerWeek === days,
+            onSelect: function () { state.answers.daysPerWeek = days; render(); },
+          };
+        })),
+        el('p', { class: 'hint-line', text: splitPreview() }),
+      ]),
+    ]));
+
+    var goals = el('div', { class: 'sheet-body' }, []);
+    GOALS.forEach(function (goal) {
+      goals.appendChild(el('button', {
+        type: 'button', class: 'choice',
+        'aria-pressed': String(state.answers.goal === goal.id),
+        onclick: function () { state.answers.goal = goal.id; render(); },
+      }, [
+        el('span', { class: 'choice-title', text: goal.label }),
+        el('span', { class: 'choice-hint', text: goal.hint }),
+      ]));
+    });
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [el('h3', { text: '목표' })]),
+      goals,
+    ]));
+  }
+
+  function splitPreview() {
+    var program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
+    return program.name + ' — ' + program.templates.map(function (t) { return t.name; }).join(' · ');
+  }
+
+  function stepGym() {
+    var selected = state.answers.gym.equipmentIds;
+    var available = E.availableExercises(selected).length;
+
+    screen.appendChild(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '가능한 종목' }),
+      el('div', { text: available + ' / ' + E.EXERCISES.length + '개 — 있는 기구를 켜면 종목이 열립니다.' }),
+    ]));
+
+    var categories = {};
+    E.EQUIPMENT_CATALOG.forEach(function (item) {
+      (categories[item.category] = categories[item.category] || []).push(item);
+    });
+
+    Object.keys(categories).forEach(function (category) {
+      var body = el('div', { class: 'sheet-body' }, []);
+      var row = el('div', { class: 'toggle-row' }, []);
+
+      categories[category].forEach(function (item) {
+        var has = selected.indexOf(item.id) >= 0;
+        var unlocks = has ? [] : E.wouldEnable(item.id, selected);
+        var label = item.name + (unlocks.length > 0 ? ' +' + unlocks.length : '');
+
+        row.appendChild(el('button', {
+          type: 'button', class: 'toggle', 'aria-pressed': String(has), text: label,
+          onclick: function () {
+            state.answers.gym.equipmentIds = has
+              ? selected.filter(function (id) { return id !== item.id; })
+              : selected.concat([item.id]);
+            render();
+          },
+        }));
+      });
+
+      body.appendChild(row);
+      screen.appendChild(el('div', { class: 'sheet' }, [
+        el('div', { class: 'sheet-head' }, [el('h3', { text: E.CATEGORY_LABELS_KO[category] })]),
+        body,
+      ]));
+    });
+
+    var gaps = E.coverageReport(selected).filter(function (item) { return !item.sufficient; });
+    if (gaps.length > 0) {
+      screen.appendChild(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: '아직 부족한 부위' }),
+        el('div', { text: gaps.map(function (gap) {
+          return gap.label + (gap.suggestion ? ' (' + gap.suggestion.name + ')' : '');
+        }).join(', ') }),
+      ]));
+    }
+  }
+
+  function stepMeasure() {
+    var selected = state.answers.gym.equipmentIds;
+    var measurable = E.EQUIPMENT_CATALOG.filter(function (item) {
+      return item.measurement && selected.indexOf(item.id) >= 0;
+    });
+
+    if (measurable.length === 0) {
+      screen.appendChild(el('div', { class: 'notice' }, [
+        el('div', { text: '실측할 항목이 없습니다. 다음으로 넘어가세요.' }),
+      ]));
+      return;
+    }
+
+    screen.appendChild(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '왜 묻나' }),
+      el('div', { text: '기구마다 만들 수 있는 중량이 다릅니다. 모르면 기본값으로 두고 나중에 고쳐도 됩니다.' }),
+    ]));
+
+    measurable.forEach(function (item) {
+      var measurement = item.measurement;
+      var current = (state.answers.gym.measurements[item.id] || {})[measurement.field];
+      if (current === undefined) current = measurement.default;
+
+      screen.appendChild(el('div', { class: 'sheet' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: item.name }),
+          el('span', { class: 'meta', text: measurement.label }),
+        ]),
+        el('div', { class: 'sheet-body' }, [
+          segmented(measurement.options.map(function (option) {
+            return {
+              label: option + 'kg',
+              active: current === option,
+              onSelect: function () {
+                var store = state.answers.gym.measurements;
+                store[item.id] = store[item.id] || {};
+                store[item.id][measurement.field] = option;
+                render();
+              },
+            };
+          })),
+          measurement.hint ? el('p', { class: 'hint-line', text: measurement.hint }) : null,
+        ]),
+      ]));
+    });
+  }
+
+  function stepResult() {
+    var result = E.runOnboarding(state.answers);
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: result.program.name }),
+        el('span', {
+          class: 'badge accum',
+          text: E.LEVEL_LABELS_KO[result.level.level] + ' · RIR ' + result.firstWeek.targetRir,
+        }),
+      ]),
+      el('div', { class: 'sheet-body' }, result.notes.map(function (note) {
+        return el('p', { class: 'hint-line', text: note });
+      })),
+    ]));
+
+    result.program.templates.forEach(function (template) {
+      var body = el('div', { class: 'sheet-body' }, []);
+      template.slots.forEach(function (slot) {
+        var exercise = index.get(slot.exerciseId);
+        body.appendChild(el('div', { class: 'delta' }, [
+          el('span', { text: exercise ? exercise.name : slot.exerciseId }),
+          el('span', { class: 'num', text: slot.sets + '세트' }),
+          el('span', { class: 'num flat', text: slot.repRange.min + '-' + slot.repRange.max + '회' }),
+        ]));
+      });
+      screen.appendChild(el('div', { class: 'sheet' }, [
+        el('div', { class: 'sheet-head' }, [el('h3', { text: template.name })]),
+        body,
+      ]));
+    });
+  }
+
   /* ── 시작 ──────────────────────────────────────── */
-  loadScenario('normal');
+  state.answers = JSON.parse(JSON.stringify(DEFAULT_ANSWERS));
+  state.answers.gym.measurements = {};
+  state.program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
+  loadScenario('normal', true);
   render();
 })();

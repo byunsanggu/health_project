@@ -298,6 +298,52 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .freq-top .num { font-family: var(--mono); font-size: 12px; color: var(--zone-hard); font-variant-numeric: tabular-nums; }
 .freq-advice { font-size: 12px; color: var(--muted); }
 
+.steps { display: flex; gap: 5px; flex-wrap: wrap; }
+.step {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.step.on { border-color: var(--accent); color: var(--accent); font-weight: 500; }
+.step.done { border-color: var(--zone-ok); color: var(--zone-ok); }
+
+.choice {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.choice + .choice { margin-top: 7px; }
+.choice:hover { border-color: var(--accent); }
+.choice[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.choice-title { font-size: 14px; font-weight: 600; }
+.choice-hint { font-size: 12px; color: var(--muted); }
+
+.wizard-nav { display: flex; gap: 8px; justify-content: flex-end; padding-top: 4px; }
+.wizard-nav button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 9px;
+  padding: 9px 16px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.wizard-nav button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 500;
+}
+.wizard-nav button.ghost:hover { border-color: var(--accent); color: var(--accent); }
+
 .segmented { display: flex; gap: 6px; flex-wrap: wrap; }
 .segmented button {
   border: 1px solid var(--line);
@@ -532,6 +578,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
           <li><b>볼륨</b> 탭의 게이지는 부위별 주간 유효 세트입니다. 눈금은 MEV(최소 자극) · MAV(적응 최대) · MRV(회복 한계)이고, 빗금 구간이 레드라인입니다.</li>
           <li><b>체크인</b> 탭에서 어깨 통증을 3점 이상으로 올리면, 오늘 세션의 종목이 자동으로 대체됩니다.</li>
           <li><b>헬스장</b> 탭에서 바 무게나 스택 간격을 바꾸면 처방 중량이 그 기구가 만들 수 있는 값으로 다시 맞춰집니다. 기구를 끄면 해당 종목이 대체됩니다.</li>
+          <li>맨 처음 뜨는 <b>초기 설정</b>에서 경력과 보유 기구를 고르면 프로그램이 자동으로 생성됩니다. 경력을 실제보다 높게 고르면 훈련 개월 수와 대조해 낮춰 잡습니다.</li>
         </ol>
       </div>
     </section>
@@ -549,6 +596,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
         <li><span><b>집계</b> RIR · 부위 기여도 · 세션당 상한으로 유효 세트 환산</span></li>
         <li><span><b>판정</b> 피로 신호 7종을 가중 합산</span></li>
         <li><span><b>처방</b> 구간별 볼륨 증감, 임계 초과 시 디로드</span></li>
+        <li><span><b>생성</b> 경력 · 일수 · 보유 기구로 첫 프로그램 자동 구성</span></li>
         <li><span><b>세션</b> 기구 보유 → 통증 게이트 → 세트 수 → 중량 순서로 구성</span></li>
         <li><span><b>스냅</b> 처방 중량을 그 기구가 만들 수 있는 값으로 조정</span></li>
       </ol>

@@ -1,5 +1,6 @@
 import { estimate1RM } from './load.ts';
 import { nearestLoadable, type LoadingSpec } from './gym.ts';
+import { LEVEL_LABELS_KO } from './levels.ts';
 import type { Exercise, SessionLog, TrainingLevel } from './types.ts';
 
 export interface LifterProfile {
@@ -76,11 +77,11 @@ export const ANCHOR_FACTORS: Record<string, AnchorFactor> = {
  * 널리 통용되는 근력 기준표의 보수적인 쪽 값을 썼다.
  */
 const BODYWEIGHT_RATIO: Record<Anchor, Record<TrainingLevel, number>> = {
-  bench: { beginner: 0.75, intermediate: 1.0, advanced: 1.35 },
-  squat: { beginner: 1.0, intermediate: 1.4, advanced: 1.85 },
-  deadlift: { beginner: 1.25, intermediate: 1.75, advanced: 2.2 },
-  overheadPress: { beginner: 0.45, intermediate: 0.6, advanced: 0.8 },
-  row: { beginner: 0.65, intermediate: 0.9, advanced: 1.15 },
+  bench: { beginner: 0.75, intermediate: 1.0, advanced: 1.35, expert: 1.6 },
+  squat: { beginner: 1.0, intermediate: 1.4, advanced: 1.85, expert: 2.25 },
+  deadlift: { beginner: 1.25, intermediate: 1.75, advanced: 2.2, expert: 2.75 },
+  overheadPress: { beginner: 0.45, intermediate: 0.6, advanced: 0.8, expert: 1.0 },
+  row: { beginner: 0.65, intermediate: 0.9, advanced: 1.15, expert: 1.4 },
 };
 
 /** 여성은 상체에서 격차가 더 크고 하체는 상대적으로 가깝다. */
@@ -247,5 +248,5 @@ function round(value: number, step: number): number {
 }
 
 function levelLabel(level?: TrainingLevel): string {
-  return level === 'advanced' ? '고급' : level === 'intermediate' ? '중급' : '초급';
+  return LEVEL_LABELS_KO[level ?? 'beginner'];
 }

@@ -64,6 +64,9 @@ const LEVEL_SCALE: Record<TrainingLevel, { mev: number; mav: number; mrv: number
   beginner: { mev: 0.7, mav: 0.7, mrv: 0.75 },
   intermediate: { mev: 1, mav: 1, mrv: 1 },
   advanced: { mev: 1.2, mav: 1.15, mrv: 1.1 },
+  // 전문가는 자극 역치가 더 높지만 회복 능력은 그만큼 늘지 않는다.
+  // MRV 배율이 MEV보다 낮은 이유 — 쓸 수 있는 폭이 오히려 좁아진다.
+  expert: { mev: 1.35, mav: 1.25, mrv: 1.15 },
 };
 
 /** 랜드마크 순서(mev ≤ mav ≤ mrv)를 깨뜨리지 않게 보정한다. */
