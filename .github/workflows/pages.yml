@@ -1,0 +1,58 @@
+# 프로토타입을 GitHub Pages로 배포한다.
+#
+# 아티팩트 링크로는 홈 화면에 설치할 수 없다 — 뷰어 안에서 열리고 로그인이
+# 필요하기 때문이다. 설치되는 PWA가 되려면 평범한 공개 HTTPS 주소가 있어야
+# 한다. 이 워크플로가 그 주소를 만든다.
+name: Deploy prototype to Pages
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'prototype/**'
+      - 'src/engine/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 한 번에 하나만. 밀린 실행은 최신 것만 남긴다.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 타입체크와 테스트
+        run: npm run check
+
+      - name: 프로토타입 빌드
+        run: node prototype/build.mjs
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: prototype/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
