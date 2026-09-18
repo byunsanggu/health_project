@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>볼륨 코치</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -695,6 +697,168 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
   max-width: 70ch;
 }
 
+
+/* ── 동작 시연 모달 ─────────────────────────────── */
+.demo-open {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 7px;
+  padding: 2px 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+.demo-open:hover { border-color: var(--accent); color: var(--accent); }
+
+.modal {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(88vh, 760px);
+  overflow: auto;
+  box-shadow: var(--shadow);
+  font-family: var(--sans);
+}
+.modal::backdrop { background: rgba(10, 12, 16, .55); }
+.modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 14px 11px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+.modal-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.modal-head .pattern {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+.modal-close {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 7px;
+  width: 26px;
+  height: 26px;
+  line-height: 1;
+  color: var(--muted);
+  font-size: 15px;
+}
+.modal-close:hover { border-color: var(--accent); color: var(--accent); }
+.modal-body { display: grid; gap: 12px; padding: 13px 14px 16px; }
+
+.demo-stage { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
+.demo-canvas { display: block; width: 100%; aspect-ratio: 4 / 3; }
+.demo-caption {
+  position: absolute;
+  left: 9px;
+  bottom: 9px;
+  max-width: calc(100% - 18px);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: var(--accent-ink);
+  background: rgba(20, 22, 27, .72);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.demo-fallback { padding: 22px 14px; text-align: center; color: var(--muted); font-size: 12.5px; }
+.demo-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.demo-controls .spacer { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.demo-track { height: 3px; background: var(--line-soft); border-radius: 2px; overflow: hidden; }
+.demo-track-fill { height: 100%; background: var(--accent); }
+
+.cue-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+.cue-list li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+}
+.cue-list li:first-child { border-top: 0; }
+.cue-list li::before { content: "·"; color: var(--zone-ok); font-weight: 700; text-align: center; }
+.cue-list.mistakes li::before { content: "×"; color: var(--zone-over); font-weight: 600; font-size: 11px; }
+.list-label { font-family: var(--mono); font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.asset-note { font-size: 11.5px; color: var(--muted); line-height: 1.55; }
+
+/* ── 개인 랜드마크 ──────────────────────────────── */
+.person { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.person-head { padding: 11px 13px; display: grid; gap: 3px; border-bottom: 1px solid var(--line-soft); }
+.person-head .title { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13.5px; }
+.person-head .meta { font-size: 11.5px; color: var(--muted); }
+.obs { padding: 9px 13px; border-top: 1px solid var(--line-soft); display: grid; gap: 4px; font-size: 12.5px; }
+.obs:first-child { border-top: 0; }
+.obs .name { font-weight: 500; }
+.obs .shift { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.obs .shift .up { color: var(--zone-ok); }
+.obs .shift .down { color: var(--zone-hard); }
+.obs .why { color: var(--muted); font-size: 11.5px; }
+.tag-personal {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  color: var(--accent);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* ── 세션 요약 ──────────────────────────────────── */
+.finish {
+  width: 100%;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 10px;
+  padding: 11px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.finish[disabled] { background: var(--surface); border-color: var(--line); color: var(--muted); font-weight: 400; }
+.summary-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+.summary-stat { padding: 10px 12px; display: grid; gap: 2px; border-left: 1px solid var(--line-soft); }
+.summary-stat:first-child { border-left: 0; }
+.summary-stat .value { font-family: var(--mono); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.summary-stat .key { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.summary-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+}
+.summary-row:first-child { border-top: 0; }
+.summary-row .muscle { font-weight: 500; }
+.summary-row .nums { font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.summary-row .zone { font-family: var(--mono); font-size: 10.5px; }
+.summary-row .zone.low { color: var(--zone-low); }
+.summary-row .zone.ok { color: var(--zone-ok); }
+.summary-row .zone.hard { color: var(--zone-hard); }
+.summary-row .zone.over { color: var(--zone-over); }
+.summary-list { border: 1px solid var(--line); border-radius: 11px; background: var(--surface); overflow: hidden; }
+.record { display: flex; gap: 7px; align-items: baseline; padding: 9px 12px; border-top: 1px solid var(--line-soft); font-size: 12.5px; }
+.record:first-child { border-top: 0; }
+.record .pr { font-family: var(--mono); font-size: 9.5px; letter-spacing: .07em; color: var(--zone-ok); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; }
+.record .detail { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -735,6 +899,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
           <li><b>오늘 쓸 수 있는 시간</b>을 30분으로 줄여 보세요. 고립 운동부터 잘라내고 메인 복합 동작은 끝까지 지킵니다.</li>
           <li>각 종목 위의 <b>워밍업</b>은 본세트 중량에 맞춘 램프입니다. 앞 종목이 이미 데운 부위는 짧게 끝내거나 생략합니다.</li>
           <li>세트를 다 채운 뒤에도 여유가 있으면 <b>한 세트 추가</b>를 권하고, 반복이 무너지면 <b>여기까지</b>라고 알립니다.</li>
+          <li>종목 이름 옆의 <b>시연</b>을 눌러 보세요. 관절 각도로 동작을 돌리고, 수행 큐와 흔한 실수를 같이 보여줍니다.</li>
+          <li><b>볼륨</b> 탭 아래 <b>개인 볼륨 랜드마크</b>는 8주 이상의 기록에서 MEV·MRV를 그 사람 값으로 옮긴 결과입니다. 근거가 약한 부위는 옮기지 않고 <b>관측 중</b>으로 둡니다.</li>
+          <li>세트를 기록한 뒤 <b>세션 완료</b>를 누르면 오늘의 톤수·개인 기록·부위별 볼륨과 다음 주 처방이 요약으로 나옵니다.</li>
         </ol>
       </div>
     </section>
@@ -758,6 +925,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
         <li><span><b>보정</b> 실패 세트와 대조해 RIR 신고 편향을 역산, 집계와 처방에 반영</span></li>
         <li><span><b>블록</b> 근비대 · 근력 · 고밀도 · 한계 돌파 · 컨디셔닝으로 주기를 바꿈</span></li>
         <li><span><b>시간</b> 쓸 수 있는 시간에 맞춰 세트와 종목을 잘라냄</span></li>
+        <li><span><b>개인화</b> 8주 이상의 관측으로 MEV · MRV를 그 사람 값으로 이동</span></li>
+        <li><span><b>요약</b> 세션 종료 후 볼륨 · 기록 · 다음 주 처방을 되돌려줌</span></li>
       </ol>
     </section>
 
@@ -767,11 +936,16 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
     </section>
   </div>
 
+  <dialog class="modal" id="modal" aria-labelledby="modal-title"></dialog>
+
   <div class="disclaimer">
     <p>이 페이지는 제품 프로토타입이며 의료기기가 아닙니다. 제공하는 정보는 의학적 진단·처방·치료를 대신하지 않습니다. 통증이 지속되면 전문의 진료를 받으세요.</p>
+    <p>동작 시연은 관절 각도 키프레임으로 그린 예시이며, 실제 촬영 영상이나 구매한 3D 에셋이 들어갈 자리를 대신합니다. 특정 앱의 에셋을 쓰거나 본뜬 것이 아닙니다.</p>
     <p>표시된 훈련 기록은 엔진 동작을 보여주기 위해 생성한 예시 데이터입니다. 운동 명칭은 일반 명칭이며, 부위 기여도·관절 스트레스·볼륨 랜드마크는 공개 문헌과 코칭 판단으로 직접 작성했습니다.</p>
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>/*ENGINE_BUNDLE*/</script>
+<script>/*DEMO3D_SCRIPT*/</script>
 <script>/*APP_SCRIPT*/</script>

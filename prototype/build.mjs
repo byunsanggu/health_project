@@ -21,10 +21,12 @@ const bundled = await build({
 
 const engine = bundled.outputFiles[0].text;
 const app = await readFile(new URL('app.js', root), 'utf8');
+const demo3d = await readFile(new URL('demo3d.js', root), 'utf8');
 const template = await readFile(new URL('index.template.html', root), 'utf8');
 
 const page = template
   .replace('/*ENGINE_BUNDLE*/', () => engine)
+  .replace('/*DEMO3D_SCRIPT*/', () => demo3d)
   .replace('/*APP_SCRIPT*/', () => app);
 
 const target = new URL('dist/index.html', root);

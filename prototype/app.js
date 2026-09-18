@@ -4,7 +4,7 @@
 
   var E = window.FitEngine;
   var index = E.buildExerciseIndex();
-  var landmarks = E.landmarksFor('intermediate');
+  var baseLandmarks = E.landmarksFor('intermediate');
 
   /** 헬스장 지하에는 신호가 없다. 로컬이 원본이고 서버는 나중에 붙는다. */
   var storage = E.createStore(browserAdapter(), { namespace: 'volume-coach.proto' });
@@ -208,6 +208,11 @@
     program: null,
     answers: null,
     gymBook: null,
+    landmarks: baseLandmarks,
+    personalization: null,
+    summary: null,
+    demo: null,
+    sessionStartedAt: null,
     style: 'hypertrophy',
     blockHistory: ['hypertrophy'],
     conditioning: null,
@@ -249,9 +254,15 @@
   }
 
   /**
-   * 지난 2주 전체 + 이번 주 앞 세 번의 훈련을 생성한다.
+   * 지난 9주 전체 + 이번 주 앞 세 번의 훈련을 생성한다.
    * 오늘이 그 주의 네 번째 세션이라, 앱을 열면 볼륨 게이지가 실제로 쌓인 상태로 보인다.
+   *
+   * 2주가 아니라 10주를 만드는 이유 — 개인 랜드마크 보정은 8주 이상의
+   * 관측이 있어야 시작한다. 그보다 짧으면 컨디션 나쁜 한 주를 그 사람의
+   * 한계로 오해한다.
    */
+  var SEED_WEEKS = 10;
+
   function seedHistory(scenario) {
     var history = [];
     var checkIns = [];
@@ -259,23 +270,25 @@
       .map(function (joint) { return { joint: joint, score: scenario.pain[joint] || 0 }; })
       .filter(function (report) { return report.score > 0; });
 
-    for (var week = 0; week < 3; week += 1) {
-      var monday = E.addDays(state.monday, (week - 2) * 7);
+    for (var week = 0; week < SEED_WEEKS; week += 1) {
+      var monday = E.addDays(state.monday, (week - (SEED_WEEKS - 1)) * 7);
+      // 블록은 4주마다 돈다 — 3주 쌓고 한 주 덜어내는 실제 주기를 흉내낸다.
+      var weekInBlock = (week % 4) + 1;
       var plan = week === 0
         ? coldStartPlan(monday)
         : E.planNextWeek({
             sessions: history,
             checkIns: checkIns,
             index: index,
-            landmarks: landmarks,
+            landmarks: state.landmarks,
             asOf: E.addDays(monday, -1),
-            weekInBlock: week + 1,
+            weekInBlock: weekInBlock,
             lastWeekPhase: 'accumulation',
           });
 
-      // 이번 주(week 2)는 오늘 세션을 남겨둔다.
+      // 마지막 주는 오늘 세션을 남겨둔다.
       var offsets = trainingDays();
-      var days = week === 2 ? offsets.slice(0, -1) : offsets;
+      var days = week === SEED_WEEKS - 1 ? offsets.slice(0, -1) : offsets;
 
       days.forEach(function (offset, dayIndex) {
         var date = E.addDays(monday, offset);
@@ -293,7 +306,7 @@
           gym: state.gym,
           lifter: state.lifter,
         });
-        history.push(perform(planned, scenario.decay * (week + 1)));
+        history.push(perform(planned, scenario.decay * weekInBlock));
         checkIns.push({
           date: date,
           sleepHours: scenario.sleep,
@@ -353,6 +366,9 @@
     state.history = seeded.history;
     state.checkIns = seeded.checkIns;
     state.todaySets = [];
+    state.summary = null;
+    state.sessionStartedAt = null;
+    refreshLandmarks();
     if (!silent) state.log = [];
 
     rebuildPlan();
@@ -368,12 +384,25 @@
     }
   }
 
+  /** 8주 이상 쌓이면 개인 관측으로 랜드마크를 옮긴다. */
+  function refreshLandmarks() {
+    var result = E.personalizeLandmarks({
+      history: state.history,
+      index: index,
+      level: state.lifter.level,
+      baseLandmarks: E.landmarksFor(state.lifter.level),
+    });
+    state.personalization = result;
+    state.landmarks = result.landmarks;
+    return result;
+  }
+
   function rebuildPlan() {
     state.plan = E.planNextWeek({
       sessions: state.history,
       checkIns: state.checkIns,
       index: index,
-      landmarks: landmarks,
+      landmarks: state.landmarks,
       asOf: E.addDays(state.monday, -1),
       weekInBlock: 2,
       lastWeekPhase: 'accumulation',
@@ -464,6 +493,12 @@
     });
   }
 
+  /** 신고 RIR에 개인 편향 보정을 실은 집계 옵션. */
+  function rirOptions() {
+    var calibration = state.session && state.session.rirCalibration;
+    return { rirOffset: calibration && calibration.applied ? calibration.offset : 0 };
+  }
+
   /** 오늘 완료한 세트까지 포함한 이번 주 세션 목록. */
   function weekSessions() {
     var sunday = E.addDays(state.monday, 6);
@@ -486,6 +521,7 @@
 
     set.rir = rir;
     set.done = true;
+    if (!state.sessionStartedAt) state.sessionStartedAt = Date.now();
 
     var logged = {
       exerciseId: lift.exercise.id,
@@ -511,7 +547,7 @@
     updateDecision(lift);
     startRest(lift, setIndex);
 
-    var report = E.volumeReport(weekSessions(), landmarks, index);
+    var report = E.volumeReport(weekSessions(), state.landmarks, index);
     var muscle = E.primaryMuscle(lift.exercise);
     var status = report.filter(function (row) { return row.muscle === muscle; })[0];
     if (status && (status.zone === 'mavToMrv' || status.zone === 'overMrv')) {
@@ -532,7 +568,7 @@
       });
 
     var muscle = E.primaryMuscle(lift.exercise);
-    var report = E.volumeReport(weekSessions(), landmarks, index);
+    var report = E.volumeReport(weekSessions(), state.landmarks, index);
     var status = report.filter(function (row) { return row.muscle === muscle; })[0];
     var calibration = state.session.rirCalibration;
 
@@ -663,6 +699,34 @@
   var scenariosEl = document.getElementById('scenarios');
   var scenarioNote = document.getElementById('scenario-note');
   var statusMeta = document.getElementById('status-meta');
+  var modal = document.getElementById('modal');
+
+  modal.addEventListener('close', function () {
+    if (state.demo) {
+      state.demo.dispose();
+      state.demo = null;
+    }
+    modal.textContent = '';
+  });
+
+  /** 모달 하나를 돌려쓴다. 제목과 본문만 갈아끼운다. */
+  function openModal(title, tag, body) {
+    if (modal.open) modal.close();
+    modal.textContent = '';
+    modal.appendChild(el('div', { class: 'modal-head' }, [
+      el('h3', { id: 'modal-title', text: title }),
+      tag ? el('span', { class: 'pattern', text: tag }) : null,
+      el('button', {
+        type: 'button',
+        class: 'modal-close',
+        'aria-label': '닫기',
+        text: '\u00d7',
+        onclick: function () { modal.close(); },
+      }),
+    ]));
+    modal.appendChild(el('div', { class: 'modal-body' }, body));
+    modal.showModal();
+  }
 
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
@@ -744,6 +808,214 @@
     else renderCheckin();
   }
 
+  /* ── 세션 요약 ─────────────────────────────────── */
+
+  /**
+   * 세션이 끝나면 "오늘 뭘 했지"가 남아야 한다.
+   * 세트 목록이 아니라, 오늘이 이번 주 계획의 어디쯤이고 무엇이 늘었는지를 보여준다.
+   */
+  function openSummary() {
+    var summary = E.summarizeSession({
+      date: state.todayDate,
+      name: state.session.name,
+      sets: state.todaySets,
+      history: state.history,
+      index: index,
+      landmarks: state.landmarks,
+      plan: state.plan,
+      durationSeconds: state.sessionStartedAt
+        ? Math.round((Date.now() - state.sessionStartedAt) / 1000)
+        : undefined,
+      volumeOptions: rirOptions(),
+    });
+    state.summary = summary;
+
+    var body = [];
+
+    body.push(el('div', { class: 'summary-stats' }, [
+      el('div', { class: 'summary-stat' }, [
+        el('span', { class: 'value', text: String(summary.setsCompleted) }),
+        el('span', { class: 'key', text: '세트' }),
+      ]),
+      el('div', { class: 'summary-stat' }, [
+        el('span', { class: 'value', text: String(summary.totalReps) }),
+        el('span', { class: 'key', text: '총 반복' }),
+      ]),
+      el('div', { class: 'summary-stat' }, [
+        el('span', { class: 'value', text: fmt(summary.tonnageKg / 1000) + '톤' }),
+        el('span', { class: 'key', text: '든 무게' }),
+      ]),
+    ]));
+
+    var best = E.bestEffort(state.todaySets, rirOptions().rirOffset || 0);
+    if (best) {
+      var bestExercise = index.get(best.set.exerciseId);
+      body.push(el('p', {
+        class: 'asset-note',
+        text: '오늘 최고 수행 · ' + (bestExercise ? bestExercise.name : best.set.exerciseId) + ' ' +
+          best.set.weightKg + 'kg × ' + best.set.reps + '회 (RIR ' + best.set.rir + ') → 추정 1RM ' +
+          fmt(best.value) + 'kg' +
+          (summary.durationMinutes ? ' · 소요 ' + summary.durationMinutes + '분' : ''),
+      }));
+    }
+
+    if (summary.records.length > 0) {
+      body.push(el('div', { class: 'list-label', text: '오늘 세운 기록' }));
+      body.push(el('div', { class: 'summary-list' }, summary.records.map(function (record) {
+        return el('div', { class: 'record' }, [
+          el('span', { class: 'pr', text: 'PR' }),
+          el('span', { text: record.name }),
+          el('span', {
+            class: 'detail',
+            text: record.weightKg + 'kg × ' + record.reps + ' · 1RM ' + fmt(record.estimated1RM),
+          }),
+        ]);
+      })));
+    }
+
+    if (summary.highlights.length > 0) {
+      body.push(el('div', { class: 'list-label', text: '올린 것' }));
+      body.push(el('ul', { class: 'cue-list' }, summary.highlights.map(function (highlight) {
+        return el('li', {}, [el('span', { text: highlight.name + ' — ' + highlight.message })]);
+      })));
+    }
+
+    if (summary.byMuscle.length > 0) {
+      body.push(el('div', { class: 'list-label', text: '부위별 · 오늘 / 이번 주' }));
+      body.push(el('div', { class: 'summary-list' }, summary.byMuscle.map(function (row) {
+        return el('div', { class: 'summary-row' }, [
+          el('span', { class: 'muscle', text: row.label }),
+          el('span', {
+            class: 'nums',
+            text: fmt(row.today) + ' / ' + fmt(row.week) + '세트 · MEV ' + row.landmark.mev + ' MRV ' + row.landmark.mrv,
+          }),
+          el('span', {
+            class: 'zone ' + zoneClass(E.zoneOf(row.week, row.landmark)),
+            text: row.zone,
+          }),
+        ]);
+      })));
+    }
+
+    if (summary.notes.length > 0 || summary.nextWeek) {
+      body.push(el('div', { class: 'list-label', text: '다음' }));
+      var notes = summary.notes.slice();
+      if (summary.nextWeek) notes.push('다음 주 처방 — ' + summary.nextWeek);
+      body.push(el('ul', { class: 'cue-list' }, notes.map(function (note) {
+        return el('li', {}, [el('span', { text: note })]);
+      })));
+    }
+
+    openModal(state.session.name, state.todayDate, body);
+    pushLog('세션 요약', '<b>' + summary.setsCompleted + '세트</b> · ' + summary.totalReps + '회 · ' +
+      fmt(summary.tonnageKg / 1000) + '톤' +
+      (summary.records.length > 0 ? ' · 개인 기록 ' + summary.records.length + '건' : ''));
+  }
+
+  /* ── 동작 시연 ─────────────────────────────────── */
+
+  /**
+   * 종목 하나의 동작을 3D로 돌린다.
+   *
+   * 실제 제품에서는 촬영 영상이나 구매한 3D 에셋이 이 자리에 온다. 지금은
+   * 엔진의 관절 키프레임으로 절차적 애니메이션을 돌려, 어떤 데이터가
+   * 필요하고 화면이 어떻게 생기는지를 먼저 확인한다.
+   */
+  function openDemo(exercise) {
+    var demo = E.demoFor(exercise);
+    var body = [];
+
+    var caption = el('div', { class: 'demo-caption', text: '' });
+    var fill = el('div', { class: 'demo-track-fill' });
+    var track = el('div', { class: 'demo-track' }, [fill]);
+    var canvas = el('canvas', { class: 'demo-canvas' });
+    var supported = window.FitDemo3D && window.FitDemo3D.available();
+
+    var stage = el('div', { class: 'demo-stage' }, supported
+      ? [canvas, caption]
+      : [el('div', {
+          class: 'demo-fallback',
+          text: '이 브라우저에서는 시연을 띄울 수 없습니다. 아래 수행 큐를 참고하세요.',
+        })]);
+    body.push(stage);
+
+    if (supported) {
+      body.push(track);
+
+      var playButton = el('button', { type: 'button', class: 'chip', text: '일시정지' });
+      var controls = el('div', { class: 'demo-controls' }, [playButton]);
+
+      var speedChips = [0.5, 1, 1.5].map(function (speed) {
+        return el('button', {
+          type: 'button',
+          class: 'chip',
+          'aria-pressed': String(speed === 1),
+          text: speed + '\u00d7',
+          onclick: function () {
+            if (state.demo) state.demo.setSpeed(speed);
+            speedChips.forEach(function (chip, i) {
+              chip.setAttribute('aria-pressed', String([0.5, 1, 1.5][i] === speed));
+            });
+          },
+        });
+      });
+      speedChips.forEach(function (chip) { controls.appendChild(chip); });
+      controls.appendChild(el('span', {
+        class: 'spacer',
+        text: '1회 ' + demo.cycleSeconds + '초 · ' +
+          (window.FitDemo3D.is3d() ? (demo.view === 'front' ? '정면' : demo.view === 'side' ? '측면' : '사선') : '측면 2D'),
+      }));
+      body.push(controls);
+
+      playButton.addEventListener('click', function () {
+        if (!state.demo) return;
+        playButton.textContent = state.demo.toggle() ? '일시정지' : '재생';
+      });
+    }
+
+    if (demo.cues.length > 0) {
+      body.push(el('div', { class: 'list-label', text: '수행 큐' }));
+      body.push(el('ul', { class: 'cue-list' }, demo.cues.map(function (cue) {
+        return el('li', {}, [el('span', { text: cue })]);
+      })));
+    }
+
+    if (demo.mistakes.length > 0) {
+      body.push(el('div', { class: 'list-label', text: '흔한 실수' }));
+      body.push(el('ul', { class: 'cue-list mistakes' }, demo.mistakes.map(function (mistake) {
+        return el('li', {}, [el('span', { text: mistake })]);
+      })));
+    }
+
+    body.push(el('p', {
+      class: 'asset-note',
+      text: '이 시연은 관절 각도 키프레임으로 그린 예시입니다' +
+        (window.FitDemo3D.is3d() ? '' : ' (three.js를 받지 못해 평면으로 그렸습니다)') +
+        '. 동작 패턴 10개를 공유하고 종목별로 큐와 실수만 덧붙이는 구조라, ' +
+        '나중에 촬영 영상이나 3D 에셋으로 바꿀 때도 종목 ' + index.size + '개를 하나씩 찍지 않고 패턴 단위로 교체하면 됩니다.',
+    }));
+
+    openModal(exercise.name, E.PATTERN_LABELS_KO[demo.pattern], body);
+
+    if (!supported) return;
+
+    state.demo = window.FitDemo3D.mount(canvas, demo, {
+      dark: prefersDark(),
+      onProgress: function (t, label) {
+        fill.style.width = (t * 100).toFixed(1) + '%';
+        if (label && caption.textContent !== label) caption.textContent = label;
+      },
+    });
+  }
+
+  function prefersDark() {
+    try {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    } catch (err) {
+      return false;
+    }
+  }
+
   /* 오늘 */
   function renderToday() {
     var phaseBadge = el('span', {
@@ -789,6 +1061,15 @@
         }));
       }
 
+      // 이름만으로는 동작을 모른다 — 처방 옆에 늘 시연을 붙여둔다.
+      nameRow.appendChild(el('button', {
+        type: 'button',
+        class: 'demo-open',
+        text: '시연',
+        'aria-label': lift.exercise.name + ' 동작 시연 보기',
+        onclick: function () { openDemo(lift.exercise); },
+      }));
+
       var card = el('div', { class: 'lift' }, [
         el('div', { class: 'lift-head' }, [
           nameRow,
@@ -810,12 +1091,25 @@
 
     renderMaxTest();
     renderConditioning();
+    renderFinish();
+  }
+
+  /** 오늘을 닫고 요약을 본다. 세트를 하나도 안 했으면 닫을 것도 없다. */
+  function renderFinish() {
+    var done = state.todaySets.length;
+    screen.appendChild(el('button', {
+      type: 'button',
+      class: 'finish',
+      disabled: done === 0 ? '' : null,
+      text: done === 0 ? '세트를 완료하면 세션을 마칠 수 있습니다' : '세션 완료 · ' + done + '세트 요약 보기',
+      onclick: function () { if (done > 0) openSummary(); },
+    }));
   }
 
   /** 마지막 세트에 붙일 수 있는 강도 기법. 지금 쓰면 손해인 건 이유와 함께 잠근다. */
   function renderTechniques(lift) {
     var muscle = E.primaryMuscle(lift.exercise);
-    var report = E.volumeReport(weekSessions(), landmarks, index);
+    var report = E.volumeReport(weekSessions(), state.landmarks, index);
     var status = report.filter(function (row) { return row.muscle === muscle; })[0];
 
     var options = E.availableTechniques({
@@ -1154,7 +1448,7 @@
 
   /* 볼륨 */
   function renderVolume() {
-    var report = E.volumeReport(weekSessions(), landmarks, index)
+    var report = E.volumeReport(weekSessions(), state.landmarks, index)
       .filter(function (row) { return row.effectiveSets > 0; })
       .sort(function (a, b) { return b.mrvRatio - a.mrvRatio; });
 
@@ -1178,6 +1472,96 @@
       ]),
       body,
     ]));
+
+    renderPersonalization();
+  }
+
+  /** 그 부위의 랜드마크가 개인 관측으로 움직였는가. */
+  function personalShift(muscle) {
+    var result = state.personalization;
+    if (!result || !result.applied) return null;
+    var match = result.observations.filter(function (obs) {
+      return obs.muscle === muscle && obs.moved;
+    })[0];
+    return match || null;
+  }
+
+  /**
+   * 개인 볼륨 랜드마크.
+   *
+   * MEV·MAV·MRV는 개인차가 가장 큰 값인데 지금까지는 모두가 교과서 평균을
+   * 썼다. 8주가 쌓이면 그 사람의 기록이 직접 말하게 한다 — 무엇을 보고
+   * 얼마나 움직였는지까지 같이 보여줘야 숫자를 믿을 수 있다.
+   */
+  function renderPersonalization() {
+    var result = state.personalization;
+    if (!result) return;
+
+    // 숫자가 실제로 바뀐 것만 위에 세우고, 근거만 쌓인 부위는 아래에 따로 적는다.
+    var shifted = result.observations.filter(function (obs) { return obs.moved; });
+    var watching = result.observations.filter(function (obs) {
+      return !obs.moved && (obs.mrvShift !== undefined || obs.mevShift !== undefined);
+    });
+
+    var card = el('div', { class: 'person' }, [
+      el('div', { class: 'person-head' }, [
+        el('div', { class: 'title' }, [
+          el('span', { text: '개인 볼륨 랜드마크' }),
+          result.applied ? el('span', { class: 'tag-personal', text: '적용됨' }) : null,
+        ]),
+        el('div', { class: 'meta', text: result.note }),
+      ]),
+    ]);
+
+    var base = E.landmarksFor(state.lifter.level);
+
+    if (shifted.length === 0 && watching.length === 0) {
+      card.appendChild(el('div', { class: 'obs' }, [
+        el('div', {
+          class: 'why',
+          text: result.weeksOfData + '주 기록 · 기준값을 그대로 씁니다. ' +
+            '한 주의 컨디션으로 한 사람의 한계를 정할 수는 없습니다.',
+        }),
+      ]));
+      screen.appendChild(card);
+      return;
+    }
+
+    shifted.forEach(function (obs) {
+      var shifts = [];
+      if (obs.mevShift !== undefined) {
+        shifts.push(shiftNode('MEV', base[obs.muscle].mev, state.landmarks[obs.muscle].mev));
+      }
+      if (obs.mrvShift !== undefined) {
+        shifts.push(shiftNode('MRV', base[obs.muscle].mrv, state.landmarks[obs.muscle].mrv));
+      }
+
+      card.appendChild(el('div', { class: 'obs' }, [
+        el('div', { class: 'name', text: obs.label }),
+        el('div', { class: 'shift' }, shifts),
+        el('div', { class: 'why', text: obs.note }),
+      ]));
+    });
+
+    watching.forEach(function (obs) {
+      card.appendChild(el('div', { class: 'obs' }, [
+        el('div', { class: 'name', text: obs.label + ' — 관측 중' }),
+        el('div', {
+          class: 'why',
+          text: obs.note + '. 다만 기본값과 차이가 작아 아직 숫자를 옮기지 않았습니다.',
+        }),
+      ]));
+    });
+
+    screen.appendChild(card);
+  }
+
+  /** "MRV 25 → 24" — 기준값에서 실제로 적용된 값까지. 관측값은 아래 설명에 따로 쓴다. */
+  function shiftNode(label, from, to) {
+    return el('span', {}, [
+      document.createTextNode(label + ' ' + fmt(from) + ' → '),
+      el('span', { class: to > from ? 'up' : 'down', text: fmt(to) + '  ' }),
+    ]);
   }
 
   function gaugeRow(row) {
@@ -1209,7 +1593,10 @@
 
     return el('div', { class: 'gauge-row' }, [
       el('div', { class: 'gauge-top' }, [
-        el('span', { class: 'name', text: E.MUSCLE_LABELS_KO[row.muscle] }),
+        el('span', { class: 'name' }, [
+          document.createTextNode(E.MUSCLE_LABELS_KO[row.muscle] + ' '),
+          personalShift(row.muscle) ? el('span', { class: 'tag-personal', text: '개인값' }) : null,
+        ]),
         el('span', { class: 'value zone-text-' + zone }, [
           document.createTextNode(fmt(row.effectiveSets) + ' '),
           el('span', { text: '세트 · ' + row.zoneLabel }),
@@ -1427,7 +1814,7 @@
   /* 진행 */
   function renderProgress() {
     var calibration = state.session.rirCalibration;
-    var options = { rirOffset: calibration.applied ? calibration.offset : 0 };
+    var options = rirOptions();
     var history = weekSessions().length > 0 ? state.history.concat(
       state.todaySets.length > 0 ? [{ date: state.todayDate, sets: state.todaySets }] : []
     ) : state.history;
@@ -1499,7 +1886,7 @@
           el('h3', { text: E.MUSCLE_LABELS_KO[muscle] + ' 주간 볼륨' }),
           el('span', { class: 'meta', text: '유효 세트' }),
         ]),
-        el('div', { class: 'sheet-body' }, [volumeChart(trend, landmarks[muscle])]),
+        el('div', { class: 'sheet-body' }, [volumeChart(trend, state.landmarks[muscle])]),
       ]));
     }
 
