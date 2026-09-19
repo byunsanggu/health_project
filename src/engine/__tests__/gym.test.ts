@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { LoadingSpec } from '../gym.ts';
 
 import {
   DEFAULT_GYM,
   availableEquipmentOf,
   describePlates,
+  neighborLoad,
   isAvailableAt,
   loadableWeights,
   loadingFor,
@@ -146,5 +148,40 @@ describe('보유 기구', () => {
     assert.equal((curl as BarbellLoading).barKg, 10, '컬은 EZ바');
     assert.equal(loadingFor(bench, DEFAULT_GYM)!.kind, 'barbell');
     assert.equal(loadingFor(legPress, DEFAULT_GYM)!.kind, 'plateLoaded');
+  });
+});
+
+describe('만들 수 있는 무게에서 한 칸', () => {
+  it('바벨은 플레이트 한 쌍만큼 움직인다', () => {
+    const spec = { kind: 'barbell', barKg: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25] } as LoadingSpec;
+    assert.equal(neighborLoad(105, spec, 1), 107.5);
+    assert.equal(neighborLoad(105, spec, -1), 102.5);
+  });
+
+  it('덤벨은 간격이 일정하지 않아도 다음 칸으로 간다', () => {
+    /*
+     * 증분을 더하면 없는 무게가 나온다. 22.5kg 덤벨이 없는 곳에서
+     * "2.5kg 올리기"는 들 수 없는 무게를 처방하는 것이다.
+     */
+    const spec = { kind: 'dumbbell', availableKg: [10, 12, 14, 16, 20, 24, 30] } as LoadingSpec;
+    assert.equal(neighborLoad(16, spec, 1), 20);
+    assert.equal(neighborLoad(20, spec, -1), 16);
+  });
+
+  it('목록에 없는 무게에서도 이웃을 찾는다', () => {
+    // 사용자가 직접 친 값은 목록에 없을 수 있다.
+    const spec = { kind: 'dumbbell', availableKg: [10, 12, 14, 16] } as LoadingSpec;
+    assert.equal(neighborLoad(13, spec, 1), 14);
+    assert.equal(neighborLoad(13, spec, -1), 10);
+  });
+
+  it('끝에 닿으면 그 자리에 둔다', () => {
+    // 없는 무게로 넘어가느니 안 움직이는 게 낫다.
+    const spec = { kind: 'dumbbell', availableKg: [10, 12, 14] } as LoadingSpec;
+    assert.equal(neighborLoad(10, spec, -1), 10);
+    assert.equal(neighborLoad(14, spec, 1), 14);
+    // 목록 밖의 값에서도 넘어가지 않는다
+    assert.equal(neighborLoad(2, spec, -1), 10);
+    assert.equal(neighborLoad(99, spec, 1), 14);
   });
 });

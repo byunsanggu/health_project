@@ -967,6 +967,49 @@
     render();
   }
 
+  function typeReps(liftIndex, setIndex, raw) {
+    var value = parseInt(raw, 10);
+    // 빈칸이나 이상한 값이면 원래 값을 그대로 둔다 — 0회를 기록할 일은 없다.
+    if (!Number.isFinite(value) || value < 1) return render();
+    state.lifts[liftIndex].sets[setIndex].reps = clamp(value, 1, 100);
+    render();
+  }
+
+  function setWeight(liftIndex, setIndex, weightKg) {
+    var set = state.lifts[liftIndex].sets[setIndex];
+    set.weightKg = Math.round(weightKg * 100) / 100;
+    // 직접 정한 값이므로 더 이상 추정이 아니다. 화면의 "추정" 표시가 사라진다.
+    set.estimated = false;
+    render();
+  }
+
+  function typeWeight(liftIndex, setIndex, raw) {
+    var value = parseFloat(raw);
+    if (!Number.isFinite(value) || value < 0) return render();
+    setWeight(liftIndex, setIndex, Math.min(999, value));
+  }
+
+  /**
+   * ± 한 번에 얼마나 움직일까.
+   *
+   * 종목마다 다르다 — 바벨은 플레이트 한 쌍(보통 2.5kg), 덤벨은 사다리
+   * 간격, 스택 머신은 한 판. 1kg씩 움직이면 바벨에서 못 만드는 무게만
+   * 나온다.
+   */
+  function stepWeight(liftIndex, setIndex, direction) {
+    var lift = state.lifts[liftIndex];
+    var set = lift.sets[setIndex];
+    if (!lift.loading) {
+      return setWeight(liftIndex, setIndex, Math.max(0, set.weightKg + direction * (lift.exercise.increment || 2.5)));
+    }
+    /*
+     * 만들 수 있는 무게 목록에서 한 칸 옮긴다. 증분을 더하는 것보다
+     * 정확하다 — 덤벨은 간격이 일정하지 않다(20, 22.5, 25, 30...).
+     */
+    var moved = E.neighborLoad(set.weightKg, lift.loading, direction);
+    if (moved !== set.weightKg) setWeight(liftIndex, setIndex, moved);
+  }
+
   /* ── 렌더링 ────────────────────────────────────── */
 
   var screen = document.getElementById('screen');
@@ -2092,15 +2135,56 @@
       ? set.targetReps.max + '회'
       : set.targetReps.min + '–' + set.targetReps.max + '회';
 
-    var body = [
-      el('div', { class: 'now-load' }, [
-        el('span', { class: 'weight', text: set.weightKg > 0 ? String(set.weightKg) : '맨몸' }),
-        set.weightKg > 0 ? el('span', { class: 'unit', text: 'kg' }) : null,
-        el('span', { class: 'now-target', text: '목표 ' + target }),
-      ]),
-    ];
+    var body = [];
+
+    /*
+     * 중량과 반복은 직접 친다.
+     *
+     * ± 버튼만 두면 105에서 60으로 내리는 데 열여덟 번을 눌러야 한다.
+     * 처방과 다르게 한 날이 오히려 기록이 중요한 날이고, 그때 입력이
+     * 번거로우면 아예 기록을 안 한다. 버튼은 미세 조정용으로 남긴다.
+     */
+    if (set.weightKg > 0) {
+      body.push(el('div', { class: 'now-load' }, [
+        el('div', { class: 'big-field' }, [
+          el('button', { type: 'button', class: 'nudge', 'aria-label': '중량 줄이기', text: '−',
+            onclick: function () { stepWeight(liftIndex, setIndex, -1); } }),
+          el('input', {
+            type: 'number', min: '0', max: '999', step: 'any', inputmode: 'decimal',
+            class: 'big-input', value: String(set.weightKg),
+            'aria-label': (setIndex + 1) + '세트 중량 (kg)',
+            onfocus: function (event) { event.target.select(); },
+            onchange: function (event) { typeWeight(liftIndex, setIndex, event.target.value); },
+          }),
+          el('span', { class: 'big-unit', text: 'kg' }),
+          el('button', { type: 'button', class: 'nudge', 'aria-label': '중량 늘리기', text: '+',
+            onclick: function () { stepWeight(liftIndex, setIndex, 1); } }),
+        ]),
+      ]));
+    } else {
+      body.push(el('div', { class: 'now-load' }, [el('span', { class: 'weight', text: '맨몸' })]));
+    }
 
     if (plates) body.push(el('div', { class: 'plates', text: E.describePlates(plates) }));
+
+    /*
+     * 친 무게를 이 헬스장에서 만들 수 있는지 본다. 못 만들면 고쳐주지
+     * 않고 알려만 준다 — 다른 바를 쓰거나 눈금이 다른 기계일 수도 있고,
+     * 그건 사용자가 더 잘 안다.
+     */
+    if (set.weightKg > 0 && lift.loading) {
+      var loadable = E.nearestLoadable(set.weightKg, lift.loading, 'nearest');
+      if (Math.abs(loadable - set.weightKg) > 0.01) {
+        body.push(el('button', {
+          type: 'button', class: 'snap-note',
+          onclick: function () { setWeight(liftIndex, setIndex, loadable); },
+        }, [
+          el('span', { text: set.weightKg + 'kg — 이 헬스장 기구로는 만들 수 없는 무게입니다.' }),
+          el('span', { class: 'snap-to', text: loadable + 'kg로 맞추기' }),
+        ]));
+      }
+    }
+
     if (set.adjustment) {
       body.push(el('div', { class: 'set-result' }, [
         el('em', { text: (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg — ' + set.adjustment.reason }),
@@ -2109,11 +2193,19 @@
 
     body.push(el('div', { class: 'now-reps' }, [
       el('span', { class: 'rir-label', text: '반복' }),
-      el('div', { class: 'reps' }, [
-        el('button', { type: 'button', 'aria-label': '반복 수 줄이기', text: '−',
+      el('span', { class: 'now-target', text: '목표 ' + target }),
+      el('div', { class: 'big-field small' }, [
+        el('button', { type: 'button', class: 'nudge', 'aria-label': '반복 수 줄이기', text: '−',
           onclick: function () { setReps(liftIndex, setIndex, -1); } }),
-        el('output', { text: set.reps + '회' }),
-        el('button', { type: 'button', 'aria-label': '반복 수 늘리기', text: '+',
+        el('input', {
+          type: 'number', min: '1', max: '100', step: '1', inputmode: 'numeric',
+          class: 'big-input', value: String(set.reps),
+          'aria-label': (setIndex + 1) + '세트 반복 수',
+          onfocus: function (event) { event.target.select(); },
+          onchange: function (event) { typeReps(liftIndex, setIndex, event.target.value); },
+        }),
+        el('span', { class: 'big-unit', text: '회' }),
+        el('button', { type: 'button', class: 'nudge', 'aria-label': '반복 수 늘리기', text: '+',
           onclick: function () { setReps(liftIndex, setIndex, 1); } }),
       ]),
     ]));

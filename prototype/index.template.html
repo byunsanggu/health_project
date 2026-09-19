@@ -1061,6 +1061,55 @@ input[type="search"] {
   color: var(--zone-ok); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px;
 }
 
+/* ── 직접 치는 중량·반복 ────────────────────────── */
+/*
+ * ± 버튼만 두면 105에서 60으로 내리는 데 열여덟 번을 눌러야 한다.
+ * 숫자를 직접 치고, 버튼은 미세 조정으로 남긴다.
+ */
+.big-field {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.big-field .nudge { width: 48px; height: 56px; font-size: 22px; }
+.big-input {
+  width: 96px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  letter-spacing: -.02em;
+  -moz-appearance: textfield;
+  padding: 0;
+}
+.big-input::-webkit-outer-spin-button,
+.big-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.big-unit { align-self: center; font-family: var(--mono); font-size: 13px; color: var(--muted); padding-right: 10px; }
+.big-field.small .nudge { width: 42px; height: 46px; font-size: 19px; }
+.big-field.small .big-input { width: 62px; font-size: 21px; }
+.big-field.small .big-unit { font-size: 11.5px; padding-right: 8px; }
+
+/* 못 만드는 무게를 쳤을 때. 고쳐주지 않고 알려만 준다. */
+.snap-note {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  width: 100%; text-align: left;
+  border: 1px solid var(--zone-hard);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--muted);
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.snap-to { margin-left: auto; color: var(--accent); font-weight: 500; white-space: nowrap; }
+
 /* ── 세트: 한 번에 하나 ─────────────────────────── */
 .set-track { border-top: 1px solid var(--line-soft); }
 
@@ -1101,17 +1150,15 @@ input[type="search"] {
   color: var(--accent); padding: 8px 13px 0;
 }
 .now-body { display: grid; gap: 10px; padding: 4px 13px 13px; }
-.now-load { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.now-load { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .now-load .weight {
   font-family: var(--mono); font-size: 34px; font-weight: 600;
   line-height: 1.05; font-variant-numeric: tabular-nums; letter-spacing: -.02em;
 }
 .now-load .unit { font-family: var(--mono); font-size: 14px; color: var(--muted); }
 .now-target { margin-left: auto; font-size: 12.5px; color: var(--muted); }
-.now-reps { display: flex; align-items: center; gap: 9px; }
-.now-reps .reps { margin-left: auto; }
-.now-reps .reps button { width: 40px; height: 40px; font-size: 19px; }
-.now-reps .reps output { font-size: 16px; min-width: 52px; }
+.now-reps { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.now-reps .big-field { margin-left: auto; }
 /* RIR은 장갑 낀 손으로도 눌려야 한다 */
 .now-rir .chip { min-width: 46px; height: 42px; font-size: 14px; }
 
@@ -1120,13 +1167,23 @@ input[type="search"] {
 }
 
 /* 경과 시간 — 폰 시계는 "몇 시"만 알려주지 "얼마나 했는지"는 모른다 */
+/* 운동한 시간. 헬스장에서 제일 자주 보는 숫자라 작으면 안 된다. */
 .elapsed {
-  display: inline-flex; align-items: baseline; gap: 4px;
-  font-family: var(--mono); font-size: 12px; font-weight: 600;
-  font-variant-numeric: tabular-nums; color: var(--ink);
-  white-space: nowrap; padding-left: 2px;
+  display: inline-grid;
+  justify-items: end;
+  gap: 0;
+  white-space: nowrap;
+  padding-left: 2px;
 }
-.elapsed i { font-style: normal; font-size: 9.5px; letter-spacing: .08em; color: var(--muted); font-weight: 400; }
+.elapsed i {
+  font-style: normal; font-family: var(--mono); font-size: 9px;
+  letter-spacing: .12em; color: var(--muted); line-height: 1.2;
+}
+.elapsed span {
+  font-family: var(--mono); font-size: 22px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+  line-height: 1.1; letter-spacing: -.01em;
+}
 
 /* ── 오늘 할 날 바꾸기 ──────────────────────────── */
 /*
@@ -1208,7 +1265,23 @@ input[type="search"] {
 }
 
 /* ── 오늘: 진행 중 ──────────────────────────────── */
-.progress-head { display: flex; align-items: center; gap: 9px; }
+/*
+ * 운동 중의 머리띠. 스크롤해도 안 사라져야 한다 — 몇 종목째인지, 얼마나
+ * 했는지는 세트를 내려다보는 중에도 보여야 하는 정보다.
+ * 위아래 여백을 음수로 빼서 .screen의 패딩 자리까지 덮는다.
+ */
+.progress-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -16px -16px 0;
+  padding: 10px 16px;
+  background: var(--ground);
+  border-bottom: 1px solid var(--line-soft);
+}
 .progress-count {
   font-family: var(--mono); font-size: 12px; font-weight: 600;
   font-variant-numeric: tabular-nums; white-space: nowrap;
@@ -1351,7 +1424,8 @@ input[type="search"] {
         <ol>
           <li>오늘 할 날이 마음에 안 들면 <b>제목(하체 B)을 눌러</b> 바꾸세요. 상체를 하고 싶은 날이 있습니다. 막지 않고, 그 부위를 마지막으로 언제 했는지만 알려줍니다 — <b>어제 가슴을 했습니다</b>처럼요. 건너뛴 날은 없어지지 않고 다음으로 밀립니다.</li>
           <li><b>오늘</b> 탭은 <b>시작하기</b>를 누르기 전까지 목록만 보여줍니다. 누르면 <b>한 종목씩</b> 나옵니다 — 헬스장에서 필요한 건 "지금 이거" 하나이고, 일곱 개가 한 화면에 깔려 있으면 시작하기 전에 지칩니다. 위의 <b>목록</b>으로 언제든 전체를 다시 봅니다.</li>
-          <li>세트도 <b>한 번에 하나</b>만 나옵니다. 점이 세트이고, 끝난 세트는 접힙니다. 워밍업은 첫 본세트를 하면 자동으로 접힙니다 — 지금 할 세트가 화면 밖으로 밀리면 안 되니까요. 오른쪽 위 <b>운동 12:34</b>는 시작하기를 누른 순간부터 잰 시간입니다.</li>
+          <li>세트도 <b>한 번에 하나</b>만 나옵니다. 점이 세트이고, 끝난 세트는 접힙니다. 워밍업은 첫 본세트를 하면 자동으로 접힙니다 — 지금 할 세트가 화면 밖으로 밀리면 안 되니까요. 오른쪽 위 <b>운동 12:34</b>는 시작하기를 누른 순간부터 잰 시간이고, 스크롤해도 따라옵니다.</li>
+          <li><b>중량과 반복은 직접 치면 됩니다.</b> ± 버튼은 미세 조정용이고, 한 번에 그 기구가 만들 수 있는 <b>다음 칸</b>으로 갑니다 — 덤벨은 간격이 일정하지 않으니까요. 못 만드는 무게를 쳐도 막지 않고 가까운 값을 알려줍니다.</li>
           <li>세트의 RIR을 탭해 보세요. 다음 세트 중량이 즉시 조정되고, 그 이유가 아래 로그에 남습니다. 잘못 눌렀으면 <b>완료 → 고치기</b>로 되돌립니다 — 주간 볼륨에서도 같이 빠집니다.</li>
           <li><b>볼륨</b> 탭의 게이지는 부위별 주간 유효 세트입니다. 눈금은 MEV(최소 자극) · MAV(적응 최대) · MRV(회복 한계)이고, 빗금 구간이 레드라인입니다.</li>
           <li><b>체크인</b> 탭에서 어깨 통증을 3점 이상으로 올리면, 오늘 세션의 종목이 자동으로 대체됩니다.</li>

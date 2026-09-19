@@ -265,6 +265,37 @@ export function stepAround(targetKg: number, spec: LoadingSpec): number {
   return next === undefined ? 0 : Math.round((next - current) * 100) / 100;
 }
 
+/**
+ * 만들 수 있는 무게 목록에서 한 칸 옮긴다.
+ *
+ * 증분을 더하는 것과 다르다. 덤벨은 간격이 일정하지 않고(20, 22.5, 25, 30…),
+ * 바벨도 작은 플레이트가 떨어지면 아래쪽 간격이 벌어진다. "2.5kg를 더한다"가
+ * 아니라 "다음 칸으로 간다"가 현장에서 맞는 동작이다.
+ *
+ * 끝에 닿으면 그 자리에 둔다 — 없는 무게로 넘어가지 않는다.
+ */
+export function neighborLoad(
+  targetKg: number,
+  spec: LoadingSpec,
+  direction: 1 | -1,
+): number {
+  const options = loadableWeights(spec);
+  if (options.length === 0) return targetKg;
+
+  const current = nearestLoadable(targetKg, spec);
+  if (direction > 0) {
+    const next = options.find((value) => value > current + 1e-9);
+    return next === undefined ? current : next;
+  }
+
+  let previous = current;
+  for (const value of options) {
+    if (value < current - 1e-9) previous = value;
+    else break;
+  }
+  return previous;
+}
+
 export interface PlatePlan {
   /** 바/캐리지 자체 무게 */
   baseKg: number;
