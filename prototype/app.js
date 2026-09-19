@@ -156,6 +156,13 @@
         style: state.style,
         blockHistory: state.blockHistory,
         timeBudget: state.timeBudget,
+        /*
+         * 어디까지 했는지도 저장한다. 헬스장에서 화면이 꺼지거나 앱이
+         * 다시 뜨는 일은 늘 있는데, 그때마다 목록 화면으로 돌아가서
+         * 몇 번째였는지 다시 찾게 하면 안 된다.
+         */
+        started: state.started,
+        liftCursor: state.liftCursor,
         gymBook: state.gymBook,
         consent: state.consent,
         consentRecord: state.consentRecord,
@@ -191,6 +198,8 @@
       state.tab = settings.tab || 'today';
       state.style = settings.style || 'hypertrophy';
       state.timeBudget = settings.timeBudget || null;
+      state.started = Boolean(settings.started);
+      state.liftCursor = settings.liftCursor || 0;
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
       state.blockHistory = settings.blockHistory || ['hypertrophy'];
@@ -367,6 +376,13 @@
     warmupOpen: {},
     gymQuery: '',
     maxTest: null,
+    /*
+     * 오늘을 시작했는가. 시작 전에는 목록만 보여주고, 시작한 뒤에는
+     * 한 종목씩만 보여준다. 한 화면에 일곱 개가 깔려 있으면 시작하기
+     * 전에 지친다 — 헬스장에서 실제로 필요한 건 "지금 이거" 하나다.
+     */
+    started: false,
+    liftCursor: 0,
     onboarding: { active: true, step: 0 },
   };
 
@@ -586,7 +602,7 @@
       lifter: state.lifter,
     });
 
-    // 오늘 쓸 수 있는 시간이 정해져 있으면 그 안에 들어오게 줄인다.
+    // 오늘 운동 할 수 있는 시간이 정해져 있으면 그 안에 들어오게 줄인다.
     state.timeFit = null;
     if (state.timeBudget) {
       var profile = E.styleProfile(state.style);
@@ -963,9 +979,27 @@
     return Math.round(value * 10) / 10;
   }
 
+  /*
+   * 화면이 바뀌면 맨 위로 올린다.
+   *
+   * #screen은 재사용되므로 스크롤 위치가 그대로 남는다. 초기 설정에서
+   * 한참 내려간 상태로 오늘 탭에 들어오면 세션 이름과 시간 설정을 지나친
+   * 자리에서 시작한다. 반대로 RIR을 탭할 때마다 위로 튀면 못 쓴다 —
+   * 그래서 "어느 화면인가"가 바뀔 때만 올린다.
+   */
+  function viewKey() {
+    if (state.onboarding.active) return 'onboarding:' + state.onboarding.step;
+    return state.tab + ':' + (state.started ? 'lift:' + state.liftCursor : 'plan');
+  }
+  var lastViewKey = null;
+
   function render() {
     var onboarding = state.onboarding.active;
     tabbar.hidden = onboarding;
+
+    var key = viewKey();
+    var moved = key !== lastViewKey;
+    lastViewKey = key;
 
     screen.textContent = '';
     if (onboarding) {
@@ -976,6 +1010,8 @@
       renderStatus();
       renderScreen();
     }
+    if (moved) screen.scrollTop = 0;
+
     renderRest();
     renderLog();
     renderScenarios();
@@ -1648,124 +1684,272 @@
   }
 
   /* 오늘 */
-  function renderToday() {
+  /* ── 오늘 ────────────────────────────────────────
+
+     화면을 둘로 나눈다.
+
+     시작 전에는 목록만 보여준다 — 오늘 뭘 하는지, 얼마나 걸리는지,
+     시간이 없으면 뭘 자를지. 여기서 정하고 나면 더 볼 게 없다.
+
+     시작한 뒤에는 한 종목만 보여준다. 헬스장에서 필요한 건 "지금 이거"
+     하나고, 일곱 개가 한 화면에 깔려 있으면 세 번째 종목쯤에서 스크롤을
+     잃는다. 남은 개수는 위에 숫자로만 있으면 된다.
+  ── */
+
+  function sessionHead() {
     var phaseBadge = el('span', {
       class: 'badge ' + (state.plan.phase === 'deload' ? 'deload' : 'accum'),
       text: state.plan.phase === 'deload' ? '디로드' : '축적 ' + state.plan.weekInBlock + '주차',
     });
-
     var estimate = E.estimateSessionTime(state.session, {
       restMultiplier: E.styleProfile(state.style).restMultiplier,
     });
-
-    screen.appendChild(el('div', { class: 'session-head' }, [
-      el('div', { class: 'title' }, [
-        el('h2', { text: state.session.name }),
-        phaseBadge,
+    return {
+      estimate: estimate,
+      node: el('div', { class: 'session-head' }, [
+        el('div', { class: 'title' }, [
+          el('h2', { text: state.session.name }),
+          phaseBadge,
+        ]),
+        el('p', {
+          class: 'meta',
+          text: state.session.date + ' · 목표 RIR ' + state.plan.targetRir + ' · ' +
+            state.lifts.length + '개 종목 · 약 ' + estimate.totalMinutes + '분',
+        }),
       ]),
-      el('p', {
-        class: 'meta',
-        text: state.session.date + ' · 목표 RIR ' + state.plan.targetRir + ' · ' +
-          state.lifts.length + '개 종목 · 약 ' + estimate.totalMinutes + '분',
-      }),
-    ]));
+    };
+  }
 
-    renderTimeBudget(estimate);
-
+  function renderWarnings() {
     state.session.warnings.forEach(function (warning) {
       screen.appendChild(el('div', { class: 'notice' + (warning.medical ? ' stop' : '') }, [
         el('div', { class: 'label', text: WARNING_LABELS[warning.kind] || '알림' }),
         el('div', { text: warning.text }),
       ]));
     });
+  }
 
-    state.lifts.forEach(function (lift, liftIndex) {
-      var nameRow = el('div', { class: 'lift-name' }, [el('span', { text: lift.exercise.name })]);
-      if (lift.substitutedFrom) {
-        nameRow.appendChild(el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name }));
-      }
-      if (state.occupied[lift.exercise.id] === 'deferred') {
-        nameRow.appendChild(el('span', { class: 'occupied-tag', text: '뒤로 미룸' }));
-      }
+  /** 종목 한 줄 요약 — "4세트 × 65kg × 8회". 목록에서는 이것만 있으면 된다. */
+  function liftSummaryLine(lift) {
+    var sets = lift.sets.length;
+    var first = lift.sets[0];
+    if (!first) return sets + '세트';
+    var reps = first.targetReps.min === first.targetReps.max
+      ? first.targetReps.max + '회'
+      : first.targetReps.min + '–' + first.targetReps.max + '회';
+    var load = first.weightKg > 0 ? first.weightKg + 'kg' : '맨몸';
+    return sets + '세트 · ' + load + ' · ' + reps;
+  }
 
-      if (lift.startingLoad && lift.startingLoad.needsCalibration) {
-        nameRow.appendChild(el('span', {
-          class: 'est-tag',
-          text: lift.startingLoad.method === 'related-lift' ? '환산 추정' : '기준선 추정',
-        }));
-      }
+  /** 시작 전 — 오늘 할 것 목록. */
+  function renderPlanList() {
+    var head = sessionHead();
+    screen.appendChild(head.node);
 
-      // 이름만으로는 동작을 모른다 — 처방 옆에 늘 시연을 붙여둔다.
-      nameRow.appendChild(el('button', {
-        type: 'button',
-        class: 'demo-open',
-        text: '시연',
-        'aria-label': lift.exercise.name + ' 동작 시연 보기',
-        onclick: function () { openDemo(lift.exercise); },
-      }));
+    renderTimeBudget(head.estimate);
+    renderWarnings();
 
-      // 헬스장에서 계획이 깨지는 가장 흔한 이유 — 기구에 사람이 있다.
-      nameRow.appendChild(el('button', {
-        type: 'button',
-        class: 'demo-open busy',
-        text: '사람 있어요',
-        'aria-label': lift.exercise.name + ' 기구가 사용 중일 때 대안 보기',
-        onclick: function () { openOccupancy(lift.exercise); },
-      }));
-
-      /*
-       * 첫 화면에서 기구 31개를 정확히 고르게 할 수는 없다 — "플랫 벤치"와
-       * "인클라인 벤치"가 뭔지 모르는 사람이 훨씬 많다. 대충 시작하고 여기서
-       * 고친다. 지금은 눈앞에 기구가 있으니 틀릴 수가 없다.
-       */
-      if (E.equipmentBehind(lift.exercise, currentGymEntry() || { equipmentIds: [] }).length > 0) {
-        nameRow.appendChild(el('button', {
-          type: 'button',
-          class: 'demo-open missing',
-          text: '없어요',
-          'aria-label': lift.exercise.name + '에 필요한 기구가 헬스장에 없을 때',
-          onclick: function () { openMissingEquipment(lift.exercise); },
-        }));
-      }
-
-      var card = el('div', { class: 'lift' }, [
-        el('div', { class: 'lift-head' }, [
-          nameRow,
-          el('div', { class: 'lift-note', text: lift.note }),
+    var list = el('div', { class: 'summary-list' }, state.lifts.map(function (lift, index) {
+      var done = lift.sets.filter(function (set) { return set.done; }).length;
+      return el('div', { class: 'plan-row' }, [
+        el('span', { class: 'plan-no', text: String(index + 1) }),
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name' }, [
+            el('span', { text: lift.exercise.name }),
+            lift.substitutedFrom
+              ? el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name })
+              : null,
+          ]),
+          el('span', { class: 'plan-sets', text: liftSummaryLine(lift) }),
         ]),
+        done > 0
+          ? el('span', { class: 'plan-done', text: done + '/' + lift.sets.length })
+          : el('button', {
+              type: 'button', class: 'demo-open', text: '시연',
+              'aria-label': lift.exercise.name + ' 동작 시연 보기',
+              onclick: function () { openDemo(lift.exercise); },
+            }),
       ]);
+    }));
 
-      // 다른 헬스장에서 하던 기계면 표기 중량이 다르다. 숨기면 안 된다.
-      if (lift.gymWeightNote) {
-        card.appendChild(el('div', { class: 'machine-note' }, [
-          el('span', { class: 'label', text: '처음 쓰는 기계' }),
-          el('span', { text: lift.gymWeightNote }),
-        ]));
-      }
-
-      card.appendChild(renderWarmup(lift));
-
-      lift.sets.forEach(function (set, setIndex) {
-        card.appendChild(renderSetRow(lift, liftIndex, set, setIndex));
-      });
-
-      var decision = renderDecision(lift);
-      if (decision) card.appendChild(decision);
-      card.appendChild(renderTechniques(lift));
-      screen.appendChild(card);
-    });
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '오늘 할 것' }),
+        el('span', { class: 'meta', text: state.lifts.length + '개' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [list]),
+    ]));
 
     renderMaxTest();
     renderConditioning();
-    renderFinish();
+
+    var doneSets = state.todaySets.length;
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish start-cta',
+      text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : '시작하기',
+      onclick: function () {
+        state.started = true;
+        // 이어서 할 때는 아직 안 끝낸 첫 종목으로 간다.
+        var next = state.lifts.findIndex(function (lift) {
+          return lift.sets.some(function (set) { return !set.done; });
+        });
+        state.liftCursor = next >= 0 ? next : 0;
+        render();
+      },
+    }));
+
+    if (doneSets > 0) renderFinish(true);
   }
 
-  /** 오늘을 닫고 요약을 본다. 세트를 하나도 안 했으면 닫을 것도 없다. */
-  function renderFinish() {
+  /** 시작한 뒤 — 지금 할 종목 하나. */
+  function renderActiveLift() {
+    // 시간 예산을 바꾸면 종목이 줄어든다. 커서가 밖으로 나가지 않게 잡아둔다.
+    if (state.liftCursor >= state.lifts.length) state.liftCursor = Math.max(0, state.lifts.length - 1);
+    var lift = state.lifts[state.liftCursor];
+    if (!lift) { state.started = false; renderPlanList(); return; }
+
+    var total = state.lifts.length;
+    var position = state.liftCursor + 1;
+
+    screen.appendChild(el('div', { class: 'progress-head' }, [
+      el('button', {
+        type: 'button', class: 'demo-open', text: '목록',
+        'aria-label': '오늘 할 것 목록으로',
+        onclick: function () { state.started = false; render(); },
+      }),
+      el('span', { class: 'progress-count', text: position + ' / ' + total }),
+      el('span', { class: 'progress-bar' }, [
+        el('i', { style: 'width:' + Math.round((position / total) * 100) + '%' }),
+      ]),
+    ]));
+
+    renderWarnings();
+    screen.appendChild(buildLiftCard(lift, state.liftCursor));
+
+    var remaining = lift.sets.filter(function (set) { return !set.done; }).length;
+    var last = state.liftCursor >= total - 1;
+
+    var nav = el('div', { class: 'step-nav' }, [
+      state.liftCursor > 0
+        ? el('button', {
+            type: 'button', class: 'ghost', text: '이전',
+            onclick: function () { state.liftCursor -= 1; render(); },
+          })
+        : null,
+      last
+        ? null
+        : el('button', {
+            /* 세트가 남았는데 넘어가는 것도 막지 않는다 — 기구가 막혀서
+               순서를 바꾸는 일이 헬스장에서는 늘 있다. 다만 티는 낸다. */
+            type: 'button',
+            class: remaining === 0 ? 'primary' : 'ghost',
+            text: remaining === 0 ? '다음 종목' : '다음 종목 (' + remaining + '세트 남음)',
+            onclick: function () { state.liftCursor += 1; render(); },
+          }),
+    ]);
+    screen.appendChild(nav);
+
+    if (last) {
+      renderMaxTest();
+      renderConditioning();
+    }
+    renderFinish(!last);
+  }
+
+  /** 종목 카드 하나. 목록 화면에서는 안 쓰고 진행 화면에서만 쓴다. */
+  function buildLiftCard(lift, liftIndex) {
+    var nameRow = el('div', { class: 'lift-name' }, [el('span', { text: lift.exercise.name })]);
+    if (lift.substitutedFrom) {
+      nameRow.appendChild(el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name }));
+    }
+    if (state.occupied[lift.exercise.id] === 'deferred') {
+      nameRow.appendChild(el('span', { class: 'occupied-tag', text: '뒤로 미룸' }));
+    }
+
+    if (lift.startingLoad && lift.startingLoad.needsCalibration) {
+      nameRow.appendChild(el('span', {
+        class: 'est-tag',
+        text: lift.startingLoad.method === 'related-lift' ? '환산 추정' : '기준선 추정',
+      }));
+    }
+
+    // 이름만으로는 동작을 모른다 — 처방 옆에 늘 시연을 붙여둔다.
+    nameRow.appendChild(el('button', {
+      type: 'button',
+      class: 'demo-open',
+      text: '시연',
+      'aria-label': lift.exercise.name + ' 동작 시연 보기',
+      onclick: function () { openDemo(lift.exercise); },
+    }));
+
+    // 헬스장에서 계획이 깨지는 가장 흔한 이유 — 기구에 사람이 있다.
+    nameRow.appendChild(el('button', {
+      type: 'button',
+      class: 'demo-open busy',
+      text: '사람 있어요',
+      'aria-label': lift.exercise.name + ' 기구가 사용 중일 때 대안 보기',
+      onclick: function () { openOccupancy(lift.exercise); },
+    }));
+
+    /*
+     * 첫 화면에서 기구 31개를 정확히 고르게 할 수는 없다 — "플랫 벤치"와
+     * "인클라인 벤치"가 뭔지 모르는 사람이 훨씬 많다. 대충 시작하고 여기서
+     * 고친다. 지금은 눈앞에 기구가 있으니 틀릴 수가 없다.
+     */
+    if (E.equipmentBehind(lift.exercise, currentGymEntry() || { equipmentIds: [] }).length > 0) {
+      nameRow.appendChild(el('button', {
+        type: 'button',
+        class: 'demo-open missing',
+        text: '없어요',
+        'aria-label': lift.exercise.name + '에 필요한 기구가 헬스장에 없을 때',
+        onclick: function () { openMissingEquipment(lift.exercise); },
+      }));
+    }
+
+    var card = el('div', { class: 'lift' }, [
+      el('div', { class: 'lift-head' }, [
+        nameRow,
+        el('div', { class: 'lift-note', text: lift.note }),
+      ]),
+    ]);
+
+    // 다른 헬스장에서 하던 기계면 표기 중량이 다르다. 숨기면 안 된다.
+    if (lift.gymWeightNote) {
+      card.appendChild(el('div', { class: 'machine-note' }, [
+        el('span', { class: 'label', text: '처음 쓰는 기계' }),
+        el('span', { text: lift.gymWeightNote }),
+      ]));
+    }
+
+    card.appendChild(renderWarmup(lift));
+
+    lift.sets.forEach(function (set, setIndex) {
+      card.appendChild(renderSetRow(lift, liftIndex, set, setIndex));
+    });
+
+    var decision = renderDecision(lift);
+    if (decision) card.appendChild(decision);
+    card.appendChild(renderTechniques(lift));
+    return card;
+  }
+
+  function renderToday() {
+    if (state.started) renderActiveLift();
+    else renderPlanList();
+  }
+
+  /**
+   * 오늘을 닫고 요약을 본다. 세트를 하나도 안 했으면 닫을 것도 없다.
+   *
+   * 마지막 종목이 아니면 조용히 둔다. 운동 중에 화면에서 제일 큰 버튼이
+   * "세션 완료"면 다음에 뭘 해야 하는지 잘못 읽힌다 — 지금 할 일은
+   * 다음 종목이다.
+   */
+  function renderFinish(quiet) {
     var done = state.todaySets.length;
     screen.appendChild(el('button', {
       type: 'button',
-      class: 'finish',
+      class: 'finish' + (quiet ? ' quiet' : ''),
       disabled: done === 0 ? '' : null,
       text: done === 0 ? '세트를 완료하면 세션을 마칠 수 있습니다' : '세션 완료 · ' + done + '세트 요약 보기',
       onclick: function () { if (done > 0) openSummary(); },
@@ -1936,27 +2120,67 @@
 
   var TIME_BUDGETS = [30, 45, 60, 90];
 
-  /** 오늘 쓸 수 있는 시간. 현실에서 가장 흔한 제약인데 대부분의 앱이 안 받아준다. */
-  function renderTimeBudget(estimate) {
-    var chips = el('div', { class: 'chip-row' }, []);
+  /** 오늘 운동 할 수 있는 시간. 현실에서 가장 흔한 제약인데 대부분의 앱이 안 받아준다. */
+  function applyTimeBudget(minutes) {
+    state.timeBudget = minutes;
+    rebuildSession();
+    if (minutes && state.timeFit && state.timeFit.adjustments.length > 0) {
+      pushLog('시간 예산', '<b>' + minutes + '분</b>에 맞춰 조정했습니다 — ' + state.timeFit.notes[0]);
+    }
+    render();
+  }
 
-    TIME_BUDGETS.concat([null]).forEach(function (minutes) {
+  function renderTimeBudget(estimate) {
+    /*
+     * 미리 정해둔 몇 개만 고르게 하면 "오늘은 37분밖에 없다"를 못 받는다.
+     * 칩은 빠른 선택일 뿐이고, 실제 값은 직접 적는다.
+     */
+    var chips = el('div', { class: 'chip-row' }, []);
+    TIME_BUDGETS.forEach(function (minutes) {
       chips.appendChild(el('button', {
         type: 'button', class: 'pick',
         'aria-pressed': String(state.timeBudget === minutes),
-        text: minutes === null ? '제한 없음' : minutes + '분',
-        onclick: function () {
-          state.timeBudget = minutes;
-          rebuildSession();
-          if (state.timeFit && state.timeFit.adjustments.length > 0) {
-            pushLog('시간 예산', '<b>' + minutes + '분</b>에 맞춰 조정했습니다 — ' + state.timeFit.notes[0]);
-          }
-          render();
-        },
+        text: minutes + '분',
+        onclick: function () { applyTimeBudget(minutes); },
       }));
     });
 
-    var body = el('div', { class: 'sheet-body' }, [chips]);
+    var input = el('input', {
+      type: 'number', min: '10', max: '300', step: '1', inputmode: 'numeric',
+      value: state.timeBudget == null ? '' : String(state.timeBudget),
+      // 빈칸에 오늘 예상 시간을 흐리게 띄운다 — 몇 자리를 적는 칸인지 바로 안다
+      placeholder: String(estimate.totalMinutes),
+      'aria-label': '오늘 운동 할 수 있는 시간 (분)',
+      onchange: function (event) {
+        var value = parseInt(event.target.value, 10);
+        // 비우면 제한 없음. 0이나 음수를 적어도 같게 본다.
+        applyTimeBudget(Number.isFinite(value) && value >= 10 ? Math.min(300, value) : null);
+      },
+    });
+    var step = function (delta) {
+      var base = state.timeBudget == null ? Math.round(estimate.totalMinutes / 5) * 5 : state.timeBudget;
+      applyTimeBudget(Math.max(10, Math.min(300, base + delta)));
+    };
+    var field = el('div', { class: 'number-field' }, [
+      el('button', { type: 'button', class: 'nudge', text: '−', 'aria-label': '5분 줄이기',
+        onclick: function () { step(-5); } }),
+      input,
+      el('span', { class: 'unit', text: '분' }),
+      el('button', { type: 'button', class: 'nudge', text: '+', 'aria-label': '5분 늘리기',
+        onclick: function () { step(5); } }),
+    ]);
+
+    var freeRow = el('div', { class: 'time-free' }, [
+      field,
+      el('button', {
+        type: 'button', class: 'pick',
+        'aria-pressed': String(state.timeBudget == null),
+        text: '제한 없음',
+        onclick: function () { applyTimeBudget(null); },
+      }),
+    ]);
+
+    var body = el('div', { class: 'sheet-body' }, [chips, freeRow]);
 
     if (state.timeFit) {
       var fit = state.timeFit;
@@ -1980,12 +2204,13 @@
       });
     } else {
       body.appendChild(el('p', { class: 'hint-line', text:
-        '시간을 고르면 그 안에 들어오게 줄입니다. 고립 운동부터 자르고 메인 복합 동작은 지킵니다.' }));
+        '분 단위로 직접 적으면 됩니다. 그 안에 들어오게 고립 운동부터 자르고 메인 복합 동작은 지킵니다. ' +
+        '비워 두면 프로그램을 그대로 합니다.' }));
     }
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '오늘 쓸 수 있는 시간' }),
+        el('h3', { text: '오늘 운동 할 수 있는 시간' }),
         el('span', { class: 'meta', text: '워밍업 · 휴식 포함' }),
       ]),
       body,
