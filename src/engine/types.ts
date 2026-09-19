@@ -115,6 +115,13 @@ export interface SessionLog extends Syncable {
   /** YYYY-MM-DD */
   date: string;
   sets: SetLog[];
+  /**
+   * 어느 헬스장에서 했는가.
+   *
+   * 머신·케이블·스미스는 기계마다 표기 중량이 달라서, 중량 처방에 쓸 이력을
+   * 고를 때 이 값으로 걸러낸다. 없으면 헬스장을 가리지 않고 전부 본다.
+   */
+  gymId?: string;
 }
 
 export interface PainReport {

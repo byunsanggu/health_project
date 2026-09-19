@@ -14,15 +14,8 @@ import type {
   PainReport,
   TrainingLevel,
 } from './types.ts';
+import { planGoals, repRangeForGoals, type TrainingGoal } from './goals.ts';
 
-export type TrainingGoal = 'hypertrophy' | 'strength' | 'fatLoss' | 'general';
-
-export const GOAL_LABELS_KO: Record<TrainingGoal, string> = {
-  hypertrophy: '근비대',
-  strength: '근력',
-  fatLoss: '체지방 감량',
-  general: '건강 유지',
-};
 
 export interface OnboardingAnswers {
   /** 설문에서 사용자가 고른 단계 */
@@ -32,9 +25,14 @@ export interface OnboardingAnswers {
   bodyweightKg: number;
   heightCm?: number;
   sex?: 'male' | 'female' | 'unspecified';
-  /** 주당 훈련 일수 (2~6) */
+  /** 주당 운동 일수 (2~7) */
   daysPerWeek: number;
-  goal: TrainingGoal;
+  /**
+   * 목표. 여러 개를 고를 수 있다 — "근비대도 하고 근력도 늘리면서 살도 빼고
+   * 싶다"가 현장에서 가장 흔한 대답이다. 조합에 따라 반복 범위와 볼륨 상한이
+   * 달라진다.
+   */
+  goals: TrainingGoal[];
   gym: GymSelection;
   /** 기존 통증·부상 */
   pain?: readonly PainReport[];
@@ -196,12 +194,32 @@ const FULL_C: DayBlueprint = {
  * 말하는 바이고, 프로그램 생성기가 그 규칙을 어기면 앞뒤가 안 맞는다.
  * 그래서 주 3회도 PPL이 아니라 전신 3회다.
  */
+/**
+ * 주 7일을 고른 사람을 위한 날.
+ *
+ * 매일 고강도로 하면 회복이 안 된다. 그래서 7일째는 또 하나의 하드 세션이
+ * 아니라 약한 부위를 채우고 관절 부담이 적은 것들로만 채운다 — 이런 날이
+ * 있어야 나머지 6일을 제대로 할 수 있다.
+ */
+const ACCESSORY_DAY: DayBlueprint = {
+  name: '보완 · 가벼운 날',
+  slots: [
+    { muscle: 'rearDelt', role: 'isolation' },
+    { muscle: 'sideDelt', role: 'isolation' },
+    { muscle: 'traps', role: 'isolation' },
+    { muscle: 'forearms', role: 'isolation' },
+    { muscle: 'abs', role: 'isolation' },
+    { muscle: 'calves', role: 'isolation' },
+  ],
+};
+
 const SPLITS: Record<number, DayBlueprint[]> = {
   2: [FULL_A, FULL_B],
   3: [FULL_A, FULL_B, FULL_C],
   4: [UPPER_A, LOWER_A, UPPER_B, LOWER_B],
   5: [UPPER_A, LOWER_A, PUSH, PULL, LEGS],
   6: [PUSH, PULL, LEGS, PUSH, PULL, LEGS],
+  7: [PUSH, PULL, LEGS, PUSH, PULL, LEGS, ACCESSORY_DAY],
 };
 
 const SPLIT_NAMES: Record<number, string> = {
@@ -210,18 +228,10 @@ const SPLIT_NAMES: Record<number, string> = {
   4: '주 4회 상하체 분할',
   5: '주 5회 혼합 분할',
   6: '주 6회 푸시·풀·레그 2순환',
+  7: '주 7회 푸시·풀·레그 2순환 + 보완일',
 };
 
 /* ── 종목 선택 ─────────────────────────────────────────────── */
-
-/** 목표에 따른 반복 범위. */
-function repRangeFor(role: SlotRole, goal: TrainingGoal): { min: number; max: number } {
-  if (role === 'isolation') return { min: 10, max: 15 };
-  if (role === 'accessory') return { min: 8, max: 12 };
-  if (goal === 'strength') return { min: 4, max: 6 };
-  if (goal === 'fatLoss') return { min: 8, max: 12 };
-  return { min: 6, max: 10 };
-}
 
 const FREE_WEIGHT: readonly Exercise['equipment'][] = ['barbell', 'dumbbell'];
 
@@ -304,7 +314,7 @@ function addJointLoad(load: Map<Joint, number>, exercise: Exercise): void {
 
 export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): TrainingProgram {
   const profile = levelProfile(level);
-  const days = Math.min(6, Math.max(2, Math.round(answers.daysPerWeek)));
+  const days = Math.min(7, Math.max(2, Math.round(answers.daysPerWeek)));
   const blueprints = SPLITS[days] ?? SPLITS[4]!;
   const landmarks = landmarksFor(level);
 
@@ -351,7 +361,7 @@ export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): 
       slots.push({
         exerciseId: exercise.id,
         sets: clamp(Math.ceil(target / divisor), floor, cap),
-        repRange: repRangeFor(slot.role, answers.goal),
+        repRange: repRangeForGoals(slot.role, answers.goals),
       });
     }
 

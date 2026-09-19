@@ -30,7 +30,7 @@ const answers: OnboardingAnswers = {
   monthsTraining: 18,
   bodyweightKg: 78,
   daysPerWeek: 4,
-  goal: 'hypertrophy',
+  goals: ['hypertrophy'],
   gym: { equipmentIds: COMMON_EQUIPMENT_IDS },
 };
 

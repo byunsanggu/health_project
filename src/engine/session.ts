@@ -13,6 +13,7 @@ import {
   type PlatePlan,
   type SnapDirection,
 } from './gym.ts';
+import { describeGymWeight, weightHistoryFor } from './gymWeight.ts';
 import { suggestStartingLoad, type LifterProfile, type StartingLoad } from './strength.ts';
 import { withParticle } from './korean.ts';
 import { NO_CALIBRATION, calibrateRir, type RirCalibration } from './rirCalibration.ts';
@@ -62,6 +63,8 @@ export interface PlannedExercise {
   plates?: PlatePlan | null;
   /** 첫 수행이라 중량을 추정한 경우의 근거 */
   startingLoad?: StartingLoad;
+  /** 이 헬스장에서 처음 쓰는 기계일 때의 안내 */
+  gymWeightNote?: string;
   /** 중량/세트 처방 근거 한 줄 */
   note: string;
 }
@@ -102,6 +105,11 @@ export interface BuildSessionInput {
   availableEquipment?: readonly Equipment[];
   /** 다니는 헬스장. 중량 스냅과 기구 보유 여부가 여기서 나온다 */
   gym?: GymProfile;
+  /**
+   * 오늘 가는 헬스장의 id.
+   * 머신·케이블 중량 이력을 이 헬스장 것으로만 거르는 데 쓴다.
+   */
+  gymId?: string;
   /** 첫 수행 종목의 중량을 추정하기 위한 신체 정보 */
   lifter?: LifterProfile;
   /** 미리 계산한 RIR 보정. 없으면 이력에서 직접 구한다 */
@@ -189,11 +197,18 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     // 3) 세트 수 — 주간 볼륨 처방에 맞춰 조정
     const setCount = adjustSetCount(slot, exercise, scaling);
 
-    // 4) 중량 — 마지막 수행 기록 기준, 그 헬스장이 만들 수 있는 값으로 맞춘다
-    const lastSession = findLastSession(input.history, exercise.id);
+    /*
+     * 4) 중량 — 마지막 수행 기록 기준, 그 헬스장이 만들 수 있는 값으로 맞춘다.
+     *
+     * 머신·케이블·스미스는 같은 헬스장 기록만 본다. A짐 레그프레스 100kg을
+     * 들고 B짐에 가면 엉뚱한 무게가 된다 — 기계마다 표기가 다르다.
+     */
+    const weightHistory = weightHistoryFor(input.history, exercise, { gymId: input.gymId });
+    const lastSession = findLastSession(weightHistory, exercise.id);
     const rule: LoadRule = { repRange: slot.repRange, targetRir: input.plan.targetRir, rirOffset };
     const prescription = prescribeLoad(exercise, lastSession?.sets, rule);
     const loading = gym ? loadingFor(exercise, gym) : null;
+    const gymWeight = describeGymWeight(input.history, exercise, input.gymId);
 
     const multiplier = input.plan.intensityMultiplier * ruling.loadMultiplier;
     let weightKg: number | null;
@@ -229,6 +244,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
       loading,
       plates: weightKg !== null && loading ? platePlan(weightKg, loading) : null,
       startingLoad,
+      gymWeightNote: gymWeight.note,
       note: buildNote(prescription.reason, multiplier, ruling, reference, startingLoad),
       sets: Array.from({ length: setCount }, (_, i) => ({
         setNumber: i + 1,

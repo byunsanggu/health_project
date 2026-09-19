@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { buildProgram, runOnboarding, type OnboardingAnswers } from '../onboarding.ts';
 import { COMMON_EQUIPMENT_IDS } from '../equipment.ts';
+import { EXERCISES } from '../exercises.ts';
 import { levelProfile } from '../levels.ts';
 import { exerciseById } from '../exercises.ts';
 import { aggregateVolume } from '../volume.ts';
@@ -16,7 +17,7 @@ function answers(overrides: Partial<OnboardingAnswers> = {}): OnboardingAnswers 
     bodyweightKg: 78,
     sex: 'male',
     daysPerWeek: 4,
-    goal: 'hypertrophy',
+    goals: ['hypertrophy'],
     gym: { equipmentIds: COMMON_EQUIPMENT_IDS },
     ...overrides,
   };
@@ -73,7 +74,7 @@ describe('buildProgram', () => {
   });
 
   it('범위를 벗어난 일수는 붙잡아 준다', () => {
-    assert.equal(buildProgram(answers({ daysPerWeek: 9 }), 'intermediate').templates.length, 6);
+    assert.equal(buildProgram(answers({ daysPerWeek: 9 }), 'intermediate').templates.length, 7);
     assert.equal(buildProgram(answers({ daysPerWeek: 1 }), 'intermediate').templates.length, 2);
   });
 
@@ -110,8 +111,8 @@ describe('buildProgram', () => {
   });
 
   it('목표에 따라 반복 범위가 달라진다', () => {
-    const strength = buildProgram(answers({ goal: 'strength' }), 'advanced');
-    const hypertrophy = buildProgram(answers({ goal: 'hypertrophy' }), 'advanced');
+    const strength = buildProgram(answers({ goals: ['strength'] }), 'advanced');
+    const hypertrophy = buildProgram(answers({ goals: ['hypertrophy'] }), 'advanced');
 
     const firstOf = (p: ReturnType<typeof buildProgram>) => p.templates[0]!.slots[0]!.repRange;
     assert.ok(firstOf(strength).max < firstOf(hypertrophy).max);
@@ -153,5 +154,26 @@ describe('buildProgram', () => {
       template.slots.some((slot) => ((exerciseById(slot.exerciseId) as Exercise).contribution.chest ?? 0) >= 0.5),
     ).length;
     assert.ok(daysHittingChest >= 2, `가슴 주 ${daysHittingChest}회`);
+  });
+});
+
+describe('주 7일', () => {
+  it('7일째는 또 하나의 하드 세션이 아니라 보완일이다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 7 }), 'advanced');
+    assert.equal(program.templates.length, 7);
+    const last = program.templates[6]!;
+    assert.match(last.name, /보완|가벼운/);
+  });
+
+  it('보완일은 관절 부담이 큰 복합 동작을 넣지 않는다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 7 }), 'advanced');
+    const last = program.templates[6]!;
+    for (const slot of last.slots) {
+      const exercise = EXERCISES.find((item) => item.id === slot.exerciseId)!;
+      assert.ok(
+        exercise.pattern === 'isolation' || exercise.pattern === 'core' || exercise.pattern === 'carry',
+        `${exercise.name}(${exercise.pattern})는 가벼운 날에 맞지 않는다`,
+      );
+    }
   });
 });

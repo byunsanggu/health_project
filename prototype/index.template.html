@@ -610,12 +610,6 @@ input[type="search"] {
 .delta .flat { color: var(--muted); }
 
 /* 체크인 */
-.slider-row { display: grid; gap: 5px; }
-.slider-top { display: flex; align-items: baseline; justify-content: space-between; }
-.slider-top .name { font-size: 13px; }
-.slider-top .score { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
-input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
-.scale-marks { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
 
 .verdict { font-size: 12px; color: var(--muted); display: grid; gap: 4px; }
 .verdict b { color: var(--ink); font-weight: 500; }
@@ -958,6 +952,66 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
 .option-row { flex-wrap: wrap; }
 .modal-body input[type="search"] { width: 100%; }
 
+
+/* ── 숫자 입력 ──────────────────────────────────── */
+.number-row { display: grid; gap: 6px; }
+.number-row .name { font-size: 13px; }
+.number-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  overflow: hidden;
+  width: fit-content;
+}
+.number-field input[type="number"] {
+  width: 72px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 7px 0;
+  -moz-appearance: textfield;
+}
+.number-field input[type="number"]::-webkit-outer-spin-button,
+.number-field input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.number-field .unit { font-size: 11.5px; color: var(--muted); padding-right: 8px; }
+.nudge {
+  border: 0;
+  background: var(--surface-2);
+  width: 38px;
+  height: 36px;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+}
+.nudge:hover { color: var(--accent); }
+
+/* ── 처음 쓰는 기계 ─────────────────────────────── */
+.machine-note {
+  display: grid;
+  gap: 3px;
+  padding: 9px 13px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.machine-note .label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--zone-hard);
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -1003,6 +1057,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
           <li>세트를 기록한 뒤 <b>세션 완료</b>를 누르면 오늘의 톤수·개인 기록·부위별 볼륨과 다음 주 처방이 요약으로 나옵니다.</li>
           <li>종목 옆 <b>사람 있어요</b>를 눌러 보세요. 기구가 막혔을 때 순서를 바꿀지, 대체할지, 기다릴지를 정해줍니다. 랙이 막히면 그 랙을 쓰는 종목이 전부 막히고, 머신 한 대는 그 종목만 막힙니다.</li>
           <li><b>헬스장</b> 탭에서 검색해 보세요. 결과가 없으면 <b>직접 등록</b>이 뜹니다 — 아파트·회사 헬스장은 원래 검색에 안 나옵니다. 유형만 고르면 기구가 채워지고, 이미 등록된 곳과 겹치면 만들기 전에 물어봅니다.</li>
+          <li><b>헬스장</b> 탭에서 다른 곳을 등록하고 전환해 보세요. 머신·케이블은 <b>그 헬스장 기록만</b> 봅니다 — 기계마다 표기 중량이 달라서, 처음 쓰는 기계면 그렇다고 알려줍니다. 바벨·덤벨은 헬스장이 바뀌어도 그대로입니다.</li>
+          <li>초기 설정의 <b>목표</b>는 여러 개 고를 수 있습니다. 근력과 근비대를 같이 고르면 메인은 저반복, 보조는 중반복으로 갑니다. 체지방 감량을 더하면 반복 범위는 그대로 두고 볼륨 상한만 내립니다.</li>
           <li>이 페이지는 <b>PWA</b>입니다. 브라우저 메뉴에서 설치하면 홈 화면에 깔리고 <b>오프라인</b>에서도 열립니다. 상태는 <b>체크인</b> 탭 아래에서 확인합니다.</li>
           <li>휴식 타이머는 <b>끝나는 시각</b>을 기억합니다. 화면을 껐다 켜도 남은 시간이 틀리지 않고, 알림을 켜두면 <b>애플워치·갤럭시워치</b>로 그대로 전달됩니다.</li>
         </ol>

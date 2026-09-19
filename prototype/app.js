@@ -227,7 +227,7 @@
     bodyweightKg: 78,
     sex: 'male',
     daysPerWeek: 4,
-    goal: 'hypertrophy',
+    goals: ['hypertrophy'],
     gym: { equipmentIds: E.COMMON_EQUIPMENT_IDS.slice() },
   };
 
@@ -238,6 +238,7 @@
     4: [0, 1, 3, 4],
     5: [0, 1, 2, 4, 5],
     6: [0, 1, 2, 3, 4, 5],
+    7: [0, 1, 2, 3, 4, 5, 6],
   };
 
   var START_WEIGHT = {
@@ -337,6 +338,7 @@
     sessionStartedAt: null,
     busyEquipment: [],
     occupied: {},
+    homeGymId: null,
     // 사용자가 직접 등록한 곳. 공개 디렉터리에 없는 아파트·회사 헬스장이 여기 쌓인다.
     myDirectory: [],
     gymDraft: null,
@@ -363,7 +365,7 @@
   }
 
   /** 계획된 세션을 "수행했다"고 가정하고 기록을 만든다. */
-  function perform(planned, decay) {
+  function perform(planned, decay, gymId) {
     var sets = [];
     planned.exercises.forEach(function (item) {
       var fallback = START_WEIGHT[item.exercise.id] || 40;
@@ -377,7 +379,7 @@
         });
       });
     });
-    return { date: planned.date, sets: sets };
+    return { date: planned.date, sets: sets, gymId: gymId };
   }
 
   /**
@@ -433,7 +435,7 @@
           gym: state.gym,
           lifter: state.lifter,
         });
-        history.push(perform(planned, scenario.decay * weekInBlock));
+        history.push(perform(planned, scenario.decay * weekInBlock, homeGymId()));
         checkIns.push({
           date: date,
           sleepHours: scenario.sleep,
@@ -560,6 +562,8 @@
       index: index,
       pain: activePain(),
       gym: state.gym,
+      // 머신·케이블 중량은 이 헬스장 기록만 본다 — 기계마다 표기가 다르다.
+      gymId: state.gymBook ? state.gymBook.activeId : undefined,
       lifter: state.lifter,
     });
 
@@ -597,6 +601,7 @@
         substitutedFrom: item.substitutedFrom,
         swapReason: item.swapReason,
         startingLoad: item.startingLoad,
+        gymWeightNote: item.gymWeightNote,
         loading: item.loading,
         warmup: warmup,
         decision: null,
@@ -632,7 +637,9 @@
   function weekSessions() {
     var sunday = E.addDays(state.monday, 6);
     var sessions = state.history.filter(function (s) { return s.date >= state.monday && s.date <= sunday; });
-    if (state.todaySets.length > 0) sessions = sessions.concat([{ date: state.todayDate, sets: state.todaySets }]);
+    if (state.todaySets.length > 0) {
+      sessions = sessions.concat([{ date: state.todayDate, sets: state.todaySets, gymId: activeGymId() }]);
+    }
     return sessions;
   }
 
@@ -1280,6 +1287,22 @@
     };
   }
 
+  function activeGymId() {
+    return state.gymBook ? state.gymBook.activeId : undefined;
+  }
+
+  /**
+   * 시드 이력이 쌓인 헬스장.
+   *
+   * 헬스장을 옮겼다고 과거 기록까지 새 헬스장 것이 되면 안 된다. 그러면
+   * 머신 중량이 헬스장별로 갈리는 것을 볼 수가 없다 — 이력이 늘 현재
+   * 헬스장을 따라다니기 때문이다.
+   */
+  function homeGymId() {
+    if (!state.homeGymId) state.homeGymId = activeGymId();
+    return state.homeGymId;
+  }
+
   /** 그 종목을 마지막으로 한 세션의 세트들. 중량 처방의 기준이 된다. */
   function lastSetsFor(exerciseId) {
     for (var i = state.history.length - 1; i >= 0; i -= 1) {
@@ -1475,6 +1498,14 @@
           el('div', { class: 'lift-note', text: lift.note }),
         ]),
       ]);
+
+      // 다른 헬스장에서 하던 기계면 표기 중량이 다르다. 숨기면 안 된다.
+      if (lift.gymWeightNote) {
+        card.appendChild(el('div', { class: 'machine-note' }, [
+          el('span', { class: 'label', text: '처음 쓰는 기계' }),
+          el('span', { text: lift.gymWeightNote }),
+        ]));
+      }
 
       card.appendChild(renderWarmup(lift));
 
@@ -2215,7 +2246,7 @@
     var calibration = state.session.rirCalibration;
     var options = rirOptions();
     var history = weekSessions().length > 0 ? state.history.concat(
-      state.todaySets.length > 0 ? [{ date: state.todayDate, sets: state.todaySets }] : []
+      state.todaySets.length > 0 ? [{ date: state.todayDate, sets: state.todaySets, gymId: activeGymId() }] : []
     ) : state.history;
 
     var lifts = E.liftProgress(history, index, options);
@@ -2417,10 +2448,12 @@
 
     var body = el('div', { class: 'sheet-body' }, []);
     state.pain.forEach(function (report, i) {
-      body.appendChild(sliderRow({
+      body.appendChild(numberRow({
         name: E.JOINT_LABELS_KO[report.joint] + ' 통증',
         value: report.score,
+        min: 0,
         max: 10,
+        unit: '/ 10',
         id: 'pain-' + report.joint,
         onInput: function (value) {
           state.pain[i].score = value;
@@ -2698,9 +2731,9 @@
         el('span', { class: 'meta', text: '첫 중량 추정용' }),
       ]),
       el('div', { class: 'sheet-body' }, [
-        sliderRow({
-          name: '체중 (kg)', value: state.lifter.bodyweightKg, min: 40, max: 130,
-          id: 'lifter-bw', marks: ['40', '70', '100', '130'],
+        numberRow({
+          name: '체중', value: state.lifter.bodyweightKg, min: 30, max: 200,
+          step: 0.5, unit: 'kg', id: 'lifter-bw',
           onInput: function (value) {
             state.lifter.bodyweightKg = value;
             loadScenario(state.scenario, true);
@@ -2986,32 +3019,52 @@
     return row;
   }
 
-  function sliderRow(config) {
-    var output = el('span', { class: 'score', text: String(config.value) });
+  /**
+   * 숫자 입력.
+   *
+   * 스크롤로는 정확한 값을 맞추기 어렵다 — 체중 78kg을 슬라이더로 맞추려면
+   * 손가락을 몇 번씩 미세하게 움직여야 한다. 직접 치는 쪽이 빠르고, 옆에
+   * ± 버튼을 두면 한두 칸 조정도 된다.
+   */
+  function numberRow(config) {
+    var step = config.step || 1;
     var input = el('input', {
-      type: 'range',
-      min: String(config.min === undefined ? 0 : config.min),
+      type: 'number',
+      inputmode: 'decimal',
+      min: String(config.min),
       max: String(config.max),
-      step: '1',
+      step: String(step),
       value: String(config.value),
       id: config.id,
-      oninput: function (event) {
-        var value = Number(event.target.value);
-        output.textContent = String(value);
-        config.onInput(value);
-      },
+      onchange: function (event) { commit(Number(event.target.value)); },
     });
 
-    return el('div', { class: 'slider-row' }, [
-      el('div', { class: 'slider-top' }, [
-        el('label', { class: 'name', for: config.id, text: config.name }),
-        output,
+    function commit(raw) {
+      var value = clamp(isNaN(raw) ? config.value : raw, config.min, config.max);
+      // 0.5kg 단위까지만 — 소수점이 길게 붙으면 읽기 어렵다
+      value = Math.round(value / step) * step;
+      value = Math.round(value * 100) / 100;
+      input.value = String(value);
+      config.onInput(value);
+    }
+
+    var nudge = function (delta) {
+      return el('button', {
+        type: 'button', class: 'nudge', text: delta > 0 ? '+' : '−',
+        'aria-label': config.name + (delta > 0 ? ' 늘리기' : ' 줄이기'),
+        onclick: function () { commit(Number(input.value) + delta); },
+      });
+    };
+
+    return el('div', { class: 'number-row' }, [
+      el('label', { class: 'name', for: config.id, text: config.name }),
+      el('div', { class: 'number-field' }, [
+        nudge(-step),
+        input,
+        config.unit ? el('span', { class: 'unit', text: config.unit }) : null,
+        nudge(step),
       ]),
-      input,
-      el('div', { class: 'scale-marks' },
-        (config.marks || ['0', '3', '7', '10']).map(function (mark) {
-          return el('span', { text: mark });
-        })),
+      config.hint ? el('p', { class: 'hint-line', text: config.hint }) : null,
     ]);
   }
 
@@ -3069,13 +3122,6 @@
   }
 
   /* ── 온보딩 ────────────────────────────────────── */
-
-  var GOALS = [
-    { id: 'hypertrophy', label: '근비대', hint: '근육량을 늘립니다' },
-    { id: 'strength', label: '근력', hint: '드는 무게를 올립니다' },
-    { id: 'fatLoss', label: '체지방 감량', hint: '근육을 지키며 체중을 줄입니다' },
-    { id: 'general', label: '건강 유지', hint: '무리 없이 꾸준히' },
-  ];
 
   var STEPS = [
     { id: 'level', title: '경력', render: stepLevel },
@@ -3173,9 +3219,10 @@
         el('span', { class: 'meta', text: '단계 검증에 씁니다' }),
       ]),
       el('div', { class: 'sheet-body' }, [
-        sliderRow({
-          name: '개월 수', value: state.answers.monthsTraining, min: 0, max: 84,
-          id: 'months', marks: ['0', '24', '48', '84'],
+        numberRow({
+          name: '꾸준히 훈련한 기간', value: state.answers.monthsTraining,
+          min: 0, max: 360, unit: '개월', id: 'months',
+          hint: '고른 단계가 실제와 맞는지 대조합니다.',
           onInput: function (value) { state.answers.monthsTraining = value; renderPreviewNote(); },
         }),
         el('p', { class: 'hint-line', id: 'level-preview', text: levelPreview() }),
@@ -3205,9 +3252,10 @@
         el('span', { class: 'meta', text: '첫 중량 추정용' }),
       ]),
       el('div', { class: 'sheet-body' }, [
-        sliderRow({
-          name: '체중 (kg)', value: state.answers.bodyweightKg, min: 40, max: 130,
-          id: 'bw', marks: ['40', '70', '100', '130'],
+        numberRow({
+          name: '체중', value: state.answers.bodyweightKg, min: 30, max: 200,
+          step: 0.5, unit: 'kg', id: 'bw',
+          hint: '첫 종목의 시작 중량을 여기서 환산합니다.',
           onInput: function (value) { state.answers.bodyweightKg = value; },
         }),
         segmented([
@@ -3219,11 +3267,11 @@
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '주당 훈련 일수' }),
+        el('h3', { text: '주당 운동 일수' }),
         el('span', { class: 'meta', text: '분할이 달라집니다' }),
       ]),
       el('div', { class: 'sheet-body' }, [
-        segmented([2, 3, 4, 5, 6].map(function (days) {
+        segmented([2, 3, 4, 5, 6, 7].map(function (days) {
           return {
             label: days + '일',
             active: state.answers.daysPerWeek === days,
@@ -3234,19 +3282,42 @@
       ]),
     ]));
 
+    /*
+     * 목표는 여러 개를 고를 수 있다. "근비대도 하고 근력도 늘리면서 살도
+     * 빼고 싶다"가 현장에서 가장 흔한 대답인데, 하나만 고르게 하면 그걸
+     * 담지 못한다. 대신 상충되는 부분은 아래에 그대로 적는다.
+     */
     var goals = el('div', { class: 'sheet-body' }, []);
-    GOALS.forEach(function (goal) {
+    Object.keys(E.GOAL_LABELS_KO).forEach(function (id) {
+      var on = state.answers.goals.indexOf(id) >= 0;
       goals.appendChild(el('button', {
         type: 'button', class: 'choice',
-        'aria-pressed': String(state.answers.goal === goal.id),
-        onclick: function () { state.answers.goal = goal.id; render(); },
+        'aria-pressed': String(on),
+        onclick: function () {
+          state.answers.goals = on
+            ? state.answers.goals.filter(function (item) { return item !== id; })
+            : state.answers.goals.concat([id]);
+          render();
+        },
       }, [
-        el('span', { class: 'choice-title', text: goal.label }),
-        el('span', { class: 'choice-hint', text: goal.hint }),
+        el('span', { class: 'choice-title' }, [
+          document.createTextNode(E.GOAL_LABELS_KO[id] + ' '),
+          on ? el('span', { class: 'tag-personal', text: '선택' }) : null,
+        ]),
+        el('span', { class: 'choice-hint', text: E.GOAL_HINTS_KO[id] }),
       ]));
     });
+
+    var plan = E.planGoals(state.answers.goals);
+    plan.notes.forEach(function (note) {
+      goals.appendChild(el('p', { class: 'hint-line', text: note }));
+    });
+
     screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [el('h3', { text: '목표' })]),
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '목표' }),
+        el('span', { class: 'meta', text: '여러 개 고를 수 있습니다' }),
+      ]),
       goals,
     ]));
   }
