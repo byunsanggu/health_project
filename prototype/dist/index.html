@@ -159,7 +159,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .statusbar strong { color: var(--ink); font-weight: 600; letter-spacing: 0; font-family: var(--sans); font-size: 13px; }
 
-.screen { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 16px 16px 24px; }
+.screen { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 16px 16px 32px; }
 .screen > * + * { margin-top: 14px; }
 
 [hidden] { display: none !important; }
@@ -397,20 +397,7 @@ input[type="search"] {
 }
 .lift-note { font-size: 12px; color: var(--muted); }
 
-.setrow {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 10px;
-  padding: 9px 13px;
-  border-top: 1px solid var(--line-soft);
-  align-items: start;
-}
-.setrow.done { background: var(--surface-2); }
-.set-no { font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 4px; }
-.set-main { display: grid; gap: 7px; min-width: 0; }
-.set-load { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--mono); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.set-load .unit { font-size: 11px; color: var(--muted); font-weight: 400; }
-.set-load .target { font-size: 11px; color: var(--muted); font-weight: 400; letter-spacing: .02em; }
+.set-no { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 
 .reps { margin-left: auto; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
 .reps button { border: 0; background: var(--surface-2); width: 26px; height: 26px; line-height: 1; color: var(--muted); font-size: 15px; }
@@ -1074,6 +1061,73 @@ input[type="search"] {
   color: var(--zone-ok); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px;
 }
 
+/* ── 세트: 한 번에 하나 ─────────────────────────── */
+.set-track { border-top: 1px solid var(--line-soft); }
+
+.set-dots-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 13px; border-bottom: 1px solid var(--line-soft);
+}
+.set-dots { display: flex; gap: 5px; flex: 1; flex-wrap: wrap; }
+/* 점 하나가 세트 하나. 세어 보지 않아도 어디쯤인지 보인다. */
+.set-dots i {
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--surface-2);
+}
+.set-dots i.on { background: var(--accent); border-color: var(--accent); }
+.set-dots i.now { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 2px var(--accent-soft); }
+.set-count {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+.done-head {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px;
+  align-items: center; width: 100%; border: 0; background: var(--surface-2);
+  padding: 7px 13px; text-align: left; border-bottom: 1px solid var(--line-soft);
+}
+.done-set {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 9px;
+  align-items: center; padding: 6px 13px; background: var(--surface-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+.done-detail { font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.done-set .demo-open { margin-left: 0; }
+
+/* 지금 할 세트. 화면에서 제일 커야 한다 — 지금 할 일은 이것 하나다. */
+.set-now { padding: 4px 0 2px; }
+.now-head {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  color: var(--accent); padding: 8px 13px 0;
+}
+.now-body { display: grid; gap: 10px; padding: 4px 13px 13px; }
+.now-load { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.now-load .weight {
+  font-family: var(--mono); font-size: 34px; font-weight: 600;
+  line-height: 1.05; font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.now-load .unit { font-family: var(--mono); font-size: 14px; color: var(--muted); }
+.now-target { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+.now-reps { display: flex; align-items: center; gap: 9px; }
+.now-reps .reps { margin-left: auto; }
+.now-reps .reps button { width: 40px; height: 40px; font-size: 19px; }
+.now-reps .reps output { font-size: 16px; min-width: 52px; }
+/* RIR은 장갑 낀 손으로도 눌려야 한다 */
+.now-rir .chip { min-width: 46px; height: 42px; font-size: 14px; }
+
+.set-cleared {
+  padding: 14px 13px; text-align: center; font-size: 12.5px; color: var(--zone-ok);
+}
+
+/* 경과 시간 — 폰 시계는 "몇 시"만 알려주지 "얼마나 했는지"는 모른다 */
+.elapsed {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+  white-space: nowrap; padding-left: 2px;
+}
+.elapsed i { font-style: normal; font-size: 9.5px; letter-spacing: .08em; color: var(--muted); font-weight: 400; }
+
 /* ── 오늘 할 날 바꾸기 ──────────────────────────── */
 /*
  * 제목 자체가 버튼이다. 따로 "변경" 버튼을 두면 제목 옆에 군더더기가
@@ -1297,7 +1351,8 @@ input[type="search"] {
         <ol>
           <li>오늘 할 날이 마음에 안 들면 <b>제목(하체 B)을 눌러</b> 바꾸세요. 상체를 하고 싶은 날이 있습니다. 막지 않고, 그 부위를 마지막으로 언제 했는지만 알려줍니다 — <b>어제 가슴을 했습니다</b>처럼요. 건너뛴 날은 없어지지 않고 다음으로 밀립니다.</li>
           <li><b>오늘</b> 탭은 <b>시작하기</b>를 누르기 전까지 목록만 보여줍니다. 누르면 <b>한 종목씩</b> 나옵니다 — 헬스장에서 필요한 건 "지금 이거" 하나이고, 일곱 개가 한 화면에 깔려 있으면 시작하기 전에 지칩니다. 위의 <b>목록</b>으로 언제든 전체를 다시 봅니다.</li>
-          <li>세트의 RIR을 탭해 보세요. 다음 세트 중량이 즉시 조정되고, 그 이유가 아래 로그에 남습니다.</li>
+          <li>세트도 <b>한 번에 하나</b>만 나옵니다. 점이 세트이고, 끝난 세트는 접힙니다. 워밍업은 첫 본세트를 하면 자동으로 접힙니다 — 지금 할 세트가 화면 밖으로 밀리면 안 되니까요. 오른쪽 위 <b>운동 12:34</b>는 시작하기를 누른 순간부터 잰 시간입니다.</li>
+          <li>세트의 RIR을 탭해 보세요. 다음 세트 중량이 즉시 조정되고, 그 이유가 아래 로그에 남습니다. 잘못 눌렀으면 <b>완료 → 고치기</b>로 되돌립니다 — 주간 볼륨에서도 같이 빠집니다.</li>
           <li><b>볼륨</b> 탭의 게이지는 부위별 주간 유효 세트입니다. 눈금은 MEV(최소 자극) · MAV(적응 최대) · MRV(회복 한계)이고, 빗금 구간이 레드라인입니다.</li>
           <li><b>체크인</b> 탭에서 어깨 통증을 3점 이상으로 올리면, 오늘 세션의 종목이 자동으로 대체됩니다.</li>
           <li><b>헬스장</b> 탭에서 바 무게나 스택 간격을 바꾸면 처방 중량이 그 기구가 만들 수 있는 값으로 다시 맞춰집니다. 기구를 끄면 해당 종목이 대체됩니다.</li>
@@ -2416,6 +2471,7 @@ input[type="search"] {
         started: state.started,
         liftCursor: state.liftCursor,
         dayOverride: state.dayOverride,
+        sessionStartedAt: state.sessionStartedAt,
         gymBook: state.gymBook,
         consent: state.consent,
         consentRecord: state.consentRecord,
@@ -2454,6 +2510,7 @@ input[type="search"] {
       state.started = Boolean(settings.started);
       state.liftCursor = settings.liftCursor || 0;
       state.dayOverride = settings.dayOverride == null ? null : settings.dayOverride;
+      state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
       state.blockHistory = settings.blockHistory || ['hypertrophy'];
@@ -2641,6 +2698,7 @@ input[type="search"] {
     timeBudget: null,
     timeFit: null,
     warmupOpen: {},
+    doneOpen: {},
     gymQuery: '',
     maxTest: null,
     /*
@@ -2973,6 +3031,9 @@ input[type="search"] {
       rir: rir,
     };
     state.todaySets.push(logged);
+    // 되돌릴 때 이 항목만 정확히 빼려고 붙여 둔다. 같은 중량·반복이 여러 번
+    // 나오므로 값으로 찾으면 엉뚱한 세트가 지워진다.
+    set.logged = logged;
 
     var next = lift.sets[setIndex + 1];
     if (next && !next.done) {
@@ -3092,6 +3153,34 @@ input[type="search"] {
     notifyWorker({ type: 'rest:start', endsAt: state.rest.endsAt, body: '연장한 휴식이 끝났습니다.' });
     renderRest();
   }
+
+  /**
+   * 시작하고 나서 얼마나 지났는가.
+   *
+   * 남은 시간을 세는 대신 시작한 시각을 저장해두고 매번 지금과 뺀다.
+   * 화면이 꺼져 있던 동안도 정확하고, 앱이 다시 떠도 이어진다.
+   */
+  function elapsedSeconds() {
+    if (!state.sessionStartedAt) return 0;
+    return Math.max(0, Math.round((Date.now() - state.sessionStartedAt) / 1000));
+  }
+
+  function elapsedText() {
+    var total = elapsedSeconds();
+    var hours = Math.floor(total / 3600);
+    var rest = total % 3600;
+    var body = E.formatDuration(rest);
+    // 한 시간을 넘기면 분만으로는 못 읽는다
+    return hours > 0 ? hours + ':' + body.padStart(4, '0') : body;
+  }
+
+  function tickElapsed() {
+    var node = document.getElementById('session-elapsed');
+    if (node) node.textContent = elapsedText();
+  }
+
+  // 화면 전체를 다시 그리지 않고 숫자만 바꾼다 — 1초마다 다시 그리면 못 쓴다.
+  setInterval(tickElapsed, 1000);
 
   function restRemaining() {
     if (!state.rest) return 0;
@@ -4151,6 +4240,8 @@ input[type="search"] {
       text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : '시작하기',
       onclick: function () {
         state.started = true;
+        // 시계는 여기서 돈다. 세트를 기록해야 시작하면 워밍업 시간이 빠진다.
+        if (!state.sessionStartedAt) state.sessionStartedAt = Date.now();
         // 이어서 할 때는 아직 안 끝낸 첫 종목으로 간다.
         var next = state.lifts.findIndex(function (lift) {
           return lift.sets.some(function (set) { return !set.done; });
@@ -4182,6 +4273,15 @@ input[type="search"] {
       el('span', { class: 'progress-count', text: position + ' / ' + total }),
       el('span', { class: 'progress-bar' }, [
         el('i', { style: 'width:' + Math.round((position / total) * 100) + '%' }),
+      ]),
+      /*
+       * 운동한 지 얼마나 됐는지. 헬스장에서 제일 자주 하는 질문인데
+       * 폰 시계로는 "몇 시"만 알지 "얼마나 했는지"는 모른다.
+       */
+      // 숫자만 있으면 휴식 시간과 헷갈린다. 무엇을 재는 시계인지 붙여둔다.
+      el('span', { class: 'elapsed' }, [
+        el('i', { text: '운동' }),
+        el('span', { id: 'session-elapsed', text: elapsedText() }),
       ]),
     ]));
 
@@ -4216,6 +4316,152 @@ input[type="search"] {
       renderConditioning();
     }
     renderFinish(!last);
+  }
+
+  /**
+   * 세트를 한 번에 하나씩.
+   *
+   * 6세트를 다 펼쳐 놓으면 똑같이 생긴 줄이 여섯 개 쌓인다. 화면에서
+   * 스크롤을 잃고, 지금 몇 세트째인지 세어 봐야 알게 된다. 헬스장에서
+   * 숨차는 채로 할 일이 아니다.
+   *
+   * 그래서 지금 할 세트 하나만 크게 띄우고, 끝난 것은 접어서 위에 둔다.
+   * 어디쯤인지는 점으로 본다 — 세어 볼 필요가 없다.
+   */
+  function renderSetTrack(lift, liftIndex) {
+    var sets = lift.sets;
+    var doneCount = sets.filter(function (set) { return set.done; }).length;
+    var cursor = -1;
+    for (var i = 0; i < sets.length; i += 1) {
+      if (!sets[i].done) { cursor = i; break; }
+    }
+
+    var wrap = el('div', { class: 'set-track' }, []);
+
+    /* 점 — 몇 개 했고 몇 개 남았는지 한눈에. */
+    wrap.appendChild(el('div', { class: 'set-dots-row' }, [
+      el('span', { class: 'set-dots' }, sets.map(function (set, setIndex) {
+        return el('i', {
+          class: set.done ? 'on' : (setIndex === cursor ? 'now' : ''),
+          'aria-hidden': 'true',
+        });
+      })),
+      el('span', { class: 'set-count', text: cursor >= 0
+        ? (cursor + 1) + ' / ' + sets.length + ' 세트'
+        : sets.length + '세트 완료' }),
+    ]));
+
+    /* 끝낸 세트는 접어 둔다. 기록을 고칠 일은 있지만 늘 보일 필요는 없다. */
+    if (doneCount > 0) {
+      var open = state.doneOpen[lift.exercise.id] === true;
+      wrap.appendChild(el('button', {
+        type: 'button', class: 'done-head', 'aria-expanded': String(open),
+        onclick: function () {
+          state.doneOpen[lift.exercise.id] = !open;
+          render();
+        },
+      }, [
+        el('span', { class: 'warmup-label', text: '완료' }),
+        el('span', { class: 'warmup-summary', text: doneCount + '세트' }),
+        el('span', { class: 'warmup-toggle', text: open ? '접기' : '보기' }),
+      ]));
+
+      if (open) {
+        sets.forEach(function (set, setIndex) {
+          if (!set.done) return;
+          wrap.appendChild(el('div', { class: 'done-set' }, [
+            el('span', { class: 'set-no', text: String(setIndex + 1) }),
+            el('span', { class: 'done-detail', text:
+              (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회 · RIR ' + set.rir }),
+            el('button', {
+              type: 'button', class: 'demo-open', text: '고치기',
+              'aria-label': (setIndex + 1) + '세트 기록 고치기',
+              onclick: function () { undoSet(liftIndex, setIndex); },
+            }),
+          ]));
+        });
+      }
+    }
+
+    if (cursor >= 0) {
+      wrap.appendChild(renderCurrentSet(lift, liftIndex, sets[cursor], cursor));
+    } else {
+      wrap.appendChild(el('div', { class: 'set-cleared', text: '이 종목은 끝났습니다.' }));
+    }
+
+    return wrap;
+  }
+
+  /** 지금 할 세트. 화면에서 제일 커야 한다 — 지금 할 일은 이것 하나다. */
+  function renderCurrentSet(lift, liftIndex, set, setIndex) {
+    var plates = set.weightKg > 0 && lift.loading ? E.platePlan(set.weightKg, lift.loading) : null;
+    var target = set.targetReps.min === set.targetReps.max
+      ? set.targetReps.max + '회'
+      : set.targetReps.min + '–' + set.targetReps.max + '회';
+
+    var body = [
+      el('div', { class: 'now-load' }, [
+        el('span', { class: 'weight', text: set.weightKg > 0 ? String(set.weightKg) : '맨몸' }),
+        set.weightKg > 0 ? el('span', { class: 'unit', text: 'kg' }) : null,
+        el('span', { class: 'now-target', text: '목표 ' + target }),
+      ]),
+    ];
+
+    if (plates) body.push(el('div', { class: 'plates', text: E.describePlates(plates) }));
+    if (set.adjustment) {
+      body.push(el('div', { class: 'set-result' }, [
+        el('em', { text: (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg — ' + set.adjustment.reason }),
+      ]));
+    }
+
+    body.push(el('div', { class: 'now-reps' }, [
+      el('span', { class: 'rir-label', text: '반복' }),
+      el('div', { class: 'reps' }, [
+        el('button', { type: 'button', 'aria-label': '반복 수 줄이기', text: '−',
+          onclick: function () { setReps(liftIndex, setIndex, -1); } }),
+        el('output', { text: set.reps + '회' }),
+        el('button', { type: 'button', 'aria-label': '반복 수 늘리기', text: '+',
+          onclick: function () { setReps(liftIndex, setIndex, 1); } }),
+      ]),
+    ]));
+
+    var chips = el('div', { class: 'rir-row now-rir' }, [
+      el('span', {
+        class: 'rir-label',
+        title: 'RIR = 이 세트에서 몇 회 더 할 수 있었는지. 세트마다 기록합니다. 0 = 실패 지점.',
+        text: 'RIR',
+      }),
+    ]);
+    [0, 1, 2, 3, 4].forEach(function (rir) {
+      chips.appendChild(el('button', {
+        type: 'button',
+        class: 'chip' + (rir === 0 ? ' fail' : ''),
+        'aria-pressed': 'false',
+        'aria-label': rir === 0 ? '실패 지점까지 수행' : '남은 반복 ' + rir + '회',
+        text: rir === 0 ? '실패' : String(rir),
+        onclick: function () { completeSet(liftIndex, setIndex, rir); },
+      }));
+    });
+    body.push(chips);
+
+    return el('div', { class: 'set-now' }, [
+      el('div', { class: 'now-head', text: (setIndex + 1) + '세트' }),
+      el('div', { class: 'now-body' }, body),
+    ]);
+  }
+
+  /** 잘못 누른 세트를 되돌린다. 기록도 같이 빼야 볼륨이 부풀지 않는다. */
+  function undoSet(liftIndex, setIndex) {
+    var set = state.lifts[liftIndex].sets[setIndex];
+    if (!set.done) return;
+    if (set.logged) {
+      var at = state.todaySets.indexOf(set.logged);
+      if (at >= 0) state.todaySets.splice(at, 1);
+      set.logged = null;
+    }
+    set.done = false;
+    set.rir = undefined;
+    render();
   }
 
   /** 종목 카드 하나. 목록 화면에서는 안 쓰고 진행 화면에서만 쓴다. */
@@ -4284,10 +4530,7 @@ input[type="search"] {
     }
 
     card.appendChild(renderWarmup(lift));
-
-    lift.sets.forEach(function (set, setIndex) {
-      card.appendChild(renderSetRow(lift, liftIndex, set, setIndex));
-    });
+    card.appendChild(renderSetTrack(lift, liftIndex));
 
     var decision = renderDecision(lift);
     if (decision) card.appendChild(decision);
@@ -4582,7 +4825,14 @@ input[type="search"] {
   /** 워밍업 램프 — 본세트 중량에 맞춰 올라간다. 볼륨에는 세지 않는다. */
   function renderWarmup(lift) {
     var warmup = lift.warmup;
-    var open = state.warmupOpen[lift.exercise.id] !== false;
+    /*
+     * 워밍업은 첫 본세트 전에만 볼 것이다. 4세트짜리 램프가 계속 펼쳐져
+     * 있으면 정작 지금 할 세트가 화면 밖으로 밀린다. 그래서 본세트를
+     * 하나라도 끝내면 접는다 — 사용자가 직접 연 경우는 그대로 둔다.
+     */
+    var started = lift.sets.some(function (set) { return set.done; });
+    var choice = state.warmupOpen[lift.exercise.id];
+    var open = choice === undefined ? !started : choice;
 
     var head = el('button', {
       type: 'button', class: 'warmup-head', 'aria-expanded': String(open),
@@ -4633,70 +4883,6 @@ input[type="search"] {
       }));
     }
     return row;
-  }
-
-  function renderSetRow(lift, liftIndex, set, setIndex) {
-    var load = el('div', { class: 'set-load' }, [
-      el('span', { text: set.weightKg > 0 ? set.weightKg + '' : '맨몸' }),
-      set.weightKg > 0 ? el('span', { class: 'unit', text: 'kg' }) : null,
-      el('span', {
-        class: 'target',
-        text: '목표 ' + (set.targetReps.min === set.targetReps.max
-          ? set.targetReps.max + '회'
-          : set.targetReps.min + '–' + set.targetReps.max + '회'),
-      }),
-    ]);
-
-    var main = el('div', { class: 'set-main' }, [load]);
-
-    var plates = set.weightKg > 0 && lift.loading ? E.platePlan(set.weightKg, lift.loading) : null;
-    if (plates) {
-      main.appendChild(el('div', { class: 'plates', text: E.describePlates(plates) }));
-    }
-
-    if (set.done) {
-      main.appendChild(el('div', { class: 'set-result' }, [
-        el('span', { text: set.reps + '회 · RIR ' + set.rir + ' · 완료' }),
-      ]));
-      if (set.adjustment) {
-        main.appendChild(el('div', { class: 'set-result' }, [
-          el('em', { text: '다음 세트 ' + (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg' }),
-        ]));
-      }
-    } else {
-      var reps = el('div', { class: 'reps' }, [
-        el('button', { type: 'button', 'aria-label': '반복 수 줄이기', text: '−', onclick: function () { setReps(liftIndex, setIndex, -1); } }),
-        el('output', { text: set.reps + '회' }),
-        el('button', { type: 'button', 'aria-label': '반복 수 늘리기', text: '+', onclick: function () { setReps(liftIndex, setIndex, 1); } }),
-      ]);
-
-      load.appendChild(reps);
-      var chips = el('div', { class: 'rir-row' }, [
-        el('span', {
-          class: 'rir-label',
-          title: 'RIR = 이 세트에서 몇 회 더 할 수 있었는지. 세트마다 기록합니다. 0 = 실패 지점.',
-          text: 'RIR',
-        }),
-      ]);
-
-      [0, 1, 2, 3, 4].forEach(function (rir) {
-        chips.appendChild(el('button', {
-          type: 'button',
-          class: 'chip' + (rir === 0 ? ' fail' : ''),
-          'aria-pressed': 'false',
-          'aria-label': rir === 0 ? '실패 지점까지 수행' : '남은 반복 ' + rir + '회',
-          text: rir === 0 ? '실패' : String(rir),
-          onclick: function () { completeSet(liftIndex, setIndex, rir); },
-        }));
-      });
-
-      main.appendChild(chips);
-    }
-
-    return el('div', { class: 'setrow' + (set.done ? ' done' : '') }, [
-      el('div', { class: 'set-no', text: String(setIndex + 1) }),
-      main,
-    ]);
   }
 
   /* 볼륨 */
