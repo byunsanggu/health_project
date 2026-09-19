@@ -152,6 +152,17 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
   const pool = [...input.index.values()].filter((candidate) => !gym || isAvailableAt(candidate, gym));
   const availableEquipment = input.availableEquipment ?? (gym ? availableEquipmentOf(gym) : undefined);
 
+  /*
+   * 이미 고른 종목은 다시 고르지 않는다.
+   *
+   * 기구가 빠지면 여러 슬롯이 같은 대체 종목으로 몰린다 — 바벨이 없어지면
+   * 데드리프트도 스티프 레그 데드리프트도 케이블 풀스루가 된다. 그걸 그대로
+   * 두면 한 세션에 같은 종목이 두 번 나온다.
+   */
+  const taken = new Set<string>();
+  const pickReplacement = (candidates: readonly Exercise[]) =>
+    candidates.find((candidate) => !taken.has(candidate.id));
+
   for (const slot of input.template.slots) {
     const original = input.index.get(slot.exerciseId);
     if (!original) continue;
@@ -162,7 +173,9 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
 
     // 1) 그 헬스장에 기구가 있는가
     if (gym && !isAvailableAt(original, gym)) {
-      const replacement = findSubstitutes(original, [], { pool, availableEquipment })[0];
+      const replacement = pickReplacement(
+        findSubstitutes(original, [], { pool, availableEquipment, substituteLimit: pool.length }),
+      );
       if (!replacement) {
         warnings.push({
           kind: 'equipment',
@@ -183,7 +196,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     const ruling = screenExercise(exercise, pain, { pool, availableEquipment });
 
     if (ruling.action === 'substitute' || ruling.action === 'stop') {
-      const replacement = ruling.substitutes[0];
+      const replacement = pickReplacement(ruling.substitutes);
       if (!replacement) {
         warnings.push({ kind: 'pain', text: `${exercise.name} — ${ruling.message}`, medical: ruling.action === 'stop' });
         continue; // 대체가 없으면 오늘은 건너뛴다
@@ -193,6 +206,9 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
       swapReason = 'pain';
       warnings.push({ kind: 'pain', text: ruling.message, medical: ruling.action === 'stop' });
     }
+
+    if (taken.has(exercise.id)) continue;
+    taken.add(exercise.id);
 
     // 3) 세트 수 — 주간 볼륨 처방에 맞춰 조정
     const setCount = adjustSetCount(slot, exercise, scaling);

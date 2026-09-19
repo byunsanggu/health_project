@@ -1341,6 +1341,75 @@
     return E.particle(word, pair);
   }
 
+  /* ── 이 기구 없어요 ─────────────────────────────── */
+
+  /**
+   * 그 종목에 필요한 기구 중 무엇이 없는지 고르게 한다.
+   *
+   * "이 종목 빼기"가 아니라 "이 기구 없음"으로 받는 이유가 있다. 종목만 빼면
+   * 같은 기구를 쓰는 다른 종목이 내일 또 나온다. 기구를 끄면 그 기구를 쓰는
+   * 종목이 전부 한 번에 정리된다.
+   */
+  function openMissingEquipment(exercise) {
+    var entry = currentGymEntry();
+    if (!entry) return;
+
+    var candidates = E.equipmentBehind(exercise, entry);
+    var body = [];
+
+    body.push(el('p', { class: 'asset-note', text:
+      exercise.name + '에 필요한 기구입니다. 헬스장에 없는 것을 골라 주세요. ' +
+      '그 기구를 쓰는 다른 종목도 같이 정리됩니다.' }));
+
+    body.push(el('div', { class: 'summary-list' }, candidates.map(function (id) {
+      var item = E.equipmentItem(id);
+      var guide = E.equipmentGuide(id);
+      // 무엇이 사라지는지 누르기 전에 보여준다.
+      var preview = E.setEquipmentPresent(state.gymBook, entry.id, id, false);
+
+      return el('button', {
+        type: 'button', class: 'equip-row',
+        onclick: function () { applyMissingEquipment(id); },
+      }, [
+        el('span', { class: 'mark', text: '' }),
+        el('span', { class: 'equip-main' }, [
+          el('span', { class: 'name', text: item ? item.name : id }),
+          guide ? el('span', { class: 'look', text: guide.look }) : null,
+          el('span', { class: 'aka', text: preview.lost.length > 0
+            ? '없애면 종목 ' + preview.lost.length + '개가 대체됩니다'
+            : '없애도 다른 종목에는 영향이 없습니다' }),
+        ]),
+      ]);
+    })));
+
+    body.push(el('p', { class: 'asset-note', text:
+      '잘못 눌러도 됩니다 — 헬스장 탭에서 언제든 다시 켤 수 있습니다.' }));
+
+    openModal(exercise.name, '기구 없음', body);
+  }
+
+  function applyMissingEquipment(equipmentId) {
+    var entry = currentGymEntry();
+    if (!entry) return;
+
+    var result = E.setEquipmentPresent(state.gymBook, entry.id, equipmentId, false);
+    state.gymBook = result.book;
+    state.gym = E.activeProfile(state.gymBook);
+    state.answers.gym = {
+      equipmentIds: E.activeGym(state.gymBook).equipmentIds.slice(),
+      measurements: state.answers.gym.measurements,
+    };
+
+    modal.close();
+    // 오늘 세션을 다시 짜야 그 기구를 쓰는 종목이 대체된다.
+    loadScenario(state.scenario, true);
+    pushLog('기구 없음', '<b>' + ((E.equipmentItem(equipmentId) || {}).name || equipmentId) +
+      '</b> 없음으로 바꿨습니다. ' +
+      (result.lost.length > 0 ? '종목 ' + result.lost.length + '개가 대체됩니다. ' : '') +
+      '헬스장 탭에서 다시 켤 수 있습니다.');
+    render();
+  }
+
   /* ── 동작 시연 ─────────────────────────────────── */
 
   /**
@@ -1510,6 +1579,21 @@
         'aria-label': lift.exercise.name + ' 기구가 사용 중일 때 대안 보기',
         onclick: function () { openOccupancy(lift.exercise); },
       }));
+
+      /*
+       * 첫 화면에서 기구 31개를 정확히 고르게 할 수는 없다 — "플랫 벤치"와
+       * "인클라인 벤치"가 뭔지 모르는 사람이 훨씬 많다. 대충 시작하고 여기서
+       * 고친다. 지금은 눈앞에 기구가 있으니 틀릴 수가 없다.
+       */
+      if (E.equipmentBehind(lift.exercise, currentGymEntry() || { equipmentIds: [] }).length > 0) {
+        nameRow.appendChild(el('button', {
+          type: 'button',
+          class: 'demo-open missing',
+          text: '없어요',
+          'aria-label': lift.exercise.name + '에 필요한 기구가 헬스장에 없을 때',
+          onclick: function () { openMissingEquipment(lift.exercise); },
+        }));
+      }
 
       var card = el('div', { class: 'lift' }, [
         el('div', { class: 'lift-head' }, [
@@ -3815,8 +3899,37 @@
       el('div', { class: 'sheet-body' }, [
         presets,
         el('p', { class: 'hint-line', text:
-          '고르면 기구가 대부분 채워집니다. 정확하지 않아도 됩니다 — 운동하면서 고칩니다.' }),
+          '고르면 기구가 대부분 채워집니다. 정확하지 않아도 됩니다 — ' +
+          '운동하다 그 종목이 나왔을 때 "없어요"를 누르면 그때 빠집니다.' }),
       ]),
+    ]));
+
+    /*
+     * "플랫 벤치"와 "인클라인 벤치"가 뭔지 모르는 사람이 훨씬 많다.
+     * 여기서 붙잡아 두면 앱을 닫는다. 그냥 넘어가는 길을 눈에 보이게 둔다.
+     */
+    screen.appendChild(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '몰라도 괜찮습니다' }),
+      el('div', { text:
+        '기구 이름을 지금 다 알 필요는 없습니다. 흔한 것들로 시작해두고, ' +
+        '운동하다 없는 기구가 나오면 그때 빼면 됩니다. 눈앞에 기구가 있을 때가 제일 정확합니다.' }),
+      el('button', {
+        type: 'button', class: 'pick',
+        text: '잘 모르겠어요 — 나중에 할게요',
+        onclick: function () {
+          state.answers.gym.equipmentIds = E.presetEquipment('unknown');
+          state.answers.gym.measurements = {};
+          pushLog('기구 설정', '흔한 기구 ' + state.answers.gym.equipmentIds.length +
+            '개로 시작합니다. 없는 건 운동하면서 뺍니다.');
+          /*
+           * 실측까지 건너뛴다. 기구를 모르겠다고 한 사람에게 바로 "빈 바 무게가
+           * 몇 kg인가요"를 묻는 건 더 모르는 걸 묻는 것이다. 기본값(20kg·5kg)이
+           * 한국 헬스장의 대부분이고, 틀리면 헬스장 탭에서 고치면 된다.
+           */
+          state.onboarding.step = stepIndex('result');
+          render();
+        },
+      }),
     ]));
 
     var search = el('input', {
@@ -3846,6 +3959,13 @@
     }
   }
 
+  function stepIndex(id) {
+    for (var i = 0; i < STEPS.length; i += 1) {
+      if (STEPS[i].id === id) return i;
+    }
+    return STEPS.length - 1;
+  }
+
   function stepMeasure() {
     var selected = state.answers.gym.equipmentIds;
     var measurable = E.EQUIPMENT_CATALOG.filter(function (item) {
@@ -3861,7 +3981,19 @@
 
     screen.appendChild(el('div', { class: 'notice' }, [
       el('div', { class: 'label', text: '왜 묻나' }),
-      el('div', { text: '기구마다 만들 수 있는 중량이 다릅니다. 모르면 기본값으로 두고 나중에 고쳐도 됩니다.' }),
+      el('div', { text:
+        '기구마다 만들 수 있는 중량이 다릅니다. 다만 한국 헬스장은 대부분 ' +
+        '빈 바 20kg · 스택 5kg이라, 몰라도 기본값이 거의 맞습니다.' }),
+      el('button', {
+        type: 'button', class: 'pick',
+        text: '모르겠어요 — 기본값으로 시작',
+        onclick: function () {
+          state.answers.gym.measurements = {};
+          pushLog('실측', '기본값(빈 바 20kg · 스택 5kg)으로 시작합니다. 헬스장 탭에서 고칠 수 있습니다.');
+          state.onboarding.step = stepIndex('result');
+          render();
+        },
+      }),
     ]));
 
     measurable.forEach(function (item) {

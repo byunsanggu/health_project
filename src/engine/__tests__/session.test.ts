@@ -6,6 +6,7 @@ import { planNextWeek, type WeeklyPlan } from '../mesocycle.ts';
 import { landmarksFor } from '../muscles.ts';
 import { exerciseById } from '../exercises.ts';
 import { DEFAULT_GYM } from '../gym.ts';
+import { gymFromCatalog } from '../equipment.ts';
 import type { Exercise, PainReport, SessionLog } from '../types.ts';
 import type { LifterProfile } from '../strength.ts';
 import { index, session, sets } from './helpers.ts';
@@ -312,5 +313,52 @@ describe('세션 경고', () => {
       assert.ok(!warning.text.includes('(는)'), warning.text);
       assert.ok(!warning.text.includes('(으)로'), warning.text);
     }
+  });
+});
+
+describe('한 세션에 같은 종목을 두 번 넣지 않는다', () => {
+  it('기구가 빠져 여러 슬롯이 같은 대체로 몰려도 중복되지 않는다', () => {
+    // 바벨이 없으면 데드리프트도 스티프 레그 데드리프트도 같은 곳으로 몰린다
+    const noBarbell = gymFromCatalog({
+      equipmentIds: ['floor', 'dumbbells', 'bench-flat', 'cable-station', 'leg-curl-machine'],
+    });
+
+    const session = buildSession({
+      template: {
+        name: '하체',
+        slots: [
+          { exerciseId: 'conventional-deadlift', sets: 3, repRange: { min: 5, max: 8 } },
+          { exerciseId: 'stiff-leg-deadlift', sets: 3, repRange: { min: 8, max: 12 } },
+          { exerciseId: 'romanian-deadlift', sets: 3, repRange: { min: 8, max: 12 } },
+          { exerciseId: 'good-morning', sets: 3, repRange: { min: 8, max: 12 } },
+        ],
+      },
+      date: '2026-09-19',
+      plan: planFrom([], '2026-09-18'),
+      history: [],
+      index,
+      gym: noBarbell,
+    });
+
+    const ids = session.exercises.map((item) => item.exercise.id);
+    assert.equal(new Set(ids).size, ids.length, `중복: ${ids.join(', ')}`);
+  });
+
+  it('템플릿이 같은 종목을 두 번 담아도 한 번만 넣는다', () => {
+    const session = buildSession({
+      template: {
+        name: '가슴',
+        slots: [
+          { exerciseId: 'barbell-bench-press', sets: 3, repRange: { min: 5, max: 8 } },
+          { exerciseId: 'barbell-bench-press', sets: 3, repRange: { min: 8, max: 12 } },
+        ],
+      },
+      date: '2026-09-19',
+      plan: planFrom([], '2026-09-18'),
+      history: [],
+      index,
+    });
+
+    assert.equal(session.exercises.length, 1);
   });
 });

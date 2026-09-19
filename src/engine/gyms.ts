@@ -1,5 +1,6 @@
 import {
   COMMON_EQUIPMENT_IDS,
+  EXERCISE_REQUIREMENTS,
   availableExercises,
   coverageReport,
   equipmentItem,
@@ -670,4 +671,75 @@ export function suggestGymByLocation(
 
 function metersApart(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   return distanceKm(a, b) * 1000;
+}
+
+/* ── 쓰면서 고치기 ─────────────────────────────────────── */
+
+export interface EquipmentEdit {
+  book: GymBook;
+  /** 이 변경으로 못 하게 된 종목 */
+  lost: Exercise[];
+  /** 이 변경으로 할 수 있게 된 종목 */
+  gained: Exercise[];
+  message: string;
+}
+
+/**
+ * 헬스장에 그 기구가 있는지 없는지를 쓰면서 고친다.
+ *
+ * 첫 화면에서 기구 31개를 정확히 고르게 할 수는 없다 — "플랫 벤치"와
+ * "인클라인 벤치"가 뭔지 모르는 사람이 훨씬 많다. 그래서 대충 시작하고,
+ * 실제로 그 종목이 처방됐을 때 "이 기구 없어요"로 빼는 쪽이 맞다.
+ * 그때는 눈앞에 기구가 있으니 틀릴 수가 없다.
+ *
+ * 되돌릴 수 있어야 한다. 잘못 눌러서 종목이 사라지면 사용자는 앱을 못 믿는다.
+ */
+export function setEquipmentPresent(
+  book: GymBook,
+  gymId: string,
+  equipmentId: string,
+  present: boolean,
+  pool: readonly Exercise[] = EXERCISES,
+): EquipmentEdit {
+  const entry = book.gyms.find((gym) => gym.id === gymId);
+  if (!entry) {
+    return { book, lost: [], gained: [], message: '등록되지 않은 헬스장입니다.' };
+  }
+
+  const had = entry.equipmentIds.includes(equipmentId);
+  if (had === present) {
+    return { book, lost: [], gained: [], message: '이미 그렇게 되어 있습니다.' };
+  }
+
+  const next: GymEntry = {
+    ...entry,
+    equipmentIds: present
+      ? [...entry.equipmentIds, equipmentId]
+      : entry.equipmentIds.filter((id) => id !== equipmentId),
+  };
+
+  const diff = compareGyms(entry, next, pool);
+  const label = equipmentItem(equipmentId)?.name ?? equipmentId;
+
+  return {
+    book: { ...book, gyms: book.gyms.map((gym) => (gym.id === gymId ? next : gym)) },
+    lost: diff.lost,
+    gained: diff.gained,
+    message: present
+      ? `${label} 있음으로 바꿨습니다.` +
+        (diff.gained.length > 0 ? ` 종목 ${diff.gained.length}개가 열립니다.` : '')
+      : `${label} 없음으로 바꿨습니다.` +
+        (diff.lost.length > 0 ? ` 종목 ${diff.lost.length}개가 대체됩니다.` : ''),
+  };
+}
+
+/**
+ * 그 종목을 하려면 무엇이 필요한가.
+ * "이 기구 없어요"를 눌렀을 때 무엇을 꺼야 하는지 알려준다.
+ */
+export function equipmentBehind(exercise: Exercise, entry: GymSelection): string[] {
+  const required = EXERCISE_REQUIREMENTS[exercise.id];
+  if (!required || required.length === 0) return [];
+  // 지금 켜져 있는 것 중에서만 고른다 — 이미 꺼진 걸 또 끌 수는 없다.
+  return required.filter((id) => entry.equipmentIds.includes(id));
 }
