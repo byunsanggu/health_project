@@ -1053,6 +1053,35 @@ input[type="search"] {
 }
 
 
+/* ── 근육 지도 ──────────────────────────────────── */
+/*
+ * 몸과 근육 모두 currentColor로 그려져 있고 농도만 다르다.
+ * 색은 여기서 한 번만 정한다 — 다크 모드는 --accent가 알아서 따라온다.
+ */
+.body-map { width: 100%; max-width: 280px; height: auto; color: var(--accent); display: block; margin: 0 auto; }
+.body-legend { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+.body-legend-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px auto;
+  gap: 9px;
+  align-items: center;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+}
+.body-legend-row:first-child { border-top: 0; }
+.body-legend-row .name { font-weight: 500; display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.body-legend-row .bar { height: 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line-soft); overflow: hidden; }
+.body-legend-row .bar i { display: block; height: 100%; background: var(--accent); }
+.body-legend-row .pct {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.body-legend-row .role {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
+  border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; color: var(--accent);
+}
+
 /* ── 동의 ───────────────────────────────────────── */
 .consent-card {
   border: 1px solid var(--line);
@@ -1214,5 +1243,6 @@ input[type="search"] {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>/*ENGINE_BUNDLE*/</script>
 <script>/*EQUIPMENT_ART*/</script>
+<script>/*BODY_MAP*/</script>
 <script>/*DEMO3D_SCRIPT*/</script>
 <script>/*APP_SCRIPT*/</script>

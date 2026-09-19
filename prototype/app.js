@@ -1342,6 +1342,50 @@
   }
 
   /**
+   * 사용하는 근육 그림 + 범례.
+   *
+   * 경쟁 앱들은 종목마다 근육이 칠해진 그림 한 장을 붙여 둡니다. 우리는
+   * 그림이 한 장뿐이고 색을 계산해서 넣습니다 — 엔진이 이미 종목별 근육
+   * 기여도를 갖고 있기 때문입니다. 그래서 데드리프트의 둔근(100%)과
+   * 대퇴사두(30%)가 같은 색으로 보이지 않습니다.
+   *
+   * 주동근/협응근을 나누는 기준은 0.7입니다. 그보다 아래는 "같이 쓰이는"
+   * 근육이지 그 종목으로 키우는 근육이 아닙니다.
+   */
+  function musclePanel(exercise) {
+    var map = window.FitBodyMap;
+    var contribution = exercise.contribution || {};
+    var ranked = Object.keys(contribution)
+      .filter(function (muscle) { return contribution[muscle] > 0; })
+      .sort(function (a, b) { return contribution[b] - contribution[a]; });
+    if (ranked.length === 0) return [];
+
+    var out = [];
+    out.push(el('div', { class: 'list-label', text: '쓰는 근육' }));
+    if (map) out.push(map.render(contribution, exercise.name + '에서 쓰는 근육'));
+
+    out.push(el('div', { class: 'body-legend' }, ranked.map(function (muscle) {
+      var weight = contribution[muscle];
+      var primary = weight >= 0.7;
+      return el('div', { class: 'body-legend-row' }, [
+        el('span', { class: 'name' }, [
+          el('span', { text: E.MUSCLE_LABELS_KO[muscle] || muscle }),
+          primary ? el('span', { class: 'role', text: '주동근' }) : null,
+        ]),
+        el('span', { class: 'bar' }, [
+          el('i', { style: 'width:' + Math.round(Math.min(1, weight) * 100) + '%' }),
+        ]),
+        el('span', { class: 'pct', text: Math.round(weight * 100) + '%' }),
+      ]);
+    })));
+
+    out.push(el('p', { class: 'asset-note', text:
+      '진한 곳이 그 종목으로 키우는 근육입니다. 흐린 곳도 쓰이긴 하지만 ' +
+      '주된 자극은 아닙니다 — 주간 볼륨도 이 비율대로 나눠서 쌓입니다.' }));
+    return out;
+  }
+
+  /**
    * 기구 그림 한 칸.
    *
    * 그림이 없는 기구가 있어도 목록이 들쭉날쭉해지면 안 되므로, 없으면 같은
@@ -1484,6 +1528,8 @@
         playButton.textContent = state.demo.toggle() ? '일시정지' : '재생';
       });
     }
+
+    musclePanel(exercise).forEach(function (node) { body.push(node); });
 
     if (demo.cues.length > 0) {
       body.push(el('div', { class: 'list-label', text: '수행 큐' }));
