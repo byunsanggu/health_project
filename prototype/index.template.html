@@ -1314,6 +1314,13 @@ input[type="search"] {
 .progress-bar { flex: 1; height: 5px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line-soft); overflow: hidden; }
 .progress-bar i { display: block; height: 100%; background: var(--accent); transition: width .25s ease; }
 .step-nav { display: flex; gap: 8px; }
+/* 다 끝난 뒤의 "이전"은 되돌아가는 길일 뿐이다. 자리를 다 먹지 않게 둔다. */
+.step-nav.done button { flex: 0 0 auto; padding-inline: 20px; }
+/*
+ * 운동을 마친 뒤의 완료 버튼. 시작하기와 같은 무게감을 주되 고정하지는
+ * 않는다 — 고정하면 바로 위의 "이전"을 덮는다.
+ */
+.finish.major { padding: 15px; font-size: 15px; }
 .step-nav button {
   flex: 1;
   border: 1px solid var(--line);

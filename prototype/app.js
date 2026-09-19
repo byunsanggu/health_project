@@ -2145,7 +2145,13 @@
     var remaining = lift.sets.filter(function (set) { return !set.done; }).length;
     var last = state.liftCursor >= total - 1;
 
-    var nav = el('div', { class: 'step-nav' }, [
+    var finished = allSetsDone();
+
+    /*
+     * 다 끝냈으면 "이전"만 남는다. 그 버튼 하나가 막다른 길처럼 보이면
+     * 안 되므로, 완료 버튼을 바로 아래에 붙이고 "이전"은 좁게 둔다.
+     */
+    var nav = el('div', { class: 'step-nav' + (finished ? ' done' : '') }, [
       state.liftCursor > 0
         ? el('button', {
             type: 'button', class: 'ghost', text: '이전',
@@ -2163,18 +2169,19 @@
             onclick: function () { state.liftCursor += 1; render(); },
           }),
     ]);
-    screen.appendChild(nav);
+    if (nav.childNodes.length > 0) screen.appendChild(nav);
+
+    /*
+     * 완료 버튼이 컨디셔닝·맥스테스트 시트 아래에 묻혀 있었다. 다 끝냈는데
+     * 다음 행동이 스크롤 두 번 아래에 있으면 "아무 일도 안 일어난다"로
+     * 읽힌다. 끝났으면 이게 제일 먼저 와야 한다.
+     */
+    if (finished) renderFinish(false);
 
     if (last) {
       renderMaxTest();
       renderConditioning();
     }
-
-    /*
-     * 마지막 종목의 마지막 세트까지 끝났을 때만 완료 버튼을 띄운다.
-     * 그 전에는 "다음 종목"이 유일한 다음 행동이다.
-     */
-    if (allSetsDone()) renderFinish(false);
   }
 
   /**
@@ -2442,7 +2449,14 @@
 
     var decision = renderDecision(lift);
     if (decision) card.appendChild(decision);
-    card.appendChild(renderTechniques(lift));
+
+    /*
+     * 강도 기법은 "마지막 세트에 붙일" 것이다. 세트를 다 기록한 뒤에도
+     * 떠 있으면 끝난 종목 밑에 할 일이 남은 것처럼 보이고, 정작 다음
+     * 행동인 완료 버튼을 화면 밖으로 밀어낸다.
+     */
+    var pending = lift.sets.some(function (set) { return !set.done; });
+    if (pending) card.appendChild(renderTechniques(lift));
     return card;
   }
 
@@ -2532,7 +2546,7 @@
     if (done === 0) return;
     screen.appendChild(el('button', {
       type: 'button',
-      class: 'finish' + (quiet ? ' quiet' : ''),
+      class: 'finish' + (quiet ? ' quiet' : ' major'),
       text: quiet
         ? '여기서 끝내기 · ' + done + '세트 요약'
         : '오늘 운동 완료 · 요약 보기',
