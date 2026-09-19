@@ -1,7 +1,7 @@
 import { EXERCISES } from './exercises.ts';
 import { availableExercises, coverageReport, gymFromCatalog, type GymSelection } from './equipment.ts';
 import { assessLevel, levelProfile, type LevelAssessment } from './levels.ts';
-import { MUSCLE_LABELS_KO, landmarksFor } from './muscles.ts';
+import { MUSCLE_GROUPS, MUSCLE_LABELS_KO, landmarksFor } from './muscles.ts';
 import { screenExercise } from './pain.ts';
 import type { LifterProfile } from './strength.ts';
 import type { SessionSlot, SessionTemplate } from './session.ts';
@@ -22,8 +22,11 @@ export interface OnboardingAnswers {
   selfReportedLevel: TrainingLevel;
   /** 꾸준히 훈련한 개월 수 — 자가 신고 검증에 쓴다 */
   monthsTraining?: number;
+  /**
+   * 체중. 이력이 하나도 없는 첫날 중량을 뽑는 유일한 근거이고,
+   * 자가 신고한 경력을 실제 기록과 대조하는 데도 쓴다.
+   */
   bodyweightKg: number;
-  heightCm?: number;
   sex?: 'male' | 'female' | 'unspecified';
   /** 주당 운동 일수 (2~7) */
   daysPerWeek: number;
@@ -41,6 +44,12 @@ export interface OnboardingAnswers {
 export interface TrainingProgram {
   name: string;
   daysPerWeek: number;
+  /**
+   * 이 일정으로 기대할 수 있는 것의 한계.
+   * 주 1~2회는 부위별 볼륨이 최소 자극선에 못 미치는 경우가 많다.
+   * 되는 척하지 않고 무엇이 가능한지 말한다.
+   */
+  caution?: string;
   /** 주간 순환 템플릿 */
   templates: SessionTemplate[];
   /** 부위별 주간 목표 유효 세트 */
@@ -214,6 +223,8 @@ const ACCESSORY_DAY: DayBlueprint = {
 };
 
 const SPLITS: Record<number, DayBlueprint[]> = {
+  // 주 1회는 늘리기 위한 일정이 아니라 지키기 위한 일정이다. 전신 한 번.
+  1: [FULL_A],
   2: [FULL_A, FULL_B],
   3: [FULL_A, FULL_B, FULL_C],
   4: [UPPER_A, LOWER_A, UPPER_B, LOWER_B],
@@ -223,6 +234,7 @@ const SPLITS: Record<number, DayBlueprint[]> = {
 };
 
 const SPLIT_NAMES: Record<number, string> = {
+  1: '주 1회 전신',
   2: '주 2회 전신',
   3: '주 3회 전신',
   4: '주 4회 상하체 분할',
@@ -314,7 +326,7 @@ function addJointLoad(load: Map<Joint, number>, exercise: Exercise): void {
 
 export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): TrainingProgram {
   const profile = levelProfile(level);
-  const days = Math.min(7, Math.max(2, Math.round(answers.daysPerWeek)));
+  const days = Math.min(7, Math.max(1, Math.round(answers.daysPerWeek)));
   const blueprints = SPLITS[days] ?? SPLITS[4]!;
   const landmarks = landmarksFor(level);
 
@@ -373,9 +385,41 @@ export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): 
   return {
     name: SPLIT_NAMES[days] ?? `주 ${days}회 분할`,
     daysPerWeek: days,
+    caution: cautionFor(days, weeklyTargets, landmarks),
     templates,
     weeklyTargets,
   };
+}
+
+/**
+ * 이 일정의 한계를 그대로 말한다.
+ *
+ * 주 1~2회로는 대부분의 부위가 최소 자극선(MEV)에 닿지 않는다. 그걸 숨기고
+ * "훌륭한 프로그램입니다"라고 하면 몇 달 뒤에 사용자가 앱을 탓하게 된다.
+ * 무엇이 되고 무엇이 안 되는지 처음에 말해야 한다.
+ */
+function cautionFor(
+  days: number,
+  targets: Partial<Record<MuscleGroup, number>>,
+  landmarks: ReturnType<typeof landmarksFor>,
+): string | undefined {
+  const below = MUSCLE_GROUPS.filter((muscle) => {
+    const mev = landmarks[muscle].mev;
+    return mev > 0 && (targets[muscle] ?? 0) < mev;
+  });
+
+  if (days === 1) {
+    return '주 1회는 근육을 늘리기보다 지키는 일정입니다. 전신을 한 번에 돌려 ' +
+      '빠지는 부위가 없게 짰지만, 부위별 볼륨은 최소 자극선에 못 미칩니다. ' +
+      '늘리는 것이 목표라면 주 2회부터가 현실적입니다.';
+  }
+
+  if (below.length >= 6) {
+    return `주 ${days}회로는 ${below.slice(0, 3).map((muscle) => MUSCLE_LABELS_KO[muscle]).join(', ')} 등 ` +
+      `${below.length}개 부위가 최소 자극선에 닿지 않습니다. 하루를 더 낼 수 있으면 크게 달라집니다.`;
+  }
+
+  return undefined;
 }
 
 /* ── 온보딩 전체 ───────────────────────────────────────────── */

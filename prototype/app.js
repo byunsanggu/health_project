@@ -233,6 +233,7 @@
 
   /** 주당 일수별 훈련 요일 (월=0). */
   var WEEK_OFFSETS = {
+    1: [2],
     2: [0, 3],
     3: [0, 2, 4],
     4: [0, 1, 3, 4],
@@ -3271,7 +3272,7 @@
         el('span', { class: 'meta', text: '분할이 달라집니다' }),
       ]),
       el('div', { class: 'sheet-body' }, [
-        segmented([2, 3, 4, 5, 6, 7].map(function (days) {
+        segmented([1, 2, 3, 4, 5, 6, 7].map(function (days) {
           return {
             label: days + '일',
             active: state.answers.daysPerWeek === days,
@@ -3279,6 +3280,7 @@
           };
         })),
         el('p', { class: 'hint-line', text: splitPreview() }),
+        splitCaution(),
       ]),
     ]));
 
@@ -3325,6 +3327,16 @@
   function splitPreview() {
     var program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
     return program.name + ' — ' + program.templates.map(function (t) { return t.name; }).join(' · ');
+  }
+
+  /** 이 일수로 안 되는 것이 있으면 처음에 말한다. */
+  function splitCaution() {
+    var program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
+    if (!program.caution) return null;
+    return el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '알아두세요' }),
+      el('div', { text: program.caution }),
+    ]);
   }
 
   function stepGym() {

@@ -75,7 +75,7 @@ describe('buildProgram', () => {
 
   it('범위를 벗어난 일수는 붙잡아 준다', () => {
     assert.equal(buildProgram(answers({ daysPerWeek: 9 }), 'intermediate').templates.length, 7);
-    assert.equal(buildProgram(answers({ daysPerWeek: 1 }), 'intermediate').templates.length, 2);
+    assert.equal(buildProgram(answers({ daysPerWeek: 0 }), 'intermediate').templates.length, 1);
   });
 
   it('헬스장에 없는 종목은 넣지 않는다', () => {
@@ -175,5 +175,30 @@ describe('주 7일', () => {
         `${exercise.name}(${exercise.pattern})는 가벼운 날에 맞지 않는다`,
       );
     }
+  });
+});
+
+describe('주 1~2회', () => {
+  it('주 1회는 전신 한 번이다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 1 }), 'intermediate');
+    assert.equal(program.templates.length, 1);
+    assert.match(program.name, /주 1회/);
+  });
+
+  it('주 1회로 늘릴 수 있다고 말하지 않는다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 1 }), 'intermediate');
+    assert.ok(program.caution, '한계를 말하지 않으면 사용자가 몇 달 뒤에 앱을 탓한다');
+    assert.match(program.caution!, /지키는|최소 자극선/);
+  });
+
+  it('빠지는 부위 없이 전신을 돌린다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 1 }), 'intermediate');
+    const slots = program.templates[0]!.slots.length;
+    assert.ok(slots >= 5, `전신인데 슬롯이 ${slots}개뿐이다`);
+  });
+
+  it('일수가 충분하면 경고하지 않는다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 5 }), 'intermediate');
+    assert.equal(program.caution, undefined);
   });
 });
