@@ -1341,6 +1341,19 @@
     return E.particle(word, pair);
   }
 
+  /**
+   * 기구 그림 한 칸.
+   *
+   * 그림이 없는 기구가 있어도 목록이 들쭉날쭉해지면 안 되므로, 없으면 같은
+   * 크기의 빈 칸을 돌려준다. 그림은 장식이 아니라 "이게 그거 맞나"를
+   * 확인하는 장치라서, 이름·생김새 설명과 나란히 놓는다.
+   */
+  function equipArt(id, label) {
+    var art = window.FitEquipmentArt;
+    var svg = art && art.has(id) ? art.render(id, label + ' 그림') : null;
+    return svg || el('span', { class: 'equip-art-blank', 'aria-hidden': 'true' });
+  }
+
   /* ── 이 기구 없어요 ─────────────────────────────── */
 
   /**
@@ -1372,6 +1385,7 @@
         onclick: function () { applyMissingEquipment(id); },
       }, [
         el('span', { class: 'mark', text: '' }),
+        equipArt(id, item ? item.name : id),
         el('span', { class: 'equip-main' }, [
           el('span', { class: 'name', text: item ? item.name : id }),
           guide ? el('span', { class: 'look', text: guide.look }) : null,
@@ -3853,6 +3867,7 @@
         },
       }, [
         el('span', { class: 'mark', text: has ? '✓' : '' }),
+        equipArt(item.id, item.name),
         el('span', { class: 'equip-main' }, [
           el('span', { class: 'name', text: item.name }),
           guide ? el('span', { class: 'look', text: guide.look }) : null,

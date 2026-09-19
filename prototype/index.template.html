@@ -1018,7 +1018,7 @@ input[type="search"] {
 /* ── 기구 고르기 ────────────────────────────────── */
 .equip-row {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 20px 46px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
   width: 100%;
@@ -1032,6 +1032,17 @@ input[type="search"] {
 .equip-row:hover { background: var(--surface-2); }
 .equip-row[aria-pressed="true"] { background: var(--accent-soft); }
 .equip-row .mark { font-size: 13px; color: var(--accent); font-weight: 700; line-height: 1.5; }
+/*
+ * 기구 그림. currentColor로 그려져 있으므로 색은 여기서 정한다 —
+ * 평소에는 흐리게, 고른 것은 강조색으로 바뀐다.
+ */
+.equip-art {
+  width: 46px; height: 34px;
+  color: var(--muted);
+  flex: none;
+}
+.equip-row[aria-pressed="true"] .equip-art { color: var(--accent); }
+.equip-art-blank { width: 46px; height: 34px; }
 .equip-main { display: grid; gap: 2px; min-width: 0; }
 .equip-main .name { font-size: 13.5px; font-weight: 500; }
 .equip-main .look { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
@@ -1202,5 +1213,6 @@ input[type="search"] {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>/*ENGINE_BUNDLE*/</script>
+<script>/*EQUIPMENT_ART*/</script>
 <script>/*DEMO3D_SCRIPT*/</script>
 <script>/*APP_SCRIPT*/</script>
