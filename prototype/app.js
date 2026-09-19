@@ -1477,9 +1477,71 @@
    * 엔진의 관절 키프레임으로 절차적 애니메이션을 돌려, 어떤 데이터가
    * 필요하고 화면이 어떻게 생기는지를 먼저 확인한다.
    */
+  /**
+   * 직접 찍은 영상이 있으면 그걸 쓴다.
+   *
+   * 애니메이션은 관절 각도를 보여줄 뿐이고, 초보자가 따라 하려면 사람이
+   * 하는 걸 봐야 한다. 다만 영상이 없다고 빈 칸이 나오면 안 되므로,
+   * 없는 종목은 지금까지대로 애니메이션이 그대로 돈다.
+   *
+   * 실수 컷을 같이 찍었으면 전환 버튼이 생긴다. 초보자에게는 "이렇게
+   * 하세요"보다 "이러면 안 됩니다"가 더 잘 박힌다.
+   */
+  function filmedStage(exercise) {
+    var clips = window.FitDemoClips;
+    if (!clips || !clips.has(exercise.id)) return null;
+
+    var video = el('video', {
+      class: 'demo-video',
+      src: clips.src(exercise.id),
+      loop: '', muted: '', playsinline: '', autoplay: '', preload: 'metadata',
+      'aria-label': exercise.name + ' 시연 영상',
+    });
+    video.muted = true;  // 속성만으로는 일부 브라우저가 자동재생을 막는다
+
+    var stage = el('div', { class: 'demo-stage' }, [video]);
+    var controls = null;
+
+    if (clips.hasMistake(exercise.id)) {
+      var showing = 'normal';
+      var swap = function (which) {
+        showing = which;
+        video.src = which === 'normal' ? clips.src(exercise.id) : clips.mistakeSrc(exercise.id);
+        video.play().catch(function () { /* 자동재생이 막히면 사용자가 누른다 */ });
+        takes.forEach(function (button, i) {
+          button.setAttribute('aria-pressed', String((i === 0 ? 'normal' : 'mistake') === showing));
+        });
+      };
+      var takes = [
+        el('button', { type: 'button', class: 'chip', 'aria-pressed': 'true', text: '정상',
+          onclick: function () { swap('normal'); } }),
+        el('button', { type: 'button', class: 'chip', 'aria-pressed': 'false', text: '흔한 실수',
+          onclick: function () { swap('mistake'); } }),
+      ];
+      controls = el('div', { class: 'demo-controls demo-take' }, takes.concat([
+        el('span', { class: 'spacer', text: '직접 촬영' }),
+      ]));
+    } else {
+      controls = el('div', { class: 'demo-controls demo-take' }, [
+        el('span', { class: 'filmed', text: '직접 촬영' }),
+      ]);
+    }
+
+    return { stage: stage, controls: controls };
+  }
+
   function openDemo(exercise) {
     var demo = E.demoFor(exercise);
     var body = [];
+
+    var filmed = filmedStage(exercise);
+    if (filmed) {
+      body.push(filmed.stage);
+      body.push(filmed.controls);
+      buildDemoBody(exercise, demo, body, true);
+      openModal(exercise.name, E.PATTERN_LABELS_KO[demo.pattern] || demo.pattern, body);
+      return;
+    }
 
     var caption = el('div', { class: 'demo-caption', text: '' });
     var fill = el('div', { class: 'demo-track-fill' });
@@ -1529,8 +1591,27 @@
       });
     }
 
-    musclePanel(exercise).forEach(function (node) { body.push(node); });
+    buildDemoBody(exercise, demo, body, false);
+    openModal(exercise.name, E.PATTERN_LABELS_KO[demo.pattern], body);
 
+    if (!supported) return;
+
+    state.demo = window.FitDemo3D.mount(canvas, demo, {
+      dark: prefersDark(),
+      onProgress: function (t, label) {
+        fill.style.width = (t * 100).toFixed(1) + '%';
+        if (label && caption.textContent !== label) caption.textContent = label;
+      },
+    });
+  }
+
+  /**
+   * 시연 아래 붙는 것들. 영상이든 애니메이션이든 같다.
+   *
+   * 순서가 중요하다 — 동작을 본 다음 큐, 그 다음 실수, 근육은 맨 뒤다.
+   * 초보자가 필요한 건 "어떻게 하는가"이고 "어디에 오는가"는 그 다음이다.
+   */
+  function buildDemoBody(exercise, demo, body, filmed) {
     if (demo.cues.length > 0) {
       body.push(el('div', { class: 'list-label', text: '수행 큐' }));
       body.push(el('ul', { class: 'cue-list' }, demo.cues.map(function (cue) {
@@ -1545,25 +1626,17 @@
       })));
     }
 
+    musclePanel(exercise).forEach(function (node) { body.push(node); });
+
     body.push(el('p', {
       class: 'asset-note',
-      text: '이 시연은 관절 각도 키프레임으로 그린 예시입니다' +
-        (window.FitDemo3D.is3d() ? '' : ' (three.js를 받지 못해 평면으로 그렸습니다)') +
-        '. 동작 패턴 10개를 공유하고 종목별로 큐와 실수만 덧붙이는 구조라, ' +
-        '나중에 촬영 영상이나 3D 에셋으로 바꿀 때도 종목 ' + index.size + '개를 하나씩 찍지 않고 패턴 단위로 교체하면 됩니다.',
+      text: filmed
+        ? '직접 촬영한 영상입니다. 저작권이 이쪽에 있어 사용에 제약이 없습니다.'
+        : '이 시연은 관절 각도 키프레임으로 그린 예시입니다' +
+          (window.FitDemo3D.is3d() ? '' : ' (three.js를 받지 못해 평면으로 그렸습니다)') +
+          '. 촬영본이 들어오면 이 자리가 영상으로 바뀝니다 — 종목마다 따로 켤 수 있어서 ' +
+          '다 찍을 때까지 기다리지 않아도 됩니다.',
     }));
-
-    openModal(exercise.name, E.PATTERN_LABELS_KO[demo.pattern], body);
-
-    if (!supported) return;
-
-    state.demo = window.FitDemo3D.mount(canvas, demo, {
-      dark: prefersDark(),
-      onProgress: function (t, label) {
-        fill.style.width = (t * 100).toFixed(1) + '%';
-        if (label && caption.textContent !== label) caption.textContent = label;
-      },
-    });
   }
 
   function prefersDark() {

@@ -1053,6 +1053,24 @@ input[type="search"] {
 }
 
 
+/* ── 직접 찍은 시연 영상 ────────────────────────── */
+.demo-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+.demo-take {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.demo-take .filmed {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
+  color: var(--zone-ok); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px;
+}
+
 /* ── 근육 지도 ──────────────────────────────────── */
 /*
  * 몸과 근육 모두 currentColor로 그려져 있고 농도만 다르다.
@@ -1244,5 +1262,6 @@ input[type="search"] {
 <script>/*ENGINE_BUNDLE*/</script>
 <script>/*EQUIPMENT_ART*/</script>
 <script>/*BODY_MAP*/</script>
+<script>/*DEMO_CLIPS*/</script>
 <script>/*DEMO3D_SCRIPT*/</script>
 <script>/*APP_SCRIPT*/</script>
