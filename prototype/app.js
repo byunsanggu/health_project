@@ -839,11 +839,24 @@
   }
 
   /** 알림에서 "+30초"를 눌렀을 때. 타이머를 다시 예약한다. */
+  /**
+   * 휴식을 늘리거나 줄인다.
+   *
+   * 줄여서 남은 시간이 없어지면 그냥 끝낸다 — 0초짜리 타이머를 띄워 두는
+   * 것보다 다음 세트로 넘어가는 게 사용자가 원한 것이다.
+   */
   function extendRest(seconds) {
     if (!state.rest) return;
+    if (restRemaining() + seconds <= 0) return stopRest();
+
     state.rest.endsAt += seconds * 1000;
-    state.rest.total += seconds;
-    notifyWorker({ type: 'rest:start', endsAt: state.rest.endsAt, body: '연장한 휴식이 끝났습니다.' });
+    // 진행 막대가 100%를 넘지 않게 총량도 같이 줄인다.
+    state.rest.total = Math.max(restRemaining(), state.rest.total + seconds);
+    notifyWorker({
+      type: 'rest:start',
+      endsAt: state.rest.endsAt,
+      body: seconds > 0 ? '연장한 휴식이 끝났습니다.' : '휴식이 끝났습니다.',
+    });
     renderRest();
   }
 
@@ -946,8 +959,23 @@
         el('span', { class: 'rest-time', id: 'rest-remaining', text: E.formatDuration(remaining) }),
       ]),
       el('div', { class: 'rest-why', text: state.rest.reason }),
-      el('button', { type: 'button', class: 'rest-skip', text: '+30초', onclick: function () { extendRest(30); } }),
-      el('button', { type: 'button', class: 'rest-skip', text: '건너뛰기', onclick: stopRest }),
+      // 버튼은 한 묶음으로 — 셋을 그리드 칸에 하나씩 흘리면 줄이 무너진다.
+      /*
+       * 버튼은 한 묶음으로 — 셋을 그리드 칸에 하나씩 흘리면 줄이 무너진다.
+       *
+       * aria-label로 "휴식 30초 늘리기"를 주면 보이는 글자("+30초")와
+       * 읽히는 이름이 달라진다. 음성으로 "플러스 삼십초"라고 말하는
+       * 사용자는 그 버튼을 못 누른다. 설명은 title로 주고 이름은 글자
+       * 그대로 둔다.
+       */
+      el('div', { class: 'rest-actions' }, [
+        el('button', { type: 'button', class: 'rest-skip', text: '−30초',
+          title: '휴식을 30초 줄입니다', onclick: function () { extendRest(-30); } }),
+        el('button', { type: 'button', class: 'rest-skip', text: '+30초',
+          title: '휴식을 30초 늘립니다', onclick: function () { extendRest(30); } }),
+        el('button', { type: 'button', class: 'rest-skip', text: '건너뛰기',
+          title: '휴식을 끝내고 다음 세트로', onclick: stopRest }),
+      ]),
     ]));
 
     // 알림 권한은 여기서 묻는다 — 필요한 순간에 물어야 의미가 전달된다.

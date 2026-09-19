@@ -39,9 +39,15 @@ describe('세션 시간 추정', () => {
     assert.ok(estimate.totalMinutes > 30 && estimate.totalMinutes < 120);
   });
 
-  it('휴식이 가장 큰 덩어리다', () => {
-    const { breakdown } = estimateSessionTime(session);
-    assert.ok(breakdown.rest > breakdown.work, '볼륨 관리에서 휴식을 빼놓을 수 없는 이유');
+  it('휴식이 세션 시간의 큰 몫을 차지한다', () => {
+    /*
+     * 휴식을 1분~1분 30초 띠로 줄이기 전에는 휴식이 수행 시간보다 컸다.
+     * 지금은 그렇지 않다 — 그래도 4분의 1 이상은 휴식이라, 시간을 맞출 때
+     * 휴식부터 건드리는 게 여전히 맞다.
+     */
+    const { breakdown, totalSeconds } = estimateSessionTime(session);
+    assert.ok(breakdown.rest / totalSeconds >= 0.25,
+      `휴식 비중 ${Math.round((breakdown.rest / totalSeconds) * 100)}%`);
   });
 
   it('블록의 휴식 배율을 반영한다', () => {
@@ -75,7 +81,9 @@ describe('시간 예산에 맞추기', () => {
   });
 
   it('고립 운동부터 줄인다', () => {
-    const result = fitToTimeBudget(session, 55);
+    // 예산은 세션 추정치에서 끌어온다 — 휴식 기준이 바뀌면 고정 분 수는 의미가 없다.
+    const full = estimateSessionTime(session).totalMinutes;
+    const result = fitToTimeBudget(session, Math.round(full * 0.75));
     assert.ok(result.adjustments.length > 0);
     const roles = classifyRoles(session.exercises);
     const firstTouched = session.exercises.findIndex(
@@ -128,8 +136,15 @@ describe('시간 예산에 맞추기', () => {
   });
 
   it('휴식 단축으로 맞출 수 있으면 세트를 건드리기 전에 그것부터 쓴다', () => {
-    // 65분짜리 세션은 휴식을 25% 줄이면 58분 근처가 된다
-    const result = fitToTimeBudget(session, 60, { allowShortRest: true });
+    /*
+     * 휴식을 25% 줄여서 닿는 예산을 잡는다. 휴식이 차지하는 몫이
+     * 세션마다 다르므로 추정치에서 계산한다 — 분 수를 박아 두면
+     * 휴식 기준을 손댈 때마다 이 테스트가 엉뚱하게 깨진다.
+     */
+    const before = estimateSessionTime(session);
+    const saved = before.breakdown.rest * 0.25;
+    const budget = Math.floor((before.totalSeconds - saved * 0.5) / 60);
+    const result = fitToTimeBudget(session, budget, { allowShortRest: true });
     assert.equal(result.fits, true);
     assert.equal(result.adjustments[0]?.action, 'shortenRest');
     assert.equal(result.session.exercises.length, session.exercises.length, '종목이 빠지지 않았다');

@@ -183,6 +183,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 7px; padding: 5px 10px; font-size: 12px; color: var(--muted);
 }
 .rest-skip:hover { color: var(--accent); border-color: var(--accent); }
+.rest-actions { display: flex; gap: 5px; }
 
 .reliability { display: flex; align-items: center; gap: 9px; }
 .reliability-track { flex: 1; height: 8px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
@@ -1434,7 +1435,7 @@ input[type="search"] {
           <li>기구 이름을 몰라도 됩니다. <b>초기 설정 → 헬스장 기구</b>에서 "굽은 봉", "나비", "철장"처럼 <b>생김새로 검색</b>하거나, 헬스장 유형을 골라 한 번에 채울 수 있습니다.</li>
           <li>맨 처음 화면은 <b>동의</b>입니다. 체중·운동·통증 기록은 건강정보라 별도 동의를 받아야 해서, <b>"전체 동의" 버튼을 두지 않았습니다.</b> 선택 항목을 거부하면 그 기능만 꺼지고 나머지는 그대로 동작합니다 — <b>체크인</b> 탭의 <b>내 정보</b>에서 언제든 철회하고, 내 데이터를 내려받거나 전부 지울 수 있습니다.</li>
           <li>맨 처음 뜨는 <b>초기 설정</b>에서 경력과 보유 기구를 고르면 프로그램이 자동으로 생성됩니다. 경력을 실제보다 높게 고르면 훈련 개월 수와 대조해 낮춰 잡습니다.</li>
-          <li>세트를 완료하면 <b>휴식 타이머</b>가 자동으로 뜹니다. 복합 동작·고중량·허리 부담에 따라 시간이 달라집니다.</li>
+          <li>세트를 완료하면 <b>휴식 타이머</b>가 자동으로 뜹니다. <b>1분 ~ 1분 30초</b> 띠이고 복합 동작·고중량·허리 부담에 따라 그 안에서 달라집니다. <b>−30초 · +30초</b>로 바꿀 수 있고, 빼다가 남은 시간이 없어지면 그냥 닫힙니다. 블록 유형이 배수로 늘립니다 — 근력 블록은 2분, 컨디셔닝은 30초대가 됩니다.</li>
           <li><b>진행</b> 탭에 추정 1RM 추이와 주간 볼륨 추이가 쌓입니다. <b>주간</b> 탭의 RIR 신뢰도는 실패 세트와 대조해 신고가 얼마나 정확한지 보여줍니다.</li>
           <li><b>주간</b> 탭에서 <b>블록 유형</b>을 바꿔 보세요. 근력 · 고밀도 · 한계 돌파 · 컨디셔닝으로 반복 범위와 휴식이 달라집니다. 지금 고르면 손해인 블록은 이유와 함께 잠깁니다.</li>
           <li><b>한계 돌파</b> 블록을 고르면 <b>오늘</b> 탭에 워밍업 램프와 3회 시도 계획이 나타납니다. 디로드 전이거나 통증이 있으면 막습니다.</li>
