@@ -413,3 +413,172 @@ export function gymFromCatalog(selection: GymSelection): GymProfile {
 export const COMMON_EQUIPMENT_IDS: readonly string[] = EQUIPMENT_CATALOG
   .filter((item) => item.common)
   .map((item) => item.id);
+
+/* ── 이름을 몰라도 알아보게 ─────────────────────────────── */
+
+export interface EquipmentGuide {
+  /** 다르게 부르는 이름들. 검색에 쓴다 */
+  aka: string[];
+  /** 생김새 한 줄 — 이름을 몰라도 헬스장에서 찾을 수 있어야 한다 */
+  look: string;
+}
+
+/**
+ * 기구 설명.
+ *
+ * "올림픽 바벨 + 플레이트"나 "펙덱"이 뭔지 모르는 사람이 훨씬 많다. 이름만
+ * 늘어놓고 고르라고 하면 초보자는 거기서 앱을 닫는다. 그래서 다르게 부르는
+ * 이름과 생김새를 같이 준다 — "긴 봉에 원판 끼우는 것"이라고 하면 안다.
+ */
+export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
+  floor: {
+    aka: ['매트', '맨몸', '스트레칭 존', '요가매트'],
+    look: '바닥에 깔린 매트. 팔굽혀펴기나 플랭크를 할 수 있는 빈 공간',
+  },
+  'barbell-set': {
+    aka: ['긴 바벨', '봉', '원판', '바벨', '역기'],
+    look: '2m쯤 되는 긴 쇠봉과 양쪽에 끼우는 둥근 원판',
+  },
+  'ez-bar': {
+    aka: ['굽은 바', 'W바', '지그재그 봉', '컬바'],
+    look: '가운데가 W자로 굽은 짧은 봉. 팔 운동에 씁니다',
+  },
+  dumbbells: {
+    aka: ['아령', '덤벨'],
+    look: '한 손으로 드는 아령. 보통 벽 쪽 거치대에 무게순으로 놓여 있습니다',
+  },
+  'power-rack': {
+    aka: ['랙', '스쿼트랙', '철장', '파워케이지'],
+    look: '사람이 들어가는 네모난 철제 구조물. 안에서 바벨을 들어올립니다',
+  },
+  'bench-flat': {
+    aka: ['벤치', '평평한 벤치', '눕는 의자'],
+    look: '평평하게 누울 수 있는 긴 의자',
+  },
+  'bench-incline': {
+    aka: ['기울어진 벤치', '경사 벤치', '인클라인'],
+    look: '등받이 각도를 세울 수 있는 벤치',
+  },
+  'pull-up-bar': {
+    aka: ['철봉', '턱걸이 봉', '풀업'],
+    look: '천장이나 기둥에 달린 가로 봉. 매달려서 턱걸이를 합니다',
+  },
+  landmine: {
+    aka: ['한쪽 고정 바벨', '랜드마인'],
+    look: '바벨 한쪽 끝이 바닥에 고정돼 비스듬히 움직이는 장치',
+  },
+  'back-extension-bench': {
+    aka: ['허리 운동대', '로만체어', '백익스텐션'],
+    look: '허벅지를 받치고 상체를 숙였다 펴는 비스듬한 받침대',
+  },
+  'cable-station': {
+    aka: ['케이블', '줄 당기는 기계', '도르래'],
+    look: '기둥에 줄(케이블)이 달려 있고 손잡이를 갈아 끼우는 기계. 추가 핀으로 조절됩니다',
+  },
+  'lat-pulldown-machine': {
+    aka: ['랫풀', '위에서 당기는 기계', '풀다운'],
+    look: '앉아서 머리 위의 긴 봉을 아래로 당기는 기계',
+  },
+  'seated-row-machine': {
+    aka: ['로우 머신', '앉아서 당기는 기계', '시티드로우'],
+    look: '앉아서 손잡이를 몸 쪽으로 당기는 기계',
+  },
+  'chest-press-machine': {
+    aka: ['체스트프레스', '가슴 미는 기계'],
+    look: '앉아서 앞으로 미는 기계. 가슴 운동입니다',
+  },
+  'shoulder-press-machine': {
+    aka: ['숄더프레스', '어깨 미는 기계'],
+    look: '앉아서 위로 미는 기계. 어깨 운동입니다',
+  },
+  'pec-deck-machine': {
+    aka: ['펙덱', '플라이 머신', '나비 기계', '버터플라이'],
+    look: '앉아서 양팔을 안으로 모으는 기계. 나비처럼 생겼습니다',
+  },
+  'chest-supported-row-machine': {
+    aka: ['가슴 대고 당기는 기계', '티바 로우'],
+    look: '가슴을 받침대에 대고 엎드려 당기는 기계',
+  },
+  'leg-press-machine': {
+    aka: ['레그프레스', '다리 미는 기계'],
+    look: '앉거나 누워서 발판을 다리로 밀어내는 큰 기계',
+  },
+  'hack-squat-machine': {
+    aka: ['핵스쿼트', '어깨로 미는 스쿼트 기계'],
+    look: '비스듬히 누워 어깨로 받치고 밀어 올리는 기계',
+  },
+  'leg-extension-machine': {
+    aka: ['레그익스텐션', '앉아서 다리 펴는 기계'],
+    look: '앉아서 발목 앞의 롤러를 걸고 무릎을 펴는 기계',
+  },
+  'leg-curl-machine': {
+    aka: ['레그컬', '다리 접는 기계', '햄스트링 기계'],
+    look: '엎드리거나 앉아서 발목 뒤의 롤러를 걸고 무릎을 접는 기계',
+  },
+  'calf-raise-machine': {
+    aka: ['종아리 기계', '카프레이즈'],
+    look: '서서 어깨로 받치고 뒤꿈치를 드는 기계',
+  },
+  'seated-calf-machine': {
+    aka: ['앉아서 하는 종아리 기계'],
+    look: '앉아서 무릎 위에 패드를 얹고 뒤꿈치를 드는 기계',
+  },
+  'dip-station': {
+    aka: ['딥스', '평행봉'],
+    look: '어깨너비 평행봉 두 개. 몸을 띄워 내렸다 올립니다',
+  },
+  'preacher-bench': {
+    aka: ['프리처', '팔 받침대', '암컬 벤치'],
+    look: '팔을 비스듬한 패드에 얹고 컬을 하는 의자',
+  },
+  'ab-wheel': {
+    aka: ['앱휠', '복근 롤러', '바퀴'],
+    look: '양쪽에 손잡이가 달린 작은 바퀴',
+  },
+  't-bar-row-machine': {
+    aka: ['티바로우', 'T바'],
+    look: '한쪽이 바닥에 고정된 바에 원판을 끼우고 당기는 기구',
+  },
+  'assisted-pull-up-machine': {
+    aka: ['어시스트 풀업', '보조 턱걸이 기계', '그래비트론'],
+    look: '무릎이나 발을 얹는 발판이 올라와 턱걸이를 도와주는 기계',
+  },
+  'lateral-raise-machine': {
+    aka: ['레터럴레이즈 머신', '옆으로 드는 기계'],
+    look: '앉아서 팔꿈치로 패드를 밀어 옆으로 올리는 기계',
+  },
+  'hip-thrust-machine': {
+    aka: ['힙쓰러스트 기계', '엉덩이 기계'],
+    look: '앉아서 골반 위에 패드를 얹고 밀어 올리는 기계',
+  },
+  'smith-machine': {
+    aka: ['스미스', '레일 달린 바벨', '가이드 바벨'],
+    look: '바벨이 두 개의 레일을 따라서만 위아래로 움직이는 기계',
+  },
+};
+
+export function equipmentGuide(id: string): EquipmentGuide | undefined {
+  return EQUIPMENT_GUIDE[id];
+}
+
+/**
+ * 이름을 몰라도 찾을 수 있게 — 정식 이름과 별명, 생김새를 모두 뒤진다.
+ * "굽은 봉"으로도 "EZ 바"로도 같은 것이 나와야 한다.
+ */
+export function findEquipment(query: string, pool: readonly EquipmentItem[] = EQUIPMENT_CATALOG): EquipmentItem[] {
+  /*
+   * 낱말 단위로 본다. "굽은 봉"을 통째로 붙여 찾으면 "가운데가 W자로 굽은
+   * 짧은 봉"에서 못 찾는다 — 사람은 기억나는 낱말 몇 개만 던진다.
+   */
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [...pool];
+
+  return pool.filter((item) => {
+    const guide = EQUIPMENT_GUIDE[item.id];
+    const haystack = [item.name, ...(guide?.aka ?? []), guide?.look ?? '']
+      .join(' ')
+      .toLowerCase()
+      .replace(/[\s·()]/g, '');
+    return tokens.every((token) => haystack.includes(token.replace(/[\s·()]/g, '')));
+  });
+}

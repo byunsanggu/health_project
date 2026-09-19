@@ -109,6 +109,13 @@ export interface GymDirectoryEntry {
    * 단지 헬스장을 등록했는지는 알 필요도 없고, 알려줘서도 안 된다.
    */
   visibility?: GymVisibility;
+  /**
+   * 같은 곳일 수 있는데 아직 확인하지 않은 항목들.
+   *
+   * 등록할 때마다 "혹시 이거 아닌가요?"로 막으면 성가시다. 나중에 묻기로
+   * 하고 여기 적어두면, 검색하다 마주쳤을 때 그때 확인할 수 있다.
+   */
+  pendingMergeWith?: string[];
 }
 
 /**
@@ -370,6 +377,11 @@ export interface RegisterInput {
   directory?: readonly GymDirectoryEntry[];
   /** 후보를 보고도 "새로 만들겠다"고 한 경우 */
   force?: boolean;
+  /**
+   * 지금 확인하지 않고 나중에 묻는다.
+   * 후보를 pendingMergeWith에 적어두고 일단 등록한다.
+   */
+  defer?: boolean;
   today?: string;
 }
 
@@ -418,7 +430,7 @@ export function registerGym(input: RegisterInput): RegisterResult {
     };
   }
 
-  if (hits.length > 0 && !input.force) {
+  if (hits.length > 0 && !input.force && !input.defer) {
     return {
       outcome: 'confirm',
       candidates: hits,
@@ -439,6 +451,10 @@ export function registerGym(input: RegisterInput): RegisterResult {
     equipmentIds: [...equipmentIds],
     source: 'user',
     visibility,
+    // 나중에 묻기로 한 후보는 적어둔다. 그냥 버리면 영영 못 합친다.
+    pendingMergeWith: input.defer && hits.length > 0
+      ? hits.map((hit) => hit.entry.id)
+      : undefined,
     verifiedAt: input.today,
   };
 
@@ -446,10 +462,85 @@ export function registerGym(input: RegisterInput): RegisterResult {
     outcome: 'created',
     entry,
     candidates: hits,
-    message: hits.length > 0
-      ? '비슷한 곳이 있었지만 새로 만들었습니다.'
-      : '새 헬스장으로 등록했습니다.',
+    message: hits.length === 0
+      ? '새 헬스장으로 등록했습니다.'
+      : input.defer
+        ? `비슷한 곳 ${hits.length}곳은 나중에 확인합니다. 지금은 이대로 씁니다.`
+        : '비슷한 곳이 있었지만 새로 만들었습니다.',
   };
+}
+
+/* ── 나중에 확인하기 ───────────────────────────────────── */
+
+export interface PendingMerge {
+  entry: GymDirectoryEntry;
+  others: GymDirectoryEntry[];
+}
+
+/**
+ * 아직 확인하지 않은 중복 후보.
+ *
+ * 등록할 때 "나중에"를 고른 것들이다. 헬스장을 검색하거나 목록을 열었을 때
+ * 한 번씩 물어서 정리한다 — 그때가 사용자가 헬스장을 생각하고 있는
+ * 순간이라 대답하기 쉽다.
+ */
+export function pendingMerges(directory: readonly GymDirectoryEntry[]): PendingMerge[] {
+  const byId = new Map(directory.map((entry) => [entry.id, entry]));
+
+  return directory
+    .filter((entry) => (entry.pendingMergeWith ?? []).length > 0)
+    .map((entry) => ({
+      entry,
+      others: (entry.pendingMergeWith ?? [])
+        .map((id) => byId.get(id))
+        .filter((other): other is GymDirectoryEntry => Boolean(other)),
+    }))
+    .filter((item) => item.others.length > 0);
+}
+
+/**
+ * 확인을 끝냈다고 표시한다 — 합쳤든 아니라고 했든.
+ *
+ * mergedInto를 주면 entryId가 그쪽으로 흡수되어 사라진다. 안 주면 "다른
+ * 곳이다"로 보고 둘 다 남기되, 다시 묻지 않도록 짝을 지운다.
+ */
+export function resolvePending(
+  directory: readonly GymDirectoryEntry[],
+  entryId: string,
+  mergedInto?: string,
+): GymDirectoryEntry[] {
+  const source = directory.find((entry) => entry.id === entryId);
+
+  const drop = (entry: GymDirectoryEntry, remove: string) => {
+    const rest = (entry.pendingMergeWith ?? []).filter((id) => id !== remove);
+    return rest.length > 0
+      ? { ...entry, pendingMergeWith: rest }
+      : { ...entry, pendingMergeWith: undefined };
+  };
+
+  return directory
+    .map((entry) => {
+      // 정리한 항목 자신의 대기 목록은 통째로 비운다.
+      if (entry.id === entryId) return { ...entry, pendingMergeWith: undefined };
+
+      if (mergedInto && entry.id === mergedInto && source) {
+        const merged = mergeGymRecords(entry, source);
+        return drop({
+          ...merged,
+          /*
+           * 사용자가 목록에서 이쪽을 골라 "여기로 합친다"고 했다. 그러면
+           * 이쪽 이름으로 남아야 한다 — 기구는 최근 확인이 이기지만, 이름은
+           * 사용자가 방금 고른 것이 이긴다.
+           */
+          name: entry.name,
+          pendingMergeWith: entry.pendingMergeWith,
+        }, entryId);
+      }
+
+      // 이 짝은 어느 쪽으로 끝났든 다시 물을 필요가 없다.
+      return drop(entry, entryId);
+    })
+    .filter((entry) => !(mergedInto && entry.id === entryId));
 }
 
 /**

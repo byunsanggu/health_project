@@ -41,6 +41,19 @@ const CORE_MACHINES = [
 
 export const GYM_PRESETS: readonly GymPreset[] = [
   {
+    id: 'unknown',
+    label: '잘 모르겠어요',
+    hint: '어떤 기구가 있는지 모를 때. 운동하면서 채웁니다',
+    /*
+     * 가장 흔한 것만 켜고 시작한다. 어느 헬스장에나 있는 것들이라 크게
+     * 틀리지 않고, 틀린 건 실제로 그 종목이 나왔을 때 "없어요"로 빼면 된다.
+     * 아무것도 모르는 사람에게 기구 31개를 보여주는 것보다 훨씬 낫다.
+     */
+    equipmentIds: [...BASE, ...FREE_WEIGHT, 'pull-up-bar', 'cable-station',
+      'lat-pulldown-machine', 'leg-press-machine'],
+    visibility: 'public',
+  },
+  {
     id: 'franchise',
     label: '대형 · 프랜차이즈',
     hint: '랙이 여러 대, 머신이 부위별로 다 있는 곳',

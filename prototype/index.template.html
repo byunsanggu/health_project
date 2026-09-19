@@ -1012,6 +1012,33 @@ input[type="search"] {
   color: var(--zone-hard);
 }
 
+
+/* ── 기구 고르기 ────────────────────────────────── */
+.equip-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+  padding: 10px 12px;
+}
+.equip-row:first-child { border-top: 0; }
+.equip-row:hover { background: var(--surface-2); }
+.equip-row[aria-pressed="true"] { background: var(--accent-soft); }
+.equip-row .mark { font-size: 13px; color: var(--accent); font-weight: 700; line-height: 1.5; }
+.equip-main { display: grid; gap: 2px; min-width: 0; }
+.equip-main .name { font-size: 13.5px; font-weight: 500; }
+.equip-main .look { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.equip-main .aka { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.equip-row .detail {
+  font-family: var(--mono); font-size: 10.5px; color: var(--zone-ok);
+  white-space: nowrap; padding-top: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -1043,6 +1070,7 @@ input[type="search"] {
           <li><b>볼륨</b> 탭의 게이지는 부위별 주간 유효 세트입니다. 눈금은 MEV(최소 자극) · MAV(적응 최대) · MRV(회복 한계)이고, 빗금 구간이 레드라인입니다.</li>
           <li><b>체크인</b> 탭에서 어깨 통증을 3점 이상으로 올리면, 오늘 세션의 종목이 자동으로 대체됩니다.</li>
           <li><b>헬스장</b> 탭에서 바 무게나 스택 간격을 바꾸면 처방 중량이 그 기구가 만들 수 있는 값으로 다시 맞춰집니다. 기구를 끄면 해당 종목이 대체됩니다.</li>
+          <li>기구 이름을 몰라도 됩니다. <b>초기 설정 → 헬스장 기구</b>에서 "굽은 봉", "나비", "철장"처럼 <b>생김새로 검색</b>하거나, 헬스장 유형을 골라 한 번에 채울 수 있습니다.</li>
           <li>맨 처음 뜨는 <b>초기 설정</b>에서 경력과 보유 기구를 고르면 프로그램이 자동으로 생성됩니다. 경력을 실제보다 높게 고르면 훈련 개월 수와 대조해 낮춰 잡습니다.</li>
           <li>세트를 완료하면 <b>휴식 타이머</b>가 자동으로 뜹니다. 복합 동작·고중량·허리 부담에 따라 시간이 달라집니다.</li>
           <li><b>진행</b> 탭에 추정 1RM 추이와 주간 볼륨 추이가 쌓입니다. <b>주간</b> 탭의 RIR 신뢰도는 실패 세트와 대조해 신고가 얼마나 정확한지 보여줍니다.</li>

@@ -8,9 +8,18 @@
 const HANGUL_BASE = 0xac00;
 const HANGUL_LAST = 0xd7a3;
 
+/**
+ * 판정에 쓸 마지막 글자.
+ *
+ * 헬스장 이름은 "예시 피트니스 A (대형)"처럼 괄호나 따옴표로 끝나는 일이
+ * 흔하다. 그 기호를 그대로 보면 한글이 아니라 판정을 못 하고 "대형)와" 같은
+ * 문장이 나온다. 뒤에 붙은 기호는 걷어내고 본다.
+ */
+const TRAILING_NOISE = /[\s"'’”)\]}»·.,!?~-]+$/;
+
 /** 마지막 글자에 받침이 있는가. 한글이 아니면 null. */
 export function hasFinalConsonant(word: string): boolean | null {
-  const trimmed = word.trim();
+  const trimmed = word.trim().replace(TRAILING_NOISE, '');
   if (trimmed.length === 0) return null;
 
   const code = trimmed.charCodeAt(trimmed.length - 1);
@@ -37,8 +46,9 @@ export function particle(word: string, pair: ParticlePair): string {
   if (final === null) return withoutFinal;
 
   if (pair === '으로/로' && final) {
-    // ㄹ 받침(코드 8)은 '로'
-    const code = word.trim().charCodeAt(word.trim().length - 1);
+    // ㄹ 받침(코드 8)은 '로'. 기호를 걷어낸 같은 글자를 봐야 한다.
+    const core = word.trim().replace(TRAILING_NOISE, '');
+    const code = core.charCodeAt(core.length - 1);
     if ((code - HANGUL_BASE) % 28 === 8) return withoutFinal;
   }
 

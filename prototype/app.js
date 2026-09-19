@@ -340,6 +340,7 @@
     busyEquipment: [],
     occupied: {},
     homeGymId: null,
+    equipmentQuery: '',
     // 사용자가 직접 등록한 곳. 공개 디렉터리에 없는 아파트·회사 헬스장이 여기 쌓인다.
     myDirectory: [],
     gymDraft: null,
@@ -2653,6 +2654,8 @@
       el('p', { class: 'meta', text: '여러 곳을 등록해 두고 그날 가는 곳으로 바꿉니다' }),
     ]));
 
+    renderPendingMerges();
+
     // 내 헬스장 목록
     var list = el('div', { class: 'sheet-body' }, []);
     book.gyms.forEach(function (entry) {
@@ -2818,9 +2821,79 @@
     });
   }
 
-  /** 지금 판정에 쓰는 전체 목록 — 공개 예시 + 내가 만든 것. */
+  /**
+   * 지금 판정에 쓰는 전체 목록 — 공개 예시 + 내가 만든 것.
+   * 같은 id가 겹치면 내가 손댄 쪽이 이긴다. 합치고 나면 내 기록이 원본이다.
+   */
   function fullDirectory() {
-    return E.SAMPLE_DIRECTORY.concat(state.myDirectory);
+    var mine = {};
+    state.myDirectory.forEach(function (entry) { mine[entry.id] = entry; });
+    var merged = E.SAMPLE_DIRECTORY.filter(function (entry) { return !mine[entry.id]; });
+    return merged.concat(state.myDirectory);
+  }
+
+  /**
+   * 나중에 확인하기로 미뤄둔 중복.
+   *
+   * 등록 순간에 막아 세우면 등록 자체를 포기한다. 일단 쓰게 두고, 헬스장
+   * 탭에 왔을 때 다시 묻는다 — 그때가 사용자가 헬스장을 생각하고 있는
+   * 순간이라 대답하기 쉽다.
+   */
+  function renderPendingMerges() {
+    // 후보는 예시 디렉터리에 있을 수도 있다. 전체를 두고 봐야 짝이 풀린다.
+    var pending = E.pendingMerges(fullDirectory());
+    if (pending.length === 0) return;
+
+    var item = pending[0];
+    var other = item.others[0];
+
+    screen.appendChild(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '확인이 남았습니다' }),
+      el('div', { text: '"' + item.entry.name + '"' + particleOf(item.entry.name, '과/와') +
+        ' "' + other.name + '"' + particleOf(other.name, '이/가') + ' 같은 곳인가요? ' +
+        '같은 곳이면 기구 정보가 한 곳에 모입니다.' }),
+      el('div', { class: 'chip-row' }, [
+        el('button', {
+          type: 'button', class: 'pick',
+          text: '"' + other.name + '"' + particleOf(other.name, '과/와') + ' 같은 곳',
+          onclick: function () { settlePending(item.entry.id, other.id); },
+        }),
+        el('button', {
+          type: 'button', class: 'pick',
+          text: '다른 곳입니다',
+          onclick: function () { settlePending(item.entry.id); },
+        }),
+      ]),
+    ]));
+  }
+
+  function settlePending(entryId, mergedInto) {
+    var all = fullDirectory();
+    var before = all.filter(function (e) { return e.id === entryId; })[0];
+    var resolved = E.resolvePending(all, entryId, mergedInto);
+
+    /*
+     * 예시 디렉터리는 읽기 전용이다. 손댄 것만 내 쪽에 남긴다 — 합친 대상은
+     * 이제 내 기록이 섞였으니 내가 들고 있어야 한다.
+     */
+    var touched = {};
+    state.myDirectory.forEach(function (e) { touched[e.id] = true; });
+    if (mergedInto) touched[mergedInto] = true;
+    state.myDirectory = resolved.filter(function (e) { return touched[e.id]; });
+
+    if (mergedInto) {
+      var target = state.myDirectory.filter(function (e) { return e.id === mergedInto; })[0];
+      // 합쳐서 사라진 쪽을 쓰고 있었다면 남은 쪽으로 옮겨준다.
+      state.gymBook = E.removeGym(state.gymBook, entryId);
+      if (target) useGym(E.toGymEntry(target));
+      var fromName = before ? before.name : '';
+      var toName = target ? target.name : '';
+      pushLog('헬스장', '<b>' + fromName + '</b>' + particleOf(fromName, '을/를') + ' <b>' +
+        toName + '</b>' + particleOf(toName, '으로/로') + ' 합쳤습니다. 기구 정보가 한 곳에 모입니다.');
+    } else {
+      pushLog('헬스장', '다른 곳으로 확인했습니다. 다시 묻지 않습니다.');
+    }
+    render();
   }
 
   /* ── 헬스장 직접 등록 ───────────────────────────── */
@@ -2869,6 +2942,10 @@
         body.push(row);
       });
 
+      body.push(el('p', { class: 'asset-note', text:
+        '기구 이름을 몰라도 됩니다. 아래 "내 기구"에서 생김새로 찾을 수 있고, ' +
+        '운동하면서 "이 기구 없어요"로 빼면 됩니다.' }));
+
       openModal('헬스장 등록', '1 / 2', body);
       return;
     }
@@ -2908,14 +2985,15 @@
     body.push(el('button', {
       type: 'button', class: 'finish',
       text: '등록하기',
-      onclick: function () { submitGymRegister(false); },
+      onclick: function () { submitGymRegister(); },
     }));
 
     openModal('헬스장 등록', '2 / 2', body);
   }
 
   /** 등록 시도. 겹치는 곳이 있으면 만들지 않고 먼저 보여준다. */
-  function submitGymRegister(force) {
+  function submitGymRegister(options) {
+    options = options || {};
     var draft = state.gymDraft;
     var name = (draft.name || '').trim();
     if (name.length === 0) return;
@@ -2927,7 +3005,8 @@
       location: { lat: 37.5, lng: 127.03 },
       presetId: draft.presetId,
       directory: fullDirectory(),
-      force: force,
+      force: options.force,
+      defer: options.defer,
       today: todayISO(),
     });
 
@@ -2943,7 +3022,10 @@
       state.myDirectory = state.myDirectory.concat([result.entry]);
       pushLog('헬스장', '<b>' + result.entry.name + '</b>' + particleOf(result.entry.name, '을/를') +
         ' 새로 등록했습니다. ' +
-        '기구 ' + result.entry.equipmentIds.length + '개로 시작합니다.');
+        '기구 ' + result.entry.equipmentIds.length + '개로 시작합니다.' +
+        ((result.entry.pendingMergeWith || []).length > 0
+          ? ' 비슷한 곳 ' + result.entry.pendingMergeWith.length + '곳은 나중에 확인합니다.'
+          : ''));
     }
 
     state.gymDraft = null;
@@ -2981,7 +3063,17 @@
     body.push(el('button', {
       type: 'button', class: 'finish',
       text: '아니요, 다른 곳입니다 — 새로 등록',
-      onclick: function () { submitGymRegister(true); },
+      onclick: function () { submitGymRegister({ force: true }); },
+    }));
+
+    /*
+     * 지금 판단하기 어려울 수 있다. 막아 세우면 등록 자체를 포기한다.
+     * 일단 쓰게 두고, 헬스장 탭에 올 때 다시 묻는다.
+     */
+    body.push(el('button', {
+      type: 'button', class: 'register-open',
+      text: '잘 모르겠어요 — 일단 쓰고 나중에 확인',
+      onclick: function () { submitGymRegister({ defer: true }); },
     }));
 
     openModal('혹시 이 곳인가요?', '중복 확인', body);
@@ -3339,6 +3431,57 @@
     ]);
   }
 
+  /**
+   * 기구 목록.
+   *
+   * 이름 옆에 생김새를 같이 적는다. "펙덱 (플라이 머신)"만 보면 모르지만
+   * "앉아서 양팔을 안으로 모으는 기계. 나비처럼 생겼습니다"를 보면 안다.
+   */
+  function renderEquipmentList() {
+    var host = document.getElementById('equipment-list');
+    if (!host) return;
+    host.textContent = '';
+
+    var selected = state.answers.gym.equipmentIds;
+    var matches = E.findEquipment(state.equipmentQuery || '');
+
+    if (matches.length === 0) {
+      host.appendChild(el('p', { class: 'hint-line', text:
+        '찾는 기구가 없습니다. 다르게 불러 보세요 — "줄 당기는", "다리 미는" 처럼요.' }));
+      return;
+    }
+
+    var list = el('div', { class: 'summary-list' }, []);
+    matches.forEach(function (item) {
+      var has = selected.indexOf(item.id) >= 0;
+      var guide = E.equipmentGuide(item.id);
+      var unlocks = has ? [] : E.wouldEnable(item.id, selected);
+
+      list.appendChild(el('button', {
+        type: 'button',
+        class: 'equip-row',
+        'aria-pressed': String(has),
+        onclick: function () {
+          state.answers.gym.equipmentIds = has
+            ? selected.filter(function (id) { return id !== item.id; })
+            : selected.concat([item.id]);
+          render();
+        },
+      }, [
+        el('span', { class: 'mark', text: has ? '✓' : '' }),
+        el('span', { class: 'equip-main' }, [
+          el('span', { class: 'name', text: item.name }),
+          guide ? el('span', { class: 'look', text: guide.look }) : null,
+          guide ? el('span', { class: 'aka', text: '또는 ' + guide.aka.slice(0, 3).join(' · ') }) : null,
+        ]),
+        unlocks.length > 0
+          ? el('span', { class: 'detail', text: '+' + unlocks.length + '종목' })
+          : null,
+      ]));
+    });
+    host.appendChild(list);
+  }
+
   function stepGym() {
     var selected = state.answers.gym.equipmentIds;
     var available = E.availableExercises(selected).length;
@@ -3348,37 +3491,49 @@
       el('div', { text: available + ' / ' + E.EXERCISES.length + '개 — 있는 기구를 켜면 종목이 열립니다.' }),
     ]));
 
-    var categories = {};
-    E.EQUIPMENT_CATALOG.forEach(function (item) {
-      (categories[item.category] = categories[item.category] || []).push(item);
-    });
-
-    Object.keys(categories).forEach(function (category) {
-      var body = el('div', { class: 'sheet-body' }, []);
-      var row = el('div', { class: 'toggle-row' }, []);
-
-      categories[category].forEach(function (item) {
-        var has = selected.indexOf(item.id) >= 0;
-        var unlocks = has ? [] : E.wouldEnable(item.id, selected);
-        var label = item.name + (unlocks.length > 0 ? ' +' + unlocks.length : '');
-
-        row.appendChild(el('button', {
-          type: 'button', class: 'toggle', 'aria-pressed': String(has), text: label,
-          onclick: function () {
-            state.answers.gym.equipmentIds = has
-              ? selected.filter(function (id) { return id !== item.id; })
-              : selected.concat([item.id]);
-            render();
-          },
-        }));
+    /*
+     * 기구 이름을 모르는 사람이 훨씬 많다. "펙덱"이 뭔지 모르면 고를 수가
+     * 없으니, 유형으로 한 번에 채우는 길과 생김새로 찾는 길을 둘 다 연다.
+     */
+    var presets = el('div', { class: 'chip-row' }, E.GYM_PRESETS.map(function (preset) {
+      return el('button', {
+        type: 'button', class: 'pick', text: preset.label,
+        onclick: function () {
+          state.answers.gym.equipmentIds = E.presetEquipment(preset.id);
+          pushLog('기구 설정', '<b>' + preset.label + '</b> 기준으로 기구 ' +
+            state.answers.gym.equipmentIds.length + '개를 켰습니다.');
+          render();
+        },
       });
+    }));
 
-      body.appendChild(row);
-      screen.appendChild(el('div', { class: 'sheet' }, [
-        el('div', { class: 'sheet-head' }, [el('h3', { text: E.CATEGORY_LABELS_KO[category] })]),
-        body,
-      ]));
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '어떤 곳인가요?' }),
+        el('span', { class: 'meta', text: '한 번에 채우기' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        presets,
+        el('p', { class: 'hint-line', text:
+          '고르면 기구가 대부분 채워집니다. 정확하지 않아도 됩니다 — 운동하면서 고칩니다.' }),
+      ]),
+    ]));
+
+    var search = el('input', {
+      type: 'search', value: state.equipmentQuery || '',
+      placeholder: '생김새로 찾기 (예: 굽은 봉, 나비, 철장)',
+      oninput: function (event) { state.equipmentQuery = event.target.value; renderEquipmentList(); },
     });
+    var listHost = el('div', { id: 'equipment-list' }, []);
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '내 기구' }),
+        el('span', { class: 'meta', text: selected.length + '개 켜짐' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [search, listHost]),
+    ]));
+    renderEquipmentList();
 
     var gaps = E.coverageReport(selected).filter(function (item) { return !item.sufficient; });
     if (gaps.length > 0) {
