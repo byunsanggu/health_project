@@ -162,6 +162,7 @@
          * 몇 번째였는지 다시 찾게 하면 안 된다.
          */
         started: state.started,
+        sessionClosed: state.sessionClosed,
         liftCursor: state.liftCursor,
         dayOverride: state.dayOverride,
         sessionStartedAt: state.sessionStartedAt,
@@ -201,6 +202,7 @@
       state.style = settings.style || 'hypertrophy';
       state.timeBudget = settings.timeBudget || null;
       state.started = Boolean(settings.started);
+      state.sessionClosed = Boolean(settings.sessionClosed);
       state.liftCursor = settings.liftCursor || 0;
       state.dayOverride = settings.dayOverride == null ? null : settings.dayOverride;
       state.sessionStartedAt = settings.sessionStartedAt || null;
@@ -400,6 +402,8 @@
      * 전에 지친다 — 헬스장에서 실제로 필요한 건 "지금 이거" 하나다.
      */
     started: false,
+    // 오늘을 마쳤는가. 마치면 목록 대신 "오늘 끝" 화면이 나온다.
+    sessionClosed: false,
     liftCursor: 0,
     /*
      * 오늘 할 날을 직접 고른 경우의 템플릿 번호. null이면 프로그램 순서대로.
@@ -743,6 +747,26 @@
 
     updateDecision(lift);
     startRest(lift, setIndex);
+
+    /*
+     * 그 종목의 세트를 다 했으면 다음 종목으로 옮겨준다.
+     *
+     * 헬스장에서는 끝나면 다음 기구로 걸어간다. 화면이 그 자리에 머물러
+     * 있으면 사용자가 버튼을 찾아 눌러야 하는데, 그건 앱이 할 일이다.
+     * 휴식 타이머는 화면 아래에 계속 있으므로 걸어가면서 쉬면 된다.
+     *
+     * 다만 "한 세트 더" 판단이 붙었으면 옮기지 않는다 — 그걸 물어보려고
+     * 계산한 것인데 화면을 넘겨버리면 물어볼 기회가 사라진다.
+     */
+    var remaining = lift.sets.filter(function (item) { return !item.done; }).length;
+    var wantsMore = lift.decision && lift.decision.verdict === 'continue';
+    if (state.started && remaining === 0 && !wantsMore && liftIndex < state.lifts.length - 1) {
+      state.liftCursor = liftIndex + 1;
+      var nextName = state.lifts[liftIndex + 1].exercise.name;
+      pushLog('다음 종목',
+        '<b>' + lift.exercise.name + '</b>' + particleOf(lift.exercise.name, '을/를') +
+        ' 마치고 <b>' + nextName + '</b>' + particleOf(nextName, '으로/로') + ' 넘어갑니다.');
+    }
 
     var report = E.volumeReport(weekSessions(), state.landmarks, index);
     var muscle = E.primaryMuscle(lift.exercise);
@@ -1234,6 +1258,60 @@
       }));
     }
 
+    /*
+     * "오늘 몇 세트 했다"는 끝나고 나면 아무 감흥이 없다. 알고 싶은 건
+     * 늘었는가이고, 그건 지난번의 나와 비교해야 나온다.
+     *
+     * 무게를 그냥 비교하면 안 된다 — 지난주 60kg 10회와 오늘 80kg 5회 중
+     * 어느 쪽이 나은지는 무게만 봐서는 모른다. 추정 1RM으로 환산해 재되,
+     * 환산값만 내보내지 않고 실제로 든 세트를 같이 붙인다.
+     */
+    var comparisons = E.compareToPast({
+      todaySets: state.todaySets,
+      today: state.todayDate,
+      history: state.history,
+      index: index,
+      rirOffset: rirOptions().rirOffset || 0,
+    });
+
+    if (comparisons.length > 0) {
+      var rollup = E.summarizeComparison(comparisons);
+      body.push(el('div', { class: 'list-label', text: '지난번과 비교' }));
+      body.push(el('p', { class: 'compare-headline', text: rollup.headline }));
+
+      body.push(el('div', { class: 'summary-list' }, comparisons.map(function (row) {
+        var dir = E.directionOf(row.deltaPrevious);
+        return el('div', { class: 'compare-row' }, [
+          el('span', { class: 'compare-main' }, [
+            el('span', { class: 'name', text: row.name }),
+            el('span', { class: 'compare-line', text: E.describeComparison(row, 'previous') }),
+            row.monthAgo
+              ? el('span', { class: 'compare-line month', text: '한 달 · ' + E.describeComparison(row, 'month') })
+              : null,
+          ]),
+          /*
+           * 고반복이면 큰 kg 숫자를 옆에 세우지 않는다. 102.5kg 15회를
+           * "+13.7kg"으로 보여주면 실제로 늘어난 것보다 훨씬 커 보인다.
+           */
+          el('span', { class: 'compare-delta ' + (row.reliable ? dir : 'same'), text:
+            row.deltaPrevious === undefined ? '처음'
+              : !row.reliable ? '고반복'
+              : (row.deltaPrevious > 0 ? '+' : '') + fmt(row.deltaPrevious) + 'kg' }),
+        ]);
+      })));
+
+      var gain = E.biggestGain(comparisons);
+      if (gain) {
+        var monthText = E.monthLine(gain);
+        body.push(el('p', { class: 'asset-note', text:
+          '오늘 가장 많이 오른 건 ' + gain.name + '입니다.' + (monthText ? ' ' + monthText : '') }));
+      }
+
+      body.push(el('p', { class: 'asset-note', text:
+        '환산값은 추정 1RM입니다. RIR 신고가 흔들리면 같이 흔들리므로 ' +
+        E.MEANINGFUL_KG + 'kg 미만 변화는 "비슷하다"로 봅니다.' }));
+    }
+
     if (summary.records.length > 0) {
       body.push(el('div', { class: 'list-label', text: '오늘 세운 기록' }));
       body.push(el('div', { class: 'summary-list' }, summary.records.map(function (record) {
@@ -1280,6 +1358,17 @@
         return el('li', {}, [el('span', { text: note })]);
       })));
     }
+
+    /*
+     * 요약을 닫으면 아무 데도 안 간다는 게 문제였다. 여기서 오늘을
+     * 닫아야 세션이 끝난 것이고, 그래야 내일 다시 열었을 때 어제 것이
+     * 안 남아 있다.
+     */
+    body.push(el('button', {
+      type: 'button', class: 'finish',
+      text: '오늘 마치기',
+      onclick: closeToday,
+    }));
 
     openModal(state.session.name, state.todayDate, body);
     pushLog('세션 요약', '<b>' + summary.setsCompleted + '세트</b> · ' + summary.totalReps + '회 · ' +
@@ -2015,7 +2104,8 @@
       },
     }));
 
-    if (doneSets > 0) renderFinish(true);
+    // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다.
+    if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
   }
 
   /** 시작한 뒤 — 지금 할 종목 하나. */
@@ -2079,7 +2169,12 @@
       renderMaxTest();
       renderConditioning();
     }
-    renderFinish(!last);
+
+    /*
+     * 마지막 종목의 마지막 세트까지 끝났을 때만 완료 버튼을 띄운다.
+     * 그 전에는 "다음 종목"이 유일한 다음 행동이다.
+     */
+    if (allSetsDone()) renderFinish(false);
   }
 
   /**
@@ -2352,8 +2447,46 @@
   }
 
   function renderToday() {
-    if (state.started) renderActiveLift();
+    if (state.sessionClosed) renderClosedToday();
+    else if (state.started) renderActiveLift();
     else renderPlanList();
+  }
+
+  /**
+   * 오늘을 마친 뒤의 화면.
+   *
+   * 끝났는데 목록이 또 나오면 "아직 안 끝났나?" 싶어진다. 끝났다고
+   * 분명히 말하고, 요약을 다시 볼 길과 되돌릴 길만 남긴다.
+   */
+  function renderClosedToday() {
+    var head = sessionHead();
+    screen.appendChild(head.node);
+
+    var minutes = state.sessionStartedAt
+      ? Math.max(1, Math.round((Date.now() - state.sessionStartedAt) / 60000))
+      : null;
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '오늘 운동을 마쳤습니다' }),
+        el('span', { class: 'meta', text: state.todaySets.length + '세트' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        el('p', { class: 'hint-line', text: minutes
+          ? minutes + '분 동안 ' + state.todaySets.length + '세트를 했습니다. 기록은 볼륨·진행 탭에 반영됐습니다.'
+          : '기록은 볼륨·진행 탭에 반영됐습니다.' }),
+        el('button', { type: 'button', class: 'finish', text: '요약 다시 보기', onclick: openSummary }),
+        el('button', {
+          type: 'button', class: 'finish quiet', text: '아직 안 끝났어요 — 이어서 하기',
+          onclick: function () {
+            // 잘못 눌렀을 수 있다. 되돌아가는 길을 막지 않는다.
+            state.sessionClosed = false;
+            state.started = true;
+            render();
+          },
+        }),
+      ]),
+    ]));
   }
 
   /**
@@ -2363,14 +2496,47 @@
    * "세션 완료"면 다음에 뭘 해야 하는지 잘못 읽힌다 — 지금 할 일은
    * 다음 종목이다.
    */
+  /**
+   * 오늘을 닫는다.
+   *
+   * 기록을 이력으로 넘기고 진행 화면에서 빠져나온다. 요약은 다시 볼 수
+   * 있게 남겨둔다 — 닫자마자 사라지면 방금 본 숫자를 확인할 길이 없다.
+   */
+  function closeToday() {
+    if (state.todaySets.length === 0) return;
+    state.sessionClosed = true;
+    state.started = false;
+    modal.close();
+    render();
+  }
+
+  /** 오늘 할 세트가 하나도 안 남았는가. */
+  function allSetsDone() {
+    return state.lifts.length > 0 && state.lifts.every(function (lift) {
+      return lift.sets.every(function (set) { return set.done; });
+    });
+  }
+
+  /**
+   * 오늘을 닫고 요약을 본다.
+   *
+   * 운동 중에는 안 보여준다. 3세트째에 "세션 완료 · 2세트 요약 보기"가
+   * 화면에서 제일 큰 버튼이면 다음에 뭘 해야 하는지 잘못 읽힌다 — 지금
+   * 할 일은 다음 세트고, 요약은 다 끝나고 볼 것이다.
+   *
+   * 중간에 끝내야 하는 날도 있으므로 길을 막지는 않는다. 그건 목록
+   * 화면에 조용한 버튼으로 둔다.
+   */
   function renderFinish(quiet) {
     var done = state.todaySets.length;
+    if (done === 0) return;
     screen.appendChild(el('button', {
       type: 'button',
       class: 'finish' + (quiet ? ' quiet' : ''),
-      disabled: done === 0 ? '' : null,
-      text: done === 0 ? '세트를 완료하면 세션을 마칠 수 있습니다' : '세션 완료 · ' + done + '세트 요약 보기',
-      onclick: function () { if (done > 0) openSummary(); },
+      text: quiet
+        ? '여기서 끝내기 · ' + done + '세트 요약'
+        : '오늘 운동 완료 · 요약 보기',
+      onclick: openSummary,
     }));
   }
 
