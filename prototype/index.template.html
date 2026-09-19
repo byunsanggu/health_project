@@ -937,6 +937,27 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
 .status-val.warn { color: var(--zone-hard); }
 .status-val.todo { color: var(--muted); }
 
+
+/* ── 헬스장 등록 ────────────────────────────────── */
+.register-open {
+  width: 100%;
+  border: 1px dashed var(--line);
+  background: var(--surface-2);
+  border-radius: 9px;
+  padding: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.register-open:hover { border-color: var(--accent); color: var(--accent); }
+.option-row .why {
+  grid-column: 1 / -1;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.option-row { flex-wrap: wrap; }
+.modal-body input[type="search"] { width: 100%; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -981,6 +1002,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
           <li><b>볼륨</b> 탭 아래 <b>개인 볼륨 랜드마크</b>는 8주 이상의 기록에서 MEV·MRV를 그 사람 값으로 옮긴 결과입니다. 근거가 약한 부위는 옮기지 않고 <b>관측 중</b>으로 둡니다.</li>
           <li>세트를 기록한 뒤 <b>세션 완료</b>를 누르면 오늘의 톤수·개인 기록·부위별 볼륨과 다음 주 처방이 요약으로 나옵니다.</li>
           <li>종목 옆 <b>사람 있어요</b>를 눌러 보세요. 기구가 막혔을 때 순서를 바꿀지, 대체할지, 기다릴지를 정해줍니다. 랙이 막히면 그 랙을 쓰는 종목이 전부 막히고, 머신 한 대는 그 종목만 막힙니다.</li>
+          <li><b>헬스장</b> 탭에서 검색해 보세요. 결과가 없으면 <b>직접 등록</b>이 뜹니다 — 아파트·회사 헬스장은 원래 검색에 안 나옵니다. 유형만 고르면 기구가 채워지고, 이미 등록된 곳과 겹치면 만들기 전에 물어봅니다.</li>
           <li>이 페이지는 <b>PWA</b>입니다. 브라우저 메뉴에서 설치하면 홈 화면에 깔리고 <b>오프라인</b>에서도 열립니다. 상태는 <b>체크인</b> 탭 아래에서 확인합니다.</li>
           <li>휴식 타이머는 <b>끝나는 시각</b>을 기억합니다. 화면을 껐다 켜도 남은 시간이 틀리지 않고, 알림을 켜두면 <b>애플워치·갤럭시워치</b>로 그대로 전달됩니다.</li>
         </ol>

@@ -337,6 +337,9 @@
     sessionStartedAt: null,
     busyEquipment: [],
     occupied: {},
+    // 사용자가 직접 등록한 곳. 공개 디렉터리에 없는 아파트·회사 헬스장이 여기 쌓인다.
+    myDirectory: [],
+    gymDraft: null,
     style: 'hypertrophy',
     blockHistory: ['hypertrophy'],
     conditioning: null,
@@ -878,17 +881,25 @@
   var statusMeta = document.getElementById('status-meta');
   var modal = document.getElementById('modal');
 
+  function disposeDemo() {
+    if (!state.demo) return;
+    state.demo.dispose();
+    state.demo = null;
+  }
+
   modal.addEventListener('close', function () {
-    if (state.demo) {
-      state.demo.dispose();
-      state.demo = null;
-    }
+    disposeDemo();
     modal.textContent = '';
   });
 
-  /** 모달 하나를 돌려쓴다. 제목과 본문만 갈아끼운다. */
+  /**
+   * 모달 하나를 돌려쓴다. 제목과 본문만 갈아끼운다.
+   *
+   * 열려 있을 때 close()부터 부르면 안 된다 — close 이벤트가 비동기로 와서
+   * 방금 그린 내용을 나중에 지워버린다. 내용만 갈고 열려 있으면 그대로 둔다.
+   */
   function openModal(title, tag, body) {
-    if (modal.open) modal.close();
+    disposeDemo();
     modal.textContent = '';
     modal.appendChild(el('div', { class: 'modal-head' }, [
       el('h3', { id: 'modal-title', text: title }),
@@ -902,7 +913,7 @@
       }),
     ]));
     modal.appendChild(el('div', { class: 'modal-body' }, body));
-    modal.showModal();
+    if (!modal.open) modal.showModal();
   }
 
   function el(tag, attrs, children) {
@@ -1194,15 +1205,15 @@
       var moved = state.lifts.splice(from, 1)[0];
       state.lifts.splice(to, 0, moved);
       state.occupied[blocked.id] = 'deferred';
-      pushLog('기구 점유', '<b>' + replacement.name + '</b>을(를) 먼저 합니다. ' +
-        blocked.name + '은(는) 비는 대로 돌아와서 합니다.');
+      pushLog('기구 점유', '<b>' + replacement.name + '</b>' + particleOf(replacement.name, '을/를') +
+        ' 먼저 합니다. ' + withParticleJs(blocked.name, '은/는') + ' 비는 대로 돌아와서 합니다.');
     } else {
       var swapped = buildReplacementLift(state.lifts[from], replacement);
       if (!swapped) return;
       state.lifts[from] = swapped;
       state.occupied[blocked.id] = 'substituted';
       pushLog('기구 점유', '<b>' + blocked.name + '</b> 기구가 사용 중 → <b>' +
-        replacement.name + '</b>(으)로 대체했습니다.');
+        replacement.name + '</b>' + particleOf(replacement.name, '으로/로') + ' 대체했습니다.');
     }
     render();
   }
@@ -1281,6 +1292,11 @@
   /** 엔진의 조사 규칙을 화면 문구에도 쓴다. */
   function withParticleJs(word, pair) {
     return E.withParticle(word, pair);
+  }
+
+  /** <b>…</b> 뒤에 조사만 붙일 때. 태그가 끼어 있어 단어와 떨어져 있다. */
+  function particleOf(word, pair) {
+    return E.particle(word, pair);
   }
 
   /* ── 동작 시연 ─────────────────────────────────── */
@@ -2586,7 +2602,7 @@
 
     if (previous && previous.id !== entry.id) {
       var diff = E.compareGyms(previous, entry);
-      pushLog('헬스장 전환', '<b>' + entry.name + '</b>(으)로 옮겼습니다. ' +
+      pushLog('헬스장 전환', '<b>' + entry.name + '</b>' + particleOf(entry.name, '으로/로') + ' 옮겼습니다. ' +
         (diff.lost.length ? '못 하게 되는 종목 ' + diff.lost.length + '개 → 대체됩니다.' : '종목 손실 없음.'));
     }
     loadScenario(state.scenario, true);
@@ -2708,10 +2724,17 @@
     var results = E.searchGyms(state.gymQuery, {
       near: { lat: 37.5, lng: 127.03 },
       program: state.program,
+      directory: fullDirectory(),
     });
 
     if (results.length === 0) {
-      host.appendChild(el('p', { class: 'hint-line', text: '검색 결과가 없습니다.' }));
+      host.appendChild(el('p', {
+        class: 'hint-line',
+        text: state.gymQuery.trim().length === 0
+          ? '이름이나 지역을 입력하면 근처 헬스장을 찾습니다.'
+          : '검색 결과가 없습니다. 아파트나 회사 헬스장은 원래 검색에 나오지 않습니다.',
+      }));
+      host.appendChild(registerButton());
       return;
     }
 
@@ -2741,8 +2764,193 @@
       host.appendChild(card);
     });
 
+    host.appendChild(registerButton());
     host.appendChild(el('p', { class: 'hint-line', text:
       '표시된 목록은 구조를 보여주는 예시 데이터입니다. 실제로는 지도 API와 사용자가 올린 기구 정보로 채워집니다.' }));
+  }
+
+  /**
+   * 직접 등록으로 가는 문.
+   *
+   * 검색 결과 아래에만 둔다. 먼저 찾아보게 만드는 것이 중복을 막는 가장 싼
+   * 방법이다 — 대부분의 중복은 악의가 아니라 검색을 안 해봐서 생긴다.
+   */
+  function registerButton() {
+    return el('button', {
+      type: 'button',
+      class: 'register-open',
+      text: '찾는 곳이 없나요? 직접 등록하기',
+      onclick: function () { openGymRegister(); },
+    });
+  }
+
+  /** 지금 판정에 쓰는 전체 목록 — 공개 예시 + 내가 만든 것. */
+  function fullDirectory() {
+    return E.SAMPLE_DIRECTORY.concat(state.myDirectory);
+  }
+
+  /* ── 헬스장 직접 등록 ───────────────────────────── */
+
+  /**
+   * 아파트 커뮤니티 헬스장, 회사 헬스장, 홈짐은 검색에 절대 안 나온다.
+   * 그래서 등록 경로가 반드시 있어야 하는데, 그 경로가 중복을 만드는 문이
+   * 되면 안 된다. 그래서 유형 → 이름 → 중복 확인 순으로만 진행한다.
+   */
+  function openGymRegister(draft) {
+    state.gymDraft = draft || state.gymDraft || {
+      presetId: null,
+      name: state.gymQuery.trim(),
+      floor: '',
+      step: 'type',
+    };
+    renderGymRegister();
+  }
+
+  function renderGymRegister() {
+    var draft = state.gymDraft;
+    var body = [];
+
+    if (draft.step === 'type') {
+      body.push(el('p', { class: 'asset-note', text:
+        '어떤 곳인지 고르면 기구가 대부분 채워집니다. 틀린 건 운동하면서 ' +
+        '"이 기구 없어요"로 빼면 되니 정확하지 않아도 됩니다.' }));
+
+      E.GYM_PRESETS.forEach(function (preset) {
+        var row = el('button', {
+          type: 'button',
+          class: 'choice',
+          'aria-pressed': String(draft.presetId === preset.id),
+          onclick: function () {
+            draft.presetId = preset.id;
+            draft.step = 'detail';
+            renderGymRegister();
+          },
+        }, [
+          el('span', { class: 'choice-title', text: preset.label }),
+          el('span', { class: 'choice-hint', text: preset.hint }),
+          el('span', { class: 'choice-hint', text:
+            '기구 ' + E.presetEquipment(preset.id).length + '개' +
+            (preset.visibility === 'private' ? ' · 나만 봅니다' : '') }),
+        ]);
+        body.push(row);
+      });
+
+      openModal('헬스장 등록', '1 / 2', body);
+      return;
+    }
+
+    var preset = E.gymPreset(draft.presetId);
+    var nameInput = el('input', {
+      type: 'search', value: draft.name, placeholder: '헬스장 이름',
+      oninput: function (event) { draft.name = event.target.value; },
+    });
+    var floorInput = el('input', {
+      type: 'search', value: draft.floor, placeholder: '층 (예: 3층, 지하 1층)',
+      oninput: function (event) { draft.floor = event.target.value; },
+    });
+
+    body.push(el('div', { class: 'verdict-head' }, [
+      el('span', { class: 'verdict-tag', text: preset.label }),
+      el('button', {
+        type: 'button', class: 'pick', text: '유형 바꾸기',
+        onclick: function () { draft.step = 'type'; renderGymRegister(); },
+      }),
+    ]));
+    body.push(el('div', { class: 'list-label', text: '이름' }));
+    body.push(nameInput);
+    body.push(el('div', { class: 'list-label', text: '층' }));
+    body.push(floorInput);
+    body.push(el('p', { class: 'asset-note', text:
+      '같은 건물 3층과 5층에 다른 헬스장이 있는 경우가 흔합니다. 층을 적어두면 ' +
+      '다른 사람이 등록한 곳과 헷갈리지 않습니다.' }));
+
+    if (preset.visibility === 'private') {
+      body.push(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: '나만 봅니다' }),
+        el('div', { text: withParticleJs(preset.label, '은/는') + ' 검색에 올리지 않습니다. 이 기록은 내 목록에만 남습니다.' }),
+      ]));
+    }
+
+    body.push(el('button', {
+      type: 'button', class: 'finish',
+      text: '등록하기',
+      onclick: function () { submitGymRegister(false); },
+    }));
+
+    openModal('헬스장 등록', '2 / 2', body);
+  }
+
+  /** 등록 시도. 겹치는 곳이 있으면 만들지 않고 먼저 보여준다. */
+  function submitGymRegister(force) {
+    var draft = state.gymDraft;
+    var name = (draft.name || '').trim();
+    if (name.length === 0) return;
+
+    var result = E.registerGym({
+      name: name,
+      address: draft.floor,
+      // 프로토타입에는 GPS가 없다. 실제 앱에서는 현재 좌표가 들어온다.
+      location: { lat: 37.5, lng: 127.03 },
+      presetId: draft.presetId,
+      directory: fullDirectory(),
+      force: force,
+      today: todayISO(),
+    });
+
+    if (result.outcome === 'confirm') {
+      showGymCandidates(result);
+      return;
+    }
+
+    if (result.outcome === 'joined') {
+      pushLog('헬스장', '<b>' + result.entry.name + '</b>' + particleOf(result.entry.name, '은/는') +
+        ' 이미 등록된 곳이라 그대로 씁니다.');
+    } else {
+      state.myDirectory = state.myDirectory.concat([result.entry]);
+      pushLog('헬스장', '<b>' + result.entry.name + '</b>' + particleOf(result.entry.name, '을/를') +
+        ' 새로 등록했습니다. ' +
+        '기구 ' + result.entry.equipmentIds.length + '개로 시작합니다.');
+    }
+
+    state.gymDraft = null;
+    modal.close();
+    useGym(E.toGymEntry(result.entry));
+  }
+
+  /**
+   * "혹시 이거 아닌가요?"
+   *
+   * 여기서 만들지 않는 것이 핵심이다. 사용자가 고르기 전에는 새 항목이
+   * 생기지 않는다.
+   */
+  function showGymCandidates(result) {
+    var body = [];
+    body.push(el('p', { class: 'asset-note', text: result.message }));
+
+    body.push(el('div', { class: 'summary-list' }, result.candidates.map(function (hit) {
+      return el('button', {
+        type: 'button', class: 'option-row',
+        onclick: function () {
+          state.gymDraft = null;
+          modal.close();
+          pushLog('헬스장', '<b>' + hit.entry.name + '</b>' + particleOf(hit.entry.name, '으로/로') +
+            ' 합쳤습니다. ' + hit.match.reason);
+          useGym(E.toGymEntry(hit.entry));
+        },
+      }, [
+        el('span', { class: 'name', text: hit.entry.name }),
+        el('span', { class: 'detail', text: hit.match.verdict === 'same' ? '같은 곳' : '확인 필요' }),
+        el('span', { class: 'why', text: hit.match.reason }),
+      ]);
+    })));
+
+    body.push(el('button', {
+      type: 'button', class: 'finish',
+      text: '아니요, 다른 곳입니다 — 새로 등록',
+      onclick: function () { submitGymRegister(true); },
+    }));
+
+    openModal('혹시 이 곳인가요?', '중복 확인', body);
   }
 
   function sampleWeights(spec) {

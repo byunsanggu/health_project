@@ -9,6 +9,7 @@ import {
 } from './equipment.ts';
 import { EXERCISES } from './exercises.ts';
 import { findDuplicates, gymKey, parseFloor, type DuplicateHit } from './gymIdentity.ts';
+import { gymPreset as gymPresetOf, presetEquipment, type GymVisibility } from './gymPresets.ts';
 import type { GymProfile } from './gym.ts';
 import type { Exercise } from './types.ts';
 import type { TrainingProgram } from './onboarding.ts';
@@ -100,6 +101,14 @@ export interface GymDirectoryEntry {
   equipmentVerifiedAt?: Record<string, string>;
   /** 없다고 확인된 기구. 있음만 쌓으면 사라진 기구를 영원히 못 지운다. */
   absentEquipmentIds?: string[];
+  /**
+   * 검색에 노출되는 곳인가.
+   *
+   * 아파트 커뮤니티 헬스장, 회사 헬스장, 홈짐은 'private'이다. 공개 디렉터리에
+   * 올리지 않고 중복 판정에서도 남의 것과 비교하지 않는다 — 옆 동 주민이 같은
+   * 단지 헬스장을 등록했는지는 알 필요도 없고, 알려줘서도 안 된다.
+   */
+  visibility?: GymVisibility;
 }
 
 /**
@@ -195,6 +204,9 @@ export function searchGyms(query: string, options: GymSearchOptions = {}): GymSe
   const needle = query.trim().toLowerCase();
 
   const matched = directory.filter((entry) =>
+    // 아파트·회사 헬스장은 검색에 뜨지 않는다.
+    entry.visibility !== 'private',
+  ).filter((entry) =>
     needle.length === 0 ||
     entry.name.toLowerCase().includes(needle) ||
     entry.address.toLowerCase().includes(needle),
@@ -260,9 +272,15 @@ export function toGymEntry(entry: GymDirectoryEntry, note?: string): GymEntry {
   return {
     id: entry.id,
     name: entry.name,
-    note,
+    // 같은 건물 3층과 5층은 이름이 같을 수 있다. 목록에서 구분되게 층을 메모로 남긴다.
+    note: note ?? floorNote(entry.floor),
     equipmentIds: [...entry.equipmentIds],
   };
+}
+
+export function floorNote(floor: number | undefined): string | undefined {
+  if (floor === undefined) return undefined;
+  return floor < 0 ? `지하 ${-floor}층` : `${floor}층`;
 }
 
 /** 기구 목록을 모르는 곳을 직접 등록할 때의 출발점. */
@@ -345,6 +363,10 @@ export interface RegisterInput {
   location?: { lat: number; lng: number };
   floor?: number;
   equipmentIds?: string[];
+  /** 헬스장 유형. 주면 기구 목록이 여기서 채워진다 */
+  presetId?: string;
+  /** 검색에 노출할지. 안 주면 유형이 정한다 */
+  visibility?: GymVisibility;
   directory?: readonly GymDirectoryEntry[];
   /** 후보를 보고도 "새로 만들겠다"고 한 경우 */
   force?: boolean;
@@ -372,7 +394,19 @@ export function registerGym(input: RegisterInput): RegisterResult {
     floor: input.floor,
   };
 
-  const hits = findDuplicates(identity, directory);
+  const preset = input.presetId ? gymPresetOf(input.presetId) : undefined;
+  const visibility = input.visibility ?? preset?.visibility ?? 'public';
+
+  /*
+   * 아파트·회사·홈짐은 남의 것과 비교하지 않는다.
+   * 같은 단지 주민이 올린 항목과 합쳐질 이유가 없고, 옆 동 사람의 홈짐이
+   * 후보로 뜨는 건 사생활 문제다.
+   */
+  const pool = visibility === 'private'
+    ? directory.filter((entry) => entry.visibility === 'private')
+    : directory.filter((entry) => entry.visibility !== 'private');
+
+  const hits = findDuplicates(identity, pool);
   const exact = hits.find((hit) => hit.match.verdict === 'same');
 
   if (exact) {
@@ -392,14 +426,19 @@ export function registerGym(input: RegisterInput): RegisterResult {
     };
   }
 
+  const equipmentIds = input.equipmentIds
+    ?? (input.presetId ? presetEquipment(input.presetId) : undefined)
+    ?? [...COMMON_EQUIPMENT_IDS];
+
   const entry: GymDirectoryEntry = {
     id: gymKey(identity),
     name: input.name.trim(),
     address: input.address ?? '',
     location: input.location,
     floor: input.floor ?? parseFloor(input.address),
-    equipmentIds: [...(input.equipmentIds ?? COMMON_EQUIPMENT_IDS)],
+    equipmentIds: [...equipmentIds],
     source: 'user',
+    visibility,
     verifiedAt: input.today,
   };
 

@@ -30,6 +30,7 @@ export * from './pain.ts';
 export * from './gym.ts';
 export * from './equipment.ts';
 export * from './gymIdentity.ts';
+export * from './gymPresets.ts';
 export * from './gyms.ts';
 export * from './strength.ts';
 export * from './session.ts';
