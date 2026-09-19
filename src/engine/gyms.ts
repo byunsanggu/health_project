@@ -8,6 +8,7 @@ import {
   type GymSelection,
 } from './equipment.ts';
 import { EXERCISES } from './exercises.ts';
+import { findDuplicates, gymKey, parseFloor, type DuplicateHit } from './gymIdentity.ts';
 import type { GymProfile } from './gym.ts';
 import type { Exercise } from './types.ts';
 import type { TrainingProgram } from './onboarding.ts';
@@ -79,12 +80,26 @@ export interface GymDirectoryEntry {
   /** 표시용 주소 */
   address: string;
   location?: { lat: number; lng: number };
+  /**
+   * 층. 지하는 음수.
+   * 같은 건물 3층과 5층에 다른 헬스장이 있는 경우가 흔해서, 좌표만으로는
+   * 구분되지 않는다. 주소에서 읽어내지 못하면 사용자가 채운다.
+   */
+  floor?: number;
   /** 등록된 보유 기구 */
   equipmentIds: string[];
   /** 누가 올린 정보인가 — 기구 목록의 신뢰도가 여기서 갈린다 */
   source: DirectorySource;
   /** 마지막으로 확인된 날짜 */
   verifiedAt?: string;
+  /**
+   * 기구별 마지막 확인 시각.
+   * 두 기록을 합칠 때 합집합을 쓰면 안 된다 — A가 6개월 전에 "레그프레스 있음"
+   * 이라 했고 B가 어제 "없음"이라 했으면 없는 것이다.
+   */
+  equipmentVerifiedAt?: Record<string, string>;
+  /** 없다고 확인된 기구. 있음만 쌓으면 사라진 기구를 영원히 못 지운다. */
+  absentEquipmentIds?: string[];
 }
 
 /**
@@ -309,4 +324,220 @@ function toRad(degrees: number): number {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/* ── 등록 ──────────────────────────────────────────────── */
+
+export type RegisterOutcome = 'joined' | 'confirm' | 'created';
+
+export interface RegisterResult {
+  outcome: RegisterOutcome;
+  /** joined·created면 쓸 항목, confirm이면 아직 없다 */
+  entry?: GymDirectoryEntry;
+  /** confirm일 때 사용자에게 보여줄 후보들 */
+  candidates: DuplicateHit[];
+  message: string;
+}
+
+export interface RegisterInput {
+  name: string;
+  address?: string;
+  location?: { lat: number; lng: number };
+  floor?: number;
+  equipmentIds?: string[];
+  directory?: readonly GymDirectoryEntry[];
+  /** 후보를 보고도 "새로 만들겠다"고 한 경우 */
+  force?: boolean;
+  today?: string;
+}
+
+/**
+ * 헬스장 등록.
+ *
+ * 이 함수를 거치지 않으면 새 항목을 만들 수 없게 하는 게 핵심이다. 지금까지는
+ * blankGym()을 아무 때나 불러서 바로 새 id가 나왔고, 그래서 B가 "상구 헬스장"을
+ * 다시 만들 수 있었다.
+ *
+ * 세 갈래로만 끝난다.
+ *   joined  — 확실히 같은 곳이 이미 있다. 그걸 쓴다.
+ *   confirm — 비슷한 게 있다. 사용자가 고르기 전에는 만들지 않는다.
+ *   created — 겹치는 게 없다. 새로 만든다.
+ */
+export function registerGym(input: RegisterInput): RegisterResult {
+  const directory = input.directory ?? SAMPLE_DIRECTORY;
+  const identity = {
+    name: input.name,
+    address: input.address,
+    location: input.location,
+    floor: input.floor,
+  };
+
+  const hits = findDuplicates(identity, directory);
+  const exact = hits.find((hit) => hit.match.verdict === 'same');
+
+  if (exact) {
+    return {
+      outcome: 'joined',
+      entry: exact.entry,
+      candidates: hits,
+      message: `이미 등록된 곳입니다 — ${exact.entry.name}. ${exact.match.reason}`,
+    };
+  }
+
+  if (hits.length > 0 && !input.force) {
+    return {
+      outcome: 'confirm',
+      candidates: hits,
+      message: `비슷한 곳이 ${hits.length}곳 있습니다. 같은 곳이면 골라 주세요.`,
+    };
+  }
+
+  const entry: GymDirectoryEntry = {
+    id: gymKey(identity),
+    name: input.name.trim(),
+    address: input.address ?? '',
+    location: input.location,
+    floor: input.floor ?? parseFloor(input.address),
+    equipmentIds: [...(input.equipmentIds ?? COMMON_EQUIPMENT_IDS)],
+    source: 'user',
+    verifiedAt: input.today,
+  };
+
+  return {
+    outcome: 'created',
+    entry,
+    candidates: hits,
+    message: hits.length > 0
+      ? '비슷한 곳이 있었지만 새로 만들었습니다.'
+      : '새 헬스장으로 등록했습니다.',
+  };
+}
+
+/**
+ * 두 기록을 합친다.
+ *
+ * 합집합이 아니다. 기구마다 마지막으로 확인된 시각을 보고 최근 쪽을 따른다.
+ * 합집합으로 합치면 없어진 기구가 영원히 남는다 — 한 번 "있음"이 들어가면
+ * 누구도 지울 수 없게 된다.
+ */
+export function mergeGymRecords(
+  base: GymDirectoryEntry,
+  incoming: GymDirectoryEntry,
+): GymDirectoryEntry {
+  const verified: Record<string, string> = {};
+  const present = new Set<string>();
+  const absent = new Set<string>();
+
+  const apply = (entry: GymDirectoryEntry) => {
+    const fallback = entry.verifiedAt ?? '';
+    const stamps = entry.equipmentVerifiedAt ?? {};
+
+    const consider = (id: string, isPresent: boolean) => {
+      const at = stamps[id] ?? fallback;
+      const known = verified[id];
+      // 같은 시각이면 "없음"을 믿는다. 사라진 기구를 남겨두는 쪽이 더 해롭다.
+      if (known !== undefined && at < known) return;
+      if (known !== undefined && at === known && isPresent) return;
+      verified[id] = at;
+      if (isPresent) {
+        present.add(id);
+        absent.delete(id);
+      } else {
+        absent.add(id);
+        present.delete(id);
+      }
+    };
+
+    for (const id of entry.equipmentIds) consider(id, true);
+    for (const id of entry.absentEquipmentIds ?? []) consider(id, false);
+  };
+
+  apply(base);
+  apply(incoming);
+
+  const newest = [base.verifiedAt, incoming.verifiedAt]
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .pop();
+
+  return {
+    ...base,
+    // 사람이 더 최근에 손본 쪽의 이름·주소를 믿는다.
+    name: (incoming.verifiedAt ?? '') > (base.verifiedAt ?? '') ? incoming.name : base.name,
+    address: incoming.address || base.address,
+    location: base.location ?? incoming.location,
+    floor: base.floor ?? incoming.floor,
+    equipmentIds: [...present].sort(),
+    absentEquipmentIds: [...absent].sort(),
+    equipmentVerifiedAt: verified,
+    source: base.source === 'official' || incoming.source === 'official' ? 'official' : 'community',
+    verifiedAt: newest,
+  };
+}
+
+/* ── 여러 곳을 다니는 사람 ─────────────────────────────── */
+
+/**
+ * 세 곳 이상 다니는 사람은 드물지 않다. 평일은 회사 근처, 주말은 집 근처,
+ * 가끔 출장지. 매번 손으로 고르게 하면 안 쓰게 된다.
+ */
+export interface GymRoutine {
+  /** 요일별 기본 헬스장 (0=일 … 6=토) */
+  byWeekday?: Record<number, string>;
+}
+
+/** 그 요일에 갈 곳. 정해둔 게 없으면 마지막으로 쓴 곳. */
+export function gymForWeekday(
+  book: GymBook,
+  weekday: number,
+  routine?: GymRoutine,
+): GymEntry | undefined {
+  const planned = routine?.byWeekday?.[weekday];
+  if (planned) {
+    const found = book.gyms.find((gym) => gym.id === planned);
+    if (found) return found;
+  }
+  return activeGym(book) ?? mostRecentGym(book);
+}
+
+export function mostRecentGym(book: GymBook): GymEntry | undefined {
+  return [...book.gyms].sort((a, b) => (b.lastUsedAt ?? '').localeCompare(a.lastUsedAt ?? ''))[0];
+}
+
+export interface GymSuggestion {
+  gym: GymEntry;
+  distanceM: number;
+  /** 지금 선택된 곳과 다른가 */
+  switchNeeded: boolean;
+}
+
+/**
+ * 지금 있는 위치로 어디에 왔는지 맞춘다.
+ *
+ * 헬스장에 도착해서 앱을 열면 이미 그 헬스장으로 맞춰져 있어야 한다.
+ * 세 곳을 다니는 사람에게 매번 고르게 하면 잘못 고른 채로 운동하게 된다.
+ */
+export function suggestGymByLocation(
+  book: GymBook,
+  here: { lat: number; lng: number },
+  directory: readonly GymDirectoryEntry[] = SAMPLE_DIRECTORY,
+  withinM = 150,
+): GymSuggestion | undefined {
+  let best: GymSuggestion | undefined;
+
+  for (const gym of book.gyms) {
+    const entry = directory.find((item) => item.id === gym.id);
+    if (!entry?.location) continue;
+    const distanceM = Math.round(metersApart(here, entry.location));
+    if (distanceM > withinM) continue;
+    if (!best || distanceM < best.distanceM) {
+      best = { gym, distanceM, switchNeeded: gym.id !== book.activeId };
+    }
+  }
+
+  return best;
+}
+
+function metersApart(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  return distanceKm(a, b) * 1000;
 }
