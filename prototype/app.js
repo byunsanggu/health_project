@@ -157,6 +157,8 @@
         blockHistory: state.blockHistory,
         timeBudget: state.timeBudget,
         gymBook: state.gymBook,
+        consent: state.consent,
+        consentRecord: state.consentRecord,
       },
     });
   }
@@ -171,6 +173,14 @@
     var settings = saved.settings || {};
     if (!settings.onboarded || !saved.answers || !saved.program) return false;
 
+    /*
+     * 동의 문구가 바뀌었으면 다시 묻는다. 사용자는 이전 판에 동의했을 뿐,
+     * 바뀐 내용에 동의한 적이 없다. 필수 동의가 빠져도 마찬가지다.
+     */
+    if (E.needsReconsent(settings.consentRecord) || !E.canUseService(settings.consent || [])) {
+      return false;
+    }
+
     try {
       state.answers = saved.answers;
       state.program = saved.program;
@@ -181,6 +191,8 @@
       state.tab = settings.tab || 'today';
       state.style = settings.style || 'hypertrophy';
       state.timeBudget = settings.timeBudget || null;
+      state.consent = settings.consent || [];
+      state.consentRecord = settings.consentRecord || null;
       state.blockHistory = settings.blockHistory || ['hypertrophy'];
       state.gymBook = settings.gymBook || E.createGymBook({
         id: 'my-gym', name: '내 헬스장', equipmentIds: saved.answers.gym.equipmentIds.slice(),
@@ -341,6 +353,9 @@
     occupied: {},
     homeGymId: null,
     equipmentQuery: '',
+    // 동의한 항목. 이게 비면 아무것도 묻지 않는다.
+    consent: [],
+    consentRecord: null,
     // 사용자가 직접 등록한 곳. 공개 디렉터리에 없는 아파트·회사 헬스장이 여기 쌓인다.
     myDirectory: [],
     gymDraft: null,
@@ -468,6 +483,8 @@
   /* ── 상태 계산 ─────────────────────────────────── */
 
   function activePain() {
+    // 통증 기록에 동의하지 않았으면 쓰지 않는다. 화면에서만 감추면 동의가 아니다.
+    if (!E.allows(state.consent, 'painGate')) return [];
     return state.pain.filter(function (report) { return report.score > 0; });
   }
 
@@ -2449,7 +2466,21 @@
     ]));
 
     var body = el('div', { class: 'sheet-body' }, []);
+
+    if (!E.allows(state.consent, 'painGate')) {
+      body.appendChild(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: '동의하지 않은 항목' }),
+        el('div', { text: '통증 기록은 민감정보라 별도 동의가 필요합니다. ' +
+          '동의하면 아픈 관절에 부담이 큰 종목을 자동으로 대체합니다.' }),
+        el('button', {
+          type: 'button', class: 'pick', text: '통증 기록에 동의하기',
+          onclick: function () { grantConsent('painData'); },
+        }),
+      ]));
+    }
+
     state.pain.forEach(function (report, i) {
+      if (!E.allows(state.consent, 'painGate')) return;
       body.appendChild(numberRow({
         name: E.JOINT_LABELS_KO[report.joint] + ' 통증',
         value: report.score,
@@ -2497,7 +2528,173 @@
       el('div', { text: '3점 이상이면 해당 관절 부담이 큰 종목을 대체하고, 7점 이상이면 그 관절을 쓰는 동작을 오늘 세션에서 제외합니다.' }),
     ]));
 
+    renderPrivacy();
     renderAppStatus();
+  }
+
+  /** 동의 하나를 추가로 받는다. 기록도 같이 갱신한다. */
+  function grantConsent(id) {
+    if (state.consent.indexOf(id) < 0) state.consent = state.consent.concat([id]);
+    state.consentRecord = E.recordConsent(state.consent, todayISO());
+    var item = E.consentItem(id);
+    pushLog('동의', '<b>' + (item ? item.label : id) + '</b>에 동의했습니다.');
+    rebuildSession();
+    render();
+  }
+
+  /**
+   * 내 정보.
+   *
+   * 열람권(제35조)과 삭제 요구권(제36조)은 "어딘가 적혀 있다"로는 부족하다.
+   * 앱에서 지금 바로 보고 지울 수 있어야 한다.
+   */
+  function renderPrivacy() {
+    var rows = el('div', { class: 'sheet-body' }, []);
+
+    E.CONSENT_ITEMS.forEach(function (item) {
+      var on = state.consent.indexOf(item.id) >= 0;
+      var row = el('div', { class: 'status-row' }, [
+        el('span', { class: 'status-key', text: item.required ? '필수' : '선택' }),
+        el('span', {
+          class: 'status-val ' + (on ? 'ok' : 'todo'),
+          text: item.label + (item.sensitive ? ' · 민감정보' : ''),
+        }),
+      ]);
+
+      row.appendChild(el('button', {
+        type: 'button', class: 'pick',
+        text: on ? '철회' : '동의',
+        onclick: function () {
+          if (!on) return grantConsent(item.id);
+          var result = E.withdrawConsent(
+            state.consentRecord || E.recordConsent(state.consent, todayISO()),
+            item.id,
+            todayISO(),
+          );
+          if (result.stopsService) {
+            // 필수를 철회하면 서비스가 멈춘다. 되돌릴 수 없으니 먼저 알린다.
+            confirmWithdrawal(item);
+            return;
+          }
+          state.consent = result.record.given;
+          state.consentRecord = result.record;
+          purgeFor(item.id);
+          pushLog('동의 철회', '<b>' + item.label + '</b>' + particleOf(item.label, '을/를') +
+            ' 철회하고 해당 기록을 지웠습니다.');
+          rebuildSession();
+          render();
+        },
+      }));
+      rows.appendChild(row);
+    });
+
+    rows.appendChild(el('div', { class: 'chip-row' }, [
+      el('button', {
+        type: 'button', class: 'pick', text: '내 데이터 내려받기',
+        onclick: exportMyData,
+      }),
+      el('button', {
+        type: 'button', class: 'pick danger', text: '전부 삭제',
+        onclick: function () { confirmWipe(); },
+      }),
+    ]));
+
+    if (state.consentRecord) {
+      rows.appendChild(el('p', { class: 'hint-line', text:
+        state.consentRecord.at + '에 ' + state.consentRecord.version + ' 판 문구로 동의했습니다.' }));
+    }
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '내 정보' }),
+        el('span', { class: 'meta', text: '동의 · 내려받기 · 삭제' }),
+      ]),
+      rows,
+    ]));
+  }
+
+  /** 철회한 항목의 기록을 실제로 지운다. 동의만 끄고 데이터를 남기면 안 된다. */
+  function purgeFor(id) {
+    if (id === 'painData') {
+      state.pain = JOINTS.map(function (joint) { return { joint: joint, score: 0 }; });
+      state.checkIns = state.checkIns.map(function (entry) {
+        return Object.assign({}, entry, { pain: [] });
+      });
+    }
+  }
+
+  function confirmWithdrawal(item) {
+    openModal('동의 철회', '필수 항목', [
+      el('p', { class: 'asset-note', text:
+        withParticleJs(item.label, '은/는') + ' 이 앱의 핵심 기능에 필요합니다. 철회하면 ' + item.ifDeclined }),
+      el('p', { class: 'asset-note', text:
+        '철회하면 저장된 기록을 모두 지우고 처음 화면으로 돌아갑니다. 되돌릴 수 없습니다.' }),
+      el('button', {
+        type: 'button', class: 'finish danger', text: '철회하고 전부 삭제',
+        onclick: function () { modal.close(); wipeEverything(); },
+      }),
+    ]);
+  }
+
+  function confirmWipe() {
+    openModal('전부 삭제', '되돌릴 수 없음', [
+      el('p', { class: 'asset-note', text:
+        '동의 기록, 운동 기록, 체중, 통증, 등록한 헬스장을 모두 지웁니다. 되돌릴 수 없습니다. ' +
+        '먼저 내려받아 두시겠습니까?' }),
+      el('button', {
+        type: 'button', class: 'pick', text: '내려받기',
+        onclick: exportMyData,
+      }),
+      el('button', {
+        type: 'button', class: 'finish danger', text: '네, 전부 삭제합니다',
+        onclick: function () { modal.close(); wipeEverything(); },
+      }),
+    ]);
+  }
+
+  function wipeEverything() {
+    storage.reset();
+    state.consent = [];
+    state.consentRecord = null;
+    state.myDirectory = [];
+    state.history = [];
+    state.checkIns = [];
+    state.todaySets = [];
+    state.log = [];
+    startOnboarding();
+  }
+
+  /**
+   * 내려받기.
+   *
+   * 자기 기록을 가져갈 수 없으면 그건 사용자의 데이터가 아니다.
+   * 사람이 읽을 수 있는 JSON으로 그대로 준다.
+   */
+  function exportMyData() {
+    var payload = {
+      내보낸시각: new Date().toISOString(),
+      동의: state.consentRecord,
+      설문: state.answers,
+      신체: state.lifter,
+      프로그램: state.program,
+      헬스장: { 목록: state.gymBook, 직접등록: state.myDirectory },
+      운동기록: state.history.concat(
+        state.todaySets.length > 0
+          ? [{ date: state.todayDate, sets: state.todaySets, gymId: activeGymId() }]
+          : [],
+      ),
+      체크인: state.checkIns,
+    };
+
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var link = el('a', { href: url, download: '볼륨코치-내데이터.json' });
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    pushLog('내 정보', '내 데이터를 JSON으로 내려받았습니다.');
+    renderLog();
   }
 
   /**
@@ -2759,7 +2956,8 @@
     host.textContent = '';
 
     var results = E.searchGyms(state.gymQuery, {
-      near: { lat: 37.5, lng: 127.03 },
+      // 위치 동의가 없으면 좌표를 아예 넘기지 않는다.
+      near: myLocation(),
       program: state.program,
       directory: fullDirectory(),
     });
@@ -2819,6 +3017,17 @@
       text: '찾는 곳이 없나요? 직접 등록하기',
       onclick: function () { openGymRegister(); },
     });
+  }
+
+  /**
+   * 지금 위치.
+   *
+   * 위치 동의가 없으면 없는 셈 친다 — 화면에서만 감추고 좌표를 계속 쓰면
+   * 동의를 받은 게 아니다. 프로토타입에는 GPS가 없어 고정값을 쓴다.
+   */
+  function myLocation() {
+    if (!E.allows(state.consent, 'nearbyGyms')) return undefined;
+    return { lat: 37.5, lng: 127.03 };
   }
 
   /**
@@ -3001,8 +3210,7 @@
     var result = E.registerGym({
       name: name,
       address: draft.floor,
-      // 프로토타입에는 GPS가 없다. 실제 앱에서는 현재 좌표가 들어온다.
-      location: { lat: 37.5, lng: 127.03 },
+      location: myLocation(),
       presetId: draft.presetId,
       directory: fullDirectory(),
       force: options.force,
@@ -3217,6 +3425,7 @@
   /* ── 온보딩 ────────────────────────────────────── */
 
   var STEPS = [
+    { id: 'consent', title: '동의', render: stepConsent },
     { id: 'level', title: '경력', render: stepLevel },
     { id: 'profile', title: '내 정보', render: stepProfile },
     { id: 'gym', title: '헬스장 기구', render: stepGym },
@@ -3234,6 +3443,9 @@
   }
 
   function completeOnboarding() {
+    // 언제 · 어느 판 문구에 동의했는지 남긴다. 증빙이 없으면 동의가 아니다.
+    state.consentRecord = E.recordConsent(state.consent, todayISO());
+
     var result = E.runOnboarding(state.answers);
     state.gymBook = E.createGymBook({
       id: 'my-gym', name: '내 헬스장',
@@ -3276,14 +3488,102 @@
         onclick: function () { state.onboarding.step -= 1; render(); },
       }));
     }
+    // 필수 동의 전에는 아무것도 묻지 않는다. 동의가 수집보다 먼저다.
+    var blocked = step.id === 'consent' && !E.canUseService(state.consent);
+
     nav.appendChild(el('button', {
-      type: 'button', class: 'primary', text: isLast ? '이 프로그램으로 시작' : '다음',
+      type: 'button', class: 'primary',
+      disabled: blocked ? '' : null,
+      text: isLast ? '이 프로그램으로 시작' : '다음',
       onclick: function () {
+        if (blocked) return;
         if (isLast) completeOnboarding();
         else { state.onboarding.step += 1; render(); }
       },
     }));
     screen.appendChild(nav);
+  }
+
+  /**
+   * 동의 화면.
+   *
+   * 체중·통증·운동 기록은 건강에 관한 정보라 민감정보다. 개인정보보호법은
+   * 이걸 다른 동의와 묶지 말라고 한다 — 이용약관에 끼워 넣고 한 번에 받으면
+   * 동의로 치지 않는다.
+   *
+   * 그래서 "전체 동의" 버튼을 두지 않았다. 하나씩 읽고 하나씩 누른다.
+   * 그리고 이 화면이 첫 화면이다 — 체중을 묻기 전에 동의를 받는다.
+   */
+  function stepConsent() {
+    screen.appendChild(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '먼저 확인해 주세요' }),
+      el('div', { text:
+        '체중과 운동·통증 기록은 건강에 관한 정보라 따로 동의를 받아야 합니다. ' +
+        '무엇을 왜 받고 얼마나 갖고 있는지 아래에 그대로 적었습니다. ' +
+        '선택 항목은 거부해도 앱을 쓰는 데 지장이 없습니다.' }),
+    ]));
+
+    E.CONSENT_ITEMS.forEach(function (item) {
+      var on = state.consent.indexOf(item.id) >= 0;
+
+      var head = el('div', { class: 'consent-head' }, [
+        el('span', { class: 'consent-title', text: item.label }),
+        el('span', {
+          class: 'consent-tag ' + (item.required ? 'req' : 'opt'),
+          text: item.required ? '필수' : '선택',
+        }),
+        item.sensitive ? el('span', { class: 'consent-tag sensitive', text: '민감정보' }) : null,
+      ]);
+
+      var rows = el('div', { class: 'consent-body' }, [
+        consentRow('수집 항목', item.items.join(' · ')),
+        consentRow('이용 목적', item.purpose),
+        consentRow('보유 기간', item.retention),
+        consentRow('거부하면', item.ifDeclined),
+      ]);
+
+      screen.appendChild(el('div', { class: 'consent-card' }, [
+        head,
+        rows,
+        el('button', {
+          type: 'button',
+          class: 'consent-toggle',
+          'aria-pressed': String(on),
+          text: on ? '동의함' : '동의하기',
+          onclick: function () {
+            state.consent = on
+              ? state.consent.filter(function (id) { return id !== item.id; })
+              : state.consent.concat([item.id]);
+            render();
+          },
+        }),
+      ]));
+    });
+
+    var missing = E.missingRequired(state.consent);
+    if (missing.length > 0) {
+      screen.appendChild(el('p', { class: 'hint-line warn', text:
+        '필수 항목 ' + missing.length + '개가 남았습니다 — ' +
+        missing.map(function (item) { return item.label; }).join(', ') }));
+    } else {
+      var blockedList = E.blockedFeatures(state.consent);
+      screen.appendChild(el('p', { class: 'hint-line', text: blockedList.length === 0
+        ? '모두 동의했습니다. 모든 기능을 쓸 수 있습니다.'
+        : '거부한 선택 항목 때문에 꺼지는 기능: ' +
+          blockedList.map(function (gate) { return gate.label; }).join(', ') +
+          '. 나머지는 그대로 동작합니다.' }));
+    }
+
+    screen.appendChild(el('p', { class: 'asset-note', text:
+      '동의는 언제든 철회할 수 있습니다(체크인 탭 → 내 정보). 철회하면 해당 기록을 바로 지웁니다. ' +
+      '이 문구는 프로토타입용이며, 실제 출시 전에는 법률 검토가 필요합니다.' }));
+  }
+
+  function consentRow(label, value) {
+    return el('div', { class: 'consent-row' }, [
+      el('span', { class: 'consent-key', text: label }),
+      el('span', { text: value }),
+    ]);
   }
 
   function stepLevel() {

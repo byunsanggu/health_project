@@ -1039,6 +1039,68 @@ input[type="search"] {
   white-space: nowrap; padding-top: 2px;
 }
 
+
+/* ── 동의 ───────────────────────────────────────── */
+.consent-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.consent-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.consent-title { font-size: 13.5px; font-weight: 600; }
+.consent-tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.consent-tag.req { color: var(--zone-over); }
+.consent-tag.opt { color: var(--muted); }
+.consent-tag.sensitive { color: var(--zone-hard); font-weight: 600; }
+.consent-body { display: grid; gap: 6px; padding: 11px 13px; }
+.consent-row {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 9px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.consent-key {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .07em;
+  color: var(--muted);
+}
+.consent-toggle {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface-2);
+  padding: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.consent-toggle:hover { color: var(--accent); }
+.consent-toggle[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.pick.danger { color: var(--zone-over); border-color: currentColor; }
+.finish.danger { background: var(--zone-over); border-color: var(--zone-over); color: #fff; }
+.wizard-nav button[disabled] { opacity: .45; cursor: default; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -1071,6 +1133,7 @@ input[type="search"] {
           <li><b>체크인</b> 탭에서 어깨 통증을 3점 이상으로 올리면, 오늘 세션의 종목이 자동으로 대체됩니다.</li>
           <li><b>헬스장</b> 탭에서 바 무게나 스택 간격을 바꾸면 처방 중량이 그 기구가 만들 수 있는 값으로 다시 맞춰집니다. 기구를 끄면 해당 종목이 대체됩니다.</li>
           <li>기구 이름을 몰라도 됩니다. <b>초기 설정 → 헬스장 기구</b>에서 "굽은 봉", "나비", "철장"처럼 <b>생김새로 검색</b>하거나, 헬스장 유형을 골라 한 번에 채울 수 있습니다.</li>
+          <li>맨 처음 화면은 <b>동의</b>입니다. 체중·운동·통증 기록은 건강정보라 별도 동의를 받아야 해서, <b>"전체 동의" 버튼을 두지 않았습니다.</b> 선택 항목을 거부하면 그 기능만 꺼지고 나머지는 그대로 동작합니다 — <b>체크인</b> 탭의 <b>내 정보</b>에서 언제든 철회하고, 내 데이터를 내려받거나 전부 지울 수 있습니다.</li>
           <li>맨 처음 뜨는 <b>초기 설정</b>에서 경력과 보유 기구를 고르면 프로그램이 자동으로 생성됩니다. 경력을 실제보다 높게 고르면 훈련 개월 수와 대조해 낮춰 잡습니다.</li>
           <li>세트를 완료하면 <b>휴식 타이머</b>가 자동으로 뜹니다. 복합 동작·고중량·허리 부담에 따라 시간이 달라집니다.</li>
           <li><b>진행</b> 탭에 추정 1RM 추이와 주간 볼륨 추이가 쌓입니다. <b>주간</b> 탭의 RIR 신뢰도는 실패 세트와 대조해 신고가 얼마나 정확한지 보여줍니다.</li>
@@ -1127,6 +1190,7 @@ input[type="search"] {
   <dialog class="modal" id="modal" aria-labelledby="modal-title"></dialog>
 
   <div class="disclaimer">
+    <p>동의 문구는 프로토타입용 예시입니다. 실제 서비스에 쓰기 전에는 법률 검토가 필요합니다.</p>
     <p>이 페이지는 제품 프로토타입이며 의료기기가 아닙니다. 제공하는 정보는 의학적 진단·처방·치료를 대신하지 않습니다. 통증이 지속되면 전문의 진료를 받으세요.</p>
     <p>동작 시연은 관절 각도 키프레임으로 그린 예시이며, 실제 촬영 영상이나 구매한 3D 에셋이 들어갈 자리를 대신합니다. 특정 앱의 에셋을 쓰거나 본뜬 것이 아닙니다.</p>
     <p>표시된 훈련 기록은 엔진 동작을 보여주기 위해 생성한 예시 데이터입니다. 운동 명칭은 일반 명칭이며, 부위 기여도·관절 스트레스·볼륨 랜드마크는 공개 문헌과 코칭 판단으로 직접 작성했습니다.</p>

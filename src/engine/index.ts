@@ -14,6 +14,7 @@ export * from './personalization.ts';
 export * from './styles.ts';
 export * from './intensity.ts';
 export * from './conditioning.ts';
+export * from './consent.ts';
 export * from './exercises.ts';
 export * from './demos.ts';
 export * from './volume.ts';
