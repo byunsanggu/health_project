@@ -163,6 +163,7 @@
          */
         started: state.started,
         liftCursor: state.liftCursor,
+        dayOverride: state.dayOverride,
         gymBook: state.gymBook,
         consent: state.consent,
         consentRecord: state.consentRecord,
@@ -200,6 +201,7 @@
       state.timeBudget = settings.timeBudget || null;
       state.started = Boolean(settings.started);
       state.liftCursor = settings.liftCursor || 0;
+      state.dayOverride = settings.dayOverride == null ? null : settings.dayOverride;
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
       state.blockHistory = settings.blockHistory || ['hypertrophy'];
@@ -284,6 +286,19 @@
   /** 오늘은 이번 주의 마지막 훈련일이고, 그 앞 세션들은 이미 수행한 것으로 시드한다. */
   function todayIndex() {
     return trainingDays().length - 1;
+  }
+
+  /** 프로그램상 오늘 할 차례. */
+  function scheduledTemplateIndex() {
+    return todayIndex() % state.program.templates.length;
+  }
+
+  /** 실제로 오늘 할 날. 직접 고른 게 있으면 그것. */
+  function currentTemplateIndex() {
+    var count = state.program.templates.length;
+    if (state.dayOverride == null) return scheduledTemplateIndex();
+    // 프로그램을 다시 만들면 날 수가 줄 수 있다. 밖으로 나가지 않게 잡는다.
+    return Math.min(state.dayOverride, count - 1);
   }
 
   var JOINTS = ['shoulder', 'lowBack', 'knee', 'elbow'];
@@ -383,6 +398,11 @@
      */
     started: false,
     liftCursor: 0,
+    /*
+     * 오늘 할 날을 직접 고른 경우의 템플릿 번호. null이면 프로그램 순서대로.
+     * 현장에서는 순서대로 안 온다 — "오늘 상체 하고 싶다"가 매주 있다.
+     */
+    dayOverride: null,
     onboarding: { active: true, step: 0 },
   };
 
@@ -590,7 +610,7 @@
     state.plan = styled;
 
     var built = E.buildSession({
-      template: state.program.templates[todayIndex() % state.program.templates.length],
+      template: state.program.templates[currentTemplateIndex()],
       date: state.todayDate,
       plan: state.plan,
       history: state.history,
@@ -1708,7 +1728,15 @@
       estimate: estimate,
       node: el('div', { class: 'session-head' }, [
         el('div', { class: 'title' }, [
-          el('h2', { text: state.session.name }),
+          // 제목을 눌러서 오늘 할 날을 바꾼다. 순서대로만 되면 앱을 무시하게 된다.
+          el('button', {
+            type: 'button', class: 'day-switch',
+            'aria-label': '오늘 할 날 바꾸기 — 지금은 ' + state.session.name,
+            onclick: openDayPicker,
+          }, [
+            el('h2', { text: state.session.name }),
+            el('span', { class: 'day-switch-caret', text: '바꾸기' }),
+          ]),
           phaseBadge,
         ]),
         el('p', {
@@ -1718,6 +1746,88 @@
         }),
       ]),
     };
+  }
+
+  /**
+   * 오늘 어느 날을 할 것인가.
+   *
+   * 순서를 강제하면 사용자는 앱을 무시하고 자기 마음대로 한다. 그러면
+   * 기록이 안 남고, 기록이 없으면 볼륨 계산도 처방도 다 틀어진다.
+   * 그래서 막지 않고, 대신 그 부위를 마지막으로 언제 했는지 말해준다.
+   */
+  function openDayPicker() {
+    var current = currentTemplateIndex();
+    var options = E.dayOptions(state.program.templates, {
+      scheduledIndex: scheduledTemplateIndex(),
+      sessions: state.history.concat(todaySessionLog()),
+      today: state.todayDate,
+      exerciseById: function (id) { return index.get(id); },
+    });
+
+    var body = [];
+    body.push(el('p', { class: 'asset-note', text:
+      '순서를 바꿔도 됩니다. 건너뛴 날은 없어지지 않고 다음으로 밀립니다 — ' +
+      '주간 볼륨은 한 주 전체로 계산하므로 목표는 그대로입니다.' }));
+
+    body.push(el('div', { class: 'summary-list' }, options.map(function (option) {
+      var templateIndex = state.program.templates.indexOf(option.template);
+      var picked = templateIndex === current;
+      return el('button', {
+        type: 'button',
+        class: 'day-row',
+        'aria-pressed': String(picked),
+        onclick: function () { chooseDay(templateIndex); },
+      }, [
+        el('span', { class: 'mark', text: picked ? '✓' : '' }),
+        el('span', { class: 'day-main' }, [
+          el('span', { class: 'name' }, [
+            el('span', { text: option.template.name }),
+            option.scheduled ? el('span', { class: 'day-tag', text: '오늘 차례' }) : null,
+          ]),
+          el('span', { class: 'day-muscles', text: option.muscles.slice(0, 4).map(function (muscle) {
+            return E.MUSCLE_LABELS_KO[muscle];
+          }).join(' · ') }),
+          el('span', { class: 'day-note ' + option.readiness, text: option.note }),
+        ]),
+      ]);
+    })));
+
+    openModal('오늘 뭐 할까요', state.program.name, body);
+  }
+
+  function chooseDay(templateIndex) {
+    var before = state.program.templates[currentTemplateIndex()];
+    var after = state.program.templates[templateIndex];
+    if (!after) return;
+
+    /*
+     * 날을 바꾸면 오늘 기록한 세트는 지운다. 다른 날의 종목이라 그대로
+     * 두면 어느 세션에 속한 세트인지 알 수 없게 된다. 그래서 세트가
+     * 있으면 먼저 물어본다.
+     */
+    if (state.todaySets.length > 0) {
+      var ok = window.confirm(
+        '오늘 기록한 ' + state.todaySets.length + '세트가 지워집니다. ' + after.name + '로 바꿀까요?');
+      if (!ok) return;
+      state.todaySets = [];
+    }
+
+    state.dayOverride = templateIndex === scheduledTemplateIndex() ? null : templateIndex;
+    state.started = false;
+    state.liftCursor = 0;
+    state.occupied = {};
+    rebuildSession();
+
+    var note = E.skipNote(before, after);
+    if (note) pushLog('오늘 바꿈', note);
+    modal.close();
+    render();
+  }
+
+  /** 오늘 기록한 세트를 세션 하나로 본다 — 회복 판정에 오늘 것도 넣어야 한다. */
+  function todaySessionLog() {
+    if (state.todaySets.length === 0) return [];
+    return [{ date: state.todayDate, sets: state.todaySets }];
   }
 
   function renderWarnings() {
