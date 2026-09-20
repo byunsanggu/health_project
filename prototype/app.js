@@ -2187,7 +2187,8 @@
     var nav = el('div', { class: 'step-nav' + (finished ? ' done' : '') }, [
       state.liftCursor > 0
         ? el('button', {
-            type: 'button', class: 'ghost', text: '이전',
+            /* "이전"만 있으면 세트 얘긴지 종목 얘긴지 모른다. "다음 종목"과 짝을 맞춘다. */
+            type: 'button', class: 'ghost', text: '← 이전 종목',
             onclick: function () { state.liftCursor -= 1; render(); },
           })
         : null,
@@ -2237,7 +2238,11 @@
 
     var wrap = el('div', { class: 'set-track' }, []);
 
-    /* 점 — 몇 개 했고 몇 개 남았는지 한눈에. */
+    /*
+     * 몇 세트째인가. 헬스장에서 흘끗 볼 때 중량 다음으로 필요한 숫자인데
+     * 11px 회색 글자였다. 점은 세어 보지 않고 아는 용이고, 숫자는 정확히
+     * 아는 용이다 — 둘 다 한 줄에 두되 숫자를 읽을 수 있게 키운다.
+     */
     wrap.appendChild(el('div', { class: 'set-dots-row' }, [
       el('span', { class: 'set-dots' }, sets.map(function (set, setIndex) {
         return el('i', {
@@ -2245,9 +2250,13 @@
           'aria-hidden': 'true',
         });
       })),
-      el('span', { class: 'set-count', text: cursor >= 0
-        ? (cursor + 1) + ' / ' + sets.length + ' 세트'
-        : sets.length + '세트 완료' }),
+      cursor >= 0
+        ? el('span', { class: 'set-count' }, [
+            el('i', { text: '세트' }),
+            el('b', { text: String(cursor + 1) }),
+            el('span', { text: '/ ' + sets.length }),
+          ])
+        : el('span', { class: 'set-count done', text: sets.length + '세트 완료' }),
     ]));
 
     /* 끝낸 세트는 접어 둔다. 기록을 고칠 일은 있지만 늘 보일 필요는 없다. */
@@ -2392,8 +2401,8 @@
     });
     body.push(chips);
 
+    // 세트 번호는 바로 위 점 줄에 크게 있다. 여기 또 쓰면 두 번 읽게 된다.
     return el('div', { class: 'set-now' }, [
-      el('div', { class: 'now-head', text: (setIndex + 1) + '세트' }),
       el('div', { class: 'now-body' }, body),
     ]);
   }

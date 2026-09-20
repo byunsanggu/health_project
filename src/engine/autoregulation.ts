@@ -110,7 +110,12 @@ export function decideNextSet(input: SetDecisionInput): SetDecision {
     return decide('lastSet', '계획상 마지막 세트입니다.');
   }
 
-  return decide('continue', `${done}/${input.plannedSets}세트 · 수행이 유지되고 있습니다.`);
+  /*
+   * 세트 수를 여기서 또 세지 않는다. 화면 위에 "세트 3 / 6"이 크게 있는데
+   * 여기서 "2/6세트"라고 하면 완료 기준과 현재 기준이 섞여 한 화면에 다른
+   * 숫자 둘이 뜬다. 이 줄이 할 말은 "그래서 계속해도 되나"다.
+   */
+  return decide('continue', '수행이 유지되고 있습니다. 계획대로 계속합니다.');
 }
 
 /** 세트 하나에 드는 대략적인 시간. 시간 예산 계산과 같은 모델을 쓴다. */

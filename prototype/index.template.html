@@ -1126,10 +1126,15 @@ input[type="search"] {
 }
 .set-dots i.on { background: var(--accent); border-color: var(--accent); }
 .set-dots i.now { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* 중량 다음으로 자주 보는 숫자다. 회색 잔글씨로 두면 안 된다. */
 .set-count {
-  font-family: var(--mono); font-size: 11px; color: var(--muted);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
+  display: inline-flex; align-items: baseline; gap: 4px;
+  font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
+.set-count i { font-style: normal; font-size: 10px; letter-spacing: .1em; color: var(--muted); }
+.set-count b { font-size: 19px; font-weight: 600; color: var(--accent); line-height: 1; }
+.set-count span { font-size: 13px; color: var(--muted); }
+.set-count.done { font-size: 12.5px; color: var(--zone-ok); font-weight: 600; }
 
 .done-head {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px;
@@ -1146,11 +1151,7 @@ input[type="search"] {
 
 /* 지금 할 세트. 화면에서 제일 커야 한다 — 지금 할 일은 이것 하나다. */
 .set-now { padding: 4px 0 2px; }
-.now-head {
-  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
-  color: var(--accent); padding: 8px 13px 0;
-}
-.now-body { display: grid; gap: 10px; padding: 4px 13px 13px; }
+.now-body { display: grid; gap: 10px; padding: 12px 13px 13px; }
 .now-load { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .now-load .weight {
   font-family: var(--mono); font-size: 34px; font-weight: 600;
