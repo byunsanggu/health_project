@@ -1337,6 +1337,30 @@ input[type="search"] {
 
 .sheet-body.tight { padding: 0; }
 
+/* ── 순서 변경 ──────────────────────────────────── */
+.head-actions { display: flex; align-items: center; gap: 8px; }
+.head-actions .demo-open { margin-left: 0; }
+
+.order-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.order-row:first-child { border-top: 0; }
+/* 순서 때문에 걸린 줄은 표시한다 — 막지는 않는다. */
+.order-row.flagged { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--zone-over); }
+.order-no { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.order-moves { display: flex; gap: 4px; }
+.order-moves .nudge {
+  width: 38px; height: 38px; font-size: 16px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+}
+.order-moves .nudge[disabled] { opacity: .3; cursor: default; }
+.order-moves .nudge:not([disabled]):hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── 오늘: 시작 전 목록 ─────────────────────────── */
 .plan-row {
   display: grid;
@@ -1532,6 +1556,7 @@ input[type="search"] {
       <h2>무엇을 보면 되나</h2>
       <div class="readme">
         <ol>
+          <li><b>순서 변경</b>으로 종목 차례를 바꿀 수 있습니다. 막지 않지만, <b>허리가 지친 상태에서 데드리프트를 하게 되는</b> 순서면 경고합니다 — 가슴 선피로처럼 의도적인 기법은 참고로만 알립니다. 워밍업도 새 순서에 맞춰 다시 잡히고, 시간을 줄여 종목이 바뀌어도 순서는 유지됩니다.</li>
           <li>오늘 할 날이 마음에 안 들면 <b>제목(하체 B)을 눌러</b> 바꾸세요. 상체를 하고 싶은 날이 있습니다. 막지 않고, 그 부위를 마지막으로 언제 했는지만 알려줍니다 — <b>어제 가슴을 했습니다</b>처럼요. 건너뛴 날은 없어지지 않고 다음으로 밀립니다.</li>
           <li><b>오늘</b> 탭은 <b>시작하기</b>를 누르기 전까지 목록만 보여줍니다. 누르면 <b>한 종목씩</b> 나옵니다 — 헬스장에서 필요한 건 "지금 이거" 하나이고, 일곱 개가 한 화면에 깔려 있으면 시작하기 전에 지칩니다. 위의 <b>목록</b>으로 언제든 전체를 다시 봅니다.</li>
           <li>세트도 <b>한 번에 하나</b>만 나옵니다. 점이 세트이고, 끝난 세트는 접힙니다. 워밍업은 첫 본세트를 하면 자동으로 접힙니다 — 지금 할 세트가 화면 밖으로 밀리면 안 되니까요. 오른쪽 위 <b>운동 12:34</b>는 시작하기를 누른 순간부터 잰 시간이고, 스크롤해도 따라옵니다.</li>

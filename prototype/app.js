@@ -165,6 +165,7 @@
         sessionClosed: state.sessionClosed,
         liftCursor: state.liftCursor,
         dayOverride: state.dayOverride,
+        liftOrder: state.liftOrder,
         sessionStartedAt: state.sessionStartedAt,
         gymBook: state.gymBook,
         consent: state.consent,
@@ -205,6 +206,7 @@
       state.sessionClosed = Boolean(settings.sessionClosed);
       state.liftCursor = settings.liftCursor || 0;
       state.dayOverride = settings.dayOverride == null ? null : settings.dayOverride;
+      state.liftOrder = settings.liftOrder || null;
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
@@ -396,6 +398,11 @@
     doneOpen: {},
     // 위쪽 요약 카드 중 펼쳐진 것. null이면 둘 다 접힘.
     statOpen: null,
+    /*
+     * 직접 바꾼 종목 순서(id 배열). null이면 프로그램이 짜 준 순서.
+     * 세션이 다시 짜여도 유지된다 — 시간을 줄였다고 순서가 돌아가면 안 된다.
+     */
+    liftOrder: null,
     gymQuery: '',
     maxTest: null,
     /*
@@ -641,6 +648,15 @@
       });
       built = state.timeFit.session;
     }
+    /*
+     * 직접 바꾼 순서를 여기서 적용한다. 워밍업을 계산하기 **전**이어야
+     * 한다 — "앞 종목이 데운 부위는 짧게"가 순서에 달려 있다.
+     */
+    built = Object.assign({}, built, {
+      exercises: E.applyOrder(built.exercises, state.liftOrder, function (item) {
+        return item.exercise.id;
+      }),
+    });
     state.session = built;
 
     var warmed = [];
@@ -2039,6 +2055,8 @@
     if (!after) return;
 
     state.todaySets = [];
+    // 다른 날은 종목이 아예 다르다. 앞 날의 순서를 끌고 가면 안 된다.
+    state.liftOrder = null;
     state.dayOverride = templateIndex === scheduledTemplateIndex() ? null : templateIndex;
     state.started = false;
     state.sessionClosed = false;
@@ -2191,7 +2209,13 @@
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '오늘 할 것' }),
-        el('span', { class: 'meta', text: '총 ' + state.lifts.length + '개' }),
+        el('span', { class: 'head-actions' }, [
+          el('span', { class: 'meta', text: '총 ' + state.lifts.length + '개' }),
+          el('button', {
+            type: 'button', class: 'demo-open', text: '순서 변경',
+            onclick: openReorder,
+          }),
+        ]),
       ]),
       el('div', { class: 'sheet-body tight' }, [el('div', { class: 'summary-list' }, rows)]),
     ]));
@@ -2218,6 +2242,109 @@
 
     // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다.
     if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
+  }
+
+  /**
+   * 순서 바꾸기.
+   *
+   * 끌어서 옮기는 방식이 보기는 좋지만, 땀난 손으로 스크롤하는 목록 위에서
+   * 끌기는 잘 안 잡힌다. ↑↓ 버튼은 눌리기만 하면 되고, 키보드와 스크린
+   * 리더에서도 그대로 동작한다.
+   *
+   * 바꾼 결과가 괜찮은지는 엔진이 봐준다 — 막지는 않는다.
+   */
+  function openReorder() {
+    var render2 = function () {
+      var ids = state.lifts.map(function (lift) { return lift.exercise.id; });
+      var body = [];
+
+      body.push(el('p', { class: 'asset-note', text:
+        '기구가 막혔거나 먼저 하고 싶은 게 있으면 바꾸세요. ' +
+        '바꾼 순서는 오늘 하루 유지되고, 워밍업도 새 순서에 맞춰 다시 잡힙니다.' }));
+
+      var issues = E.reviewOrder(state.lifts.map(function (lift) { return lift.exercise; }));
+      issues.forEach(function (issue) {
+        body.push(el('div', { class: 'notice' + (issue.severity === 'warn' ? ' stop' : '') }, [
+          el('div', { class: 'label', text: issue.severity === 'warn' ? '순서 주의' : '참고' }),
+          el('div', { text: issue.text }),
+        ]));
+      });
+
+      body.push(el('div', { class: 'summary-list' }, state.lifts.map(function (lift, index) {
+        var flagged = issues.some(function (issue) {
+          return issue.exerciseId === lift.exercise.id && issue.severity === 'warn';
+        });
+        var locked = lift.sets.some(function (set) { return set.done; });
+
+        return el('div', { class: 'order-row' + (flagged ? ' flagged' : '') }, [
+          el('span', { class: 'order-no', text: String(index + 1) }),
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name' }, [
+              el('span', { text: lift.exercise.name }),
+              locked ? el('span', { class: 'plan-done', text: '기록 있음' }) : null,
+            ]),
+            el('span', { class: 'plan-sets', text: liftSummaryLine(lift) }),
+          ]),
+          el('span', { class: 'order-moves' }, [
+            el('button', {
+              type: 'button', class: 'nudge', text: '↑',
+              disabled: index === 0 ? '' : null,
+              'aria-label': lift.exercise.name + ' 위로',
+              onclick: function () { moveLift(index, index - 1); render2(); },
+            }),
+            el('button', {
+              type: 'button', class: 'nudge', text: '↓',
+              disabled: index === state.lifts.length - 1 ? '' : null,
+              'aria-label': lift.exercise.name + ' 아래로',
+              onclick: function () { moveLift(index, index + 1); render2(); },
+            }),
+          ]),
+        ]);
+      })));
+
+      if (state.liftOrder) {
+        body.push(el('button', {
+          type: 'button', class: 'finish quiet', text: '프로그램 순서로 되돌리기',
+          onclick: function () {
+            state.liftOrder = null;
+            rebuildSession();
+            pushLog('순서 변경', '프로그램이 짜 준 순서로 되돌렸습니다.');
+            render();
+            render2();
+          },
+        }));
+      }
+
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: '이 순서로 하기',
+        onclick: function () { modal.close(); render(); },
+      }));
+
+      void ids;
+      openModal('순서 변경', state.lifts.length + '개 종목', body);
+    };
+    render2();
+  }
+
+  /**
+   * 한 칸 옮긴다.
+   *
+   * 이미 기록한 세트는 종목에 붙어 있으므로 순서를 옮겨도 그대로 간다.
+   * 다만 진행 중이면 커서가 다른 종목을 가리키게 되므로 같이 따라가게 한다.
+   */
+  function moveLift(from, to) {
+    var ids = state.lifts.map(function (lift) { return lift.exercise.id; });
+    var moving = ids[from];
+    state.liftOrder = E.moveItem(ids, from, to);
+    rebuildSession();
+
+    // 진행 중이었다면 보고 있던 종목을 계속 본다.
+    if (state.started) {
+      var at = state.lifts.findIndex(function (lift) { return lift.exercise.id === moving; });
+      if (at >= 0) state.liftCursor = at;
+    }
+    pushLog('순서 변경', '<b>' + (index.get(moving) ? index.get(moving).name : moving) +
+      '</b> ' + (to < from ? '위로' : '아래로') + ' 옮겼습니다.');
   }
 
   /**
