@@ -1990,7 +1990,6 @@
   }
 
   function chooseDay(templateIndex) {
-    var before = state.program.templates[currentTemplateIndex()];
     var after = state.program.templates[templateIndex];
     if (!after) return;
 
@@ -1998,18 +1997,52 @@
      * 날을 바꾸면 오늘 기록한 세트는 지운다. 다른 날의 종목이라 그대로
      * 두면 어느 세션에 속한 세트인지 알 수 없게 된다. 그래서 세트가
      * 있으면 먼저 물어본다.
+     *
+     * window.confirm은 쓰지 않는다. 앱이 iframe 안에서 돌면(아티팩트,
+     * 웹뷰, 일부 인앱 브라우저) 확인창이 뜨지도 않고 조용히 "취소"로
+     * 처리된다. 그러면 눌러도 아무 일이 안 일어난다 — 실제로 그랬다.
      */
     if (state.todaySets.length > 0) {
-      var ok = window.confirm(
-        '오늘 기록한 ' + state.todaySets.length + '세트가 지워집니다. ' + after.name + '로 바꿀까요?');
-      if (!ok) return;
-      state.todaySets = [];
+      confirmDayChange(templateIndex, after);
+      return;
     }
+    applyDayChange(templateIndex);
+  }
 
+  /** 기록이 지워진다는 걸 모달 안에서 묻는다. 브라우저 확인창을 쓰지 않는다. */
+  function confirmDayChange(templateIndex, after) {
+    var body = [
+      el('p', { class: 'asset-note', text:
+        '오늘 기록한 ' + state.todaySets.length + '세트가 지워집니다. ' +
+        withParticleJs(after.name, '은/는') + ' 다른 날이라 종목이 달라서, ' +
+        '기록을 남겨두면 어느 세션의 세트인지 알 수 없게 됩니다.' }),
+      el('div', { class: 'sheet-body' }, [
+        el('button', {
+          type: 'button', class: 'finish danger',
+          text: after.name + '로 바꾸고 기록 지우기',
+          onclick: function () { applyDayChange(templateIndex); },
+        }),
+        el('button', {
+          type: 'button', class: 'finish quiet', text: '그대로 두기',
+          onclick: openDayPicker,
+        }),
+      ]),
+    ];
+    openModal('기록이 지워집니다', after.name + '로 바꾸기', body);
+  }
+
+  function applyDayChange(templateIndex) {
+    var before = state.program.templates[currentTemplateIndex()];
+    var after = state.program.templates[templateIndex];
+    if (!after) return;
+
+    state.todaySets = [];
     state.dayOverride = templateIndex === scheduledTemplateIndex() ? null : templateIndex;
     state.started = false;
+    state.sessionClosed = false;
     state.liftCursor = 0;
     state.occupied = {};
+    state.sessionStartedAt = null;
     rebuildSession();
 
     var note = E.skipNote(before, after);
