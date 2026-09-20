@@ -1260,20 +1260,97 @@ input[type="search"] {
 .day-note.soon { color: var(--zone-hard); }
 .day-note.tired { color: var(--zone-over); }
 
+/* ── 시작 전: 위쪽 요약 카드 ────────────────────── */
+.stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; align-items: start; }
+.stat-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.stat-card.open { grid-column: 1 / -1; border-color: var(--accent); }
+.stat-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 11px 13px;
+  text-align: left;
+}
+/* 자리를 명시한다 — 자동 배치에 맡기면 캐럿이 앞으로 튀어나간다. */
+.stat-label { grid-column: 1; grid-row: 1; font-size: 11.5px; color: var(--muted); }
+.stat-value { grid-column: 1; grid-row: 2; display: flex; align-items: baseline; gap: 3px; }
+.stat-value b {
+  font-family: var(--mono); font-size: 21px; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+}
+.stat-value span { font-size: 12px; color: var(--muted); }
+.stat-caret { grid-column: 2; grid-row: 1 / 3; justify-self: end; align-self: center; font-size: 11px; color: var(--muted); }
+.stat-card.open .stat-caret { color: var(--accent); }
+.stat-body {
+  display: grid; gap: 10px;
+  padding: 11px 13px 13px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ── 시작 전: 종목 줄 ───────────────────────────── */
+/*
+ * 썸네일 자리. 촬영본이 들어오면 영상 첫 프레임이 되고, 그전까지는
+ * 그 종목을 하는 기구를 그려 둔다 — 어느 자리로 가야 하는지가 보인다.
+ */
+.lift-thumb {
+  width: 46px; height: 46px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+  flex: none;
+}
+.lift-thumb .thumb-art { width: 34px; height: 26px; }
+.lift-thumb.warm { font-size: 17px; color: var(--accent); }
+
+.row-menu {
+  border: 0; background: none; color: var(--muted);
+  font-size: 17px; line-height: 1; padding: 6px 2px 6px 8px;
+}
+.row-menu:hover { color: var(--accent); }
+
+.menu-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+  padding: 12px 13px;
+}
+.menu-row:first-child { border-top: 0; }
+.menu-row:hover { background: var(--surface-2); }
+.menu-row .detail { font-size: 15px; color: var(--muted); }
+
+.sheet-body.tight { padding: 0; }
+
 /* ── 오늘: 시작 전 목록 ─────────────────────────── */
 .plan-row {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 12px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border-top: 1px solid var(--line-soft);
 }
 .plan-row:first-child { border-top: 0; }
-.plan-no { font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.plan-main { display: grid; gap: 2px; min-width: 0; }
-.plan-main .name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13.5px; font-weight: 500; }
-.plan-sets { font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-main { display: grid; gap: 3px; min-width: 0; }
+/* 목록에서 제일 먼저 읽는 건 종목 이름이다. 버튼보다 크게 둔다. */
+.plan-main .name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 15px; font-weight: 600; }
+.plan-sets { font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .plan-done {
   font-family: var(--mono); font-size: 10.5px; color: var(--zone-ok);
   border: 1px solid currentColor; border-radius: 4px; padding: 1px 5px; white-space: nowrap;
@@ -2809,6 +2886,8 @@ input[type="search"] {
     timeFit: null,
     warmupOpen: {},
     doneOpen: {},
+    // 위쪽 요약 카드 중 펼쳐진 것. null이면 둘 다 접힘.
+    statOpen: null,
     gymQuery: '',
     maxTest: null,
     /*
@@ -4493,18 +4572,96 @@ input[type="search"] {
     return sets + '세트 · ' + load + ' · ' + reps;
   }
 
+  /**
+   * 종목 썸네일.
+   *
+   * 촬영본이 들어오면 여기가 영상 첫 프레임이 된다. 그전까지 빈 회색
+   * 네모를 두느니 그 종목을 하는 **기구**를 그려 둔다 — 목록에서 어느
+   * 자리로 가야 하는지가 바로 보이므로 자리만 채우는 그림이 아니다.
+   */
+  var EQUIPMENT_ART_FOR = {
+    barbell: 'barbell-set',
+    dumbbell: 'dumbbells',
+    machine: 'chest-press-machine',
+    cable: 'cable-station',
+    smith: 'smith-machine',
+    bodyweight: 'floor',
+  };
+
+  function liftThumb(exercise) {
+    var art = window.FitEquipmentArt;
+    var id = EQUIPMENT_ART_FOR[exercise.equipment];
+    var svg = art && id && art.has(id) ? art.render(id, '') : null;
+    var box = el('span', { class: 'lift-thumb', 'aria-hidden': 'true' }, []);
+    if (svg) { svg.setAttribute('class', 'thumb-art'); box.appendChild(svg); }
+    return box;
+  }
+
+  /** 위쪽 요약 카드 하나. 누르면 펼쳐진다. */
+  function statCard(key, label, value, unit, body) {
+    var open = state.statOpen === key;
+    var card = el('div', { class: 'stat-card' + (open ? ' open' : '') }, [
+      el('button', {
+        type: 'button', class: 'stat-head', 'aria-expanded': String(open),
+        onclick: function () { state.statOpen = open ? null : key; render(); },
+      }, [
+        el('span', { class: 'stat-label', text: label }),
+        el('span', { class: 'stat-value' }, [
+          el('b', { text: value }),
+          unit ? el('span', { text: unit }) : null,
+        ]),
+        el('span', { class: 'stat-caret', text: open ? '▴' : '▾' }),
+      ]),
+    ]);
+    if (open) card.appendChild(el('div', { class: 'stat-body' }, body()));
+    return card;
+  }
+
+  /** 컨디션 — 피로 점수를 뒤집어 보여준다. 지어낸 숫자가 아니다. */
+  function conditionPercent() {
+    var f = state.plan.fatigue;
+    if (!f || !f.threshold) return 100;
+    return Math.max(0, Math.min(100, Math.round((1 - f.score / f.threshold) * 100)));
+  }
+
   /** 시작 전 — 오늘 할 것 목록. */
   function renderPlanList() {
     var head = sessionHead();
     screen.appendChild(head.node);
 
-    renderTimeBudget(head.estimate);
+    var estimate = head.estimate;
+    var condition = conditionPercent();
+
+    screen.appendChild(el('div', { class: 'stat-row' }, [
+      statCard('time', '운동 시간',
+        String(state.timeBudget || estimate.totalMinutes), '분',
+        function () { return timeBudgetControls(estimate); }),
+      statCard('condition', '컨디션', String(condition), '%',
+        function () { return conditionDetail(); }),
+    ]));
+
     renderWarnings();
 
-    var list = el('div', { class: 'summary-list' }, state.lifts.map(function (lift, index) {
+    var rows = [];
+
+    // 워밍업은 종목이 아니라 준비라 맨 위에 한 줄로 둔다.
+    var warmupSets = state.lifts.reduce(function (sum, lift) {
+      return sum + (lift.warmup && lift.warmup.sets ? lift.warmup.sets.length : 0);
+    }, 0);
+    if (warmupSets > 0) {
+      rows.push(el('div', { class: 'plan-row' }, [
+        el('span', { class: 'lift-thumb warm', 'aria-hidden': 'true', text: '↗' }),
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name' }, [el('span', { text: '워밍업' })]),
+          el('span', { class: 'plan-sets', text: warmupSets + '세트 · 종목마다 자동' }),
+        ]),
+      ]));
+    }
+
+    state.lifts.forEach(function (lift) {
       var done = lift.sets.filter(function (set) { return set.done; }).length;
-      return el('div', { class: 'plan-row' }, [
-        el('span', { class: 'plan-no', text: String(index + 1) }),
+      rows.push(el('div', { class: 'plan-row' }, [
+        liftThumb(lift.exercise),
         el('span', { class: 'plan-main' }, [
           el('span', { class: 'name' }, [
             el('span', { text: lift.exercise.name }),
@@ -4514,22 +4671,21 @@ input[type="search"] {
           ]),
           el('span', { class: 'plan-sets', text: liftSummaryLine(lift) }),
         ]),
-        done > 0
-          ? el('span', { class: 'plan-done', text: done + '/' + lift.sets.length })
-          : el('button', {
-              type: 'button', class: 'demo-open', text: '시연',
-              'aria-label': lift.exercise.name + ' 동작 시연 보기',
-              onclick: function () { openDemo(lift.exercise); },
-            }),
-      ]);
-    }));
+        done > 0 ? el('span', { class: 'plan-done', text: done + '/' + lift.sets.length }) : null,
+        el('button', {
+          type: 'button', class: 'row-menu', text: '⋯',
+          'aria-label': lift.exercise.name + ' 더보기',
+          onclick: function () { openLiftMenu(lift); },
+        }),
+      ]));
+    });
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '오늘 할 것' }),
-        el('span', { class: 'meta', text: state.lifts.length + '개' }),
+        el('span', { class: 'meta', text: '총 ' + state.lifts.length + '개' }),
       ]),
-      el('div', { class: 'sheet-body' }, [list]),
+      el('div', { class: 'sheet-body tight' }, [el('div', { class: 'summary-list' }, rows)]),
     ]));
 
     renderMaxTest();
@@ -4554,6 +4710,42 @@ input[type="search"] {
 
     // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다.
     if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
+  }
+
+  /**
+   * 종목 한 줄의 더보기.
+   *
+   * 시연·사람 있어요·없어요를 목록에 다 늘어놓으면 줄마다 버튼이 셋이라
+   * 이름이 안 보인다. 한 곳에 모은다.
+   */
+  function openLiftMenu(lift) {
+    var entry = currentGymEntry() || { equipmentIds: [] };
+    var options = [
+      { label: '동작 시연', hint: '수행 큐 · 흔한 실수 · 쓰는 근육', run: function () { openDemo(lift.exercise); } },
+      { label: '사람 있어요', hint: '순서 변경 · 대체 · 대기 중에서 고릅니다', run: function () { openOccupancy(lift.exercise); } },
+    ];
+    if (E.equipmentBehind(lift.exercise, entry).length > 0) {
+      options.push({
+        label: '이 기구 없어요',
+        hint: '그 기구를 쓰는 종목이 한 번에 정리됩니다',
+        run: function () { openMissingEquipment(lift.exercise); },
+      });
+    }
+
+    openModal(lift.exercise.name, liftSummaryLine(lift), [
+      el('div', { class: 'summary-list' }, options.map(function (option) {
+        return el('button', {
+          type: 'button', class: 'menu-row',
+          onclick: option.run,
+        }, [
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: option.label }),
+            el('span', { class: 'plan-sets', text: option.hint }),
+          ]),
+          el('span', { class: 'detail', text: '›' }),
+        ]);
+      })),
+    ]);
   }
 
   /** 시작한 뒤 — 지금 할 종목 하나. */
@@ -5185,7 +5377,13 @@ input[type="search"] {
     render();
   }
 
-  function renderTimeBudget(estimate) {
+  /**
+   * 시간 조절 알맹이. 요약 카드를 펼치면 이게 나온다.
+   *
+   * 예전에는 화면에 늘 펼쳐진 시트였는데, 시작 전 화면에서 제일 중요한 건
+   * "오늘 뭘 하는가"라 목록이 먼저 와야 한다. 시간은 필요할 때만 연다.
+   */
+  function timeBudgetControls(estimate) {
     /*
      * 미리 정해둔 몇 개만 고르게 하면 "오늘은 37분밖에 없다"를 못 받는다.
      * 칩은 빠른 선택일 뿐이고, 실제 값은 직접 적는다.
@@ -5225,21 +5423,22 @@ input[type="search"] {
         onclick: function () { step(5); } }),
     ]);
 
-    var freeRow = el('div', { class: 'time-free' }, [
-      field,
-      el('button', {
-        type: 'button', class: 'pick',
-        'aria-pressed': String(state.timeBudget == null),
-        text: '제한 없음',
-        onclick: function () { applyTimeBudget(null); },
-      }),
-    ]);
-
-    var body = el('div', { class: 'sheet-body' }, [chips, freeRow]);
+    var out = [
+      chips,
+      el('div', { class: 'time-free' }, [
+        field,
+        el('button', {
+          type: 'button', class: 'pick',
+          'aria-pressed': String(state.timeBudget == null),
+          text: '제한 없음',
+          onclick: function () { applyTimeBudget(null); },
+        }),
+      ]),
+    ];
 
     if (state.timeFit) {
       var fit = state.timeFit;
-      body.appendChild(el('p', {
+      out.push(el('p', {
         class: 'hint-line' + (fit.fits ? '' : ' warn'),
         text: Math.round(fit.beforeSeconds / 60) + '분 → ' + Math.round(fit.afterSeconds / 60) + '분' +
           (fit.fits ? '' : ' (예산 초과)'),
@@ -5248,28 +5447,48 @@ input[type="search"] {
       var dropped = fit.adjustments.filter(function (a) { return a.action === 'drop'; });
       var trimmed = fit.adjustments.filter(function (a) { return a.action === 'trimSets'; });
       if (dropped.length > 0) {
-        body.appendChild(el('p', { class: 'hint-line', text:
+        out.push(el('p', { class: 'hint-line', text:
           '제외: ' + dropped.map(function (a) { return a.name; }).join(', ') }));
       }
       if (trimmed.length > 0) {
-        body.appendChild(el('p', { class: 'hint-line', text: '세트 축소 ' + trimmed.length + '건' }));
+        out.push(el('p', { class: 'hint-line', text: '세트 축소 ' + trimmed.length + '건' }));
       }
       fit.notes.forEach(function (note) {
-        body.appendChild(el('p', { class: 'hint-line', text: note }));
+        out.push(el('p', { class: 'hint-line', text: note }));
       });
     } else {
-      body.appendChild(el('p', { class: 'hint-line', text:
+      out.push(el('p', { class: 'hint-line', text:
         '분 단위로 직접 적으면 됩니다. 그 안에 들어오게 고립 운동부터 자르고 메인 복합 동작은 지킵니다. ' +
         '비워 두면 프로그램을 그대로 합니다.' }));
     }
 
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '오늘 운동 할 수 있는 시간' }),
-        el('span', { class: 'meta', text: '워밍업 · 휴식 포함' }),
-      ]),
-      body,
-    ]));
+    return out;
+  }
+
+  /**
+   * 컨디션 카드를 펼쳤을 때.
+   *
+   * 퍼센트 하나만 던지면 무슨 근거인지 모른다. 피로 신호를 그대로 보여준다 —
+   * 엔진이 이미 "왜"를 계산하고 있으므로 지어낼 것이 없다.
+   */
+  function conditionDetail() {
+    var f = state.plan.fatigue;
+    var out = [el('p', { class: 'hint-line', text:
+      '피로 점수 ' + f.score + ' / 디로드 기준 ' + f.threshold + '. 낮을수록 좋습니다.' })];
+
+    if (!f.signals || f.signals.length === 0) {
+      out.push(el('p', { class: 'hint-line', text: '잡힌 피로 신호가 없습니다.' }));
+    } else {
+      f.signals.forEach(function (signal) {
+        out.push(el('p', { class: 'hint-line', text: '· ' + signal.label }));
+      });
+    }
+
+    if (f.deloadRecommended) {
+      out.push(el('p', { class: 'hint-line warn', text:
+        '디로드 기준을 넘었습니다. 주간 탭에서 처방을 확인하세요.' }));
+    }
+    return out;
   }
 
   /** 워밍업 램프 — 본세트 중량에 맞춰 올라간다. 볼륨에는 세지 않는다. */
