@@ -2772,47 +2772,59 @@
     // 지금 몇 세트째인가. 다 했으면 "완료"라고 쓴다.
     var pending = lift.sets.filter(function (set) { return !set.done; }).length;
     var doneHere = lift.sets.length - pending;
-    var setPosition = pending > 0
-      ? { now: String(doneHere + 1), total: '/ ' + lift.sets.length }
-      : { now: '완료', total: '' };
+    var currentSet = null;
+    for (var c = 0; c < lift.sets.length; c += 1) {
+      if (!lift.sets[c].done) { currentSet = lift.sets[c]; break; }
+    }
+
+    /*
+     * 세트 줄은 카드가 아니라 머리띠에 둔다.
+     *
+     * 카드 안에 두었더니 화면이 짧은 폰에서는 RIR 버튼을 보려고 조금만
+     * 내려도 이 줄이 머리띠 밑으로 들어가 잘렸다. 기록할 때마다 자동으로
+     * 끌어올려도, 손으로 스크롤하면 또 가려진다 — 붙어 있는 머리띠 밑에
+     * 있는 한 언제든 가려질 수 있는 자리였다.
+     *
+     * 그래서 아예 머리띠 안으로 옮긴다. 몇 세트째인지와 그 세트의 처방은
+     * 어떻게 스크롤해도 화면에 남아야 하는 두 가지다.
+     */
+    var setLine = pending > 0 && currentSet
+      ? el('span', { class: 'progress-set' }, [
+          el('i', { text: '세트' }),
+          el('b', { text: String(doneHere + 1) }),
+          el('span', { text: '/ ' + lift.sets.length }),
+          el('em', { text: setPlanLine(currentSet) }),
+        ])
+      : el('span', { class: 'progress-set done' }, [
+          el('b', { text: lift.sets.length + '세트 완료' }),
+        ]);
 
     screen.appendChild(el('div', { class: 'progress-head' }, [
-      el('button', {
-        type: 'button', class: 'demo-open', text: '목록',
-        'aria-label': '오늘 할 것 목록으로',
-        onclick: function () { state.started = false; render(); },
-      }),
-      /*
-       * 종목과 세트를 둘 다 여기 둔다.
-       *
-       * 세트 수를 카드 안에 두었더니 스크롤하면 이 머리띠가 그 줄을
-       * 덮었다. 게다가 "2 / 5"(종목)와 "세트 1 / 5"가 한 화면에 같이
-       * 떠서 어느 게 어느 건지도 알 수 없었다. 라벨을 붙여 한곳에 모은다.
-       */
-      el('span', { class: 'progress-counts' }, [
+      el('div', { class: 'progress-top' }, [
+        el('button', {
+          type: 'button', class: 'demo-open', text: '목록',
+          'aria-label': '오늘 할 것 목록으로',
+          onclick: function () { state.started = false; render(); },
+        }),
         el('span', { class: 'progress-count' }, [
           el('i', { text: '종목' }),
           el('b', { text: String(position) }),
           el('span', { text: '/ ' + total }),
         ]),
-        el('span', { class: 'progress-count set' }, [
-          el('i', { text: '세트' }),
-          el('b', { text: setPosition.now }),
-          el('span', { text: setPosition.total }),
+        el('span', { class: 'progress-bar' }, [
+          el('i', { style: 'width:' + Math.round((position / total) * 100) + '%' }),
+        ]),
+        /*
+         * 운동한 지 얼마나 됐는지. 헬스장에서 제일 자주 하는 질문인데
+         * 폰 시계로는 "몇 시"만 알지 "얼마나 했는지"는 모른다.
+         */
+        // 숫자만 있으면 휴식 시간과 헷갈린다. 무엇을 재는 시계인지 붙여둔다.
+        el('span', { class: 'elapsed' }, [
+          el('i', { text: '운동' }),
+          el('span', { id: 'session-elapsed', text: elapsedText() }),
         ]),
       ]),
-      el('span', { class: 'progress-bar' }, [
-        el('i', { style: 'width:' + Math.round((position / total) * 100) + '%' }),
-      ]),
-      /*
-       * 운동한 지 얼마나 됐는지. 헬스장에서 제일 자주 하는 질문인데
-       * 폰 시계로는 "몇 시"만 알지 "얼마나 했는지"는 모른다.
-       */
-      // 숫자만 있으면 휴식 시간과 헷갈린다. 무엇을 재는 시계인지 붙여둔다.
-      el('span', { class: 'elapsed' }, [
-        el('i', { text: '운동' }),
-        el('span', { id: 'session-elapsed', text: elapsedText() }),
-      ]),
+      setLine,
     ]));
 
     renderWarnings();
@@ -2989,18 +3001,6 @@
     var body = [];
 
     /*
-     * 몇 세트를 하는 중이고, 그 세트는 뭘 하기로 했는가.
-     *
-     * 머리띠의 "세트 3 / 6"은 위치만 알려준다. 기구 앞에서 실제로 필요한
-     * 것은 "이번 세트는 105kg 6–10회"다. 세트마다 처방이 다를 수 있으니
-     * 세트마다 그 세트의 것을 쓴다.
-     */
-    body.push(el('div', { class: 'now-head' }, [
-      el('b', { text: (setIndex + 1) + '세트 진행중' }),
-      el('span', { text: setPlanLine(set) }),
-    ]));
-
-    /*
      * 중량과 반복은 직접 친다.
      *
      * ± 버튼만 두면 105에서 60으로 내리는 데 열여덟 번을 눌러야 한다.
@@ -3073,24 +3073,37 @@
       ]),
     ]));
 
-    var chips = el('div', { class: 'rir-row now-rir' }, [
+    /*
+     * 세트를 넘기는 버튼이 따로 없다는 게 문제였다. RIR 숫자를 누르면
+     * 기록되고 다음 세트로 가는데, 화면 어디에도 그 말이 없으니 "다음
+     * 세트로 어떻게 가느냐"가 된다. 누르기 전에 무슨 일이 일어나는지를
+     * 쓴다 — 버튼을 하나 더 두면 세트마다 탭이 한 번씩 는다.
+     */
+    var nextLabel = setIndex + 1 < lift.sets.length
+      ? (setIndex + 2) + '세트로 넘어갑니다'
+      : '이 종목을 마칩니다';
+    body.push(el('div', { class: 'rir-ask' }, [
+      el('b', { text: (setIndex + 1) + '세트 끝내기' }),
       el('span', {
-        class: 'rir-label',
-        title: 'RIR = 이 세트에서 몇 회 더 할 수 있었는지. 세트마다 기록합니다. 0 = 실패 지점.',
-        text: 'RIR',
+        title: 'RIR = 이 세트에서 몇 회 더 할 수 있었는지. 0 = 실패 지점.',
+        text: '몇 회 더 할 수 있었나요?',
       }),
-    ]);
+    ]));
+
+    var chips = el('div', { class: 'rir-row now-rir' }, []);
     [0, 1, 2, 3, 4].forEach(function (rir) {
       chips.appendChild(el('button', {
         type: 'button',
         class: 'chip' + (rir === 0 ? ' fail' : ''),
         'aria-pressed': 'false',
-        'aria-label': rir === 0 ? '실패 지점까지 수행' : '남은 반복 ' + rir + '회',
+        'aria-label': (rir === 0 ? '실패 지점까지 수행' : '남은 반복 ' + rir + '회') +
+          '으로 기록하고 ' + nextLabel,
         text: rir === 0 ? '실패' : String(rir),
         onclick: function () { completeSet(liftIndex, setIndex, rir); },
       }));
     });
     body.push(chips);
+    body.push(el('p', { class: 'hint-line', text: '누르면 기록되고 ' + nextLabel + '.' }));
 
     return el('div', { class: 'set-now' }, [
       el('div', { class: 'now-body' }, body),
@@ -3204,8 +3217,12 @@
      * 떠 있으면 끝난 종목 밑에 할 일이 남은 것처럼 보이고, 정작 다음
      * 행동인 완료 버튼을 화면 밖으로 밀어낸다.
      */
-    var pending = lift.sets.some(function (set) { return !set.done; });
-    if (pending) card.appendChild(renderTechniques(lift));
+    /*
+     * 진짜 마지막 세트일 때만 띄운다. "마지막 세트에 붙일 것"인데 1세트째부터
+     * 떠 있으면 화면 반을 먹고, 짧은 폰에서는 그만큼 RIR 버튼이 아래로 밀린다.
+     */
+    var left = lift.sets.filter(function (set) { return !set.done; }).length;
+    if (left === 1) card.appendChild(renderTechniques(lift));
     return card;
   }
 
