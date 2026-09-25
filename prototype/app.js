@@ -167,6 +167,8 @@
         dayOverride: state.dayOverride,
         liftOrder: state.liftOrder,
         supersets: state.supersets,
+        restBand: state.restBand,
+        restOverrides: state.restOverrides,
         wodResults: state.wodResults,
         sessionStartedAt: state.sessionStartedAt,
         gymBook: state.gymBook,
@@ -210,6 +212,8 @@
       state.dayOverride = settings.dayOverride == null ? null : settings.dayOverride;
       state.liftOrder = settings.liftOrder || null;
       state.supersets = settings.supersets || [];
+      state.restBand = settings.restBand || null;
+      state.restOverrides = settings.restOverrides || {};
       state.wodResults = settings.wodResults || [];
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
@@ -414,6 +418,14 @@
     supersets: [],
     // 지금 담는 중인 바퀴(종목 id 배열). 하나씩 눌러 담는 방식이다.
     supersetPick: [],
+    /*
+     * 휴식 띠. 숫자 하나가 아니라 띠인 이유는 rest.ts에 적어 두었다 —
+     * 어느 종목을 띠의 어디에 둘지는 계산이 맡고, 전체를 길게 갈지
+     * 짧게 갈지는 사람이 정한다.
+     */
+    restBand: null,
+    /* 종목별로 직접 정한 휴식(초). { 종목id: 초 } */
+    restOverrides: {},
     // 와드 설정. 길이와 바벨 여부가 성격을 크게 바꾼다.
     wodMinutes: 12,
     wodBarbell: false,
@@ -662,6 +674,9 @@
       var profile = E.styleProfile(state.style);
       state.timeFit = E.fitToTimeBudget(built, state.timeBudget, {
         restMultiplier: profile.restMultiplier,
+        // 휴식을 2분으로 늘렸는데 "50분이면 6종목"이라고 하면 거짓말이 된다
+        restBand: state.restBand || undefined,
+        restOverrides: state.restOverrides,
         allowShortRest: state.style === 'density',
       });
       built = state.timeFit.session;
@@ -928,11 +943,7 @@
 
     var timing = E.circuitTiming(
       members.map(function (item) { return item.lift.exercise; }),
-      E.restFor({
-        exercise: lift.exercise,
-        reps: lift.sets[0] ? lift.sets[0].reps : 10,
-        targetRir: lift.targetRir,
-      }).seconds,
+      E.restFor(restInput(lift, lift.sets[0] ? lift.sets[0].reps : 10, false)).seconds,
     );
     var label = E.groupLabel(group);
 
@@ -981,14 +992,21 @@
 
   /* ── 휴식 타이머 ───────────────────────────────── */
 
+  /** 지금 설정(띠 · 종목별 직접 지정)을 실은 휴식 계산 입력. */
+  function restInput(lift, reps, isLastSet) {
+    return {
+      exercise: lift.exercise,
+      reps: reps,
+      targetRir: lift.targetRir,
+      isLastSet: Boolean(isLastSet),
+      band: state.restBand || undefined,
+      overrideSeconds: state.restOverrides[lift.exercise.id],
+    };
+  }
+
   function startRest(lift, setIndex, override) {
     var isLast = setIndex === lift.sets.length - 1;
-    var prescription = E.restFor({
-      exercise: lift.exercise,
-      reps: lift.sets[setIndex].reps,
-      targetRir: lift.targetRir,
-      isLastSet: isLast,
-    });
+    var prescription = E.restFor(restInput(lift, lift.sets[setIndex].reps, isLast));
 
     /*
      * 슈퍼세트로 묶였으면 짝으로 넘어가는 동안만 쉰다. 한 바퀴를 마친
@@ -2137,6 +2155,8 @@
     });
     var estimate = E.estimateSessionTime(state.session, {
       restMultiplier: E.styleProfile(state.style).restMultiplier,
+      restBand: state.restBand || undefined,
+      restOverrides: state.restOverrides,
     });
     return {
       estimate: estimate,
@@ -2414,6 +2434,11 @@
         el('h3', { text: '오늘 할 것' }),
         el('span', { class: 'head-actions' }, [
           el('span', { class: 'meta', text: '총 ' + state.lifts.length + '개' }),
+          el('button', {
+            type: 'button', class: 'demo-open', text: '휴식',
+            title: '세트 간 휴식 시간을 정합니다',
+            onclick: openRestSettings,
+          }),
           el('button', {
             type: 'button', class: 'demo-open', text: '순서 변경',
             onclick: openReorder,
@@ -2756,6 +2781,11 @@
       { label: '동작 시연', hint: '수행 큐 · 흔한 실수 · 쓰는 근육', run: function () { openDemo(lift.exercise); } },
       { label: '사람 있어요', hint: '순서 변경 · 대체 · 대기 중에서 고릅니다', run: function () { openOccupancy(lift.exercise); } },
     ];
+    options.push({
+      label: '이 종목 휴식 시간',
+      hint: restOverrideHint(lift),
+      run: function () { openRestSettings(lift.exercise.id); },
+    });
     if (E.equipmentBehind(lift.exercise, entry).length > 0) {
       options.push({
         label: '이 기구 없어요',
@@ -2778,6 +2808,177 @@
         ]);
       })),
     ]);
+  }
+
+  /**
+   * 휴식 초를 정하는 줄.
+   *
+   * ±는 5초씩 움직인다 — 1초씩이면 1분을 고치는 데 예순 번을 눌러야 한다.
+   * 초만 쓰면 150이 몇 분인지 암산해야 하므로 mm:ss를 옆에 같이 쓴다.
+   */
+  function restBox(label, seconds, onChange) {
+    var set = function (next) { onChange(clamp(Math.round(next / 5) * 5, 10, 900)); };
+    return el('div', { class: 'rest-box' }, [
+      el('span', { class: 'rest-box-label' }, [
+        el('span', { text: label }),
+        el('span', { class: 'rest-box-clock', text: E.formatDuration(seconds) }),
+      ]),
+      el('div', { class: 'big-field small' }, [
+        el('button', { type: 'button', class: 'nudge', text: '−',
+          'aria-label': label + ' 휴식 5초 줄이기',
+          onclick: function () { set(seconds - 5); } }),
+        el('input', {
+          type: 'number', min: '10', max: '900', step: '5', inputmode: 'numeric',
+          class: 'big-input', value: String(seconds), 'aria-label': label + ' 휴식 (초)',
+          onfocus: function (event) { event.target.select(); },
+          onchange: function (event) {
+            var next = parseInt(event.target.value, 10);
+            set(Number.isFinite(next) ? next : seconds);
+          },
+        }),
+        el('span', { class: 'big-unit', text: '초' }),
+        el('button', { type: 'button', class: 'nudge', text: '+',
+          'aria-label': label + ' 휴식 5초 늘리기',
+          onclick: function () { set(seconds + 5); } }),
+      ]),
+    ]);
+  }
+
+  /** 이 종목의 휴식이 지금 몇 초인지 — 메뉴 줄에 그대로 쓴다. */
+  function restOverrideHint(lift) {
+    var fixed = state.restOverrides[lift.exercise.id];
+    var seconds = E.restFor(restInput(lift, lift.sets[0] ? lift.sets[0].reps : 10, false)).seconds;
+    return fixed != null
+      ? '직접 정함 · ' + E.formatDuration(seconds)
+      : '자동 ' + E.formatDuration(seconds) + ' · 직접 정할 수 있습니다';
+  }
+
+  /**
+   * 휴식 시간 설정.
+   *
+   * 숫자 하나가 아니라 **띠**를 받는다. "휴식 90초"로 고정하면 데드리프트도
+   * 90초, 레그 익스텐션도 90초가 된다 — 그건 휴식을 관리하는 게 아니라
+   * 안 하는 것이다. 띠를 주면 어느 종목을 띠의 어디에 둘지는 계산이 맡고,
+   * 전체를 길게 갈지 짧게 갈지는 사람이 정한다.
+   *
+   * 그래도 "이 종목만은 3분"이 있는 법이라, 종목별로 못 박는 길도 연다.
+   */
+  function openRestSettings(focusExerciseId) {
+    var draw = function () {
+      var band = E.normalizeBand(state.restBand);
+      var body = [];
+
+      body.push(el('p', { class: 'asset-note', text:
+        '휴식 범위를 정하면, 그 안에서 어느 종목을 얼마나 쉴지는 앱이 정합니다. ' +
+        '데드리프트는 위쪽, 고립 운동은 아래쪽입니다 — 한 숫자로 고정하면 둘이 같아집니다.' }));
+
+      // 미리 준비된 띠
+      var presets = el('div', { class: 'chip-row' }, E.REST_PRESETS.map(function (preset) {
+        var on = preset.band.minSeconds === band.minSeconds && preset.band.maxSeconds === band.maxSeconds;
+        return el('button', {
+          type: 'button', class: 'pick', 'aria-pressed': String(on),
+          title: preset.note,
+          text: preset.label + ' ' + E.describeBand(preset.band),
+          onclick: function () {
+            state.restBand = { minSeconds: preset.band.minSeconds, maxSeconds: preset.band.maxSeconds };
+            rebuildSession();
+            pushLog('휴식', '<b>' + preset.label + '</b> ' + E.describeBand(preset.band) + ' — ' + preset.note);
+            render();
+            draw();
+          },
+        });
+      }));
+      body.push(el('div', { class: 'sheet-body tight rest-presets' }, [presets]));
+
+      // 직접 치기
+      body.push(el('div', { class: 'rest-range' }, [
+        restBox('가장 짧게', band.minSeconds, function (value) {
+          state.restBand = E.normalizeBand({ minSeconds: value, maxSeconds: band.maxSeconds });
+          rebuildSession(); render(); draw();
+        }),
+        restBox('가장 길게', band.maxSeconds, function (value) {
+          state.restBand = E.normalizeBand({ minSeconds: band.minSeconds, maxSeconds: value });
+          rebuildSession(); render(); draw();
+        }),
+      ]));
+
+      /*
+       * 오늘 종목에 실제로 몇 초가 붙는지 바로 보여준다. 띠만 보여주면
+       * "1분 30초~2분 30초"가 내 벤치에 몇 초인지 알 수가 없다.
+       */
+      body.push(el('div', { class: 'list-label', text: '오늘 종목에 붙는 휴식' }));
+      body.push(el('div', { class: 'summary-list' }, state.lifts.map(function (lift) {
+        var fixed = state.restOverrides[lift.exercise.id];
+        var seconds = E.restFor(restInput(lift, lift.sets[0] ? lift.sets[0].reps : 10, false)).seconds;
+        return el('div', { class: 'rest-row' + (lift.exercise.id === focusExerciseId ? ' focus' : '') }, [
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: lift.exercise.name }),
+            el('span', { class: 'plan-sets', text: fixed != null ? '직접 정함' : '자동' }),
+          ]),
+          el('span', { class: 'rest-value', text: E.formatDuration(seconds) }),
+          el('button', {
+            type: 'button', class: 'demo-open',
+            text: fixed != null ? '자동으로' : '직접',
+            'aria-label': lift.exercise.name + (fixed != null ? ' 휴식을 자동으로 되돌리기' : ' 휴식 직접 정하기'),
+            onclick: function () {
+              if (fixed != null) {
+                delete state.restOverrides[lift.exercise.id];
+                pushLog('휴식', '<b>' + lift.exercise.name + '</b> 휴식을 자동으로 되돌렸습니다.');
+              } else {
+                state.restOverrides[lift.exercise.id] = seconds;
+              }
+              rebuildSession(); render(); draw();
+            },
+          }),
+        ]);
+      })));
+
+      // 직접 정한 종목만 숫자칸을 연다 — 전부 열면 화면이 숫자칸 밭이 된다
+      state.lifts.forEach(function (lift) {
+        var fixed = state.restOverrides[lift.exercise.id];
+        if (fixed == null) return;
+        body.push(restBox(lift.exercise.name, fixed, function (value) {
+          state.restOverrides[lift.exercise.id] = value;
+          rebuildSession(); render(); draw();
+        }));
+      });
+
+      /*
+       * 휴식을 늘리면 같은 시간에 들어가는 종목이 준다. 이건 숨기면 안 된다 —
+       * 종목이 조용히 사라지면 앱이 마음대로 바꾼 것처럼 보인다.
+       */
+      var estimate = E.estimateSessionTime(state.session, {
+        restMultiplier: E.styleProfile(state.style).restMultiplier,
+        restBand: state.restBand || undefined,
+        restOverrides: state.restOverrides,
+      });
+      body.push(el('p', { class: 'hint-line', text:
+        '지금 설정으로 오늘 ' + state.lifts.length + '종목 · 약 ' +
+        Math.round(estimate.totalSeconds / 60) + '분' +
+        (state.timeBudget ? ' (예산 ' + state.timeBudget + '분)' : '') }));
+
+      if (state.restBand || Object.keys(state.restOverrides).length > 0) {
+        body.push(el('button', {
+          type: 'button', class: 'demo-open wide', text: '기본값으로 되돌리기',
+          onclick: function () {
+            state.restBand = null;
+            state.restOverrides = {};
+            rebuildSession();
+            pushLog('휴식', '기본 띠(1:00~1:30)로 되돌렸습니다.');
+            render();
+            draw();
+          },
+        }));
+      }
+
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: '이대로 하기',
+        onclick: function () { modal.close(); render(); },
+      }));
+
+      openModal('휴식 시간', E.describeBand(band), body);
+    };
+    draw();
   }
 
   /** 시작한 뒤 — 지금 할 종목 하나. */

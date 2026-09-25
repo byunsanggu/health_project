@@ -1,5 +1,6 @@
 import { withParticle } from './korean.ts';
 import { restFor } from './rest.ts';
+import type { RestBand } from './rest.ts';
 import { planWarmup, warmedMusclesOf } from './warmup.ts';
 import type { PlannedExercise, PlannedSession } from './session.ts';
 import type { LoadingSpec } from './gym.ts';
@@ -26,6 +27,13 @@ export interface TimeOptions {
   transitionSeconds?: number;
   /** 블록 유형의 휴식 배율 */
   restMultiplier?: number;
+  /*
+   * 사용자가 정한 휴식 띠. 시간 계산에도 같이 넣어야 한다 — 휴식을 2분으로
+   * 늘렸는데 "50분이면 6종목" 이라고 하면 그 계산은 거짓말이 된다.
+   */
+  restBand?: RestBand;
+  /** 종목별로 직접 정한 휴식(초). 키는 종목 id. */
+  restOverrides?: Readonly<Record<string, number>>;
   /** 워밍업 시간을 포함할지 */
   includeWarmup?: boolean;
   /** 종목별 기구 명세 — 워밍업 중량 계산에 쓴다 */
@@ -86,8 +94,13 @@ export function estimateSessionTime(
     const reps = item.sets[0]?.targetReps.max ?? 10;
 
     const rest = Math.round(
-      restFor({ exercise: item.exercise, reps, targetRir: session.targetRir }).seconds *
-        config.restMultiplier,
+      restFor({
+        exercise: item.exercise,
+        reps,
+        targetRir: session.targetRir,
+        band: config.restBand,
+        overrideSeconds: config.restOverrides?.[item.exercise.id],
+      }).seconds * config.restMultiplier,
     );
 
     const work = sets * (reps * config.secondsPerRep + config.setupSeconds);

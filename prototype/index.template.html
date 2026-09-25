@@ -1411,6 +1411,29 @@ input[type="search"] {
   color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px;
 }
 
+/* ── 휴식 시간 설정 ─────────────────────────────── */
+.rest-presets { padding: 0; }
+.rest-presets .pick { padding: 7px 12px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.rest-range { display: grid; gap: 9px; }
+.rest-box { display: grid; gap: 4px; }
+.rest-box-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.rest-box-clock { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); }
+.rest-box .big-field { width: 100%; }
+/* 숫자칸이 남는 폭을 먹어야 한다 — 안 그러면 + 버튼 옆이 비어 보인다 */
+.rest-box .big-input { flex: 1 1 auto; width: auto; min-width: 0; }
+.rest-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px;
+  align-items: center; padding: 9px 12px; border-top: 1px solid var(--line-soft);
+}
+.rest-row:first-child { border-top: 0; }
+/* 종목 메뉴에서 들어왔을 때 그 줄이 어디인지 */
+.rest-row.focus { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.rest-row .demo-open { margin-left: 0; }
+.rest-value {
+  font-family: var(--mono); font-size: 15px; font-weight: 600;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
 /* ── 순서 변경 ──────────────────────────────────── */
 .head-actions { display: flex; align-items: center; gap: 8px; }
 .head-actions .demo-open { margin-left: 0; }
