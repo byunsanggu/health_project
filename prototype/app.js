@@ -166,6 +166,7 @@
         liftCursor: state.liftCursor,
         dayOverride: state.dayOverride,
         liftOrder: state.liftOrder,
+        supersets: state.supersets,
         sessionStartedAt: state.sessionStartedAt,
         gymBook: state.gymBook,
         consent: state.consent,
@@ -207,6 +208,7 @@
       state.liftCursor = settings.liftCursor || 0;
       state.dayOverride = settings.dayOverride == null ? null : settings.dayOverride;
       state.liftOrder = settings.liftOrder || null;
+      state.supersets = settings.supersets || [];
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
@@ -403,6 +405,14 @@
      * 세션이 다시 짜여도 유지된다 — 시간을 줄였다고 순서가 돌아가면 안 된다.
      */
     liftOrder: null,
+    /* 슈퍼세트로 묶은 짝들. [[종목id, 종목id], ...] */
+    supersets: [],
+    // 짝을 고르는 중인 종목 id. 하나 누르고 하나 더 누르는 방식이다.
+    supersetPick: null,
+    // 와드 설정. 길이와 바벨 여부가 성격을 크게 바꾼다.
+    wodMinutes: 12,
+    wodBarbell: false,
+    conditioningFormat: null,
     gymQuery: '',
     maxTest: null,
     /*
@@ -652,10 +662,24 @@
      * 직접 바꾼 순서를 여기서 적용한다. 워밍업을 계산하기 **전**이어야
      * 한다 — "앞 종목이 데운 부위는 짧게"가 순서에 달려 있다.
      */
+    /*
+     * 종목이 교체되거나 빠지면 짝이 깨진다. 한쪽만 남은 슈퍼세트는
+     * 그냥 단일 종목이므로 버린다.
+     */
+    var presentIds = built.exercises.map(function (item) { return item.exercise.id; });
+    state.supersets = E.pruneGroups(state.supersets, presentIds);
+
+    var ordered = E.applyOrder(built.exercises, state.liftOrder, function (item) {
+      return item.exercise.id;
+    });
+    /*
+     * 묶은 짝은 나란히 놓는다 — 떨어져 있으면 번갈아 할 수가 없다.
+     * 순서를 적용한 뒤에 해야 사용자가 앞에 둔 것이 앞에 남는다.
+     */
+    var laid = E.orderWithGroups(
+      ordered.map(function (item) { return item.exercise.id; }), state.supersets);
     built = Object.assign({}, built, {
-      exercises: E.applyOrder(built.exercises, state.liftOrder, function (item) {
-        return item.exercise.id;
-      }),
+      exercises: E.applyOrder(ordered, laid, function (item) { return item.exercise.id; }),
     });
     state.session = built;
 
@@ -764,7 +788,17 @@
     }
 
     updateDecision(lift);
-    startRest(lift, setIndex);
+
+    /*
+     * 슈퍼세트로 묶였으면 짝과 번갈아 간다.
+     *
+     * A1 → (짧게) → B1 → (원래 휴식) → A2 → ... 가 한 바퀴다. 끝낸 세트
+     * 수를 비교해서 짝이 덜 했으면 짝으로 넘어가고, 같으면 한 바퀴가
+     * 끝난 것이므로 제대로 쉰다.
+     */
+    var pairState = supersetTurn(lift, liftIndex);
+    startRest(lift, setIndex, pairState ? pairState.rest : null);
+    if (pairState && pairState.nextIndex >= 0) state.liftCursor = pairState.nextIndex;
 
     /*
      * 그 종목의 세트를 다 했으면 다음 종목으로 옮겨준다.
@@ -778,7 +812,8 @@
      */
     var remaining = lift.sets.filter(function (item) { return !item.done; }).length;
     var wantsMore = lift.decision && lift.decision.verdict === 'continue';
-    if (state.started && remaining === 0 && !wantsMore && liftIndex < state.lifts.length - 1) {
+    // 짝이 아직 남았으면 위에서 이미 그쪽으로 옮겼다. 여기서 또 건드리지 않는다.
+    if (!pairState && state.started && remaining === 0 && !wantsMore && liftIndex < state.lifts.length - 1) {
       state.liftCursor = liftIndex + 1;
       var nextName = state.lifts[liftIndex + 1].exercise.name;
       pushLog('다음 종목',
@@ -829,6 +864,61 @@
     }
   }
 
+  /**
+   * 슈퍼세트에서 지금 어디로 가야 하는가.
+   *
+   * 묶이지 않았으면 null — 평소대로 간다.
+   */
+  function supersetTurn(lift, liftIndex) {
+    if (!state.started) return null;
+    var group = E.groupOf(state.supersets, lift.exercise.id);
+    if (!group) return null;
+
+    var partnerId = group[0] === lift.exercise.id ? group[1] : group[0];
+    var partnerIndex = -1;
+    for (var i = 0; i < state.lifts.length; i += 1) {
+      if (state.lifts[i].exercise.id === partnerId) { partnerIndex = i; break; }
+    }
+    var partner = state.lifts[partnerIndex];
+    if (!partner) return null;
+
+    var doneHere = lift.sets.filter(function (set) { return set.done; }).length;
+    var donePartner = partner.sets.filter(function (set) { return set.done; }).length;
+    var partnerLeft = partner.sets.some(function (set) { return !set.done; });
+
+    var timing = E.supersetTiming(lift.exercise, partner.exercise, E.restFor({
+      exercise: lift.exercise,
+      reps: lift.sets[0] ? lift.sets[0].reps : 10,
+      targetRir: lift.targetRir,
+    }).seconds);
+
+    // 짝이 덜 했으면 지금 넘어간다 — 사이 휴식만 쉰다
+    if (partnerLeft && donePartner < doneHere) {
+      return {
+        nextIndex: partnerIndex,
+        rest: {
+          seconds: timing.betweenSeconds,
+          reason: '슈퍼세트 — ' + withParticleJs(partner.exercise.name, '으로/로') +
+            ' 옮기는 동안만 쉽니다.',
+        },
+      };
+    }
+
+    // 한 바퀴가 끝났다. 제대로 쉬고 짝(다음 차례)으로 간다.
+    if (partnerLeft) {
+      return {
+        nextIndex: partnerIndex,
+        rest: {
+          seconds: timing.afterSeconds,
+          reason: '슈퍼세트 한 바퀴를 마쳤습니다. 여기서는 제대로 쉽니다.',
+        },
+      };
+    }
+
+    // 짝도 다 했으면 평소대로
+    return null;
+  }
+
   function addSet(lift) {
     var last = lift.sets[lift.sets.length - 1];
     lift.sets.push({
@@ -847,7 +937,7 @@
 
   /* ── 휴식 타이머 ───────────────────────────────── */
 
-  function startRest(lift, setIndex) {
+  function startRest(lift, setIndex, override) {
     var isLast = setIndex === lift.sets.length - 1;
     var prescription = E.restFor({
       exercise: lift.exercise,
@@ -856,12 +946,19 @@
       isLastSet: isLast,
     });
 
+    /*
+     * 슈퍼세트로 묶였으면 짝으로 넘어가는 동안만 쉰다. 한 바퀴를 마친
+     * 뒤에는 원래 휴식을 그대로 쓴다 — 거기서 깎으면 뒤 세트가 무너진다.
+     */
+    var seconds = override ? override.seconds : prescription.seconds;
+    var reason = override ? override.reason : prescription.reason;
+
     state.rest = {
       exerciseName: lift.exercise.name,
       setNumber: setIndex + 1,
-      total: prescription.seconds,
-      endsAt: Date.now() + prescription.seconds * 1000,
-      reason: prescription.reason,
+      total: seconds,
+      endsAt: Date.now() + seconds * 1000,
+      reason: reason,
     };
 
     if (state.restTicker) clearInterval(state.restTicker);
@@ -2055,8 +2152,9 @@
     if (!after) return;
 
     state.todaySets = [];
-    // 다른 날은 종목이 아예 다르다. 앞 날의 순서를 끌고 가면 안 된다.
+    // 다른 날은 종목이 아예 다르다. 앞 날의 순서와 묶음을 끌고 가면 안 된다.
     state.liftOrder = null;
+    state.supersets = [];
     state.dayOverride = templateIndex === scheduledTemplateIndex() ? null : templateIndex;
     state.started = false;
     state.sessionClosed = false;
@@ -2215,6 +2313,10 @@
             type: 'button', class: 'demo-open', text: '순서 변경',
             onclick: openReorder,
           }),
+          el('button', {
+            type: 'button', class: 'demo-open', text: '슈퍼세트',
+            onclick: openSupersets,
+          }),
         ]),
       ]),
       el('div', { class: 'sheet-body tight' }, [el('div', { class: 'summary-list' }, rows)]),
@@ -2242,6 +2344,125 @@
 
     // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다.
     if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
+  }
+
+  /**
+   * 슈퍼세트 묶기.
+   *
+   * 두 종목을 번갈아 하면 한쪽이 쉬는 동안 다른 쪽을 한다. 같은 볼륨을
+   * 더 짧은 시간에 끝내므로, 이 앱이 이미 받고 있는 "오늘 40분밖에
+   * 없다"에 대한 제일 직접적인 답이다.
+   *
+   * 고르는 방식은 "하나 누르고 하나 더 누르기"다. 끌어다 겹치는 방식은
+   * 땀난 손으로 안 되고, 체크박스 두 개는 무엇과 무엇이 묶이는지 안 보인다.
+   */
+  function openSupersets() {
+    var draw = function () {
+      var body = [];
+
+      body.push(el('p', { class: 'asset-note', text:
+        '두 종목을 번갈아 합니다. 같은 볼륨을 더 짧은 시간에 끝냅니다 — ' +
+        '다만 한 바퀴를 마친 뒤에는 원래대로 쉽니다. 거기서 휴식을 깎으면 뒤 세트가 무너집니다.' }));
+
+      if (state.supersetPick) {
+        var picked = index.get(state.supersetPick);
+        body.push(el('div', { class: 'notice' }, [
+          el('div', { class: 'label', text: '짝 고르기' }),
+          el('div', { text: withParticleJs(picked ? picked.name : state.supersetPick, '과/와') +
+            ' 묶을 종목을 고르세요.' }),
+        ]));
+      }
+
+      body.push(el('div', { class: 'summary-list' }, state.lifts.map(function (lift) {
+        var id = lift.exercise.id;
+        var group = E.groupOf(state.supersets, id);
+        var picking = state.supersetPick;
+        var isPicked = picking === id;
+
+        // 짝 고르는 중이면 그 종목과 묶을 수 있는지 미리 본다
+        var check = picking && !isPicked && index.get(picking)
+          ? E.checkPair(index.get(picking), lift.exercise)
+          : null;
+
+        var partner = group
+          ? index.get(group[0] === id ? group[1] : group[0])
+          : null;
+
+        return el('button', {
+          type: 'button',
+          class: 'pair-row' + (isPicked ? ' picking' : '') + (group ? ' paired' : '') +
+            (check && !check.allowed ? ' blocked' : ''),
+          disabled: check && !check.allowed ? '' : null,
+          onclick: function () { pickForSuperset(id); },
+        }, [
+          el('span', { class: 'pair-mark', text: group ? '⛓' : (isPicked ? '●' : '') }),
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: lift.exercise.name }),
+            el('span', { class: 'plan-sets', text:
+              partner ? '⛓ ' + withParticleJs(partner.name, '과/와') + ' 묶임'
+                : check ? check.reason
+                : liftSummaryLine(lift) }),
+          ]),
+          group ? el('span', { class: 'detail', text: '풀기' }) : null,
+        ]);
+      })));
+
+      if (state.supersets.length > 0) {
+        var saved = state.supersets.reduce(function (sum, group) {
+          var a = index.get(group[0]);
+          var b = index.get(group[1]);
+          if (!a || !b) return sum;
+          var lift = state.lifts.filter(function (item) { return item.exercise.id === group[0]; })[0];
+          var rounds = lift ? lift.sets.length : 3;
+          var rest = lift && lift.restSeconds ? lift.restSeconds : 70;
+          return sum + E.supersetTiming(a, b, rest).savedSeconds * rounds;
+        }, 0);
+        if (saved > 0) {
+          body.push(el('p', { class: 'hint-line', text:
+            '묶은 ' + state.supersets.length + '쌍으로 약 ' + Math.round(saved / 60) + '분 줄었습니다.' }));
+        }
+      }
+
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: '이대로 하기',
+        onclick: function () { state.supersetPick = null; modal.close(); render(); },
+      }));
+
+      openModal('슈퍼세트', state.supersets.length + '쌍', body);
+    };
+    draw();
+
+    function pickForSuperset(id) {
+      var group = E.groupOf(state.supersets, id);
+      if (group) {
+        // 이미 묶여 있으면 푼다
+        state.supersets = state.supersets.filter(function (item) { return item !== group; });
+        state.supersetPick = null;
+        rebuildSession();
+        pushLog('슈퍼세트', '묶음을 풀었습니다.');
+        render();
+        return draw();
+      }
+      if (!state.supersetPick) {
+        state.supersetPick = id;
+        return draw();
+      }
+      if (state.supersetPick === id) {
+        state.supersetPick = null;
+        return draw();
+      }
+
+      var a = index.get(state.supersetPick);
+      var b = index.get(id);
+      if (!a || !b || !E.checkPair(a, b).allowed) return draw();
+
+      state.supersets = state.supersets.concat([[state.supersetPick, id]]);
+      state.supersetPick = null;
+      rebuildSession();
+      pushLog('슈퍼세트', '<b>' + a.name + '</b> + <b>' + b.name + '</b> — ' + E.checkPair(a, b).reason);
+      render();
+      draw();
+    }
   }
 
   /**
@@ -2673,6 +2894,13 @@
       nameRow.appendChild(el('span', { class: 'occupied-tag', text: '뒤로 미룸' }));
     }
 
+    // 묶인 종목이면 짝을 알려준다 — 번갈아 하는 중이라는 걸 화면이 말해야 한다.
+    var pair = E.groupOf(state.supersets, lift.exercise.id);
+    if (pair) {
+      var mate = index.get(pair[0] === lift.exercise.id ? pair[1] : pair[0]);
+      nameRow.appendChild(el('span', { class: 'pair-tag', text: '⛓ ' + (mate ? mate.name : '슈퍼세트') }));
+    }
+
     if (lift.startingLoad && lift.startingLoad.needsCalibration) {
       nameRow.appendChild(el('span', {
         class: 'est-tag',
@@ -2940,6 +3168,45 @@
 
   var CONDITIONING_FORMATS = ['amrap', 'emom', 'forTime', 'circuit'];
 
+  /** 오늘 근력 세션이 쓰는 부위. 와드는 여기를 피한다. */
+  function wodAvoid() {
+    var out = [];
+    state.lifts.forEach(function (lift) {
+      var muscle = E.primaryMuscle(lift.exercise);
+      if (muscle && out.indexOf(muscle) < 0) out.push(muscle);
+    });
+    return out;
+  }
+
+  /**
+   * 와드 한 판을 만든다.
+   *
+   * 몸풀기가 같이 나온다. 근력 세션의 워밍업은 종목마다 본세트 중량에
+   * 맞춰 올라가는 램프지만, 와드는 시작하자마자 최대 강도로 들어간다 —
+   * 들어가기 전에 다 풀려 있어야 하고, 와드 중간에는 풀 시간이 없다.
+   */
+  function buildWod(format, todayMuscles) {
+    var gym = currentGymEntry();
+    state.conditioning = E.buildWodSession({
+      format: format,
+      minutes: state.wodMinutes,
+      level: state.lifter.level,
+      equipmentIds: gym ? gym.equipmentIds : E.COMMON_EQUIPMENT_IDS,
+      pain: activePain(),
+      avoidMuscles: todayMuscles || [],
+      allowBarbell: state.wodBarbell,
+      standalone: !todayMuscles || todayMuscles.length === 0,
+    });
+    state.conditioningFormat = format;
+
+    var w = state.conditioning.workout;
+    pushLog('컨디셔닝', '<b>' + w.label + ' ' + w.durationMinutes + '분</b> — 몸풀기 ' +
+      state.conditioning.warmup.minutes + '분 포함 총 ' + state.conditioning.totalMinutes +
+      '분. 피로 ' + w.fatigueLoad + '세트분' +
+      (todayMuscles && todayMuscles.length ? ' · 오늘 근력 세션과 겹치는 부위를 피했습니다' : ''));
+    render();
+  }
+
   function renderConditioning() {
     var body = el('div', { class: 'sheet-body' }, []);
 
@@ -2954,20 +3221,51 @@
             var muscle = E.primaryMuscle(lift.exercise);
             if (muscle && todayMuscles.indexOf(muscle) < 0) todayMuscles.push(muscle);
           });
-          state.conditioning = E.buildConditioning({
-            format: format, minutes: 12, level: state.lifter.level,
-            equipmentIds: currentGymEntry() ? currentGymEntry().equipmentIds : E.COMMON_EQUIPMENT_IDS,
-            pain: activePain(), avoidMuscles: todayMuscles,
-          });
-          pushLog('컨디셔닝', '<b>' + state.conditioning.label + ' ' + state.conditioning.durationMinutes +
-            '분</b> — 오늘 근력 세션과 겹치는 부위를 피해 구성했습니다. 피로 ' + state.conditioning.fatigueLoad + '세트분');
-          render();
+          buildWod(format, todayMuscles);
         },
       });
     })));
 
+    /* 길이와 바벨 여부. 둘 다 와드의 성격을 크게 바꾼다. */
+    var options = el('div', { class: 'chip-row' }, []);
+    [8, 12, 16, 20].forEach(function (minutes) {
+      options.appendChild(el('button', {
+        type: 'button', class: 'pick', 'aria-pressed': String(state.wodMinutes === minutes),
+        text: minutes + '분',
+        onclick: function () {
+          state.wodMinutes = minutes;
+          if (state.conditioningFormat) buildWod(state.conditioningFormat, wodAvoid());
+          else render();
+        },
+      }));
+    });
+    options.appendChild(el('button', {
+      type: 'button', class: 'pick', 'aria-pressed': String(state.wodBarbell),
+      text: '바벨 넣기',
+      title: '데드리프트 같은 바벨 동작을 넣습니다. 무게를 낮게 잡아야 합니다.',
+      onclick: function () {
+        state.wodBarbell = !state.wodBarbell;
+        if (state.conditioningFormat) buildWod(state.conditioningFormat, wodAvoid());
+        else render();
+      },
+    }));
+    body.appendChild(options);
+
     if (state.conditioning) {
-      var workout = state.conditioning;
+      var session = state.conditioning;
+      var workout = session.workout;
+
+      body.appendChild(el('p', { class: 'hint-line', text:
+        '총 ' + session.totalMinutes + '분 — 몸풀기 ' + session.warmup.minutes +
+        '분 + ' + workout.label + ' ' + workout.durationMinutes + '분' }));
+
+      // 몸풀기 — 와드 앞에 와야 하는 것이라 와드보다 먼저 그린다
+      body.appendChild(el('div', { class: 'list-label', text: '몸풀기 ' + session.warmup.minutes + '분' }));
+      body.appendChild(el('ul', { class: 'cue-list' }, session.warmup.steps.map(function (step) {
+        return el('li', {}, [el('span', { text: step })]);
+      })));
+
+      body.appendChild(el('div', { class: 'list-label', text: workout.label }));
       body.appendChild(el('p', { class: 'hint-line', text: workout.description + ' · ' + workout.scoring }));
 
       var moves = el('div', { class: 'delta-list' }, []);
@@ -2979,12 +3277,20 @@
         ]));
       });
       body.appendChild(moves);
+
+      session.cautions.forEach(function (caution) {
+        body.appendChild(el('div', { class: 'notice stop' }, [
+          el('div', { class: 'label', text: '주의' }),
+          el('div', { text: caution }),
+        ]));
+      });
+
       workout.notes.forEach(function (note) {
         body.appendChild(el('p', { class: 'hint-line', text: note }));
       });
       body.appendChild(el('button', {
         type: 'button', class: 'pick', text: '지우기',
-        onclick: function () { state.conditioning = null; render(); },
+        onclick: function () { state.conditioning = null; state.conditioningFormat = null; render(); },
       }));
     } else {
       body.appendChild(el('p', { class: 'hint-line', text:

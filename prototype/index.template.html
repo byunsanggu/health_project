@@ -1337,6 +1337,37 @@ input[type="search"] {
 
 .sheet-body.tight { padding: 0; }
 
+/* ── 슈퍼세트 ───────────────────────────────────── */
+.pair-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+  padding: 11px 12px;
+}
+.pair-row:first-child { border-top: 0; }
+.pair-row:hover:not([disabled]) { background: var(--surface-2); }
+/* 지금 짝을 고르는 중인 종목 */
+.pair-row.picking { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+/* 이미 묶인 종목 */
+.pair-row.paired { background: var(--surface-2); }
+/* 묶을 수 없는 조합 — 이유는 줄 안에 적힌다 */
+.pair-row.blocked { opacity: .55; cursor: default; }
+.pair-row.blocked .plan-sets { color: var(--zone-over); }
+.pair-mark { font-size: 13px; color: var(--accent); }
+.pair-row .detail { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+
+/* 진행 화면에서 묶인 종목임을 알린다 */
+.pair-tag {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
+  color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px;
+}
+
 /* ── 순서 변경 ──────────────────────────────────── */
 .head-actions { display: flex; align-items: center; gap: 8px; }
 .head-actions .demo-open { margin-left: 0; }
@@ -1556,6 +1587,8 @@ input[type="search"] {
       <h2>무엇을 보면 되나</h2>
       <div class="readme">
         <ol>
+          <li><b>슈퍼세트</b>로 두 종목을 묶어 보세요. 길항근(벤치+풀업)은 권하고, <b>허리가 실리는 둘(데드+로우)은 막습니다.</b> 묶으면 진행 화면이 번갈아 갑니다 — 사이에는 20초만 쉬고 <b>한 바퀴를 마친 뒤에는 원래대로 쉽니다.</b> 거기서 깎으면 뒤 세트가 무너집니다.</li>
+          <li><b>컨디셔닝</b>은 와드 한 판입니다. <b>몸풀기가 같이 나옵니다</b> — 와드는 시작하자마자 최대 강도로 들어가니까요. <b>바벨 넣기</b>를 켜면 데드리프트 같은 동작이 들어가는데, 초보에게는 안 열리고 무게 상한과 형식 주의가 같이 나갑니다.</li>
           <li><b>순서 변경</b>으로 종목 차례를 바꿀 수 있습니다. 막지 않지만, <b>허리가 지친 상태에서 데드리프트를 하게 되는</b> 순서면 경고합니다 — 가슴 선피로처럼 의도적인 기법은 참고로만 알립니다. 워밍업도 새 순서에 맞춰 다시 잡히고, 시간을 줄여 종목이 바뀌어도 순서는 유지됩니다.</li>
           <li>오늘 할 날이 마음에 안 들면 <b>제목(하체 B)을 눌러</b> 바꾸세요. 상체를 하고 싶은 날이 있습니다. 막지 않고, 그 부위를 마지막으로 언제 했는지만 알려줍니다 — <b>어제 가슴을 했습니다</b>처럼요. 건너뛴 날은 없어지지 않고 다음으로 밀립니다.</li>
           <li><b>오늘</b> 탭은 <b>시작하기</b>를 누르기 전까지 목록만 보여줍니다. 누르면 <b>한 종목씩</b> 나옵니다 — 헬스장에서 필요한 건 "지금 이거" 하나이고, 일곱 개가 한 화면에 깔려 있으면 시작하기 전에 지칩니다. 위의 <b>목록</b>으로 언제든 전체를 다시 봅니다.</li>

@@ -75,6 +75,17 @@ const UNSAFE_FOR_TIME = new Set([
 /** 반복이 아니라 버티는 시간으로 세는 동작. */
 const ISOMETRIC = new Set(['plank', 'side-plank']);
 
+/**
+ * 와드에 흔히 쓰이는 바벨 동작.
+ *
+ * 크로스핏 표준 와드에 실제로 들어가는 것만 골랐다. 여기 없는 바벨 동작은
+ * 바벨을 켜도 안 들어간다 — "바벨 허용"이 아무거나 넣어도 된다는 뜻은
+ * 아니다.
+ */
+const WOD_BARBELL = [
+  'conventional-deadlift', 'sumo-deadlift', 'front-squat', 'barbell-overhead-press',
+];
+
 /** 컨디셔닝에 잘 맞는 동작 — 배우기 쉽고 반복해도 자세가 덜 무너진다. */
 const PREFERRED = [
   'goblet-squat', 'walking-lunge', 'step-up', 'bulgarian-split-squat',
@@ -96,6 +107,17 @@ export interface ConditioningInput {
   avoidMuscles?: readonly MuscleGroup[];
   bodyweightKg?: number;
   pool?: readonly Exercise[];
+  /**
+   * 바벨 동작을 넣을 것인가.
+   *
+   * 기본은 끔이다. 시간에 쫓기면서 하는 바벨 동작은 자세가 먼저 무너지고,
+   * 무너지는 곳이 하필 허리다.
+   *
+   * 다만 데드리프트를 넣은 와드는 크로스핏에서 표준이다(Diane, DT). 코치가
+   * 붙어 있고 무게를 낮게 잡으면 성립한다. 그래서 막지는 않되 켜야만
+   * 들어가고, 켜면 무게 상한과 주의가 같이 나간다.
+   */
+  allowBarbell?: boolean;
 }
 
 /** 동작 수 — 시간이 길수록 늘리되 다섯을 넘기지 않는다. 외우지 못하면 못 한다. */
@@ -113,18 +135,32 @@ export function buildConditioning(input: ConditioningInput): ConditioningWorkout
   const pain = input.pain ?? [];
   const avoid = new Set(input.avoidMuscles ?? []);
 
+  /*
+   * 바벨을 켜도 초보에게는 열지 않는다. 자세가 무너지는 걸 스스로
+   * 알아차리지 못하는 단계에서 시간에 쫓기게 하면 안 된다.
+   */
+  const barbellOn = Boolean(input.allowBarbell) && input.level !== 'beginner';
+
   const safe = available
-    .filter((exercise) => !UNSAFE_FOR_TIME.has(exercise.id))
+    .filter((exercise) => barbellOn || !UNSAFE_FOR_TIME.has(exercise.id))
     .filter((exercise) => screenExercise(exercise, pain).action === 'allow')
     .filter((exercise) => {
       // 초보에게는 기술 요구가 높은 동작을 빼고 관절 부하도 낮게 잡는다.
       const maxStress = Math.max(0, ...Object.values(exercise.jointStress));
-      return input.level === 'beginner' ? maxStress <= 0.5 : maxStress <= 0.65;
+      const ceiling = input.level === 'beginner' ? 0.5 : barbellOn ? 0.95 : 0.65;
+      return maxStress <= ceiling;
     })
-    .map((exercise) => ({
-      exercise,
-      score: PREFERRED.indexOf(exercise.id) >= 0 ? 10 - PREFERRED.indexOf(exercise.id) * 0.2 : 0,
-    }))
+    .map((exercise) => {
+      const preferred = PREFERRED.indexOf(exercise.id);
+      if (preferred >= 0) return { exercise, score: 10 - preferred * 0.2 };
+      /*
+       * 바벨을 켰으면 와드에 흔히 쓰이는 바벨 동작만 후보로 올린다.
+       * 점수를 낮게 줘서 맨몸·덤벨 동작이 먼저 차게 한다 — 바벨은
+       * 한 와드에 하나면 충분하다.
+       */
+      if (barbellOn && WOD_BARBELL.indexOf(exercise.id) >= 0) return { exercise, score: 3 };
+      return { exercise, score: 0 };
+    })
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score);
 
@@ -142,7 +178,26 @@ export function buildConditioning(input: ConditioningInput): ConditioningWorkout
   const usedMuscles = new Set<MuscleGroup>();
   const usedRegions = new Map<string, number>();
 
+  /*
+   * 바벨을 켰으면 한 자리를 먼저 잡아 둔다.
+   *
+   * 점수만 믿으면 안 들어간다 — 맨몸·덤벨 동작이 점수가 높아 자리를 다
+   * 채우기 때문이다. "바벨 허용"을 켠 사람은 바벨이 들어간 와드를 원한
+   * 것이므로, 한 자리는 확보하고 나머지를 채운다. 한 와드에 바벨은
+   * 하나면 충분하다.
+   */
+  if (barbellOn) {
+    const barbellPick = candidates.find((entry) => WOD_BARBELL.indexOf(entry.exercise.id) >= 0);
+    if (barbellPick) {
+      picked.push(barbellPick.exercise);
+      const primary = primaryOf(barbellPick.exercise);
+      if (primary) usedMuscles.add(primary);
+      usedRegions.set(regionOf(barbellPick.exercise), 1);
+    }
+  }
+
   for (const entry of candidates) {
+    if (picked.indexOf(entry.exercise) >= 0) continue;
     if (picked.length >= wanted) break;
     const primary = primaryOf(entry.exercise);
     if (primary && usedMuscles.has(primary)) continue;
@@ -323,4 +378,126 @@ function regionOf(exercise: Exercise): string {
   if (UPPER.has(primary)) return 'upper';
   if (LOWER.has(primary)) return 'lower';
   return 'core';
+}
+
+/* ── 와드 한 판 ────────────────────────────────────────
+
+   컨디셔닝을 근력 세션 뒤에 붙이는 게 아니라, **그 자체로 오늘 운동**이
+   되는 경우다. "단기간에 크로스핏처럼 효율적으로"가 목적이다.
+
+   근력 세션과 다른 점이 하나 있다. 근력 세션의 워밍업은 종목마다 본세트
+   중량에 맞춰 올라가는 램프지만, 와드는 **시작하자마자 최대 강도**로
+   들어간다. 그래서 들어가기 전에 몸이 다 풀려 있어야 한다 — 와드 중간에
+   풀 시간이 없다.
+── */
+
+export interface WodWarmup {
+  minutes: number;
+  /** 순서대로 보여줄 단계 */
+  steps: string[];
+}
+
+export interface WodSession {
+  warmup: WodWarmup;
+  workout: ConditioningWorkout;
+  /** 몸풀기까지 합친 시간 */
+  totalMinutes: number;
+  /** 무엇을 조심해야 하는가. 비어 있으면 특별히 없다 */
+  cautions: string[];
+}
+
+/**
+ * 몸풀기 길이.
+ *
+ * 와드가 짧을수록 몸풀기 비중이 커진다 — 5분짜리 와드에 5분을 푸는 건
+ * 과해 보이지만, 5분 전력으로 들어가려면 그만큼 풀려 있어야 한다.
+ */
+function warmupMinutes(wodMinutes: number): number {
+  if (wodMinutes <= 8) return 6;
+  if (wodMinutes <= 15) return 8;
+  return 10;
+}
+
+function buildWarmup(workout: ConditioningWorkout): WodWarmup {
+  const minutes = warmupMinutes(workout.durationMinutes);
+  const raise = Math.max(2, Math.round(minutes * 0.4));
+  const mobility = Math.max(2, Math.round(minutes * 0.25));
+  const rehearse = Math.max(2, minutes - raise - mobility);
+
+  /*
+   * 일반 → 구체 순서다. 심박을 올리고, 관절을 풀고, **그 날 할 동작을
+   * 가볍게 한 바퀴** 돈다. 마지막이 제일 중요하다 — 처음 하는 동작을
+   * 시계 켜고 하면 그때부터 자세가 없다.
+   */
+  const rehearsal = workout.movements
+    .map((movement) => `${movement.name} ${Math.max(3, Math.round(movement.amount * 0.3))}${
+      movement.unit === 'seconds' ? '초' : movement.unit === 'steps' ? '걸음' : '회'}`)
+    .join(' · ');
+
+  return {
+    minutes,
+    steps: [
+      `${raise}분 — 로잉·자전거·줄넘기·빠르게 걷기 중 하나로 심박을 올립니다. 땀이 살짝 날 정도까지.`,
+      `${mobility}분 — 어깨·고관절·발목을 돌립니다. 오늘 많이 쓸 관절부터.`,
+      `${rehearse}분 — 오늘 할 동작을 맨몸이나 가벼운 무게로 한 바퀴: ${rehearsal}`,
+    ],
+  };
+}
+
+/** 시간에 쫓기면서 하면 위험한 동작이 들어갔는가. */
+function riskyMovements(workout: ConditioningWorkout): string[] {
+  return workout.movements
+    .filter((movement) => UNSAFE_FOR_TIME.has(movement.exerciseId))
+    .map((movement) => movement.name);
+}
+
+export interface WodSessionInput extends ConditioningInput {
+  /** 오늘 근력 세션 없이 이것만 하는가 */
+  standalone?: boolean;
+}
+
+/**
+ * 몸풀기부터 와드까지 한 판.
+ *
+ * 경고는 실제로 위험한 조합에만 낸다 — 바벨을 켰다고 무조건 경고하면
+ * 켠 사람에게 매번 같은 잔소리를 하는 꼴이고, 그러면 안 읽는다.
+ */
+export function buildWodSession(input: WodSessionInput): WodSession {
+  const workout = buildConditioning(input);
+  const warmup = buildWarmup(workout);
+  const cautions: string[] = [];
+
+  const risky = riskyMovements(workout);
+  if (risky.length > 0) {
+    cautions.push(
+      `${withParticle(risky.join(', '), '은/는')} 시간에 쫓기면 자세가 먼저 무너집니다. ` +
+      '평소 작업 중량의 절반 이하로 잡으세요.',
+    );
+
+    /*
+     * For Time과 AMRAP은 속도 제한이 없다. 허리가 실리는 동작을 넣으면
+     * 마지막 라운드에서 자세가 무너진 채로 최대 반복을 하게 된다.
+     * EMOM은 매 분 남는 시간이 강제 휴식이라 그 일이 덜 벌어진다.
+     */
+    if (input.format === 'forTime' || input.format === 'amrap') {
+      cautions.push(
+        '이 형식은 속도 제한이 없습니다. 허리가 실리는 동작이 들어가면 ' +
+        'EMOM처럼 매 분 쉬는 구간이 있는 형식이 더 안전합니다.',
+      );
+    }
+  }
+
+  if (input.standalone) {
+    cautions.push(
+      '오늘은 이것만 합니다. 와드는 유효 세트로 세지 않으므로 주간 볼륨은 ' +
+      '늘지 않고 피로만 쌓입니다 — 근력 세션을 대체하는 게 아니라 다른 것입니다.',
+    );
+  }
+
+  return {
+    warmup,
+    workout,
+    totalMinutes: warmup.minutes + workout.durationMinutes,
+    cautions,
+  };
 }
