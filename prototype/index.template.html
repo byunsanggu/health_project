@@ -397,6 +397,10 @@ input[type="search"] {
   font-weight: 500;
 }
 .lift-note { font-size: 12px; color: var(--muted); }
+/* 행동 아래로 내려온 처방 설명 — 읽을 값어치는 있지만 먼저 읽을 것은 아니다 */
+.lift-note.below {
+  padding: 9px 13px; border-top: 1px solid var(--line-soft); line-height: 1.55;
+}
 
 .set-no { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 
@@ -1150,6 +1154,20 @@ input[type="search"] {
 .set-now { padding: 4px 0 2px; }
 .now-body { display: grid; gap: 10px; padding: 12px 13px 13px; }
 /*
+ * 이번 세트가 무엇인가. 카드에서 제일 먼저 읽는 줄이라 크게 둔다 —
+ * 기구 앞에서 보는 자리는 머리띠가 아니라 숫자칸 바로 위다.
+ */
+.now-head { display: grid; gap: 1px; }
+.now-line { display: flex; align-items: center; gap: 7px; }
+.now-head b { font-size: 18px; font-weight: 600; color: var(--accent); letter-spacing: -.01em; }
+.now-head .of { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.now-line .set-dots { margin-left: auto; flex-wrap: nowrap; }
+.now-head .plan {
+  font-family: var(--mono); font-size: 15px; font-weight: 500; color: var(--ink);
+  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+}
+
+/*
  * "이 세트를 끝낸다"는 걸 말로 쓴다. RIR 숫자만 있으면 그게 기록 버튼인
  * 줄을 모르고, "다음 세트로 어떻게 가느냐"가 된다.
  */
@@ -1453,34 +1471,20 @@ input[type="search"] {
  * 했는지는 세트를 내려다보는 중에도 보여야 하는 정보다.
  * 위아래 여백을 음수로 빼서 .screen의 패딩 자리까지 덮는다.
  */
+/*
+ * 한 줄이어야 한다. 두 줄이 되면 그만큼 카드가 아래로 밀리고, 화면이
+ * 짧은 폰에서는 눌러야 할 RIR 버튼이 화면 밖으로 나간다.
+ */
 .progress-head {
   position: sticky;
   top: 0;
   z-index: 3;
-  display: grid;
-  gap: 5px;
   margin: -16px -16px 0;
-  padding: 10px 16px 9px;
+  padding: 10px 16px;
   background: var(--ground);
   border-bottom: 1px solid var(--line-soft);
 }
 .progress-top { display: flex; align-items: center; gap: 10px; }
-/*
- * 몇 세트째이고 그 세트는 뭘 하기로 했는가. 카드 안에 두면 조금만
- * 스크롤해도 이 머리띠 밑으로 들어가 잘린다 — 그래서 머리띠 안에 있다.
- */
-.progress-set {
-  display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap;
-  font-family: var(--mono); font-variant-numeric: tabular-nums;
-}
-.progress-set i { font-style: normal; font-size: 10px; letter-spacing: .1em; color: var(--muted); }
-.progress-set b { font-size: 17px; font-weight: 600; color: var(--accent); line-height: 1; }
-.progress-set > span { font-size: 12.5px; color: var(--muted); }
-.progress-set em {
-  font-style: normal; font-size: 13px; color: var(--ink); font-weight: 500;
-  padding-left: 5px; border-left: 1px solid var(--line); margin-left: 3px;
-}
-.progress-set.done b { font-size: 13px; color: var(--zone-ok); }
 /* 종목과 세트를 위아래로. 라벨이 없으면 어느 게 어느 건지 모른다. */
 .progress-counts { display: grid; gap: 1px; }
 .progress-count {
@@ -1493,7 +1497,14 @@ input[type="search"] {
 .progress-count.set b { color: var(--accent); }
 .progress-bar { flex: 1; height: 5px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line-soft); overflow: hidden; }
 .progress-bar i { display: block; height: 100%; background: var(--accent); transition: width .25s ease; }
-.step-nav { display: flex; gap: 8px; }
+.step-nav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/*
+ * 마지막 종목에서는 앞으로 갈 곳이 없다. 버튼 하나만 덜렁 남으면 그게
+ * 다음 행동으로 읽히므로, 왜 없는지를 옆에 쓰고 "이전"은 좁게 둔다.
+ */
+.step-nav.last button { flex: none; }
+.step-state { flex: 1 1 100%; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.step-nav.last .step-state { flex: 1 1 auto; text-align: right; }
 /* 다 끝난 뒤의 "이전"은 되돌아가는 길일 뿐이다. 자리를 다 먹지 않게 둔다. */
 .step-nav.done button { flex: 0 0 auto; padding-inline: 20px; }
 /*

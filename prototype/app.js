@@ -1319,6 +1319,22 @@
   }
   var lastSetKey = null;
 
+  /*
+   * 눌러야 할 것이 화면 밖에 있으면 안 된다.
+   *
+   * 종목에 막 들어왔을 때는 맨 위(종목 이름·워밍업)부터 보여주는 게 맞다.
+   * 그런데 화면이 짧은 폰에서는 딱 몇십 px 모자라서 RIR 버튼이 아래로
+   * 잘린다 — 그러면 "다음 세트로 어떻게 가느냐"가 된다.
+   *
+   * 그래서 모자란 만큼만 내린다. 10px 모자라면 10px만 내려간다.
+   */
+  function ensureActionVisible() {
+    var rir = screen.querySelector('.now-rir');
+    if (!rir) return;
+    var over = rir.getBoundingClientRect().bottom + 10 - screen.getBoundingClientRect().bottom;
+    if (over > 0) screen.scrollTop += over;
+  }
+
   function focusCurrentSet() {
     var now = screen.querySelector('.set-now');
     if (!now) return;
@@ -1356,8 +1372,13 @@
     var setMoved = nowKey !== null && nowKey !== lastSetKey;
     lastSetKey = nowKey;
 
-    if (moved) screen.scrollTop = 0;
-    else if (setMoved) focusCurrentSet();
+    if (moved) {
+      screen.scrollTop = 0;
+      ensureActionVisible();
+    } else if (setMoved) {
+      focusCurrentSet();
+      ensureActionVisible();
+    }
 
     renderRest();
     renderLog();
@@ -2778,26 +2799,15 @@
     }
 
     /*
-     * 세트 줄은 카드가 아니라 머리띠에 둔다.
+     * 머리띠는 "몇 번째 종목인가"와 시계만 든다. 한 줄이어야 한다 —
+     * 두 줄이 되는 순간 그만큼 카드가 아래로 밀리고, 화면이 짧은 폰에서는
+     * 정작 눌러야 할 RIR 버튼이 화면 밖으로 나간다.
      *
-     * 카드 안에 두었더니 화면이 짧은 폰에서는 RIR 버튼을 보려고 조금만
-     * 내려도 이 줄이 머리띠 밑으로 들어가 잘렸다. 기록할 때마다 자동으로
-     * 끌어올려도, 손으로 스크롤하면 또 가려진다 — 붙어 있는 머리띠 밑에
-     * 있는 한 언제든 가려질 수 있는 자리였다.
-     *
-     * 그래서 아예 머리띠 안으로 옮긴다. 몇 세트째인지와 그 세트의 처방은
-     * 어떻게 스크롤해도 화면에 남아야 하는 두 가지다.
+     * 세트 번호와 그 세트의 처방은 카드가 크게 말한다. 거기가 눈이 가는
+     * 자리이고, 기록할 때마다 그 자리를 머리띠 바로 밑으로 끌어온다.
      */
-    var setLine = pending > 0 && currentSet
-      ? el('span', { class: 'progress-set' }, [
-          el('i', { text: '세트' }),
-          el('b', { text: String(doneHere + 1) }),
-          el('span', { text: '/ ' + lift.sets.length }),
-          el('em', { text: setPlanLine(currentSet) }),
-        ])
-      : el('span', { class: 'progress-set done' }, [
-          el('b', { text: lift.sets.length + '세트 완료' }),
-        ]);
+    void currentSet;
+    void doneHere;
 
     screen.appendChild(el('div', { class: 'progress-head' }, [
       el('div', { class: 'progress-top' }, [
@@ -2824,7 +2834,6 @@
           el('span', { id: 'session-elapsed', text: elapsedText() }),
         ]),
       ]),
-      setLine,
     ]));
 
     renderWarnings();
@@ -2839,7 +2848,25 @@
      * 다 끝냈으면 "이전"만 남는다. 그 버튼 하나가 막다른 길처럼 보이면
      * 안 되므로, 완료 버튼을 바로 아래에 붙이고 "이전"은 좁게 둔다.
      */
-    var nav = el('div', { class: 'step-nav' + (finished ? ' done' : '') }, [
+    /*
+     * 마지막 종목에서 "← 이전 종목" 하나만 덜렁 남아 있었다.
+     *
+     * 화면에 버튼이 그것뿐이면 그게 다음 행동으로 읽힌다 — "종목 6/6인데
+     * 왜 이전이냐"가 나온 이유다. 앞으로 갈 곳이 없으면 없다고 쓰고,
+     * 대신 지금 해야 할 일(세트가 남았다 / 끝낼 수 있다)을 말한다.
+     */
+    var forward = last
+      ? null
+      : el('button', {
+          /* 세트가 남았는데 넘어가는 것도 막지 않는다 — 기구가 막혀서
+             순서를 바꾸는 일이 헬스장에서는 늘 있다. 다만 티는 낸다. */
+          type: 'button',
+          class: remaining === 0 ? 'primary' : 'ghost',
+          text: remaining === 0 ? '다음 종목' : '다음 종목 (' + remaining + '세트 남음)',
+          onclick: function () { state.liftCursor += 1; render(); },
+        });
+
+    var nav = el('div', { class: 'step-nav' + (finished ? ' done' : '') + (last ? ' last' : '') }, [
       state.liftCursor > 0
         ? el('button', {
             /* "이전"만 있으면 세트 얘긴지 종목 얘긴지 모른다. "다음 종목"과 짝을 맞춘다. */
@@ -2847,18 +2874,22 @@
             onclick: function () { state.liftCursor -= 1; render(); },
           })
         : null,
-      last
-        ? null
-        : el('button', {
-            /* 세트가 남았는데 넘어가는 것도 막지 않는다 — 기구가 막혀서
-               순서를 바꾸는 일이 헬스장에서는 늘 있다. 다만 티는 낸다. */
-            type: 'button',
-            class: remaining === 0 ? 'primary' : 'ghost',
-            text: remaining === 0 ? '다음 종목' : '다음 종목 (' + remaining + '세트 남음)',
-            onclick: function () { state.liftCursor += 1; render(); },
-          }),
+      forward,
+      last && !finished
+        ? el('span', { class: 'step-state', text:
+            remaining > 0
+              ? '마지막 종목입니다 · ' + remaining + '세트 남으면 오늘이 끝납니다'
+              : '마지막 종목을 마쳤습니다 · 남은 종목이 있습니다' })
+        : null,
     ]);
     if (nav.childNodes.length > 0) screen.appendChild(nav);
+
+    /*
+     * 마지막 종목인데 아직 다 못 채웠을 때도 끝낼 길은 열어 둔다.
+     * 시간이 없어 중간에 나가는 날이 실제로 있고, 그때 길이 없으면
+     * 기록을 통째로 버리고 나간다.
+     */
+    if (last && !finished && state.todaySets.length > 0) renderFinish(true);
 
     /*
      * 완료 버튼이 컨디셔닝·맥스테스트 시트 아래에 묻혀 있었다. 다 끝냈는데
@@ -2894,25 +2925,19 @@
     var wrap = el('div', { class: 'set-track' }, []);
 
     /*
-     * 몇 세트째인가. 헬스장에서 흘끗 볼 때 중량 다음으로 필요한 숫자인데
-     * 11px 회색 글자였다. 점은 세어 보지 않고 아는 용이고, 숫자는 정확히
-     * 아는 용이다 — 둘 다 한 줄에 두되 숫자를 읽을 수 있게 키운다.
+     * 점은 "이번 세트" 줄 안으로 들어갔다 — 같은 이야기를 두 줄에 쓰면
+     * 그 한 줄만큼 눌러야 할 것이 화면 밖으로 밀린다. 다 끝낸 종목일
+     * 때만 여기서 한 줄로 말한다.
      */
-    wrap.appendChild(el('div', { class: 'set-dots-row' }, [
-      el('span', { class: 'set-dots' }, sets.map(function (set, setIndex) {
-        return el('i', {
-          class: set.done ? 'on' : (setIndex === cursor ? 'now' : ''),
-          'aria-hidden': 'true',
-        });
-      })),
-      /*
-       * 숫자는 머리띠에 있다. 여기서 또 세면 한 화면에 같은 숫자가 두 번
-       * 뜨고, 스크롤하면 머리띠가 이 줄을 덮어서 잘린 숫자만 보인다.
-       */
-      el('span', { class: 'set-count ' + (cursor >= 0 ? 'quiet' : 'done'), text:
-        cursor >= 0 ? doneCount + '세트 완료 · ' + (sets.length - doneCount) + '세트 남음'
-          : sets.length + '세트 완료' }),
-    ]));
+    if (cursor < 0) {
+      wrap.appendChild(el('div', { class: 'set-dots-row' }, [
+        el('span', { class: 'set-dots' }, sets.map(function (set) {
+          return el('i', { class: set.done ? 'on' : '', 'aria-hidden': 'true' });
+        })),
+        el('span', { class: 'set-count done', text: sets.length + '세트 완료' }),
+      ]));
+    }
+    void doneCount;
 
     /* 끝낸 세트는 접어 둔다. 기록을 고칠 일은 있지만 늘 보일 필요는 없다. */
     if (doneCount > 0) {
@@ -2999,6 +3024,29 @@
       : set.targetReps.min + '–' + set.targetReps.max + '회';
 
     var body = [];
+
+    /*
+     * 이번 세트가 무엇인가 — 카드에서 제일 먼저 읽는 두 줄.
+     *
+     * "1세트 진행중"과 "30kg × 10–15회". 머리띠에 작게 넣어 봤지만
+     * 그건 흘끗 보는 용이었고, 기구 앞에서 실제로 보는 자리는 숫자칸
+     * 바로 위다. 세트마다 처방이 다를 수 있으니 세트마다 그 세트의
+     * 것을 쓴다.
+     */
+    body.push(el('div', { class: 'now-head' }, [
+      el('div', { class: 'now-line' }, [
+        el('b', { text: (setIndex + 1) + '세트 진행중' }),
+        el('span', { class: 'of', text: '/ ' + lift.sets.length + '세트' }),
+        // 점은 세어 보지 않고 어디쯤인지 아는 용이다. 숫자 옆이 제자리다.
+        el('span', { class: 'set-dots' }, lift.sets.map(function (item, order) {
+          return el('i', {
+            class: item.done ? 'on' : (order === setIndex ? 'now' : ''),
+            'aria-hidden': 'true',
+          });
+        })),
+      ]),
+      el('div', { class: 'plan', text: setPlanLine(set) }),
+    ]));
 
     /*
      * 중량과 반복은 직접 친다.
@@ -3192,10 +3240,7 @@
     }
 
     var card = el('div', { class: 'lift' }, [
-      el('div', { class: 'lift-head' }, [
-        nameRow,
-        el('div', { class: 'lift-note', text: lift.note }),
-      ]),
+      el('div', { class: 'lift-head' }, [nameRow]),
     ]);
 
     // 다른 헬스장에서 하던 기계면 표기 중량이 다르다. 숨기면 안 된다.
@@ -3206,8 +3251,20 @@
       ]));
     }
 
-    card.appendChild(renderWarmup(lift));
+    /*
+     * 워밍업 줄은 첫 세트에만 둔다. 한 세트라도 했으면 이미 데운 뒤이고,
+     * 그 줄이 차지한 34px만큼 눌러야 할 RIR이 화면 밖으로 밀린다.
+     */
+    var anyDone = lift.sets.some(function (set) { return set.done; });
+    if (!anyDone) card.appendChild(renderWarmup(lift));
     card.appendChild(renderSetTrack(lift, liftIndex));
+
+    /*
+     * 처방 설명("10회 × RIR 2→3으로 목표 상단에 도달했습니다")은 읽을
+     * 값어치가 있지만, 카드 맨 위에 두면 딱 그 높이만큼 중량칸과 RIR을
+     * 아래로 민다. 행동 다음에 읽어도 되는 것은 행동 다음에 둔다.
+     */
+    if (lift.note) card.appendChild(el('div', { class: 'lift-note below', text: lift.note }));
 
     var decision = renderDecision(lift);
     if (decision) card.appendChild(decision);
