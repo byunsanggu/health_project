@@ -35,6 +35,8 @@ export * from './dayChoice.ts';
 export * from './comparison.ts';
 export * from './reorder.ts';
 export * from './superset.ts';
+export * from './tempo.ts';
+export * from './weeklyReport.ts';
 export * from './wodLog.ts';
 export * from './gymIdentity.ts';
 export * from './gymPresets.ts';

@@ -1411,6 +1411,45 @@ input[type="search"] {
   color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px;
 }
 
+/* ── 주간 리포트 한 장 ──────────────────────────── */
+.report-cta {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  border: 1px solid var(--accent); border-radius: 12px;
+  background: var(--accent-soft); color: var(--ink); padding: 12px 13px;
+}
+.report-cta .name { color: var(--accent); }
+.report-cta .detail { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; }
+/* 보내기 전에 뭘 보내는지 봐야 한다 — 미리보기를 그대로 띄운다 */
+.report-canvas {
+  display: block; width: 100%; height: auto;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+}
+.report-actions { display: grid; gap: 8px; }
+
+/* ── 박자 맞춰 세어주기 ─────────────────────────── */
+.count-start {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
+  padding: 10px 12px; font-size: 13px; color: var(--ink);
+}
+.count-start:hover { border-color: var(--accent); color: var(--accent); }
+.count-play { color: var(--accent); font-size: 11px; }
+.count-tempo {
+  margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+/*
+ * 세는 중에는 숫자 하나만 남는다. 세트 중에 볼 수 있는 건 하나뿐이고,
+ * 그 하나는 "지금 몇 개째"다.
+ */
+.count-live { display: grid; gap: 12px; justify-items: center; padding: 8px 0 4px; }
+.count-num { display: grid; justify-items: center; gap: 2px; }
+.count-num b {
+  font-family: var(--mono); font-size: 76px; font-weight: 600; line-height: 1;
+  color: var(--accent); font-variant-numeric: tabular-nums; letter-spacing: -.03em;
+}
+.count-num span { font-size: 13px; color: var(--muted); min-height: 20px; }
+.count-live .finish { max-width: 240px; }
+
 /* ── 휴식 시간 설정 ─────────────────────────────── */
 .rest-presets { padding: 0; }
 .rest-presets .pick { padding: 7px 12px; font-size: 12.5px; font-variant-numeric: tabular-nums; }

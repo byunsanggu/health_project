@@ -169,6 +169,9 @@
         supersets: state.supersets,
         restBand: state.restBand,
         restOverrides: state.restOverrides,
+        voiceOn: state.voiceOn,
+        tempo: state.tempo,
+        voiceRate: state.voiceRate,
         wodResults: state.wodResults,
         sessionStartedAt: state.sessionStartedAt,
         gymBook: state.gymBook,
@@ -214,6 +217,9 @@
       state.supersets = settings.supersets || [];
       state.restBand = settings.restBand || null;
       state.restOverrides = settings.restOverrides || {};
+      state.voiceOn = Boolean(settings.voiceOn);
+      state.tempo = settings.tempo || null;
+      state.voiceRate = settings.voiceRate || 1;
       state.wodResults = settings.wodResults || [];
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
@@ -426,6 +432,16 @@
     restBand: null,
     /* 종목별로 직접 정한 휴식(초). { 종목id: 초 } */
     restOverrides: {},
+    /*
+     * 음성 카운트. 혼자 하면 힘들어질수록 저절로 빨라지고, 빨라지면
+     * 반동이 붙어서 같은 10회가 다른 10회가 된다. 옆에서 세어 주는
+     * 사람이 하는 일의 절반이 이것이다.
+     */
+    voiceOn: false,
+    tempo: null,
+    voiceRate: 1,
+    /* 지금 세는 중인 세트. { liftIndex, setIndex, startedAt, rep, timers } */
+    counting: null,
     // 와드 설정. 길이와 바벨 여부가 성격을 크게 바꾼다.
     wodMinutes: 12,
     wodBarbell: false,
@@ -784,6 +800,8 @@
   /* ── 세트 완료 ─────────────────────────────────── */
 
   function completeSet(liftIndex, setIndex, rir) {
+    // 세는 중에 RIR을 누를 수 있다. 소리가 혼자 남으면 다음 세트와 겹친다.
+    if (state.counting) stopCounting(true);
     var lift = state.lifts[liftIndex];
     var set = lift.sets[setIndex];
     var rule = { repRange: lift.repRange, targetRir: lift.targetRir };
@@ -2435,6 +2453,11 @@
         el('span', { class: 'head-actions' }, [
           el('span', { class: 'meta', text: '총 ' + state.lifts.length + '개' }),
           el('button', {
+            type: 'button', class: 'demo-open', text: '세어주기',
+            title: '템포와 음성 카운트를 정합니다',
+            onclick: openVoiceSettings,
+          }),
+          el('button', {
             type: 'button', class: 'demo-open', text: '휴식',
             title: '세트 간 휴식 시간을 정합니다',
             onclick: openRestSettings,
@@ -2851,6 +2874,211 @@
     return fixed != null
       ? '직접 정함 · ' + E.formatDuration(seconds)
       : '자동 ' + E.formatDuration(seconds) + ' · 직접 정할 수 있습니다';
+  }
+
+  /* ── 음성 카운트 ───────────────────────────────── */
+
+  /*
+   * 말하기.
+   *
+   * 브라우저 음성합성은 공짜지만 믿을 게 못 된다. 한국어 목소리가 아예
+   * 없는 기기가 있고, iOS는 사용자가 뭔가 누르기 전에는 소리를 안 낸다.
+   * 그래서 "되면 말하고, 안 되면 조용히 지나간다" — 소리 때문에 카운트가
+   * 멈추면 안 된다. 박자는 화면이 들고 있다.
+   */
+  var voiceCache = null;
+
+  function koreanVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    if (voiceCache !== null) return voiceCache;
+    var voices = window.speechSynthesis.getVoices() || [];
+    voiceCache = voices.filter(function (voice) {
+      return /^ko/i.test(voice.lang || '');
+    })[0] || null;
+    return voiceCache;
+  }
+
+  function speak(text) {
+    if (!state.voiceOn || !('speechSynthesis' in window)) return;
+    try {
+      var utter = new SpeechSynthesisUtterance(text);
+      var voice = koreanVoice();
+      if (voice) utter.voice = voice;
+      utter.lang = 'ko-KR';
+      // 카운트는 조금 빨라야 박자에 맞는다. 설명하듯 읽으면 늦는다.
+      utter.rate = clamp(state.voiceRate || 1, 0.5, 2);
+      window.speechSynthesis.speak(utter);
+    } catch (err) {
+      void err;
+    }
+  }
+
+  function tempoOf() {
+    return state.tempo || E.DEFAULT_TEMPO;
+  }
+
+  /** 세는 중이면 멈춘다. 화면을 떠날 때도 반드시 불러야 한다. */
+  function stopCounting(keepReps) {
+    var run = state.counting;
+    if (!run) return;
+    run.timers.forEach(function (id) { clearTimeout(id); });
+    state.counting = null;
+    if ('speechSynthesis' in window) {
+      try { window.speechSynthesis.cancel(); } catch (err) { void err; }
+    }
+
+    /*
+     * 멈춘 자리까지를 기록으로 제안한다. 앱은 실제 반복을 못 봤으므로
+     * 이건 "제안"이고, 숫자칸은 그대로 고칠 수 있게 둔다.
+     */
+    if (keepReps !== false && run.rep > 0) {
+      var lift = state.lifts[run.liftIndex];
+      var set = lift && lift.sets[run.setIndex];
+      if (set && !set.done) set.reps = run.rep;
+    }
+    render();
+  }
+
+  function startCounting(liftIndex, setIndex) {
+    stopCounting(false);
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set) return;
+
+    var input = { repRange: set.targetReps, tempo: tempoOf() };
+    var cues = E.buildCues(input);
+    var run = { liftIndex: liftIndex, setIndex: setIndex, rep: 0, timers: [], startedAt: Date.now() };
+    state.counting = run;
+
+    cues.forEach(function (cue) {
+      run.timers.push(setTimeout(function () {
+        if (state.counting !== run) return;
+        run.rep = cue.rep;
+        speak(cue.say);
+        // 화면의 숫자도 같이 올라간다 — 소리가 안 나는 기기에서도 세어진다.
+        var box = document.getElementById('count-now');
+        if (box) box.textContent = cue.rep > 0 ? String(cue.rep) : '준비';
+        var word = document.getElementById('count-say');
+        if (word) word.textContent = cue.say;
+        if (cue.rep >= set.targetReps.max) {
+          run.timers.push(setTimeout(function () {
+            if (state.counting === run) stopCounting(true);
+          }, 700));
+        }
+      }, cue.atMs));
+    });
+
+    render();
+  }
+
+  /** 지금 세는 중인 세트의 화면. 숫자가 크고, 멈추는 버튼 하나뿐이다. */
+  function renderCounting(liftIndex, setIndex) {
+    var run = state.counting;
+    var live = run && run.liftIndex === liftIndex && run.setIndex === setIndex;
+    if (!live) return null;
+
+    return el('div', { class: 'count-live' }, [
+      el('div', { class: 'count-num' }, [
+        el('b', { id: 'count-now', text: run.rep > 0 ? String(run.rep) : '준비' }),
+        el('span', { id: 'count-say', text: '' }),
+      ]),
+      el('button', {
+        type: 'button', class: 'finish quiet', text: '멈추기',
+        onclick: function () { stopCounting(true); },
+      }),
+    ]);
+  }
+
+  /**
+   * 음성 카운트 설정.
+   *
+   * 템포를 여기서 정한다. 템포는 같은 10회를 다른 10회로 만드는 값이라
+   * 소리를 끄고 써도 뜻이 있다 — 화면 숫자만으로도 박자는 잡힌다.
+   */
+  function openVoiceSettings() {
+    var draw = function () {
+      var tempo = tempoOf();
+      var body = [];
+
+      body.push(el('p', { class: 'asset-note', text:
+        '옆에서 세어 주는 사람이 하는 일의 절반이 박자입니다. 힘들어지면 저절로 빨라지고, ' +
+        '빨라지면 반동이 붙어서 같은 10회가 다른 10회가 됩니다. ' +
+        '앱은 실제 반복을 보지 못하므로 박자만 주고, 멈춘 자리를 기록으로 제안합니다.' }));
+
+      body.push(el('button', {
+        type: 'button', class: 'pair-row', onclick: function () {
+          state.voiceOn = !state.voiceOn;
+          if (state.voiceOn) speak('하나');
+          persist();
+          draw();
+        },
+      }, [
+        el('span', { class: 'pair-mark', text: state.voiceOn ? '켜짐' : '꺼짐' }),
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: '소리로 세어 주기' }),
+          el('span', { class: 'plan-sets', text: voiceStatusLine() }),
+        ]),
+      ]));
+
+      body.push(el('div', { class: 'list-label', text: '템포 — 내리고 · 멈추고 · 올리고 · 멈추고' }));
+      body.push(el('div', { class: 'chip-row' }, E.TEMPO_PRESETS.map(function (preset) {
+        var on = E.tempoLabel(preset.tempo) === E.tempoLabel(tempo);
+        return el('button', {
+          type: 'button', class: 'pick', 'aria-pressed': String(on),
+          title: preset.note,
+          text: preset.label + ' ' + E.tempoLabel(preset.tempo),
+          onclick: function () {
+            state.tempo = preset.tempo;
+            pushLog('템포', '<b>' + preset.label + '</b> ' + E.tempoLabel(preset.tempo) +
+              ' — ' + preset.note);
+            persist();
+            draw();
+          },
+        });
+      })));
+
+      var seconds = E.repSeconds(tempo);
+      body.push(el('p', { class: 'hint-line', text:
+        '반복 하나에 ' + seconds + '초 · 10회면 ' + Math.round(seconds * 10) + '초짜리 세트입니다.' }));
+
+      body.push(el('div', { class: 'list-label', text: '말 속도' }));
+      body.push(el('div', { class: 'chip-row' }, [
+        { label: '느리게', rate: 0.85 },
+        { label: '보통', rate: 1 },
+        { label: '빠르게', rate: 1.2 },
+      ].map(function (option) {
+        return el('button', {
+          type: 'button', class: 'pick',
+          'aria-pressed': String(Math.abs((state.voiceRate || 1) - option.rate) < 0.01),
+          text: option.label,
+          onclick: function () {
+            state.voiceRate = option.rate;
+            speak('하나, 둘, 셋');
+            persist();
+            draw();
+          },
+        });
+      })));
+
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: '이대로 하기',
+        onclick: function () { modal.close(); render(); },
+      }));
+
+      openModal('세어 주기', state.voiceOn ? '켜짐 · ' + E.tempoLabel(tempo) : E.tempoLabel(tempo), body);
+    };
+    draw();
+  }
+
+  /** 이 기기에서 소리가 실제로 날지 — 안 되면 미리 말해 준다. */
+  function voiceStatusLine() {
+    if (!('speechSynthesis' in window)) {
+      return '이 브라우저는 음성합성을 지원하지 않습니다 · 화면 숫자로만 셉니다';
+    }
+    if (!koreanVoice()) {
+      return '한국어 목소리가 없는 기기입니다 · 화면 숫자로만 셉니다';
+    }
+    return state.voiceOn ? '세트마다 세어 줍니다' : '눌러서 켭니다';
   }
 
   /**
@@ -3303,6 +3531,16 @@
       ]));
     }
 
+    /*
+     * 세는 중이면 숫자 하나만 크게 띄운다. 세트 중에 볼 수 있는 건 하나뿐이고,
+     * 그 하나는 "지금 몇 개째"다.
+     */
+    var live = renderCounting(liftIndex, setIndex);
+    if (live) {
+      body.push(live);
+      return el('div', { class: 'set-now counting' }, [el('div', { class: 'now-body' }, body)]);
+    }
+
     body.push(el('div', { class: 'now-reps' }, [
       el('span', { class: 'rir-label', text: '반복' }),
       el('span', { class: 'now-target', text: '목표 ' + target }),
@@ -3320,6 +3558,20 @@
         el('button', { type: 'button', class: 'nudge', 'aria-label': '반복 수 늘리기', text: '+',
           onclick: function () { setReps(liftIndex, setIndex, 1); } }),
       ]),
+    ]));
+
+    /*
+     * 박자를 받으며 하고 싶은 날이 있다. 누르면 템포대로 세어 주고,
+     * 멈춘 자리까지를 반복 수로 제안한다 — 앱이 실제 반복을 본 건 아니다.
+     */
+    body.push(el('button', {
+      type: 'button', class: 'count-start',
+      title: E.tempoLabel(tempoOf()) + ' 템포로 세어 줍니다',
+      onclick: function () { startCounting(liftIndex, setIndex); },
+    }, [
+      el('span', { class: 'count-play', text: '▶', 'aria-hidden': 'true' }),
+      el('span', { text: '박자 맞춰 세어주기' }),
+      el('span', { class: 'count-tempo', text: E.tempoLabel(tempoOf()) }),
     ]));
 
     /*
@@ -4300,6 +4552,316 @@
   }
 
   /* 주간 */
+  /* ── 주간 리포트 한 장 ─────────────────────────── */
+
+  function thisWeekReport() {
+    return E.buildWeeklyReport({
+      sessions: weekSessions(),
+      history: state.history,
+      landmarks: state.landmarks,
+      index: index,
+      from: state.monday,
+      to: E.addDays(state.monday, 6),
+      targetSessions: trainingDays().length,
+    });
+  }
+
+  /**
+   * 한 주를 이미지 한 장으로.
+   *
+   * 회원을 붙잡는 건 기능이 아니라 **한 주가 끝났을 때 손에 남는 것**이다.
+   * 카톡으로 보낼 수 있는 한 장이 있으면 그 주가 기억에 남고, 다음 주에
+   * 앱을 다시 연다.
+   *
+   * 카카오톡·인스타에 맞춰 1080×1350으로 그린다. 글꼴은 기기에 있는 것을
+   * 쓰되, 없으면 기본 산세리프로 떨어뜨린다 — 글꼴 때문에 그림이 안 나오면
+   * 안 된다.
+   */
+  var CARD_W = 1080;
+  var CARD_H = 1350;
+
+  function drawReportCard(report, dark) {
+    var canvas = document.createElement('canvas');
+    canvas.width = CARD_W;
+    canvas.height = CARD_H;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    var ink = dark ? '#e7e9ee' : '#14161b';
+    var muted = dark ? '#949bab' : '#656c7a';
+    var accent = dark ? '#8b87ff' : '#4540c9';
+    var line = dark ? '#2b3038' : '#d3d7de';
+    var sans = '"IBM Plex Sans KR", -apple-system, "Apple SD Gothic Neo", sans-serif';
+    var mono = '"IBM Plex Mono", ui-monospace, monospace';
+
+    ctx.fillStyle = dark ? '#0f1116' : '#faf9f5';
+    ctx.fillRect(0, 0, CARD_W, CARD_H);
+
+    var pad = 84;
+    var y = 118;
+
+    // 머리 — 앱 이름은 작게, 주차는 크게
+    ctx.fillStyle = muted;
+    ctx.font = '400 30px ' + mono;
+    ctx.fillText('VOLUME COACH', pad, y);
+    y += 74;
+    ctx.fillStyle = ink;
+    ctx.font = '600 68px ' + sans;
+    ctx.fillText(report.weekLabel, pad, y);
+
+    // 한 줄 제목 — 이 장에서 제일 큰 글씨여야 한다
+    y += 82;
+    ctx.fillStyle = accent;
+    ctx.font = '600 46px ' + sans;
+    wrapText(ctx, report.headline, pad, y, CARD_W - pad * 2, 60);
+    y += 60 * countLines(ctx, report.headline, CARD_W - pad * 2) + 42;
+
+    // 숫자 셋
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(CARD_W - pad, y); ctx.stroke();
+    y += 66;
+
+    var stats = [
+      { value: String(report.sessionCount), unit: '회', key: '운동' },
+      { value: String(report.setCount), unit: '세트', key: '기록' },
+      { value: (report.tonnage / 1000).toFixed(1), unit: 't', key: '든 무게' },
+    ];
+    var colW = (CARD_W - pad * 2) / 3;
+    stats.forEach(function (stat, i) {
+      var x = pad + colW * i;
+      ctx.fillStyle = ink;
+      ctx.font = '600 72px ' + mono;
+      ctx.fillText(stat.value, x, y);
+      var w = ctx.measureText(stat.value).width;
+      ctx.fillStyle = muted;
+      ctx.font = '400 30px ' + sans;
+      ctx.fillText(stat.unit, x + w + 10, y);
+      ctx.font = '400 26px ' + sans;
+      ctx.fillText(stat.key, x, y + 44);
+    });
+    y += 96;
+
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(CARD_W - pad, y); ctx.stroke();
+    y += 58;
+
+    // 부위별 게이지 — 부족한 주는 부족하게 그려야 다음 장을 믿는다
+    ctx.fillStyle = muted;
+    ctx.font = '400 26px ' + mono;
+    ctx.fillText('부위별 주간 볼륨', pad, y);
+    y += 46;
+
+    var zoneColor = {
+      underMev: dark ? '#8a92a1' : '#7a8290',
+      mevToMav: dark ? '#34b37c' : '#17784f',
+      mavToMrv: dark ? '#d79a2e' : '#a66a00',
+      overMrv: dark ? '#e4695b' : '#c0392b',
+    };
+    /*
+     * 아래 "다음 주" 상자와 겹치면 안 된다. 잘린 글씨가 있는 이미지를
+     * 카톡에 올리면 앱이 허술해 보이고, 그게 회원한테 그대로 간다.
+     * 남은 자리를 먼저 계산하고 들어가는 만큼만 그린다.
+     */
+    var floor = CARD_H - 278;
+    var gainRoom = report.gains.length > 0 ? 20 + 44 + 46 * report.gains.length : 0;
+    var muscleRoom = floor - gainRoom;
+    var drawn = report.muscles.filter(function () { return true; }).slice(0, 6);
+
+    drawn.forEach(function (row) {
+      if (y + 50 > muscleRoom) return;
+      ctx.fillStyle = ink;
+      ctx.font = '500 32px ' + sans;
+      ctx.fillText(row.label, pad, y + 26);
+
+      var barX = pad + 180;
+      var barW = CARD_W - pad * 2 - 180 - 150;
+      ctx.fillStyle = dark ? '#1f232a' : '#eceef2';
+      roundRect(ctx, barX, y, barW, 34, 8);
+      ctx.fillStyle = zoneColor[row.zone] || muted;
+      roundRect(ctx, barX, y, Math.max(8, barW * Math.min(1, row.fill)), 34, 8);
+
+      ctx.fillStyle = muted;
+      ctx.font = '400 28px ' + mono;
+      ctx.fillText(row.sets + '세트', barX + barW + 20, y + 26);
+      y += 50;
+    });
+
+    // 오른 종목
+    if (report.gains.length > 0 && y + 44 + 46 <= floor) {
+      y += 34;
+      ctx.fillStyle = muted;
+      ctx.font = '400 26px ' + mono;
+      ctx.fillText('이번 주에 오른 것', pad, y);
+      y += 44;
+      report.gains.forEach(function (gain) {
+        if (y > floor) return;
+        ctx.fillStyle = ink;
+        ctx.font = '500 34px ' + sans;
+        ctx.fillText(gain.name, pad, y);
+        ctx.fillStyle = dark ? '#34b37c' : '#17784f';
+        ctx.font = '600 34px ' + mono;
+        var text = gain.detail;
+        ctx.fillText(text, CARD_W - pad - ctx.measureText(text).width, y);
+        y += 46;
+      });
+    }
+
+    // 다음 주 지시 — 칭찬이 아니라 지시다
+    var boxY = CARD_H - 236;
+    ctx.fillStyle = dark ? '#181b21' : '#ffffff';
+    roundRect(ctx, pad, boxY, CARD_W - pad * 2, 160, 20);
+    ctx.strokeStyle = line;
+    ctx.beginPath();
+    ctx.fillStyle = muted;
+    ctx.font = '400 24px ' + mono;
+    ctx.fillText('다음 주', pad + 36, boxY + 50);
+    ctx.fillStyle = ink;
+    ctx.font = '500 32px ' + sans;
+    wrapText(ctx, report.advice, pad + 36, boxY + 96, CARD_W - pad * 2 - 72, 42);
+
+    return canvas;
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** 캔버스에는 줄바꿈이 없다. 글자 폭을 재서 직접 끊는다. */
+  function splitLines(ctx, text, maxWidth) {
+    var words = String(text).split(' ');
+    var lines = [];
+    var line = '';
+    words.forEach(function (word) {
+      var next = line ? line + ' ' + word : word;
+      if (ctx.measureText(next).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    });
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+    splitLines(ctx, text, maxWidth).forEach(function (line, i) {
+      ctx.fillText(line, x, y + lineHeight * i);
+    });
+  }
+
+  function countLines(ctx, text, maxWidth) {
+    return splitLines(ctx, text, maxWidth).length;
+  }
+
+  /**
+   * 주간 리포트 화면.
+   *
+   * 미리보기를 화면에 그대로 띄운다 — 보내기 전에 뭘 보내는지 봐야 한다.
+   */
+  function openWeeklyReport() {
+    var report = thisWeekReport();
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark'
+      || (document.documentElement.getAttribute('data-theme') !== 'light'
+        && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    var canvas = drawReportCard(report, dark);
+    var body = [];
+
+    if (canvas) {
+      canvas.className = 'report-canvas';
+      canvas.setAttribute('role', 'img');
+      canvas.setAttribute('aria-label', report.weekLabel + ' 주간 리포트 — ' + report.headline);
+      body.push(canvas);
+    }
+
+    /*
+     * 이미지를 못 만드는 기기가 있다. 그때도 빈손으로 두지 않는다 —
+     * 글로 복사해서 보내면 된다.
+     */
+    body.push(el('div', { class: 'report-actions' }, [
+      el('button', {
+        type: 'button', class: 'finish',
+        text: canvas ? '이미지로 저장 · 공유' : '글로 복사하기',
+        onclick: function () { shareReport(report, canvas); },
+      }),
+      el('button', {
+        type: 'button', class: 'demo-open wide', text: '글로 복사하기',
+        onclick: function () { copyReportText(report); },
+      }),
+    ]));
+
+    body.push(el('p', { class: 'asset-note', text:
+      '건강 정보가 담긴 이미지입니다. 어디로 보낼지는 직접 고르시고, ' +
+      '단톡방처럼 여러 사람이 보는 곳에는 올리기 전에 한 번 더 생각해 보세요.' }));
+
+    openModal('주간 리포트', report.weekLabel, body);
+  }
+
+  function shareReport(report, canvas) {
+    if (!canvas || !canvas.toBlob) return copyReportText(report);
+
+    canvas.toBlob(function (blob) {
+      if (!blob) return copyReportText(report);
+      var name = '볼륨코치-' + report.to + '.png';
+      var file = null;
+      try { file = new File([blob], name, { type: 'image/png' }); } catch (err) { void err; }
+
+      // 폰이면 공유 시트가 뜬다 — 카톡이 거기 있다.
+      if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], text: E.reportText(report) })
+          .catch(function () { downloadBlob(blob, name); });
+        return;
+      }
+      downloadBlob(blob, name);
+    }, 'image/png');
+  }
+
+  function downloadBlob(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    pushLog('주간 리포트', '<b>' + name + '</b>으로 저장했습니다.');
+    renderLog();
+  }
+
+  function copyReportText(report) {
+    var text = E.reportText(report);
+    var done = function () {
+      pushLog('주간 리포트', '글로 복사했습니다. 카톡에 붙여 넣으면 됩니다.');
+      renderLog();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text, done); });
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+
+  function fallbackCopy(text, done) {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand('copy'); done(); } catch (err) { void err; }
+    area.remove();
+  }
+
   function renderWeek() {
     var plan = state.plan;
     var deload = plan.phase === 'deload';
@@ -4310,6 +4872,22 @@
         el('span', { class: 'badge ' + (deload ? 'deload' : 'accum'), text: 'RIR ' + plan.targetRir }),
       ]),
       el('p', { class: 'meta', text: plan.summary }),
+    ]));
+
+    /*
+     * 한 주가 끝났을 때 손에 남는 것. 회원을 붙잡는 건 기능이 아니라
+     * 이것이고, 그래서 주간 탭 맨 위에 둔다.
+     */
+    var weekReport = thisWeekReport();
+    screen.appendChild(el('button', {
+      type: 'button', class: 'report-cta',
+      onclick: openWeeklyReport,
+    }, [
+      el('span', { class: 'plan-main' }, [
+        el('span', { class: 'name', text: '이번 주 리포트' }),
+        el('span', { class: 'plan-sets', text: weekReport.headline }),
+      ]),
+      el('span', { class: 'detail', text: '카톡으로 ›' }),
     ]));
 
     var bar = el('div', { class: 'fatigue-bar' }, []);
