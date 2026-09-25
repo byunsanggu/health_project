@@ -724,8 +724,14 @@
         sets: item.sets.map(function (set, order) {
           var kept = (previous[item.exercise.id] || [])[order];
           if (kept && kept.done) return kept;
+          var planned = set.weightKg === null ? (START_WEIGHT[item.exercise.id] || 40) : set.weightKg;
           return {
-            weightKg: set.weightKg === null ? (START_WEIGHT[item.exercise.id] || 40) : set.weightKg,
+            weightKg: planned,
+            /*
+             * 처방된 중량. weightKg는 사용자가 치면 바뀌지만 이건 안 바뀐다 —
+             * "계획은 105였는데 100으로 했다"를 화면이 말할 수 있어야 한다.
+             */
+            plannedKg: planned,
             estimated: set.weightKg === null,
             targetReps: set.targetReps,
             targetRir: set.targetRir,
@@ -788,6 +794,11 @@
       next.weightKg = lift.loading
         ? E.nearestLoadable(adjustment.weightKg, lift.loading, adjustment.deltaKg > 0 ? 'up' : adjustment.deltaKg < 0 ? 'down' : 'nearest')
         : adjustment.weightKg;
+      /*
+       * 이건 코치가 다시 내린 처방이므로 계획도 같이 움직인다. 사용자가
+       * 직접 친 무게만 계획과 갈라진다 — 그래야 "계획 105"가 뜻을 갖는다.
+       */
+      next.plannedKg = next.weightKg;
       next.estimated = false;
       if (adjustment.deltaKg !== 0) {
         next.adjustment = adjustment;
@@ -955,6 +966,7 @@
     var last = lift.sets[lift.sets.length - 1];
     lift.sets.push({
       weightKg: last ? last.weightKg : 0,
+      plannedKg: last ? last.weightKg : 0,
       estimated: false,
       targetReps: lift.repRange,
       targetRir: lift.targetRir,
@@ -1289,6 +1301,40 @@
   }
   var lastViewKey = null;
 
+  /*
+   * 지금 할 세트가 바뀌었는가.
+   *
+   * 세트를 기록하면 카드 위쪽이 자란다(완료 줄이 생기고, 남은 세트 줄이
+   * 하나 줄어든다). 스크롤은 그대로라서 화면이 조금씩 밀리고, 몇 세트를
+   * 하고 나면 정작 지금 칠 중량이 머리띠 위로 올라가 버린다.
+   *
+   * 화면 전체를 위로 올리는 건 답이 아니다 — 그러면 RIR을 누를 때마다
+   * 위로 튄다. 지금 할 세트만 머리띠 바로 아래로 가져온다.
+   */
+  function setKey() {
+    if (!state.started) return null;
+    var lift = state.lifts[state.liftCursor];
+    if (!lift) return null;
+    return state.liftCursor + ':' + lift.sets.filter(function (set) { return set.done; }).length;
+  }
+  var lastSetKey = null;
+
+  function focusCurrentSet() {
+    var now = screen.querySelector('.set-now');
+    if (!now) return;
+    /*
+     * 기준은 머리띠의 아래쪽이다. #screen 위쪽 패딩만큼 어긋나므로
+     * 화면 높이에서 머리띠 높이를 빼는 식으로 계산하면 16px 모자라고,
+     * 딱 그만큼 "이번 세트" 줄이 잘린다.
+     */
+    var head = screen.querySelector('.progress-head');
+    var limit = head
+      ? head.getBoundingClientRect().bottom
+      : screen.getBoundingClientRect().top;
+    var delta = now.getBoundingClientRect().top - limit;
+    screen.scrollTop = Math.max(0, screen.scrollTop + delta - 8);
+  }
+
   function render() {
     var onboarding = state.onboarding.active;
     tabbar.hidden = onboarding;
@@ -1306,7 +1352,12 @@
       renderStatus();
       renderScreen();
     }
+    var nowKey = setKey();
+    var setMoved = nowKey !== null && nowKey !== lastSetKey;
+    lastSetKey = nowKey;
+
     if (moved) screen.scrollTop = 0;
+    else if (setMoved) focusCurrentSet();
 
     renderRest();
     renderLog();
@@ -1691,6 +1742,7 @@
       sets: original.sets.map(function (set, order) {
         return {
           weightKg: weight,
+          plannedKg: weight,
           estimated: prescription.weightKg === null,
           targetReps: original.repRange,
           targetRir: original.targetRir,
@@ -2871,7 +2923,10 @@
           wrap.appendChild(el('div', { class: 'done-set' }, [
             el('span', { class: 'set-no', text: String(setIndex + 1) }),
             el('span', { class: 'done-detail', text:
-              (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회 · RIR ' + set.rir }),
+              (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회 · RIR ' + set.rir +
+              // 계획과 다르게 한 세트는 그 사실이 남아야 한다
+              (set.plannedKg != null && set.plannedKg !== set.weightKg
+                ? '  (계획 ' + (set.plannedKg > 0 ? set.plannedKg + 'kg' : '맨몸') + ')' : '') }),
             el('button', {
               type: 'button', class: 'demo-open', text: '고치기',
               'aria-label': (setIndex + 1) + '세트 기록 고치기',
@@ -2884,11 +2939,44 @@
 
     if (cursor >= 0) {
       wrap.appendChild(renderCurrentSet(lift, liftIndex, sets[cursor], cursor));
+
+      /*
+       * 남은 세트도 세트마다 한 줄씩 적는다.
+       *
+       * 세트마다 처방이 다를 수 있고(램프업, 백오프), 다르지 않더라도
+       * "앞으로 몇 kg으로 몇 번씩 몇 세트가 남았는지"는 지금 이 세트를
+       * 어떻게 할지에 영향을 준다. 지금 할 것보다 작고 조용히 둔다.
+       */
+      var ahead = [];
+      sets.forEach(function (set, setIndex) {
+        if (set.done || setIndex <= cursor) return;
+        ahead.push(el('div', { class: 'set-plan' }, [
+          el('span', { class: 'set-no', text: (setIndex + 1) + '세트' }),
+          el('span', { class: 'set-plan-line', text: setPlanLine(set) }),
+        ]));
+      });
+      if (ahead.length > 0) {
+        wrap.appendChild(el('div', { class: 'set-plan-list' }, ahead));
+      }
     } else {
       wrap.appendChild(el('div', { class: 'set-cleared', text: '이 종목은 끝났습니다.' }));
     }
 
     return wrap;
+  }
+
+  /**
+   * 세트 하나의 처방을 한 줄로.
+   *
+   * "40kg × 15회" — 이 세트에 뭘 하기로 했는지다. 친 무게(weightKg)가
+   * 아니라 처방(plannedKg)을 쓴다. 둘이 다른 날이 기록이 중요한 날이다.
+   */
+  function setPlanLine(set) {
+    var planned = set.plannedKg == null ? set.weightKg : set.plannedKg;
+    var reps = set.targetReps.min === set.targetReps.max
+      ? set.targetReps.max + '회'
+      : set.targetReps.min + '–' + set.targetReps.max + '회';
+    return (planned > 0 ? planned + 'kg' : '맨몸') + ' × ' + reps;
   }
 
   /** 지금 할 세트. 화면에서 제일 커야 한다 — 지금 할 일은 이것 하나다. */
@@ -2899,6 +2987,18 @@
       : set.targetReps.min + '–' + set.targetReps.max + '회';
 
     var body = [];
+
+    /*
+     * 몇 세트를 하는 중이고, 그 세트는 뭘 하기로 했는가.
+     *
+     * 머리띠의 "세트 3 / 6"은 위치만 알려준다. 기구 앞에서 실제로 필요한
+     * 것은 "이번 세트는 105kg 6–10회"다. 세트마다 처방이 다를 수 있으니
+     * 세트마다 그 세트의 것을 쓴다.
+     */
+    body.push(el('div', { class: 'now-head' }, [
+      el('b', { text: (setIndex + 1) + '세트 진행중' }),
+      el('span', { text: setPlanLine(set) }),
+    ]));
 
     /*
      * 중량과 반복은 직접 친다.
@@ -2992,7 +3092,6 @@
     });
     body.push(chips);
 
-    // 세트 번호는 바로 위 점 줄에 크게 있다. 여기 또 쓰면 두 번 읽게 된다.
     return el('div', { class: 'set-now' }, [
       el('div', { class: 'now-body' }, body),
     ]);

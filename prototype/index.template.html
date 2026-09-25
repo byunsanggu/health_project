@@ -1149,6 +1149,29 @@ input[type="search"] {
 /* 지금 할 세트. 화면에서 제일 커야 한다 — 지금 할 일은 이것 하나다. */
 .set-now { padding: 4px 0 2px; }
 .now-body { display: grid; gap: 10px; padding: 12px 13px 13px; }
+/*
+ * 몇 세트째이고 그 세트는 뭘 하기로 했는가. 기구 앞에서 제일 먼저
+ * 읽는 줄이라 숫자 입력칸 바로 위에 둔다.
+ */
+.now-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.now-head b { font-size: 14px; font-weight: 600; color: var(--accent); }
+.now-head span {
+  font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 남은 세트 — 세트마다 한 줄. 지금 할 것보다 작고 조용하다. */
+.set-plan-list { border-top: 1px solid var(--line-soft); background: var(--surface-2); }
+.set-plan {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 9px;
+  align-items: baseline; padding: 5px 13px;
+}
+.set-plan:first-child { padding-top: 8px; }
+.set-plan:last-child { padding-bottom: 9px; }
+.set-plan-line {
+  font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .now-load { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .now-load .weight {
   font-family: var(--mono); font-size: 34px; font-weight: 600;
