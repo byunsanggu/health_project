@@ -172,6 +172,7 @@
         voiceOn: state.voiceOn,
         tempo: state.tempo,
         voiceRate: state.voiceRate,
+        reportSeenWeek: state.reportSeenWeek,
         wodResults: state.wodResults,
         sessionStartedAt: state.sessionStartedAt,
         gymBook: state.gymBook,
@@ -220,6 +221,7 @@
       state.voiceOn = Boolean(settings.voiceOn);
       state.tempo = settings.tempo || null;
       state.voiceRate = settings.voiceRate || 1;
+      state.reportSeenWeek = settings.reportSeenWeek || null;
       state.wodResults = settings.wodResults || [];
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
@@ -440,6 +442,8 @@
     voiceOn: false,
     tempo: null,
     voiceRate: 1,
+    /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
+    reportSeenWeek: null,
     /* 지금 세는 중인 세트. { liftIndex, setIndex, startedAt, rep, timers } */
     counting: null,
     // 와드 설정. 길이와 바벨 여부가 성격을 크게 바꾼다.
@@ -1276,6 +1280,11 @@
   modal.addEventListener('close', function () {
     disposeDemo();
     modal.textContent = '';
+    /*
+     * 모달 안에서 바꾼 것이 화면에 반영돼야 한다. 리포트를 보고 닫았는데
+     * "리포트가 나왔습니다" 줄이 그대로 있으면 앱이 안 듣는 것처럼 보인다.
+     */
+    if (state.lifts) render();
   });
 
   /**
@@ -2447,11 +2456,25 @@
       ]));
     });
 
+    /*
+     * 지킨 주를 목록 바로 위에 둔다. "오늘 나왔다"가 곧 "이번 주를 지켰다"로
+     * 이어지는 게 보여야 나올 이유가 생긴다.
+     */
+    screen.appendChild(streakCard(currentStreak()));
+    var nudge = reportNudge();
+    if (nudge) screen.appendChild(nudge);
+
     screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '오늘 할 것' }),
-        el('span', { class: 'head-actions' }, [
+      /*
+       * 버튼이 넷이 되니 390px 폰에서 제목이 두 줄로 쪼개졌다. 제목은
+       * 제목 줄에 두고, 버튼은 아래 한 줄에 모아 넘치면 옆으로 민다.
+       */
+      el('div', { class: 'sheet-head stacked' }, [
+        el('div', { class: 'head-title' }, [
+          el('h3', { text: '오늘 할 것' }),
           el('span', { class: 'meta', text: '총 ' + state.lifts.length + '개' }),
+        ]),
+        el('span', { class: 'head-actions' }, [
           el('button', {
             type: 'button', class: 'demo-open', text: '세어주기',
             title: '템포와 음성 카운트를 정합니다',
@@ -3752,6 +3775,11 @@
     var head = sessionHead();
     screen.appendChild(head.node);
 
+    // 막 마친 자리가 이번 주를 돌아볼 마음이 제일 드는 자리다.
+    screen.appendChild(streakCard(currentStreak()));
+    var closedNudge = reportNudge();
+    if (closedNudge) screen.appendChild(closedNudge);
+
     var minutes = state.sessionStartedAt
       ? Math.max(1, Math.round((Date.now() - state.sessionStartedAt) / 60000))
       : null;
@@ -4552,6 +4580,97 @@
   }
 
   /* 주간 */
+  /* ── 약속을 지킨 주 ────────────────────────────── */
+
+  /**
+   * 주 단위 연속.
+   *
+   * "며칠 연속"이 아니라 "이번 주에 하기로 한 횟수를 지켰나"다. 쉬는 날은
+   * 약속에 이미 들어 있으므로 쉬어도 불이 꺼지지 않는다 — 죄책감 없이
+   * 쉴 수 있어야 다음 주에 앱을 다시 연다.
+   */
+  function currentStreak() {
+    var sessions = state.history.slice();
+    if (state.todaySets.length > 0) {
+      sessions = sessions.concat([{ date: state.todayDate, sets: state.todaySets }]);
+    }
+    return E.buildStreak({
+      sessions: sessions,
+      thisMonday: state.monday,
+      target: trainingDays().length,
+      // 덜어내는 주는 프로그램이 정한다. 그 주는 절반만 나와도 지킨 것이다.
+      deloadWeeks: state.plan.phase === 'deload' ? [state.monday] : [],
+      today: state.todayDate,
+    });
+  }
+
+  /**
+   * 이번 주 리포트를 보여줄 때가 됐는가.
+   *
+   * 금요일부터, 또는 약속한 횟수를 이미 채운 날부터. 이미 본 주에는
+   * 다시 말하지 않는다 — 같은 말을 두 번 하면 그때부터 잔소리다.
+   */
+  function reportReady() {
+    if (state.reportSeenWeek === state.monday) return false;
+    var streak = currentStreak();
+    if (streak.thisWeek.kept) return true;
+    // 월요일을 0으로 센 요일. 금요일이면 4다.
+    var dayIndex = Math.round(
+      (Date.parse(state.todayDate + 'T00:00:00Z') - Date.parse(state.monday + 'T00:00:00Z')) / 86400000);
+    return dayIndex >= 4 && streak.thisWeek.days > 0;
+  }
+
+  /**
+   * 주가 끝나갈 때 딱 한 번 뜨는 줄.
+   *
+   * 사람을 돌아오게 하는 건 알림 그 자체가 아니라 "뭔가 기다리고 있다"는
+   * 것이다. 그래서 조르는 말이 아니라 보상이 준비됐다는 말만 쓰고, 같은
+   * 주에 두 번 말하지 않는다 — 같은 말을 두 번 하면 그때부터 잔소리다.
+   *
+   * 진짜 푸시 알림(앱을 안 열어도 오는 것)은 서버가 있어야 한다. 여기
+   * 있는 건 "열었을 때 보이는 것"이고, 그 이상을 약속하지 않는다.
+   */
+  function reportNudge() {
+    if (!reportReady()) return null;
+    return el('button', {
+      type: 'button', class: 'report-nudge', onclick: openWeeklyReport,
+    }, [
+      el('span', { class: 'plan-main' }, [
+        el('span', { class: 'name', text: '이번 주 리포트가 나왔습니다' }),
+        el('span', { class: 'plan-sets', text: thisWeekReport().headline }),
+      ]),
+      el('span', { class: 'detail', text: '보기 ›' }),
+    ]);
+  }
+
+  /** 연속 카드. 숫자 하나와 이번 주 점, 그리고 한 줄. */
+  function streakCard(streak) {
+    var dots = E.weekDots(streak.thisWeek);
+    var row = el('span', { class: 'streak-dots', 'aria-hidden': 'true' }, []);
+    for (var i = 0; i < dots.done; i += 1) row.appendChild(el('i', { class: 'on' }));
+    for (var j = 0; j < dots.left; j += 1) row.appendChild(el('i', {}));
+
+    return el('div', { class: 'streak-card' + (streak.current > 0 ? ' lit' : '') }, [
+      el('div', { class: 'streak-top' }, [
+        el('span', { class: 'streak-num' }, [
+          el('b', { text: String(streak.current) }),
+          el('span', { text: '주 연속' }),
+        ]),
+        row,
+        el('span', { class: 'streak-count', text:
+          streak.thisWeek.days + ' / ' + streak.thisWeek.target +
+          (streak.thisWeek.deload ? ' · 덜어내는 주' : '') }),
+      ]),
+      el('p', { class: 'streak-msg', text: streak.message }),
+      streak.best > streak.current
+        ? el('p', { class: 'hint-line', text: '최고 ' + streak.best + '주 연속' })
+        : null,
+      streak.freezeAvailable
+        ? el('p', { class: 'hint-line', text: '쉼표 1개 — 한 주 쉬어도 연속이 이어집니다.' })
+        : null,
+    ]);
+  }
+
   /* ── 주간 리포트 한 장 ─────────────────────────── */
 
   function thisWeekReport() {
@@ -4580,7 +4699,7 @@
   var CARD_W = 1080;
   var CARD_H = 1350;
 
-  function drawReportCard(report, dark) {
+  function drawReportCard(report, dark, streak) {
     var canvas = document.createElement('canvas');
     canvas.width = CARD_W;
     canvas.height = CARD_H;
@@ -4608,6 +4727,20 @@
     ctx.fillStyle = ink;
     ctx.font = '600 68px ' + sans;
     ctx.fillText(report.weekLabel, pad, y);
+
+    /*
+     * 연속 주는 오른쪽 위에. "7주 연속"은 "37일 연속"보다 말하기 좋고,
+     * 카톡에 올렸을 때 사람들이 제일 먼저 보는 숫자다.
+     */
+    if (streak && streak.current > 0) {
+      var tag = streak.current + '주 연속';
+      ctx.font = '600 40px ' + sans;
+      var tagW = ctx.measureText(tag).width + 48;
+      ctx.fillStyle = dark ? '#262346' : '#e7e6fa';
+      roundRect(ctx, CARD_W - pad - tagW, y - 48, tagW, 66, 33);
+      ctx.fillStyle = accent;
+      ctx.fillText(tag, CARD_W - pad - tagW + 24, y - 2);
+    }
 
     // 한 줄 제목 — 이 장에서 제일 큰 글씨여야 한다
     y += 82;
@@ -4767,12 +4900,15 @@
    * 미리보기를 화면에 그대로 띄운다 — 보내기 전에 뭘 보내는지 봐야 한다.
    */
   function openWeeklyReport() {
+    state.reportSeenWeek = state.monday;
+    persist();
     var report = thisWeekReport();
     var dark = document.documentElement.getAttribute('data-theme') === 'dark'
       || (document.documentElement.getAttribute('data-theme') !== 'light'
         && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
-    var canvas = drawReportCard(report, dark);
+    var streak = currentStreak();
+    var canvas = drawReportCard(report, dark, streak);
     var body = [];
 
     if (canvas) {
@@ -4901,6 +5037,10 @@
      * 한 주가 끝났을 때 손에 남는 것. 회원을 붙잡는 건 기능이 아니라
      * 이것이고, 그래서 주간 탭 맨 위에 둔다.
      */
+    screen.appendChild(streakCard(currentStreak()));
+    var nudge = reportNudge();
+    if (nudge) screen.appendChild(nudge);
+
     var weekReport = thisWeekReport();
     screen.appendChild(el('button', {
       type: 'button', class: 'report-cta',
