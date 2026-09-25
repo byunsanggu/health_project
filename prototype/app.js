@@ -4825,6 +4825,29 @@
   }
 
   function downloadBlob(blob, name) {
+    /*
+     * 미리보기(아티팩트 뷰어) 안에서는 보통의 다운로드 링크가 아무 일도
+     * 하지 않는다. 거기서만 쓰는 저장 통로가 따로 있으므로, 있으면 그걸
+     * 쓰고 없으면 평소대로 간다 — 진짜 폰에서는 아래 링크가 맞다.
+     */
+    if (window.claude && typeof window.claude.use === 'function') {
+      window.claude.use('downloads').then(function (downloads) {
+        if (!downloads) return saveByLink(blob, name);
+        downloads.save({ filename: name, data: blob }).then(function () {
+          pushLog('주간 리포트', '<b>' + name + '</b>으로 저장했습니다.');
+          renderLog();
+        }, function () {
+          // 사용자가 거절했거나 이 화면에서는 저장이 안 된다. 다시 묻지 않는다.
+          pushLog('주간 리포트', '저장하지 않았습니다. 글로 복사하는 길이 아래에 있습니다.');
+          renderLog();
+        });
+      }, function () { saveByLink(blob, name); });
+      return;
+    }
+    saveByLink(blob, name);
+  }
+
+  function saveByLink(blob, name) {
     var url = URL.createObjectURL(blob);
     var link = document.createElement('a');
     link.href = url;
