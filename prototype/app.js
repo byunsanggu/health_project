@@ -167,6 +167,7 @@
         dayOverride: state.dayOverride,
         liftOrder: state.liftOrder,
         supersets: state.supersets,
+        wodResults: state.wodResults,
         sessionStartedAt: state.sessionStartedAt,
         gymBook: state.gymBook,
         consent: state.consent,
@@ -209,6 +210,7 @@
       state.dayOverride = settings.dayOverride == null ? null : settings.dayOverride;
       state.liftOrder = settings.liftOrder || null;
       state.supersets = settings.supersets || [];
+      state.wodResults = settings.wodResults || [];
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
@@ -413,6 +415,9 @@
     wodMinutes: 12,
     wodBarbell: false,
     conditioningFormat: null,
+    /* 와드 기록. 같은 구성끼리만 비교한다 — 다른 와드를 비교하면 거짓말이다. */
+    wodResults: [],
+    wodDraft: null,
     gymQuery: '',
     maxTest: null,
     /*
@@ -3168,6 +3173,123 @@
 
   var CONDITIONING_FORMATS = ['amrap', 'emom', 'forTime', 'circuit'];
 
+  /**
+   * 와드 기록 남기기.
+   *
+   * 형식마다 남기는 것이 다르다 — For Time은 걸린 시간, AMRAP은 라운드,
+   * EMOM은 끝까지 했는가. 한 가지 칸을 모든 형식에 쓰면 기록이 못 쓰게
+   * 된다.
+   */
+  function openWodScore(workout) {
+    var kind = E.scoreKindOf(workout.format);
+    var draft = { seconds: workout.durationMinutes * 60, rounds: 3, extraReps: 0,
+      completed: true, stoppedAtMinute: Math.max(1, workout.durationMinutes - 2) };
+
+    var draw = function () {
+      var body = [];
+      body.push(el('p', { class: 'asset-note', text: E.wodLabel(workout) }));
+
+      if (kind === 'time') {
+        var mins = Math.floor(draft.seconds / 60);
+        var secs = draft.seconds % 60;
+        body.push(el('div', { class: 'list-label', text: '걸린 시간' }));
+        body.push(el('div', { class: 'time-free' }, [
+          numberBox(mins, '분', 0, 120, function (value) {
+            draft.seconds = value * 60 + (draft.seconds % 60); draw();
+          }),
+          numberBox(secs, '초', 0, 59, function (value) {
+            draft.seconds = Math.floor(draft.seconds / 60) * 60 + value; draw();
+          }),
+        ]));
+      } else if (kind === 'rounds') {
+        body.push(el('div', { class: 'list-label', text: '완료한 라운드' }));
+        body.push(el('div', { class: 'time-free' }, [
+          numberBox(draft.rounds, '라운드', 0, 99, function (value) { draft.rounds = value; draw(); }),
+          numberBox(draft.extraReps, '회 더', 0, 999, function (value) { draft.extraReps = value; draw(); }),
+        ]));
+        body.push(el('p', { class: 'hint-line', text:
+          '마지막 라운드를 다 못 채웠으면 채운 만큼을 "회 더"에 적으세요.' }));
+      } else {
+        body.push(el('div', { class: 'list-label', text: '끝까지 했나요' }));
+        body.push(el('div', { class: 'chip-row' }, [
+          el('button', { type: 'button', class: 'pick', 'aria-pressed': String(draft.completed),
+            text: '완주', onclick: function () { draft.completed = true; draw(); } }),
+          el('button', { type: 'button', class: 'pick', 'aria-pressed': String(!draft.completed),
+            text: '중간에 멈춤', onclick: function () { draft.completed = false; draw(); } }),
+        ]));
+        if (!draft.completed) {
+          body.push(el('div', { class: 'time-free' }, [
+            numberBox(draft.stoppedAtMinute, '분에서', 1, workout.durationMinutes,
+              function (value) { draft.stoppedAtMinute = value; draw(); }),
+          ]));
+        }
+      }
+
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: '기록하기',
+        onclick: function () { saveWodScore(workout, draft); },
+      }));
+
+      openModal('와드 기록', E.formatLabel(workout.format) + ' ' + workout.durationMinutes + '분', body);
+    };
+    draw();
+  }
+
+  /** 숫자 한 칸. 직접 치고 ±로 미세 조정한다 — 중량 입력과 같은 방식이다. */
+  function numberBox(value, unit, min, max, onChange) {
+    var input = el('input', {
+      type: 'number', min: String(min), max: String(max), step: '1', inputmode: 'numeric',
+      class: 'big-input', value: String(value), 'aria-label': unit,
+      onfocus: function (event) { event.target.select(); },
+      onchange: function (event) {
+        var next = parseInt(event.target.value, 10);
+        onChange(Number.isFinite(next) ? clamp(next, min, max) : value);
+      },
+    });
+    return el('div', { class: 'big-field small' }, [
+      el('button', { type: 'button', class: 'nudge', text: '−', 'aria-label': unit + ' 줄이기',
+        onclick: function () { onChange(clamp(value - 1, min, max)); } }),
+      input,
+      el('span', { class: 'big-unit', text: unit }),
+      el('button', { type: 'button', class: 'nudge', text: '+', 'aria-label': unit + ' 늘리기',
+        onclick: function () { onChange(clamp(value + 1, min, max)); } }),
+    ]);
+  }
+
+  function saveWodScore(workout, draft) {
+    var result = E.recordWod(workout, state.todayDate, draft);
+    var comparison = E.compareWod(result, state.wodResults);
+    state.wodResults = state.wodResults.concat([result]);
+
+    pushLog('와드 기록', '<b>' + E.formatLabel(workout.format) + ' ' +
+      workout.durationMinutes + '분</b> — ' + E.describeScore(result) + '. ' + comparison.text);
+
+    /*
+     * close()를 먼저 부르지 않는다. close 이벤트가 비동기로 와서 방금 그린
+     * 내용을 나중에 지워버린다 — openModal이 내용만 갈아끼운다.
+     */
+    // 비교 결과를 바로 보여준다. 기록만 남기고 아무 말이 없으면 남길 이유가 없다.
+    openModal('와드 기록', E.describeScore(result), [
+      el('p', { class: 'compare-headline', text: comparison.text }),
+      el('p', { class: 'asset-note', text: E.wodLabel(workout) }),
+      comparison.attempts > 1
+        ? el('div', { class: 'summary-list' },
+            E.historyOf(state.wodResults, result.signature).map(function (r) {
+              return el('div', { class: 'record' }, [
+                el('span', { text: r.date }),
+                r === comparison.best ? el('span', { class: 'pr', text: '최고' }) : null,
+                el('span', { class: 'detail', text: E.describeScore(r) }),
+              ]);
+            }))
+        : el('p', { class: 'hint-line', text:
+            '다음에 같은 와드를 하면 여기서 비교해 드립니다. 다른 구성으로 하면 비교하지 않습니다 — ' +
+            '동작이 다르면 라운드 수를 견줘도 의미가 없습니다.' }),
+      el('button', { type: 'button', class: 'finish', text: '닫기',
+        onclick: function () { modal.close(); render(); } }),
+    ]);
+    render();
+  }
+
   /** 오늘 근력 세션이 쓰는 부위. 와드는 여기를 피한다. */
   function wodAvoid() {
     var out = [];
@@ -3288,6 +3410,20 @@
       workout.notes.forEach(function (note) {
         body.appendChild(el('p', { class: 'hint-line', text: note }));
       });
+      // 같은 구성으로 전에 한 적이 있으면 미리 보여준다 — 목표가 생긴다
+      var past = E.historyOf(state.wodResults, E.wodSignature(workout));
+      if (past.length > 0) {
+        body.appendChild(el('p', { class: 'hint-line', text:
+          '같은 구성 지난 기록 — ' + past.slice(0, 3).map(function (r) {
+            return r.date + ' ' + E.describeScore(r);
+          }).join(' · ') }));
+      }
+
+      body.appendChild(el('button', {
+        type: 'button', class: 'finish', text: '끝냈습니다 — 기록하기',
+        onclick: function () { openWodScore(workout); },
+      }));
+
       body.appendChild(el('button', {
         type: 'button', class: 'pick', text: '지우기',
         onclick: function () { state.conditioning = null; state.conditioningFormat = null; render(); },

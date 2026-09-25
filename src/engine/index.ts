@@ -35,6 +35,7 @@ export * from './dayChoice.ts';
 export * from './comparison.ts';
 export * from './reorder.ts';
 export * from './superset.ts';
+export * from './wodLog.ts';
 export * from './gymIdentity.ts';
 export * from './gymPresets.ts';
 export * from './gymWeight.ts';
