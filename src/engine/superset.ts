@@ -4,7 +4,15 @@ import { withParticle } from './korean.ts';
 import type { Exercise, MuscleGroup } from './types.ts';
 
 /**
- * 슈퍼세트.
+ * 종목 묶기 — 슈퍼세트와 크로스핏 세트.
+ *
+ * 둘을 묶으면 슈퍼세트, 셋에서 다섯을 묶으면 한 바퀴를 도는
+ * 크로스핏 세트(서킷)다. 규칙은 같다. 다른 것은 바퀴의 길이뿐이다.
+ *
+ * 중요한 것 하나: 이건 **오늘 할 종목을 묶는 기능**이지, 프로그램을
+ * 크로스핏으로 바꾸는 기능이 아니다. 하던 운동, 하던 중량, 하던 세트
+ * 수를 그대로 두고 쉬는 방식만 바꾼다. 묶지 않으면 아무것도 달라지지
+ * 않는다.
  *
  * 두 종목을 번갈아 하면 한쪽이 쉬는 동안 다른 쪽을 한다. 같은 볼륨을
  * 더 짧은 시간에 끝낼 수 있고, 이 앱이 이미 받고 있는 "오늘 40분밖에
@@ -120,6 +128,95 @@ export function checkPair(a: Exercise, b: Exercise): PairCheck {
   };
 }
 
+/** 나쁜 쪽이 이긴다 — 여러 짝을 한꺼번에 볼 때 쓴다. */
+const QUALITY_RANK: Record<PairQuality, number> = {
+  blocked: 0,
+  caution: 1,
+  fine: 2,
+  best: 3,
+};
+
+/** 한 묶음에 넣을 수 있는 최대 종목 수. */
+export const MAX_GROUP = 5;
+
+/**
+ * 크로스핏 세트에 넣을 수 있는, 허리가 실리는 종목의 수.
+ *
+ * 바퀴 후반에는 숨이 차 있다. 그 상태로 무거운 걸 또 드는 것이
+ * 크로스핏에서 사람이 다치는 제일 흔한 방식이다. 한 바퀴에 하나까지다.
+ */
+const HEAVY_PER_CIRCUIT = 1;
+
+export type GroupKind = 'superset' | 'circuit';
+
+/** 둘이면 슈퍼세트, 셋 이상이면 크로스핏 세트다. */
+export function groupKind(group: readonly string[]): GroupKind {
+  return group.length >= 3 ? 'circuit' : 'superset';
+}
+
+/** 화면에 그대로 쓸 이름. */
+export function groupLabel(group: readonly string[]): string {
+  return groupKind(group) === 'circuit' ? '크로스핏 세트' : '슈퍼세트';
+}
+
+/**
+ * 이 묶음에 이 종목을 더 넣어도 되는가.
+ *
+ * 이미 들어 있는 것들과 하나씩 다 따져 보고 제일 나쁜 답을 돌려준다.
+ * 거기에 바퀴가 길어질 때만 생기는 문제 두 가지를 더 본다.
+ */
+export function checkAdd(members: readonly Exercise[], candidate: Exercise): PairCheck {
+  if (members.some((member) => member.id === candidate.id)) {
+    return { quality: 'blocked', allowed: false, reason: '이미 이 묶음에 들어 있습니다.' };
+  }
+
+  if (members.length >= MAX_GROUP) {
+    return {
+      quality: 'blocked',
+      allowed: false,
+      reason:
+        `한 묶음은 ${MAX_GROUP}종목까지입니다. 더 늘리면 한 바퀴가 너무 길어져 ` +
+        '첫 종목으로 돌아왔을 때 이미 회복이 끝나 있습니다 — 그러면 묶은 뜻이 없습니다.',
+    };
+  }
+
+  // 1) 하나씩 다 따진다. 막히는 게 하나라도 있으면 못 넣는다.
+  let worst: PairCheck = { quality: 'best', allowed: true, reason: '쓰는 부위가 달라 번갈아 해도 괜찮습니다.' };
+  for (const member of members) {
+    const check = checkPair(member, candidate);
+    if (QUALITY_RANK[check.quality] < QUALITY_RANK[worst.quality]) worst = check;
+  }
+  if (!worst.allowed) return worst;
+
+  const size = members.length + 1;
+
+  // 2) 바퀴가 길어지면 허리가 실리는 종목은 하나까지다
+  if (size >= 3) {
+    const heavy = [...members, candidate].filter((exercise) => lowBackOf(exercise) >= HEAVY_BACK);
+    const [first, second] = heavy;
+    if (first && second) {
+      return {
+        quality: 'blocked',
+        allowed: false,
+        reason:
+          `${withParticle(first.name, '과/와')} ${second.name} 둘 다 허리에 크게 실립니다. ` +
+          '한 바퀴에 허리 쓰는 종목은 하나까지입니다 — 숨이 찬 상태로 두 번째를 들면 자세가 먼저 무너집니다.',
+      };
+    }
+    if (first && heavy.length === HEAVY_PER_CIRCUIT && QUALITY_RANK[worst.quality] > QUALITY_RANK.caution) {
+      return {
+        quality: 'caution',
+        allowed: true,
+        reason:
+          `${withParticle(first.name, '은/는')} 바퀴 맨 앞에 두세요. ` +
+          '숨이 찬 뒤에 하면 반복이 아니라 자세가 먼저 떨어집니다.',
+      };
+    }
+  }
+
+  return worst;
+}
+
 export interface SupersetTiming {
   /** 두 종목 사이 — 기구를 옮기는 시간만 */
   betweenSeconds: number;
@@ -145,23 +242,64 @@ export function supersetTiming(
   b: Exercise,
   restSeconds: number,
 ): SupersetTiming {
-  const check = checkPair(a, b);
-
-  /*
-   * 같은 부위를 묶었으면 사이 휴식을 조금 더 준다. 뒤 종목이 같은 근육을
-   * 또 쓰는데 바로 이어가면 반복이 절반으로 떨어진다.
-   */
-  const between = check.quality === 'caution' && primaryMuscle(a) === primaryMuscle(b) ? 45 : 20;
-  const after = restSeconds;
-
-  // 따로 하면 restSeconds를 두 번 쉰다. 묶으면 between + after만 쉰다.
-  const saved = Math.max(0, restSeconds * 2 - (between + after));
-
-  return { betweenSeconds: between, afterSeconds: after, savedSeconds: saved };
+  return circuitTiming([a, b], restSeconds);
 }
 
-/** 슈퍼세트 묶음 하나. 지금은 둘까지만 묶는다. */
-export type SupersetGroup = [string, string];
+/**
+ * 한 동작에서 다음 동작으로 넘어갈 때 쉬는 시간.
+ *
+ * 기구를 옮기는 시간만이다. 다만 같은 근육을 또 쓰면 바로 이어갈 수가
+ * 없다 — 반복이 절반으로 떨어진다. 그럴 때만 조금 더 준다.
+ */
+export function transitionRest(from: Exercise, to: Exercise): number {
+  const muscle = primaryMuscle(from);
+  return muscle && muscle === primaryMuscle(to) ? 45 : 20;
+}
+
+/**
+ * 묶었을 때의 휴식 — 둘이든 다섯이든 같은 계산이다.
+ *
+ * 동작 사이에는 옮길 만큼만 쉬고, **한 바퀴를 마친 뒤에는 제대로 쉰다.**
+ * 바퀴가 길수록 한 바퀴 끝의 숨이 더 차 있으므로 그만큼 더 준다. 여기서
+ * 아끼면 다음 바퀴의 첫 종목이 무너지고, 아낀 시간만큼 볼륨을 잃는다.
+ */
+export function circuitTiming(
+  exercises: readonly Exercise[],
+  restSeconds: number,
+): SupersetTiming {
+  if (exercises.length < 2) {
+    return { betweenSeconds: 0, afterSeconds: restSeconds, savedSeconds: 0 };
+  }
+
+  // 한 바퀴를 돌며 실제로 쉬는 시간을 다 더한다 (마지막 동작 뒤는 제외)
+  let transitions = 0;
+  let longest = 0;
+  for (let i = 0; i + 1 < exercises.length; i += 1) {
+    const from = exercises[i];
+    const to = exercises[i + 1];
+    if (!from || !to) continue;
+    const gap = transitionRest(from, to);
+    transitions += gap;
+    if (gap > longest) longest = gap;
+  }
+
+  /*
+   * 바퀴가 길면 한 바퀴 끝의 피로가 다르다. 3종목부터 동작 하나마다
+   * 15초씩 더 쉰다 — 5종목이면 45초가 붙는다.
+   */
+  const after = restSeconds + Math.max(0, exercises.length - 2) * 15;
+
+  // 따로 하면 종목마다 한 번씩 쉰다. 묶으면 사이 휴식 + 한 번만 쉰다.
+  const saved = Math.max(0, restSeconds * exercises.length - (transitions + after));
+
+  return { betweenSeconds: longest, afterSeconds: after, savedSeconds: saved };
+}
+
+/**
+ * 묶음 하나. 둘이면 슈퍼세트, 셋에서 다섯이면 크로스핏 세트다.
+ * 순서가 곧 바퀴 도는 순서다.
+ */
+export type SupersetGroup = string[];
 
 /**
  * 묶음 목록에서 이 종목이 속한 짝을 찾는다.
@@ -177,15 +315,18 @@ export function groupOf(
 /**
  * 묶음을 지금 세션에 맞게 정리한다.
  *
- * 종목이 교체되거나 빠지면 짝이 깨진다. 한쪽만 남은 묶음은 버린다 —
- * 한쪽이 사라진 슈퍼세트는 그냥 단일 종목이다.
+ * 종목이 교체되거나 빠지면 묶음이 깨진다. 넷 중 하나가 빠졌다고 나머지
+ * 셋까지 버릴 이유는 없으니 빠진 것만 빼고, 하나만 남으면 버린다 —
+ * 혼자 남은 묶음은 그냥 단일 종목이다.
  */
 export function pruneGroups(
   groups: readonly SupersetGroup[],
   presentIds: readonly string[],
 ): SupersetGroup[] {
   const present = new Set(presentIds);
-  return groups.filter((group) => group.every((id) => present.has(id)));
+  return groups
+    .map((group) => group.filter((id) => present.has(id)))
+    .filter((group) => group.length >= 2);
 }
 
 /**

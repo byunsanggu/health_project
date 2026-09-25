@@ -1126,14 +1126,11 @@ input[type="search"] {
 }
 .set-dots i.on { background: var(--accent); border-color: var(--accent); }
 .set-dots i.now { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 2px var(--accent-soft); }
-/* 중량 다음으로 자주 보는 숫자다. 회색 잔글씨로 두면 안 된다. */
+/* 몇 세트째인지는 머리띠에 크게 있다. 여기는 남은 개수만 조용히. */
 .set-count {
-  display: inline-flex; align-items: baseline; gap: 4px;
-  font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
+  font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums;
+  white-space: nowrap; color: var(--muted);
 }
-.set-count i { font-style: normal; font-size: 10px; letter-spacing: .1em; color: var(--muted); }
-.set-count b { font-size: 19px; font-weight: 600; color: var(--accent); line-height: 1; }
-.set-count span { font-size: 13px; color: var(--muted); }
 .set-count.done { font-size: 12.5px; color: var(--zone-ok); font-weight: 600; }
 
 .done-head {
@@ -1337,7 +1334,7 @@ input[type="search"] {
 
 .sheet-body.tight { padding: 0; }
 
-/* ── 슈퍼세트 ───────────────────────────────────── */
+/* ── 묶기 — 슈퍼세트 · 크로스핏 세트 ─────────────── */
 .pair-row {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
@@ -1354,12 +1351,15 @@ input[type="search"] {
 .pair-row:hover:not([disabled]) { background: var(--surface-2); }
 /* 지금 짝을 고르는 중인 종목 */
 .pair-row.picking { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
-/* 이미 묶인 종목 */
-.pair-row.paired { background: var(--surface-2); }
+/* 이미 묶인 종목 — 한 바퀴가 한 덩어리로 보여야 한다 */
+.pair-row.paired { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
+.pair-row.paired + .pair-row.paired { border-top-color: transparent; }
 /* 묶을 수 없는 조합 — 이유는 줄 안에 적힌다 */
 .pair-row.blocked { opacity: .55; cursor: default; }
 .pair-row.blocked .plan-sets { color: var(--zone-over); }
-.pair-mark { font-size: 13px; color: var(--accent); }
+.pair-mark { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent); }
+/* 담은 것 비우기 — 되돌리는 길은 있되 조용히 둔다 */
+.demo-open.wide { display: block; width: 100%; margin-top: 8px; text-align: center; }
 .pair-row .detail { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 
 /* 진행 화면에서 묶인 종목임을 알린다 */
@@ -1440,10 +1440,16 @@ input[type="search"] {
   background: var(--ground);
   border-bottom: 1px solid var(--line-soft);
 }
+/* 종목과 세트를 위아래로. 라벨이 없으면 어느 게 어느 건지 모른다. */
+.progress-counts { display: grid; gap: 1px; }
 .progress-count {
-  font-family: var(--mono); font-size: 12px; font-weight: 600;
-  font-variant-numeric: tabular-nums; white-space: nowrap;
+  display: inline-flex; align-items: baseline; gap: 4px;
+  font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
+.progress-count i { font-style: normal; font-size: 9px; letter-spacing: .1em; color: var(--muted); width: 20px; }
+.progress-count b { font-size: 15px; font-weight: 600; }
+.progress-count span { font-size: 11px; color: var(--muted); }
+.progress-count.set b { color: var(--accent); }
 .progress-bar { flex: 1; height: 5px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line-soft); overflow: hidden; }
 .progress-bar i { display: block; height: 100%; background: var(--accent); transition: width .25s ease; }
 .step-nav { display: flex; gap: 8px; }

@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { checkPair, groupOf, orderWithGroups, pruneGroups, supersetTiming } from '../superset.ts';
+import {
+  MAX_GROUP,
+  checkAdd,
+  checkPair,
+  circuitTiming,
+  groupKind,
+  groupLabel,
+  groupOf,
+  orderWithGroups,
+  pruneGroups,
+  supersetTiming,
+  transitionRest,
+} from '../superset.ts';
 import { EXERCISES } from '../exercises.ts';
 import type { Exercise } from '../types.ts';
 import type { SupersetGroup } from '../superset.ts';
@@ -110,5 +122,153 @@ describe('묶음 관리', () => {
 
   it('묶음이 없으면 그대로 둔다', () => {
     assert.deepEqual(orderWithGroups(['b', 'a'], []), ['b', 'a']);
+  });
+});
+
+describe('크로스핏 세트 — 셋 이상 묶기', () => {
+  it('둘이면 슈퍼세트, 셋이면 크로스핏 세트다', () => {
+    assert.equal(groupKind(['a', 'b']), 'superset');
+    assert.equal(groupKind(['a', 'b', 'c']), 'circuit');
+    assert.equal(groupLabel(['a', 'b']), '슈퍼세트');
+    assert.equal(groupLabel(['a', 'b', 'c']), '크로스핏 세트');
+  });
+
+  it('넣으려는 종목을 이미 있는 것들과 하나씩 다 따진다', () => {
+    /*
+     * 데드리프트가 이미 들어 있는 바퀴에 바벨 로우를 더하면, 벤치프레스와는
+     * 괜찮아도 데드리프트와 막힌다. 하나라도 막히면 못 넣는다.
+     */
+    const check = checkAdd(
+      [by('conventional-deadlift'), by('machine-chest-press')],
+      by('barbell-row'),
+    );
+    assert.equal(check.allowed, false);
+    assert.match(check.reason, /허리/);
+  });
+
+  it('허리 쓰는 종목이 하나 있으면 맨 앞에 두라고 한다', () => {
+    /*
+     * 막지는 않는다. 다만 바퀴 후반에는 숨이 차 있고, 그 상태로 허리에
+     * 실리는 걸 들면 반복이 아니라 자세가 먼저 떨어진다.
+     */
+    const check = checkAdd(
+      [by('conventional-deadlift'), by('machine-chest-press')],
+      by('lateral-raise'),
+    );
+    assert.equal(check.allowed, true);
+    assert.equal(check.quality, 'caution');
+    assert.match(check.reason, /맨 앞/);
+  });
+
+  it('둘만 묶을 때는 맨 앞 이야기를 하지 않는다', () => {
+    // 슈퍼세트는 바퀴가 짧다. 순서 잔소리를 할 자리가 아니다.
+    const check = checkAdd([by('conventional-deadlift')], by('machine-chest-press'));
+    assert.doesNotMatch(check.reason, /맨 앞/);
+  });
+
+  it('같은 종목은 두 번 넣지 못한다', () => {
+    const check = checkAdd([by('lat-pulldown'), by('lateral-raise')], by('lat-pulldown'));
+    assert.equal(check.allowed, false);
+  });
+
+  it('다섯을 넘기지 않는다', () => {
+    /*
+     * 더 늘리면 한 바퀴가 너무 길어져서, 첫 종목으로 돌아왔을 때 이미
+     * 회복이 끝나 있다. 그러면 묶은 뜻이 없다.
+     */
+    const five = [
+      by('barbell-bench-press'),
+      by('lat-pulldown'),
+      by('lateral-raise'),
+      by('barbell-curl'),
+      by('triceps-pushdown'),
+    ];
+    assert.equal(five.length, MAX_GROUP);
+    const check = checkAdd(five, by('leg-press'));
+    assert.equal(check.allowed, false);
+    assert.match(check.reason, new RegExp(String(MAX_GROUP)));
+  });
+
+  it('부위가 다르면 넷까지도 그냥 묶인다', () => {
+    const check = checkAdd(
+      [by('barbell-bench-press'), by('lat-pulldown'), by('lateral-raise')],
+      by('hammer-curl'),
+    );
+    assert.equal(check.allowed, true);
+    assert.equal(check.quality, 'fine');
+  });
+
+  it('원판 갈아야 하는 것끼리는 넷째라도 주의를 준다', () => {
+    /*
+     * 벤치프레스와 바벨 컬은 둘 다 원판을 끼운다. 이론상 번갈아 되지만
+     * 매 바퀴 무게를 바꿔야 해서 현장에서 안 된다.
+     */
+    const check = checkAdd(
+      [by('barbell-bench-press'), by('lat-pulldown'), by('lateral-raise')],
+      by('barbell-curl'),
+    );
+    assert.equal(check.allowed, true);
+    assert.equal(check.quality, 'caution');
+    assert.match(check.reason, /원판/);
+  });
+});
+
+describe('크로스핏 세트 휴식', () => {
+  it('바퀴가 길수록 바퀴 뒤에 더 쉰다', () => {
+    /*
+     * 다섯 동작을 연달아 하고 나면 숨이 찬 정도가 다르다. 여기서 휴식을
+     * 깎으면 다음 바퀴의 첫 종목이 무너지고, 아낀 시간만큼 볼륨을 잃는다.
+     */
+    const two = circuitTiming([by('barbell-bench-press'), by('lat-pulldown')], 70);
+    const four = circuitTiming(
+      [by('barbell-bench-press'), by('lat-pulldown'), by('lateral-raise'), by('barbell-curl')],
+      70,
+    );
+    assert.equal(two.afterSeconds, 70);
+    assert.ok(four.afterSeconds > two.afterSeconds);
+  });
+
+  it('종목이 늘수록 한 바퀴에 아끼는 시간도 는다', () => {
+    const three = circuitTiming(
+      [by('barbell-bench-press'), by('lat-pulldown'), by('lateral-raise')],
+      70,
+    );
+    const two = circuitTiming([by('barbell-bench-press'), by('lat-pulldown')], 70);
+    assert.ok(three.savedSeconds > two.savedSeconds);
+  });
+
+  it('혼자면 아끼는 것이 없다', () => {
+    const one = circuitTiming([by('barbell-bench-press')], 70);
+    assert.equal(one.savedSeconds, 0);
+    assert.equal(one.afterSeconds, 70);
+  });
+
+  it('슈퍼세트 계산은 그대로다', () => {
+    // 둘을 묶은 것은 종목 두 개짜리 바퀴와 같은 계산이어야 한다.
+    const pair = supersetTiming(by('barbell-bench-press'), by('lat-pulldown'), 70);
+    const circuit = circuitTiming([by('barbell-bench-press'), by('lat-pulldown')], 70);
+    assert.deepEqual(pair, circuit);
+  });
+
+  it('같은 근육으로 이어지면 옮기는 시간보다 더 준다', () => {
+    // 바로 이어가면 반복이 절반으로 떨어진다.
+    assert.equal(transitionRest(by('lateral-raise'), by('cable-lateral-raise')), 45);
+    assert.equal(transitionRest(by('barbell-bench-press'), by('lat-pulldown')), 20);
+  });
+});
+
+describe('셋 이상 묶음 정리', () => {
+  it('넷 중 하나가 빠져도 나머지는 살린다', () => {
+    // 하나 빠졌다고 나머지 셋까지 버릴 이유는 없다.
+    assert.deepEqual(pruneGroups([['a', 'b', 'c', 'd']], ['a', 'c', 'd']), [['a', 'c', 'd']]);
+  });
+
+  it('하나만 남으면 버린다', () => {
+    assert.deepEqual(pruneGroups([['a', 'b', 'c']], ['b']), []);
+  });
+
+  it('바퀴를 나란히 끌어온다', () => {
+    const groups: SupersetGroup[] = [['a', 'b', 'c']];
+    assert.deepEqual(orderWithGroups(['a', 'x', 'b', 'y', 'c'], groups), ['a', 'b', 'c', 'x', 'y']);
   });
 });
