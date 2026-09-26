@@ -145,7 +145,12 @@ export function createStore(adapter: StorageAdapter, options: StoreOptions = {})
   function stamp<T extends Syncable>(record: T): T & { id: string; updatedAt: string } {
     return {
       ...record,
-      id: record.id ?? newId(),
+      /*
+       * 빈 문자열도 "없음"으로 본다. 화면에서 넘어온 값은 undefined가
+       * 아니라 ''인 경우가 많고, ''를 그대로 두면 id 없는 기록이 생겨
+       * 서버에 올릴 때 조용히 버려진다.
+       */
+      id: record.id || newId(),
       updatedAt: now(),
       deviceId,
     } as T & { id: string; updatedAt: string };
