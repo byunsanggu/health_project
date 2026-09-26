@@ -18,8 +18,42 @@ var Remote = (function () {
 
   var KEY = 'volume-coach.remote';
 
-  /** 저장된 접속 정보와 로그인 상태. */
+  /*
+   * 빌드할 때 박아 넣은 접속 정보.
+   *
+   * 이게 없으면 앱을 받은 사람이 주소와 열쇠를 손으로 넣어야 하고, 그러면
+   * 아무도 동기화를 안 켠다 — 관장님 말이 맞았다. 서버는 하나인데 그 주소를
+   * 사용자가 알아야 할 이유가 없다.
+   *
+   * publishable(anon) 열쇠는 **공개를 전제로 설계된 값**이다. 남의 기록은
+   * 이 열쇠가 아니라 DB의 RLS 정책이 막는다. 그래서 브라우저에 박아도 된다 —
+   * 세상 모든 Supabase 웹앱이 이렇게 쓴다. 카카오 열쇠와는 성격이 다르다.
+   *
+   * 빌드에서 넣지 않으면 그냥 비어 있고, 예전처럼 사용자가 넣는 길이 열린다.
+   */
+  function baked() {
+    var defaults = window.__VOLUME_COACH_SERVER__;
+    if (!defaults || !defaults.url || !defaults.anonKey) return null;
+    return { url: defaults.url, anonKey: defaults.anonKey };
+  }
+
+  /**
+   * 저장된 접속 정보와 로그인 상태.
+   *
+   * 박아 넣은 값이 바닥에 깔리고 저장된 값이 그 위에 얹힌다. 순서가 이래야
+   * **사용자가 직접 넣은 주소가 이긴다** — 자기 서버를 쓰려는 사람의 설정을
+   * 우리가 덮어쓰면 안 된다.
+   *
+   * 토큰 같은 로그인 상태는 저장된 쪽에만 있으므로 그대로 따라온다.
+   */
   function read() {
+    var defaults = baked();
+    var stored = readStored();
+    return defaults ? Object.assign({}, defaults, stored) : stored;
+  }
+
+  /** 이 기기에 실제로 적혀 있는 것만. 박아 넣은 값은 안 섞는다. */
+  function readStored() {
     try {
       var raw = localStorage.getItem(KEY);
       return raw ? JSON.parse(raw) : {};
@@ -37,10 +71,17 @@ var Remote = (function () {
     }
   }
 
+  /*
+   * 저장할 때는 **저장된 것에만** 얹는다.
+   *
+   * read()에 얹으면 박아 넣은 주소와 열쇠가 이 기기에 복사돼 버린다. 그러면
+   * 나중에 서버를 옮겨서 새로 빌드해도, 예전에 한 번이라도 로그인한 기기는
+   * 옛날 주소를 영영 붙들고 있게 된다.
+   */
   function patch(partial) {
-    var next = Object.assign(read(), partial);
+    var next = Object.assign(readStored(), partial);
     write(next);
-    return next;
+    return read();
   }
 
   /** 주소 끝의 / 는 붙어 있어도 없어도 되게 만든다. */
@@ -354,6 +395,7 @@ var Remote = (function () {
 
   return {
     read: read,
+    baked: baked,
     patch: patch,
     callFunction: callFunction,
     configured: configured,

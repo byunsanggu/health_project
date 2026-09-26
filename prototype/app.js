@@ -513,6 +513,8 @@
      */
     placeResults: null,
     placeBusy: false,
+    /* 서버 주소를 직접 넣는 칸을 펼쳤는가. 박아 넣은 값이 있을 때만 쓴다. */
+    showServerFields: false,
     maxTest: null,
     /*
      * 오늘을 시작했는가. 시작 전에는 목록만 보여주고, 시작한 뒤에는
@@ -5362,6 +5364,19 @@
       onclick: closeAuth,
     }));
 
+    /*
+     * 서버가 앱에 박혀 있으면 이 화면으로 바로 오게 되는데, 그러면 서버를
+     * 바꿀 길이 로그인 뒤에만 남는다. 자기 서버를 쓰려는 사람은 **로그인
+     * 전에** 바꿔야 하므로 여기에도 문을 하나 둔다. 조용한 줄로 둔다 —
+     * 대부분의 사람은 누를 일이 없다.
+     */
+    if (Remote.baked()) {
+      screen.appendChild(el('button', {
+        type: 'button', class: 'auth-skip', text: '서버 설정',
+        onclick: function () { state.authOpen = false; render(); openServerSettings(); },
+      }));
+    }
+
     screen.appendChild(el('p', { class: 'asset-note', text:
       '계정 없이도 앱은 그대로 돌아갑니다. 기록은 늘 이 기기에 먼저 저장되고, ' +
       '로그인은 그 기록을 다른 기기와 잇는 역할만 합니다. ' +
@@ -5424,8 +5439,38 @@
         ]));
       }
 
-      // ── ① 주소와 열쇠
-      body.push(el('div', { class: 'list-label', text: '① 서버 주소와 열쇠' }));
+      /*
+       * 주소와 열쇠가 빌드에 박혀 있으면 넣으라고 하지 않는다.
+       *
+       * 서버는 하나인데 그 주소를 사용자가 알아야 할 이유가 없다. 넣는 칸을
+       * 띄워 두면 앱을 받은 사람은 거기서 멈춘다 — 뭘 넣어야 하는지 알 길이
+       * 없기 때문이다.
+       *
+       * 그래도 길은 남겨 둔다. 자기 서버를 쓰려는 사람이 있을 수 있고, 그
+       * 사람이 넣은 값은 박아 넣은 값을 이긴다.
+       */
+      var preset = Remote.baked();
+      if (preset) {
+        body.push(el('div', { class: 'list-label', text: '① 서버' }));
+        body.push(el('div', { class: 'server-row' }, [
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: '연결돼 있습니다' }),
+            el('span', { class: 'plan-sets', text: conf.url.replace(/^https:\/\//, '') }),
+          ]),
+        ]));
+        body.push(el('p', { class: 'hint-line', text:
+          '주소와 열쇠는 앱에 들어 있습니다. 아래에서 계정만 만들면 됩니다.' }));
+
+        if (!state.showServerFields) {
+          body.push(el('button', {
+            type: 'button', class: 'ghost', text: '다른 서버 쓰기',
+            onclick: function () { state.showServerFields = true; draw(); },
+          }));
+        }
+      }
+
+      if (!preset || state.showServerFields) {
+      body.push(el('div', { class: 'list-label', text: preset ? '다른 서버 주소와 열쇠' : '① 서버 주소와 열쇠' }));
       var urlInput = el('input', {
         type: 'url', class: 'text-input', placeholder: 'https://xxxx.supabase.co',
         value: form.url, 'aria-label': '서버 주소',
@@ -5459,6 +5504,7 @@
           draw();
         },
       }));
+      }
 
       // ── ② 로그인
       if (Remote.configured()) {

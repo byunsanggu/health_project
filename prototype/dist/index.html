@@ -2496,6 +2496,7 @@ html[data-standalone] .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px)
   };
 })();
 </script>
+
 <script>/*
  * 서버와 이야기하기 — Supabase(PostgREST · GoTrue)에 대고 fetch만 쓴다.
  *
@@ -2516,8 +2517,42 @@ var Remote = (function () {
 
   var KEY = 'volume-coach.remote';
 
-  /** 저장된 접속 정보와 로그인 상태. */
+  /*
+   * 빌드할 때 박아 넣은 접속 정보.
+   *
+   * 이게 없으면 앱을 받은 사람이 주소와 열쇠를 손으로 넣어야 하고, 그러면
+   * 아무도 동기화를 안 켠다 — 관장님 말이 맞았다. 서버는 하나인데 그 주소를
+   * 사용자가 알아야 할 이유가 없다.
+   *
+   * publishable(anon) 열쇠는 **공개를 전제로 설계된 값**이다. 남의 기록은
+   * 이 열쇠가 아니라 DB의 RLS 정책이 막는다. 그래서 브라우저에 박아도 된다 —
+   * 세상 모든 Supabase 웹앱이 이렇게 쓴다. 카카오 열쇠와는 성격이 다르다.
+   *
+   * 빌드에서 넣지 않으면 그냥 비어 있고, 예전처럼 사용자가 넣는 길이 열린다.
+   */
+  function baked() {
+    var defaults = window.__VOLUME_COACH_SERVER__;
+    if (!defaults || !defaults.url || !defaults.anonKey) return null;
+    return { url: defaults.url, anonKey: defaults.anonKey };
+  }
+
+  /**
+   * 저장된 접속 정보와 로그인 상태.
+   *
+   * 박아 넣은 값이 바닥에 깔리고 저장된 값이 그 위에 얹힌다. 순서가 이래야
+   * **사용자가 직접 넣은 주소가 이긴다** — 자기 서버를 쓰려는 사람의 설정을
+   * 우리가 덮어쓰면 안 된다.
+   *
+   * 토큰 같은 로그인 상태는 저장된 쪽에만 있으므로 그대로 따라온다.
+   */
   function read() {
+    var defaults = baked();
+    var stored = readStored();
+    return defaults ? Object.assign({}, defaults, stored) : stored;
+  }
+
+  /** 이 기기에 실제로 적혀 있는 것만. 박아 넣은 값은 안 섞는다. */
+  function readStored() {
     try {
       var raw = localStorage.getItem(KEY);
       return raw ? JSON.parse(raw) : {};
@@ -2535,10 +2570,17 @@ var Remote = (function () {
     }
   }
 
+  /*
+   * 저장할 때는 **저장된 것에만** 얹는다.
+   *
+   * read()에 얹으면 박아 넣은 주소와 열쇠가 이 기기에 복사돼 버린다. 그러면
+   * 나중에 서버를 옮겨서 새로 빌드해도, 예전에 한 번이라도 로그인한 기기는
+   * 옛날 주소를 영영 붙들고 있게 된다.
+   */
   function patch(partial) {
-    var next = Object.assign(read(), partial);
+    var next = Object.assign(readStored(), partial);
     write(next);
-    return next;
+    return read();
   }
 
   /** 주소 끝의 / 는 붙어 있어도 없어도 되게 만든다. */
@@ -2852,6 +2894,7 @@ var Remote = (function () {
 
   return {
     read: read,
+    baked: baked,
     patch: patch,
     callFunction: callFunction,
     configured: configured,
@@ -3976,6 +4019,8 @@ var GymSearch = (function () {
      */
     placeResults: null,
     placeBusy: false,
+    /* 서버 주소를 직접 넣는 칸을 펼쳤는가. 박아 넣은 값이 있을 때만 쓴다. */
+    showServerFields: false,
     maxTest: null,
     /*
      * 오늘을 시작했는가. 시작 전에는 목록만 보여주고, 시작한 뒤에는
@@ -8825,6 +8870,19 @@ var GymSearch = (function () {
       onclick: closeAuth,
     }));
 
+    /*
+     * 서버가 앱에 박혀 있으면 이 화면으로 바로 오게 되는데, 그러면 서버를
+     * 바꿀 길이 로그인 뒤에만 남는다. 자기 서버를 쓰려는 사람은 **로그인
+     * 전에** 바꿔야 하므로 여기에도 문을 하나 둔다. 조용한 줄로 둔다 —
+     * 대부분의 사람은 누를 일이 없다.
+     */
+    if (Remote.baked()) {
+      screen.appendChild(el('button', {
+        type: 'button', class: 'auth-skip', text: '서버 설정',
+        onclick: function () { state.authOpen = false; render(); openServerSettings(); },
+      }));
+    }
+
     screen.appendChild(el('p', { class: 'asset-note', text:
       '계정 없이도 앱은 그대로 돌아갑니다. 기록은 늘 이 기기에 먼저 저장되고, ' +
       '로그인은 그 기록을 다른 기기와 잇는 역할만 합니다. ' +
@@ -8887,8 +8945,38 @@ var GymSearch = (function () {
         ]));
       }
 
-      // ── ① 주소와 열쇠
-      body.push(el('div', { class: 'list-label', text: '① 서버 주소와 열쇠' }));
+      /*
+       * 주소와 열쇠가 빌드에 박혀 있으면 넣으라고 하지 않는다.
+       *
+       * 서버는 하나인데 그 주소를 사용자가 알아야 할 이유가 없다. 넣는 칸을
+       * 띄워 두면 앱을 받은 사람은 거기서 멈춘다 — 뭘 넣어야 하는지 알 길이
+       * 없기 때문이다.
+       *
+       * 그래도 길은 남겨 둔다. 자기 서버를 쓰려는 사람이 있을 수 있고, 그
+       * 사람이 넣은 값은 박아 넣은 값을 이긴다.
+       */
+      var preset = Remote.baked();
+      if (preset) {
+        body.push(el('div', { class: 'list-label', text: '① 서버' }));
+        body.push(el('div', { class: 'server-row' }, [
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: '연결돼 있습니다' }),
+            el('span', { class: 'plan-sets', text: conf.url.replace(/^https:\/\//, '') }),
+          ]),
+        ]));
+        body.push(el('p', { class: 'hint-line', text:
+          '주소와 열쇠는 앱에 들어 있습니다. 아래에서 계정만 만들면 됩니다.' }));
+
+        if (!state.showServerFields) {
+          body.push(el('button', {
+            type: 'button', class: 'ghost', text: '다른 서버 쓰기',
+            onclick: function () { state.showServerFields = true; draw(); },
+          }));
+        }
+      }
+
+      if (!preset || state.showServerFields) {
+      body.push(el('div', { class: 'list-label', text: preset ? '다른 서버 주소와 열쇠' : '① 서버 주소와 열쇠' }));
       var urlInput = el('input', {
         type: 'url', class: 'text-input', placeholder: 'https://xxxx.supabase.co',
         value: form.url, 'aria-label': '서버 주소',
@@ -8922,6 +9010,7 @@ var GymSearch = (function () {
           draw();
         },
       }));
+      }
 
       // ── ② 로그인
       if (Remote.configured()) {

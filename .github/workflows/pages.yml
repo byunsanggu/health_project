@@ -43,6 +43,15 @@ jobs:
         run: npm run check
 
       - name: 프로토타입 빌드
+        # 접속 정보는 저장소가 아니라 Actions 비밀값에 둔다. 서버를 옮길 때
+        # 코드를 안 고쳐도 되고, 저장소 이력에 열쇠가 남지 않는다.
+        #
+        # publishable(anon) 열쇠는 공개를 전제로 설계된 값이라 빌드 결과에
+        # 들어가도 된다 — 남의 기록은 이 열쇠가 아니라 DB의 RLS가 막는다.
+        # build.mjs가 secret / service_role 열쇠는 빌드를 세워서 막는다.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: node prototype/build.mjs
 
       - uses: actions/upload-pages-artifact@v3
