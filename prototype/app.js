@@ -172,6 +172,7 @@
         supersets: state.supersets,
         restBand: state.restBand,
         restOverrides: state.restOverrides,
+        extraLifts: state.extraLifts,
         voiceOn: state.voiceOn,
         tempo: state.tempo,
         voiceRate: state.voiceRate,
@@ -225,6 +226,7 @@
       state.supersets = settings.supersets || [];
       state.restBand = settings.restBand || null;
       state.restOverrides = settings.restOverrides || {};
+      state.extraLifts = settings.extraLifts || [];
       state.voiceOn = Boolean(settings.voiceOn);
       state.tempo = settings.tempo || null;
       state.voiceRate = settings.voiceRate || 1;
@@ -445,6 +447,14 @@
     restBand: null,
     /* 종목별로 직접 정한 휴식(초). { 종목id: 초 } */
     restOverrides: {},
+    /*
+     * 오늘 따로 끼워 넣은 종목. [{ exerciseId, sets }]
+     *
+     * 프로그램이 짜 준 것 말고 더 하고 싶은 날이 있다. 세션은 다시
+     * 짜일 때마다 템플릿에서 새로 만들어지므로, 끼운 것은 따로 들고
+     * 있다가 매번 다시 붙여야 한다 — 순서·묶음과 같은 이유다.
+     */
+    extraLifts: [],
     /*
      * 음성 카운트. 혼자 하면 힘들어질수록 저절로 빨라지고, 빨라지면
      * 반동이 붙어서 같은 10회가 다른 10회가 된다. 옆에서 세어 주는
@@ -730,8 +740,42 @@
     });
     state.plan = styled;
 
+    /*
+     * 끼워 넣은 종목을 템플릿 뒤에 붙인다.
+     *
+     * 앞이 아니라 뒤다. 프로그램이 짜 준 것이 먼저고, 더 하고 싶은
+     * 것은 그다음이다 — 순서는 직접 바꿀 수 있다.
+     */
+    var baseTemplate = state.program.templates[currentTemplateIndex()];
+    var template = state.extraLifts.length === 0 ? baseTemplate : {
+      name: baseTemplate.name,
+      slots: baseTemplate.slots.concat(
+        state.extraLifts
+          .filter(function (extra) {
+            var exercise = index.get(extra.exerciseId);
+            // 이미 오늘 하는 종목이면 또 넣지 않는다.
+            return exercise && !baseTemplate.slots.some(function (slot) {
+              return slot.exerciseId === extra.exerciseId;
+            });
+          })
+          .map(function (extra) {
+            var exercise = index.get(extra.exerciseId);
+            /*
+             * 반복 범위는 동작의 성격을 따른다. 복합 동작에 15회를,
+             * 고립 운동에 5회를 주면 그건 처방이 아니라 아무 숫자다.
+             */
+            var isolation = exercise.pattern === 'isolation' || exercise.pattern === 'core';
+            return {
+              exerciseId: extra.exerciseId,
+              sets: extra.sets || 3,
+              repRange: isolation ? { min: 10, max: 15 } : { min: 6, max: 10 },
+            };
+          }),
+      ),
+    };
+
     var built = E.buildSession({
-      template: state.program.templates[currentTemplateIndex()],
+      template: template,
       date: state.todayDate,
       plan: state.plan,
       history: state.history,
@@ -2569,6 +2613,9 @@
         el('span', { class: 'plan-main' }, [
           el('span', { class: 'name' }, [
             el('span', { text: lift.exercise.name }),
+            // 프로그램이 짜 준 것과 끼워 넣은 것은 구분돼야 한다
+            isExtraLift(lift.exercise.id, lift)
+              ? el('span', { class: 'extra-tag', text: '추가' }) : null,
             lift.substitutedFrom
               ? el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name })
               : null,
@@ -2603,6 +2650,11 @@
           el('span', { class: 'meta', text: '총 ' + state.lifts.length + '개' }),
         ]),
         el('span', { class: 'head-actions' }, [
+          el('button', {
+            type: 'button', class: 'demo-open', text: '다른 운동',
+            title: '프로그램에 없는 종목을 오늘만 끼워 넣습니다',
+            onclick: openAddLift,
+          }),
           el('button', {
             type: 'button', class: 'demo-open', text: '세어주기',
             title: '템포와 음성 카운트를 정합니다',
@@ -2950,12 +3002,172 @@
    * 시연·사람 있어요·없어요를 목록에 다 늘어놓으면 줄마다 버튼이 셋이라
    * 이름이 안 보인다. 한 곳에 모은다.
    */
+  /**
+   * 다른 운동 하기.
+   *
+   * 프로그램이 짜 준 것 말고 더 하고 싶은 날이 있다. "오늘은 팔 좀 더",
+   * "이 기구 비었으니 해보자" — 그걸 못 하게 막으면 사용자는 앱 밖에서
+   * 하고, 그러면 그 세트는 볼륨 계산에서 빠진다. **기록되지 않는 운동이
+   * 제일 나쁘다.**
+   *
+   * 다만 아무거나 앞에 내놓지 않는다. 이 헬스장에 있는 기구부터,
+   * 그리고 오늘 아픈 데에 부담이 큰 것은 뒤로 민다.
+   */
+  function openAddLift() {
+    var draw = function () {
+      var entry = currentGymEntry();
+      var query = (state.addLiftQuery || '').trim();
+      var body = [];
+
+      body.push(el('p', { class: 'asset-note', text:
+        '프로그램에 없는 종목을 오늘만 끼워 넣습니다. 기록은 똑같이 남고 볼륨에도 들어갑니다 — ' +
+        '앱 밖에서 하면 그 세트는 어디에도 안 남습니다.' }));
+
+      var search = el('input', {
+        type: 'search', class: 'text-input', value: state.addLiftQuery || '',
+        placeholder: '종목 이름 (예: 컬, 레그)',
+        'aria-label': '종목 찾기',
+        oninput: function (event) { state.addLiftQuery = event.target.value; draw(); },
+      });
+      body.push(search);
+
+      var already = {};
+      state.lifts.forEach(function (lift) { already[lift.exercise.id] = true; });
+
+      var candidates = E.EXERCISES.filter(function (exercise) {
+        if (already[exercise.id]) return false;
+        if (!query) return true;
+        return exercise.name.indexOf(query) >= 0
+          || (exercise.nameEn || '').toLowerCase().indexOf(query.toLowerCase()) >= 0;
+      });
+
+      /*
+       * 이 헬스장에 기구가 없는 종목은 뒤로. 목록에서 아예 빼지는
+       * 않는다 — 기구 등록이 안 끝났을 수도 있고, 오늘만 다른 데서
+       * 할 수도 있다.
+       */
+      var painful = activePain();
+
+      /*
+       * 이 헬스장에 "없는" 기구. equipmentBehind()는 반대로 — 있는 것 중
+       * 무엇을 꺼야 하는지를 주므로 여기서는 쓸 수 없다.
+       */
+      var gymIds = entry ? entry.equipmentIds : [];
+      var missingFor = function (exercise) {
+        var required = E.EXERCISE_REQUIREMENTS[exercise.id] || [];
+        return required
+          .filter(function (id) { return gymIds.indexOf(id) < 0; })
+          .map(function (id) {
+            var item = E.equipmentItem(id);
+            return item ? item.name : id;
+          });
+      };
+
+      /*
+       * 오늘 쓰는 부위를 앞에 둔다. 하체 날에 벤치프레스가 맨 위에
+       * 뜨면 목록을 안 믿게 된다 — 끼워 넣는 종목은 대개 오늘 하는
+       * 부위의 보조 종목이다.
+       */
+      var todayMuscles = todayMuscleList();
+      var rank = function (exercise) {
+        var offToday = todayMuscles.indexOf(E.primaryMuscle(exercise)) < 0 ? 1 : 0;
+        var missing = entry && missingFor(exercise).length > 0 ? 2 : 0;
+        var hurts = painful.some(function (report) {
+          return report.score >= 3 && (exercise.jointStress[report.joint] || 0) >= 0.5;
+        }) ? 4 : 0;
+        return offToday + missing + hurts;
+      };
+      candidates = candidates.slice().sort(function (a, b) { return rank(a) - rank(b); }).slice(0, 40);
+
+      if (candidates.length === 0) {
+        body.push(el('p', { class: 'hint-line', text: '그 이름으로는 없습니다. 다르게 쳐 보세요.' }));
+      }
+
+      body.push(el('div', { class: 'summary-list' }, candidates.map(function (exercise) {
+        var missing = entry ? missingFor(exercise) : [];
+        var hurts = painful.filter(function (report) {
+          return report.score >= 3 && (exercise.jointStress[report.joint] || 0) >= 0.5;
+        })[0];
+
+        return el('button', {
+          type: 'button', class: 'add-lift-row',
+          onclick: function () { addExtraLift(exercise); },
+        }, [
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: exercise.name }),
+            el('span', { class: 'plan-sets', text:
+              hurts ? '⚠ ' + E.JOINT_LABELS_KO[hurts.joint] + '에 부담이 큽니다'
+                : missing.length > 0
+                  ? '이 헬스장에 ' + withParticleJs(missing[0], '이/가') + ' 없습니다'
+                : E.MUSCLE_LABELS_KO[E.primaryMuscle(exercise)] || exercise.pattern }),
+          ]),
+          el('span', { class: 'detail', text: '＋' }),
+        ]);
+      })));
+
+      openModal('다른 운동 하기', state.extraLifts.length > 0
+        ? state.extraLifts.length + '개 추가됨' : '오늘만', body);
+    };
+    draw();
+  }
+
+  function addExtraLift(exercise) {
+    state.extraLifts = state.extraLifts.concat([{ exerciseId: exercise.id, sets: 3 }]);
+    state.addLiftQuery = '';
+    rebuildSession();
+    pushLog('다른 운동', '<b>' + exercise.name + '</b>' +
+      particleOf(exercise.name, '을/를') + ' 오늘 목록에 넣었습니다.');
+    modal.close();
+    render();
+  }
+
+  /** 끼운 종목을 뺀다. 프로그램이 짜 준 것은 못 뺀다 — 그건 순서 변경이 할 일이다. */
+  function removeExtraLift(exerciseId) {
+    state.extraLifts = state.extraLifts.filter(function (extra) {
+      return extra.exerciseId !== exerciseId;
+    });
+    rebuildSession();
+    render();
+  }
+
+  /**
+   * 끼워 넣은 종목인가.
+   *
+   * 기구가 없어서 대체됐을 수 있다. 레그 익스텐션을 넣었는데 레그프레스로
+   * 바뀌면 id가 달라지므로, 바뀌기 전 것도 같이 본다 — 안 그러면
+   * "추가" 표시가 사라지고 뺄 수도 없게 된다.
+   */
+  function isExtraLift(exerciseId, lift) {
+    var ids = [exerciseId];
+    if (lift && lift.substitutedFrom) ids.push(lift.substitutedFrom.id);
+    return state.extraLifts.some(function (extra) {
+      return ids.indexOf(extra.exerciseId) >= 0;
+    });
+  }
+
+  /** 뺄 때도 바뀌기 전 id로 찾아야 한다. */
+  function extraIdFor(lift) {
+    var ids = [lift.exercise.id];
+    if (lift.substitutedFrom) ids.push(lift.substitutedFrom.id);
+    var found = state.extraLifts.filter(function (extra) {
+      return ids.indexOf(extra.exerciseId) >= 0;
+    })[0];
+    return found ? found.exerciseId : lift.exercise.id;
+  }
+
   function openLiftMenu(lift) {
     var entry = currentGymEntry() || { equipmentIds: [] };
     var options = [
       { label: '동작 시연', hint: '수행 큐 · 흔한 실수 · 쓰는 근육', run: function () { openDemo(lift.exercise); } },
       { label: '사람 있어요', hint: '순서 변경 · 대체 · 대기 중에서 고릅니다', run: function () { openOccupancy(lift.exercise); } },
     ];
+    if (isExtraLift(lift.exercise.id, lift)) {
+      options.push({
+        label: '오늘 목록에서 빼기',
+        hint: '따로 끼워 넣은 종목입니다',
+        run: function () { modal.close(); removeExtraLift(extraIdFor(lift)); },
+      });
+    }
     options.push({
       label: '이 종목 휴식 시간',
       hint: restOverrideHint(lift),
@@ -3472,6 +3684,14 @@
      */
     if (last && !finished && state.todaySets.length > 0) renderFinish(true);
 
+    // 다 했는데 더 하고 싶은 날. 끝내기 버튼 옆에 조용히 둔다.
+    if (finished) {
+      screen.appendChild(el('button', {
+        type: 'button', class: 'finish quiet', text: '다른 운동 더 하기',
+        onclick: openAddLift,
+      }));
+    }
+
     /*
      * 완료 버튼이 컨디셔닝·맥스테스트 시트 아래에 묻혀 있었다. 다 끝냈는데
      * 다음 행동이 스크롤 두 번 아래에 있으면 "아무 일도 안 일어난다"로
@@ -3924,6 +4144,15 @@
           ? minutes + '분 동안 ' + state.todaySets.length + '세트를 했습니다. 기록은 볼륨·진행 탭에 반영됐습니다.'
           : '기록은 볼륨·진행 탭에 반영됐습니다.' }),
         el('button', { type: 'button', class: 'finish', text: '요약 다시 보기', onclick: openSummary }),
+        /*
+         * "이어서 하기"만 있으면 오늘 계획한 것을 다 한 사람은 갈 곳이
+         * 없다. 더 하고 싶은 날이 있고, 그걸 못 하게 막으면 앱 밖에서
+         * 해서 그 세트가 어디에도 안 남는다.
+         */
+        el('button', {
+          type: 'button', class: 'finish', text: '다른 운동 더 하기',
+          onclick: openAddLift,
+        }),
         el('button', {
           type: 'button', class: 'finish quiet', text: '아직 안 끝났어요 — 이어서 하기',
           onclick: function () {
@@ -6713,12 +6942,33 @@
     });
 
     var resultsHost = el('div', { class: 'search-results', id: 'gym-results' }, []);
+    /*
+     * 검색에 나오는 건 아직 예시 네 곳뿐이다.
+     *
+     * 지도 API를 붙이기 전까지는 "찾기"가 주 경로가 아니라 "직접 등록"이
+     * 주 경로다. 그걸 감추고 검색창만 띄우면 실제 헬스장 이름을 쳤다가
+     * 아무것도 안 나오고, 그때 사용자는 앱이 고장 난 줄 안다.
+     *
+     * 게다가 지도 API가 붙어도 "여기 핵스쿼트 있나"는 어차피 손으로
+     * 넣어야 한다 — 그게 이 앱이 필요한 정보다.
+     */
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '헬스장 찾기' }),
-        el('span', { class: 'meta', text: '내 프로그램 기준' }),
+        el('h3', { text: '헬스장 추가' }),
+        el('span', { class: 'meta', text: '직접 등록' }),
       ]),
-      el('div', { class: 'sheet-body' }, [searchInput, resultsHost]),
+      el('div', { class: 'sheet-body' }, [
+        el('p', { class: 'asset-note', text:
+          '다니는 헬스장을 직접 등록하세요. 이름과 있는 기구만 넣으면 됩니다 — ' +
+          '아파트·회사 헬스장도 됩니다.' }),
+        registerButton(),
+        el('div', { class: 'list-label', text: '예시로 둘러보기' }),
+        el('p', { class: 'hint-line', text:
+          '아래 네 곳은 앱을 시험해 보시라고 넣어 둔 가상의 헬스장입니다. ' +
+          '실제 헬스장 검색은 아직 안 됩니다 — 지도 연동은 나중에 붙입니다.' }),
+        searchInput,
+        resultsHost,
+      ]),
     ]));
     renderSearchResults();
 
@@ -6794,10 +7044,10 @@
       host.appendChild(el('p', {
         class: 'hint-line',
         text: state.gymQuery.trim().length === 0
-          ? '이름이나 지역을 입력하면 근처 헬스장을 찾습니다.'
-          : '검색 결과가 없습니다. 아파트나 회사 헬스장은 원래 검색에 나오지 않습니다.',
+          ? '비워 두면 예시 네 곳이 모두 나옵니다.'
+          : '그 이름은 예시 목록에 없습니다. 실제 헬스장은 아직 검색되지 않으니 위에서 직접 등록하세요.',
       }));
-      host.appendChild(registerButton());
+      // 직접 등록 버튼은 이 칸 위에 이미 크게 있다. 둘을 두면 어느 쪽을 눌러야 하는지 헷갈린다.
       return;
     }
 
