@@ -35,6 +35,7 @@ export * from './dayChoice.ts';
 export * from './comparison.ts';
 export * from './reorder.ts';
 export * from './cardio.ts';
+export * from './painHistory.ts';
 export * from './streak.ts';
 export * from './sync.ts';
 export * from './superset.ts';

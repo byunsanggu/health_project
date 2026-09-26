@@ -146,6 +146,7 @@
   function persist() {
     // 화면 상태와 별개로, 오늘 기록은 저장소의 세션으로도 남겨야 서버에 간다.
     if (state.todayDate && state.lifts) recordTodaySession();
+    if (state.todayDate && state.pain) recordTodayCheckIn();
     storage.patch({
       answers: state.answers,
       program: state.program,
@@ -539,6 +540,8 @@
   function seedHistory(scenario) {
     var history = [];
     var checkIns = [];
+    // 통증은 "그 관절을 쓴 다음 날" 올라온다. 바로 앞 세션을 들고 다닌다.
+    var previous = null;
     var pain = JOINTS
       .map(function (joint) { return { joint: joint, score: scenario.pain[joint] || 0 }; })
       .filter(function (report) { return report.score > 0; });
@@ -579,14 +582,41 @@
           gym: state.gym,
           lifter: state.lifter,
         });
-        history.push(perform(planned, scenario.decay * weekInBlock, homeGymId()));
+        var performed = perform(planned, scenario.decay * weekInBlock, homeGymId());
+        history.push(performed);
+
+        /*
+         * 통증을 매일 같은 점수로 깔면 이력이 선이 아니라 직선이 된다 —
+         * 언제부터인지도, 나아지는지도, 어떤 동작 뒤였는지도 안 보인다.
+         *
+         * 실제 통증은 그 관절을 쓴 다음 날 올라오고, 놔두면 조금씩
+         * 심해진다. 그렇게 심는다.
+         */
+        var todayPain = pain.filter(function (report) {
+          /*
+           * 그 관절을 "조금 쓰는" 날이 아니라 "제일 크게 쓰는" 날 다음에
+           * 올라온다. 실제 통증이 그렇고, 0.3으로 깔면 스쿼트까지
+           * 어깨 통증 유발 후보가 되어 목록을 못 믿게 된다.
+           */
+          var loaded = previous && previous.sets.some(function (set) {
+            var exercise = index.get(set.exerciseId);
+            return exercise && (exercise.jointStress[report.joint] || 0) >= 0.8;
+          });
+          return loaded;
+        }).map(function (report) {
+          // 주가 갈수록 한 점씩 올라간다. 놔두면 심해지는 것이 보통이다.
+          return { joint: report.joint, score: Math.min(8, report.score + Math.floor(week / 3)) };
+        });
+
         checkIns.push({
+          id: 'seed-checkin-' + date,
           date: date,
           sleepHours: scenario.sleep,
           soreness: scenario.soreness,
           motivation: scenario.heavy ? 3 : 7,
-          pain: pain,
+          pain: todayPain,
         });
+        previous = performed;
       });
     }
     return { history: history, checkIns: checkIns };
@@ -2380,6 +2410,31 @@
    * 날짜 하나에 세션 하나다. id를 날짜로 고정해야 세트를 더할 때마다
    * 새 세션이 생기지 않고, 아웃박스도 한 줄로 유지된다.
    */
+  /**
+   * 오늘 체크인을 남긴다.
+   *
+   * 지금까지 통증은 화면 상태(state.pain)에만 있었다. 그날 종목만
+   * 바꾸고 버린 것이다 — 그러면 "3주째"를 영영 알 수 없다. 이력이
+   * 쌓여야 한 점이 선이 된다.
+   */
+  function recordTodayCheckIn() {
+    if (!E.allows(state.consent, 'painGate')) return;
+    var reported = activePain();
+    var existing = state.checkIns.filter(function (item) { return item.date === state.todayDate; })[0];
+    // 아픈 데가 없고 전에 적은 것도 없으면 빈 줄을 만들지 않는다.
+    if (reported.length === 0 && !existing) return;
+
+    var entry = Object.assign({}, existing, {
+      id: (existing && existing.id) || 'checkin-' + state.todayDate,
+      date: state.todayDate,
+      pain: reported,
+    });
+    var saved = storage.putCheckIn(entry);
+    state.checkIns = state.checkIns
+      .filter(function (item) { return item.date !== state.todayDate; })
+      .concat([saved]);
+  }
+
   function recordTodaySession() {
     // 유산소만 한 날도 운동한 날이다.
     if (state.todaySets.length === 0 && state.cardioToday.length === 0) return;
@@ -6109,6 +6164,105 @@
   }
 
   /* 체크인 */
+  /* ── 통증 이력 ─────────────────────────────────── */
+
+  function painTimeline() {
+    if (!E.allows(state.consent, 'painGate')) return [];
+    return E.painHistory({
+      checkIns: state.checkIns,
+      sessions: state.history,
+      index: index,
+      today: state.todayDate,
+    });
+  }
+
+  /**
+   * 통증 이력.
+   *
+   * "오늘 어깨가 아프다"는 한 번 듣고 종목을 바꾸면 끝나는 정보다.
+   * 20년 한 트레이너가 실제로 쓰는 건 **"왼쪽 어깨, 3주째, 항상
+   * 오버헤드 다음 날"** 이다. 한 점이 아니라 선을 본다.
+   *
+   * 진단하지 않는다. 여기 있는 건 "언제부터, 얼마나, 어떤 동작 뒤에
+   * 보고됐는가"뿐이다.
+   */
+  function renderPainHistory() {
+    var history = painTimeline();
+    if (history.length === 0) return;
+
+    var body = el('div', { class: 'sheet-body tight' }, []);
+    var list = el('div', { class: 'summary-list' }, []);
+
+    history.forEach(function (item) {
+      var row = el('div', { class: 'pain-row' + (item.latest >= 3 ? ' live' : '') }, [
+        el('div', { class: 'pain-top' }, [
+          el('b', { text: item.label }),
+          el('span', { class: 'pain-score ' + trendClass(item.trend), text:
+            item.latest >= 3 ? item.latest + '점' : '지금은 없음' }),
+          el('span', { class: 'pain-spark' }, sparkFor(item)),
+        ]),
+        el('p', { class: 'pain-line', text: item.summary }),
+      ]);
+
+      /*
+       * 유발 후보는 "같이 나왔다"까지만 말한다. 원인이라고 말하는
+       * 순간 앱이 진단을 하는 것이고, 그건 넘으면 안 되는 선이다.
+       */
+      if (item.triggers.length > 0) {
+        row.appendChild(el('p', { class: 'pain-trigger', text:
+          item.triggers.map(function (trigger) {
+            return trigger.label + ' ' + Math.round(trigger.rate * 100) + '%';
+          }).join(' · ') + ' · 안 한 날 ' +
+          Math.round(item.triggers[0].baseRate * 100) + '%' }));
+        row.appendChild(el('p', { class: 'pain-trigger quiet', text:
+          item.ambiguous
+            ? '늘 같은 날에 해서 어느 쪽인지는 이 기록으로 가릴 수 없습니다. 한 번씩 빼 보면 알 수 있습니다.'
+            : '같이 나왔다는 뜻이지 원인이라는 뜻은 아닙니다.' }));
+      }
+
+      if (item.referral) {
+        row.appendChild(el('div', { class: 'notice stop' }, [
+          el('div', { class: 'label', text: '전문의' }),
+          el('div', { text: item.referral }),
+        ]));
+      }
+
+      list.appendChild(row);
+    });
+
+    body.appendChild(list);
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '통증 이력' }),
+        el('span', { class: 'meta', text: '최근 4개월' }),
+      ]),
+      body,
+    ]));
+  }
+
+  function trendClass(trend) {
+    if (trend === 'better') return 'better';
+    if (trend === 'worse') return 'worse';
+    if (trend === 'gone') return 'gone';
+    return '';
+  }
+
+  /*
+   * 점수 흐름을 막대 몇 개로.
+   *
+   * 그래프를 그릴 만큼의 이야기가 아니다. "올라가는 중인가 내려가는
+   * 중인가"만 보이면 되고, 그건 막대 여덟 개면 충분하다.
+   */
+  function sparkFor(item) {
+    return item.points.slice(-8).map(function (point) {
+      return el('i', {
+        style: 'height:' + Math.max(3, Math.round(point.score / 10 * 18)) + 'px',
+        title: point.date + ' · ' + point.score + '점',
+      });
+    });
+  }
+
   function renderCheckin() {
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('h2', { text: '오늘 체크인' }),
@@ -6253,6 +6407,8 @@
       rows.appendChild(el('p', { class: 'hint-line', text:
         state.consentRecord.at + '에 ' + state.consentRecord.version + ' 판 문구로 동의했습니다.' }));
     }
+
+    renderPainHistory();
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [

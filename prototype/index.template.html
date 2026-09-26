@@ -1411,6 +1411,34 @@ input[type="search"] {
   color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px;
 }
 
+/* ── 통증 이력 ──────────────────────────────────── */
+.pain-row {
+  display: grid; gap: 6px;
+  padding: 11px 12px; border-top: 1px solid var(--line-soft);
+}
+.pain-row:first-child { border-top: 0; }
+/* 지금 아픈 것 */
+.pain-row.live { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--zone-hard); }
+.pain-top { display: flex; align-items: center; gap: 8px; }
+.pain-top b { font-size: 14.5px; font-weight: 600; }
+.pain-score {
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pain-score.worse { color: var(--zone-over); }
+.pain-score.better { color: var(--zone-ok); }
+.pain-score.gone { color: var(--zone-ok); }
+/*
+ * 그래프를 그릴 만큼의 이야기가 아니다. 올라가는 중인지 내려가는
+ * 중인지만 보이면 되고, 그건 막대 여덟 개면 충분하다.
+ */
+.pain-spark { margin-left: auto; display: flex; align-items: flex-end; gap: 3px; height: 18px; }
+.pain-spark i { width: 4px; border-radius: 1px; background: var(--zone-hard); display: block; }
+.pain-line { margin: 0; font-size: 12.5px; line-height: 1.55; }
+/* 같이 나왔다는 것과 원인이라는 것은 다른 말이다 */
+.pain-trigger { margin: 0; font-size: 11.5px; color: var(--ink); line-height: 1.5; font-variant-numeric: tabular-nums; }
+.pain-trigger.quiet { color: var(--muted); font-size: 11px; }
+
 /* ── 유산소 ─────────────────────────────────────── */
 .cardio-row {
   display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px;
