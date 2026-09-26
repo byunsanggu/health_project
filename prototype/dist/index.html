@@ -1852,6 +1852,58 @@ input[type="search"] {
 .finish.danger { background: var(--zone-over); border-color: var(--zone-over); color: #fff; }
 .wizard-nav button[disabled] { opacity: .45; cursor: default; }
 
+/* ── 설치된 앱으로 열렸을 때 ───────────────────────────
+ *
+ * 이 페이지는 두 가지 일을 겸한다. 브라우저로 오면 "이게 뭔지 보여주는
+ * 소개 페이지"이고(머리말 · 폰 모양 테두리 · 오른쪽 해설), 홈 화면에서
+ * 열면 "그냥 앱"이어야 한다.
+ *
+ * 이걸 안 나누면 설치해도 가짜 폰 그림 안에 진짜 앱이 들어 있는 화면이
+ * 나온다. 주소창만 없어지고 소개 글은 그대로 있는 것이라, 설치한 보람이
+ * 없다.
+ *
+ * display-mode로 가른다 — 설치 여부를 브라우저가 알려주는 값이다.
+ * 옛날 iOS는 이 질의를 모르므로 스크립트가 data-standalone을 대신 붙인다.
+ */
+@media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+  .masthead, .panel { display: none; }
+
+  .wrap {
+    max-width: none;
+    padding: 0;
+    gap: 0;
+    /* 태블릿에서도 두 칸으로 쪼개지지 않게 940px 규칙을 되돌린다 */
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .device {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    position: static;
+    /* dvh를 쓴다 — 주소창이 접혔다 펴져도 바닥이 안 흔들린다 */
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  /* 노치와 홈 인디케이터를 피한다 */
+  .statusbar { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); }
+  .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px); }
+}
+
+/* 옛날 iOS용 — 위 블록과 같은 내용을 선택자만 바꿔 적는다 */
+html[data-standalone] .masthead,
+html[data-standalone] .panel { display: none; }
+html[data-standalone] .wrap {
+  max-width: none; padding: 0; gap: 0; grid-template-columns: minmax(0, 1fr);
+}
+html[data-standalone] .device {
+  border: 0; border-radius: 0; box-shadow: none; position: static;
+  height: 100dvh; min-height: 0;
+}
+html[data-standalone] .statusbar { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); }
+html[data-standalone] .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -3447,10 +3499,26 @@ var GymSearch = (function () {
   function isStandalone() {
     try {
       return window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.matchMedia('(display-mode: minimal-ui)').matches ||
         window.navigator.standalone === true;
     } catch (err) {
+      void err;
       return false;
     }
+  }
+
+  /*
+   * 설치된 앱으로 열렸다고 문서에 표시해 둔다.
+   *
+   * CSS의 display-mode 질의만으로 대부분 되지만, 홈 화면에서 연 옛날
+   * iOS는 그 질의를 모르고 navigator.standalone만 안다. 표시를 붙여
+   * 두면 같은 규칙을 선택자로 한 번 더 적어 둘 수 있다.
+   *
+   * 설치 여부는 창이 살아 있는 동안 바뀌지 않으므로 한 번만 본다.
+   */
+  function markStandalone() {
+    if (isStandalone()) document.documentElement.setAttribute('data-standalone', '');
   }
 
   function isIOS() {
@@ -11747,6 +11815,7 @@ var GymSearch = (function () {
   state.program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
 
   if (!restore()) loadScenario('normal', true);
+  markStandalone();
   registerWorker();
   render();
 })();

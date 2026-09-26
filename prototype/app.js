@@ -36,10 +36,26 @@
   function isStandalone() {
     try {
       return window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.matchMedia('(display-mode: minimal-ui)').matches ||
         window.navigator.standalone === true;
     } catch (err) {
+      void err;
       return false;
     }
+  }
+
+  /*
+   * 설치된 앱으로 열렸다고 문서에 표시해 둔다.
+   *
+   * CSS의 display-mode 질의만으로 대부분 되지만, 홈 화면에서 연 옛날
+   * iOS는 그 질의를 모르고 navigator.standalone만 안다. 표시를 붙여
+   * 두면 같은 규칙을 선택자로 한 번 더 적어 둘 수 있다.
+   *
+   * 설치 여부는 창이 살아 있는 동안 바뀌지 않으므로 한 번만 본다.
+   */
+  function markStandalone() {
+    if (isStandalone()) document.documentElement.setAttribute('data-standalone', '');
   }
 
   function isIOS() {
@@ -8336,6 +8352,7 @@
   state.program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
 
   if (!restore()) loadScenario('normal', true);
+  markStandalone();
   registerWorker();
   render();
 })();
