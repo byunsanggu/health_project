@@ -6977,9 +6977,14 @@
         '다니는 헬스장을 직접 등록하세요. 이름과 있는 기구만 넣으면 됩니다 — ' +
         '아파트·회사 헬스장도 됩니다.' }));
       body.push(registerButton());
+      /*
+       * 열쇠 넣는 문은 작게 둔다. 이건 만든 사람이 서버 없이 시험해 보는
+       * 길이지 사용자가 할 일이 아니다. 크게 띄워 두면 앱을 받은 사람이
+       * "나도 카카오 계정을 만들어야 하나" 하고 거기서 멈춘다.
+       */
       body.push(el('button', {
         type: 'button', class: 'ghost search-setup',
-        text: '실제 헬스장 검색 켜기',
+        text: '검색을 이 기기에서만 켜기 (만든 사람용)',
         onclick: openGymSearchSetup,
       }));
       body.push(el('div', { class: 'list-label', text: '예시로 둘러보기' }));
@@ -6993,7 +6998,10 @@
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '헬스장 추가' }),
-        el('span', { class: 'meta', text: live ? '전국 검색' : '직접 등록' }),
+        el('span', { class: 'meta', text:
+          !live ? '직접 등록'
+            : GymSearch.route() === 'server' ? '전국 검색'
+              : '전국 검색 · 이 기기' }),
       ]),
       el('div', { class: 'sheet-body' }, body),
     ]));
@@ -7128,9 +7136,17 @@
     var body = [];
     var message = el('p', { class: 'hint-line' }, []);
 
+    body.push(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '사용자는 이걸 안 합니다' }),
+      el('div', { text:
+        '서버(Supabase)를 붙이면 열쇠는 거기 하나만 있으면 되고, 앱을 받은 사람은 ' +
+        '아무것도 안 넣고 바로 검색합니다. 이 화면은 서버를 붙이기 전에 만든 사람이 ' +
+        '혼자 시험해 보는 길입니다.' }),
+    ]));
+
     body.push(el('p', { class: 'asset-note', text:
-      '카카오 개발자 사이트에서 열쇠를 하나 받으면 전국 헬스장이 검색됩니다. ' +
-      '무료이고 5분이면 됩니다.' }));
+      '카카오 개발자 사이트에서 열쇠를 하나 받으면 이 기기에서 전국 헬스장이 ' +
+      '검색됩니다. 무료이고 5분이면 됩니다.' }));
 
     body.push(el('div', { class: 'list-label', text: '받는 곳' }));
     body.push(el('div', { class: 'summary-list' }, [
@@ -7199,7 +7215,7 @@
       }));
     }
 
-    openModal('헬스장 검색 켜기', '카카오 로컬', body);
+    openModal('헬스장 검색 켜기', GymSearch.serverReady() ? '서버로 이미 됩니다' : '카카오 로컬', body);
   }
 
   /** 검색 결과 한 줄. */

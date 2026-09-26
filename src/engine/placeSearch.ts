@@ -311,7 +311,8 @@ export function placeToDraft(place: Place, floor?: string): PlaceDraft {
 
 /* ── 안 될 때 ────────────────────────────────────────── */
 
-export type SearchFailure = 'noKey' | 'badKey' | 'forbidden' | 'quota' | 'network' | 'server';
+export type SearchFailure =
+  | 'noKey' | 'notConfigured' | 'badKey' | 'forbidden' | 'quota' | 'network' | 'server';
 
 /**
  * 왜 안 됐는지를 사람 말로.
@@ -323,7 +324,14 @@ export type SearchFailure = 'noKey' | 'badKey' | 'forbidden' | 'quota' | 'networ
 export function describeSearchFailure(kind: SearchFailure): string {
   switch (kind) {
     case 'noKey':
-      return '검색 키가 없습니다. 아래에서 키를 넣으면 전국 헬스장이 검색됩니다.';
+      return '아직 검색을 켜지 않았습니다. 지금은 헬스장을 직접 등록해서 쓰시면 됩니다.';
+    case 'notConfigured':
+      /*
+       * 서버 쪽 설정이 덜 된 것이다. 사용자는 열쇠를 넣은 적이 없으므로
+       * "키가 틀렸습니다"라고 하면 그건 거짓말이고, 사용자가 고칠 수도
+       * 없는 일로 고치라고 미는 셈이 된다. 할 수 있는 것만 말한다.
+       */
+      return '검색이 아직 준비되지 않았습니다. 그동안은 직접 등록으로 넣을 수 있습니다.';
     case 'badKey':
       return '키가 맞지 않습니다. 카카오 개발자 사이트의 REST API 키인지 확인해 주세요.';
     case 'forbidden':

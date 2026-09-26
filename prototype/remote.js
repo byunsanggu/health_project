@@ -325,9 +325,37 @@ var Remote = (function () {
     });
   }
 
+  /**
+   * 엣지 함수 부르기.
+   *
+   * 로그인 여부와 상관없이 Authorization을 채워 보낸다 — 로그인 안 한
+   * 사람도 헬스장은 찾을 수 있어야 하고, 게이트웨이는 이 프로젝트 열쇠를
+   * 가진 요청만 함수까지 들여보낸다.
+   */
+  function callFunction(name, body) {
+    var state = read();
+    var token = state.accessToken || state.anonKey || '';
+    return fetch(baseUrl() + '/functions/v1/' + name, {
+      method: 'POST',
+      headers: {
+        apikey: state.anonKey || '',
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body || {}),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (payload) {
+        return { ok: response.ok, status: response.status, payload: payload || {} };
+      });
+    }, function () {
+      return { ok: false, status: 0, payload: {} };
+    });
+  }
+
   return {
     read: read,
     patch: patch,
+    callFunction: callFunction,
     configured: configured,
     signedIn: signedIn,
     email: email,

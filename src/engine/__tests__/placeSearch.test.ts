@@ -213,12 +213,23 @@ describe('안 될 때', () => {
     assert.equal(failureFromStatus(500), 'server');
 
     const seen = new Set<string>();
-    for (const kind of ['noKey', 'badKey', 'forbidden', 'quota', 'network', 'server'] as const) {
+    for (const kind of
+      ['noKey', 'notConfigured', 'badKey', 'forbidden', 'quota', 'network', 'server'] as const) {
       const text = describeSearchFailure(kind);
       assert.ok(text.length > 0);
       assert.equal(seen.has(text), false, `${kind}가 다른 것과 같은 말을 한다`);
       seen.add(text);
     }
+  });
+
+  it('서버 설정이 덜 된 것을 사용자 탓으로 돌리지 않는다', () => {
+    /*
+     * 서버에 카카오 열쇠를 안 넣고 배포하면 검색이 안 된다. 그때 "키가
+     * 틀렸습니다"라고 하면 사용자는 넣은 적도 없는 키를 고치러 간다.
+     */
+    const text = describeSearchFailure('notConfigured');
+    assert.doesNotMatch(text, /키|열쇠/);
+    assert.match(text, /직접 등록/);
   });
 
   it('연결이 안 될 때 등록을 포기시키지 않는다', () => {

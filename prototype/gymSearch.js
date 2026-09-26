@@ -1,20 +1,21 @@
 /*
- * 실제 헬스장 찾기 — 카카오 로컬 API에 대고 fetch만 쓴다.
+ * 실제 헬스장 찾기.
  *
- * remote.js와 같은 규칙이다: 라이브러리 없이, 열쇠는 사용자가 직접 넣고,
- * 코드에는 아무것도 박아 두지 않는다.
+ * 길이 둘인데, 중요한 건 어느 쪽이 기본인가다.
  *
- * 다만 remote.js와 다른 점이 하나 있고, 그게 중요하다.
+ * **기본은 서버다.** 앱을 받은 사람은 열쇠를 넣지 않는다 — 넣어야 한다면
+ * 아무도 안 쓴다. 카카오 열쇠는 앱 만든 사람 것 하나가 서버(엣지 함수)에
+ * 있고, 모든 사용자의 검색이 거기를 지나간다. 브라우저에는 열쇠가 없으니
+ * 새어 나갈 것도 없고, 카카오에 도메인을 등록할 일도 없다.
  *
- * **이 열쇠는 이 기기에만 둔다. 서버로 올리지 않는다.**
+ * **기기 열쇠는 만든 사람용 임시 통로다.** 서버를 아직 안 붙였을 때
+ * 혼자 시험해 보려고 남겨 둔 길이다. 이 열쇠는 이 기기에만 두고 기록
+ * 동기화에 얹지 않는다 — 올리면 남의 기기까지 복사되고, 그건 사용자가
+ * 부탁한 적 없는 일이다. 다만 브라우저에서 직접 부르는 이상 이 기기
+ * 안에서는 보인다. 감출 수 있는 척하지 않는다.
  *
- * Supabase의 anon 열쇠는 공개돼도 안전하게 설계된 값이지만, 카카오 REST
- * 열쇠는 그렇지 않다 — 가져간 사람이 그 사람의 하루 한도를 대신 써 버릴
- * 수 있다. 기록 동기화에 얹어서 올리면 남의 기기에도 복사되고, 그건
- * 사용자가 부탁한 적 없는 일이다. 그래서 sharedSettings()에 넣지 않는다.
- *
- * 그래도 브라우저에서 부르는 이상 열쇠는 이 기기 안에서는 보인다. 감출 수
- * 있는 척하지 않고 화면에 그대로 적어 둔다.
+ * 그래서 순서는 서버 → 기기 열쇠다. 반대로 두면, 서버를 붙인 뒤에도
+ * 옛날에 열쇠를 넣어 본 기기만 다르게 동작한다.
  */
 var GymSearch = (function () {
   'use strict';
@@ -53,8 +54,21 @@ var GymSearch = (function () {
     return (read().kakaoKey || '').trim();
   }
 
+  /** 서버로 찾을 수 있는가 — 이게 기본 길이다. */
+  function serverReady() {
+    return typeof Remote !== 'undefined' && Remote.configured();
+  }
+
+  /** 어느 쪽으로든 찾을 수 있는가. */
   function configured() {
-    return apiKey().length > 0;
+    return serverReady() || apiKey().length > 0;
+  }
+
+  /** 지금 어느 길로 찾고 있는가. 화면이 사실대로 말하려면 필요하다. */
+  function route() {
+    if (serverReady()) return 'server';
+    if (apiKey().length > 0) return 'device';
+    return 'none';
   }
 
   /** 열쇠를 지운다. 검색이 꺼지는 것이고 등록한 헬스장은 그대로 남는다. */
@@ -77,18 +91,43 @@ var GymSearch = (function () {
     if (!parsed.searchable) {
       return Promise.resolve({ ok: true, places: [], parsed: parsed });
     }
-    if (!configured()) {
-      return Promise.resolve({ ok: false, failure: 'noKey', parsed: parsed });
-    }
-
-    var url = ENDPOINT + '?query=' + encodeURIComponent(parsed.query) + '&size=' + SIZE;
 
     /*
-     * 내 위치를 같이 보내면 카카오가 거리를 재서 준다. 위치 동의가 없으면
-     * 안 보낸다 — 화면에서만 감추고 좌표를 계속 보내면 동의를 받은 게 아니다.
+     * 내 위치를 같이 보내면 거리를 재서 준다. 위치 동의가 없으면 안 보낸다 —
+     * 화면에서만 감추고 좌표를 계속 보내면 동의를 받은 게 아니다.
      * 좌표를 안 보내도 검색 자체는 된다.
      */
     var near = options.near;
+
+    if (serverReady()) return viaServer(parsed, near);
+    if (apiKey().length === 0) {
+      return Promise.resolve({ ok: false, failure: 'noKey', parsed: parsed });
+    }
+    return viaDevice(parsed, near);
+  }
+
+  /** 서버를 지나간다 — 사용자는 열쇠를 모른다. */
+  function viaServer(parsed, near) {
+    var E = window.FitEngine;
+    var body = { query: parsed.query };
+    if (near) { body.x = near.lng; body.y = near.lat; }
+
+    return Remote.callFunction('gym-search', body).then(function (result) {
+      if (!result.ok) {
+        var failure = result.payload.failure
+          || (result.status === 0 ? 'network' : E.failureFromStatus(result.status));
+        return { ok: false, failure: failure, parsed: parsed };
+      }
+      var places = E.rankPlaces(E.normalizePlaces(result.payload.places || [], { near: near }));
+      return { ok: true, places: places, parsed: parsed };
+    });
+  }
+
+  /** 이 기기 열쇠로 직접 부른다 — 서버를 안 붙였을 때만. */
+  function viaDevice(parsed, near) {
+    var E = window.FitEngine;
+    var url = ENDPOINT + '?query=' + encodeURIComponent(parsed.query) + '&size=' + SIZE;
+
     if (near) {
       url += '&x=' + encodeURIComponent(near.lng) + '&y=' + encodeURIComponent(near.lat);
       url += '&sort=distance';
@@ -148,6 +187,8 @@ var GymSearch = (function () {
     patch: patch,
     forget: forget,
     configured: configured,
+    serverReady: serverReady,
+    route: route,
     search: search,
     verify: verify,
   };
