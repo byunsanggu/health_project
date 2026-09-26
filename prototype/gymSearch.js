@@ -114,8 +114,13 @@ var GymSearch = (function () {
 
     return Remote.callFunction('gym-search', body).then(function (result) {
       if (!result.ok) {
+        /*
+         * 서버가 직접 이유를 말해 줬으면 그걸 쓴다. 못 말해 준 경우(게이트웨이가
+         * 먼저 자른 경우)에만 상태 코드로 짐작한다 — 그때도 사용자 열쇠 탓으로
+         * 돌리지 않는다. 사용자는 열쇠를 넣은 적이 없다.
+         */
         var failure = result.payload.failure
-          || (result.status === 0 ? 'network' : E.failureFromStatus(result.status));
+          || (result.status === 0 ? 'network' : E.serverFailureFromStatus(result.status));
         return { ok: false, failure: failure, parsed: parsed };
       }
       var places = E.rankPlaces(E.normalizePlaces(result.payload.places || [], { near: near }));

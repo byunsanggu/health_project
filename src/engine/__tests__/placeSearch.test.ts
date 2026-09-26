@@ -5,6 +5,7 @@ import {
   describeSearchFailure,
   distanceLabel,
   failureFromStatus,
+  serverFailureFromStatus,
   looksLikeKakaoKey,
   normalizePlaces,
   parsePlaceQuery,
@@ -220,6 +221,27 @@ describe('안 될 때', () => {
       assert.equal(seen.has(text), false, `${kind}가 다른 것과 같은 말을 한다`);
       seen.add(text);
     }
+  });
+
+  it('서버를 지날 때와 직접 부를 때 같은 코드가 다른 뜻이다', () => {
+    /*
+     * 기기 열쇠로 직접 부를 때의 401은 "당신이 방금 넣은 열쇠가 틀렸다"이고,
+     * 서버를 지날 때의 401은 "서버 설정이 덜 됐다"이다. 뒤엣것을 앞엣것처럼
+     * 말하면, 열쇠를 넣은 적도 없는 사람을 열쇠 고치러 보내게 된다.
+     */
+    assert.equal(failureFromStatus(401), 'badKey');
+    assert.equal(serverFailureFromStatus(401), 'notConfigured');
+
+    // 함수를 아직 안 올렸을 때. "잠시 뒤에 다시"라고 하면 영영 안 된다.
+    assert.equal(serverFailureFromStatus(404), 'notConfigured');
+
+    // --no-verify-jwt를 빼먹어 로그인을 요구하게 올라간 경우
+    assert.equal(serverFailureFromStatus(403), 'notConfigured');
+
+    // 한도와 진짜 장애는 그대로 구분한다
+    assert.equal(serverFailureFromStatus(429), 'quota');
+    assert.equal(serverFailureFromStatus(500), 'server');
+    assert.equal(serverFailureFromStatus(503), 'server');
   });
 
   it('서버 설정이 덜 된 것을 사용자 탓으로 돌리지 않는다', () => {

@@ -345,12 +345,36 @@ export function describeSearchFailure(kind: SearchFailure): string {
   }
 }
 
-/** HTTP 응답 코드를 실패 종류로. */
+/**
+ * HTTP 응답 코드를 실패 종류로 — **이 기기 열쇠로 직접 부를 때.**
+ *
+ * 여기서 401은 "당신이 넣은 열쇠가 틀렸다"는 뜻이다. 그 사람은 방금
+ * 열쇠를 넣었으므로 그렇게 말해도 된다.
+ */
 export function failureFromStatus(status: number): SearchFailure {
   if (status === 401) return 'badKey';
   if (status === 403) return 'forbidden';
   if (status === 429) return 'quota';
   return 'server';
+}
+
+/**
+ * HTTP 응답 코드를 실패 종류로 — **서버를 지나갈 때.**
+ *
+ * 같은 코드라도 뜻이 정반대다. 사용자는 열쇠를 넣은 적이 없으므로, 여기서의
+ * 401·403·404는 전부 "서버 쪽 설정이 덜 됐다"는 뜻이지 사용자 잘못이 아니다.
+ *
+ *   404 — 함수를 아직 안 올렸다
+ *   401 — 앱에 박힌 Supabase 열쇠가 게이트웨이를 못 지난다
+ *   403 — 함수가 로그인을 요구하도록 올라갔다(--no-verify-jwt를 빼먹었다)
+ *
+ * 이걸 failureFromStatus로 뭉뚱그리면 "당신 열쇠가 틀렸습니다"가 화면에
+ * 뜬다. 넣은 적도 없는 열쇠를 고치러 가게 만드는 것이고, 고칠 수도 없다.
+ */
+export function serverFailureFromStatus(status: number): SearchFailure {
+  if (status === 429) return 'quota';
+  if (status >= 500) return 'server';
+  return 'notConfigured';
 }
 
 /**

@@ -107,16 +107,42 @@ https://supabase.com → **Start your project** → GitHub 또는 이메일로 �
 카카오맵 활성화를 빼먹으면 열쇠는 멀쩡한데 장소 검색만 안 열립니다. 제일 많이 하는
 실수입니다.
 
-### ② 올리기
+### ② 카카오 열쇠를 서버에 넣기
+
+Supabase → **Edge Functions** → **Secrets**
+
+| Key | Value |
+|---|---|
+| `KAKAO_REST_KEY` | 카카오 REST API 키 |
+
+저장소에는 넣지 마세요. 이 열쇠는 서버에만 있으면 됩니다.
+
+### ③ 함수 올리기 — 브라우저만으로
+
+CLI를 안 깔아도 됩니다.
+
+Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor**
+
+- 이름: `gym-search` (정확히 이 이름이어야 합니다 — 앱이 이 이름으로 부릅니다)
+- **Verify JWT: 끄기** ← 이걸 켜 두면 로그인한 사람만 검색됩니다
+- 내용: 이 저장소의 `server/functions/gym-search/index.ts` 전체를 붙여넣기
+
+**Verify JWT를 끄는 이유가 두 가지입니다.**
+
+하나는 처음 켠 사람이 제일 먼저 하는 일이 헬스장 고르기인데, 그 앞에 회원가입을
+세워 두면 거기서 절반이 나갑니다.
+
+둘은 더 실질적입니다 — 새 형식 열쇠(`sb_publishable_...`)는 JWT가 아니라서,
+켜 두면 **로그인한 사람도 못 지나갑니다.** 게이트웨이가 열쇠를 검사하는 건
+그대로이므로 아무나 부를 수 있게 되는 것은 아닙니다.
+
+### CLI로 하시려면
 
 ```sh
 npm install -g supabase
 supabase login
 supabase link --project-ref <프로젝트-ref>       # 대시보드 주소에 있는 그 값
-
-# 열쇠는 서버에만 둡니다. 저장소에 넣지 마세요.
 supabase secrets set KAKAO_REST_KEY=<REST API 키>
-
 supabase functions deploy gym-search --no-verify-jwt
 ```
 
@@ -125,7 +151,7 @@ supabase functions deploy gym-search --no-verify-jwt
 나갑니다. 대신 Supabase 게이트웨이가 이 프로젝트의 열쇠를 가진 요청만 함수까지
 들여보냅니다.
 
-### ③ 됐는지 보기
+### ④ 됐는지 보기
 
 앱 → **헬스장** 탭 → 검색창에 `경기도`.
 
@@ -135,11 +161,25 @@ supabase functions deploy gym-search --no-verify-jwt
 | **전국 검색 · 이 기기** | 아직 기기에 넣은 열쇠로 부르고 있습니다 |
 | **직접 등록** | 검색이 아예 안 켜져 있습니다 |
 
-안 되면:
+안 되면 앱이 이유를 말해 줍니다. 사용자는 열쇠를 넣은 적이 없으므로 "열쇠가
+틀렸습니다" 같은 말은 절대 안 나옵니다 — 고칠 수도 없는 일로 사용자를 보내는
+셈이기 때문입니다. 대신 뒤에서 무슨 일인지는 이렇게 갈립니다.
+
+| 앱에 뜨는 말 | 실제로는 | 고칠 곳 |
+|---|---|---|
+| 검색이 아직 준비되지 않았습니다 | 404 — 함수를 아직 안 올림 | ③ |
+| 〃 | 401 — Verify JWT가 켜져 있음 | ③ |
+| 〃 | 503 — 카카오 열쇠를 서버에 안 넣음 | ② |
+| 오늘 검색 한도를 다 썼습니다 | 429 — 카카오 하루 한도 | 내일 |
+| 연결이 안 됩니다 | 인터넷이 없음 | — |
+
+로그는 여기서 봅니다:
 
 ```sh
 supabase functions logs gym-search
 ```
+
+대시보드에서는 Edge Functions → `gym-search` → **Logs**.
 
 ### 열쇠를 바꿀 때
 
