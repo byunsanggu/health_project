@@ -37,6 +37,8 @@ export * from './reorder.ts';
 export * from './cardio.ts';
 export * from './painHistory.ts';
 export * from './placeSearch.ts';
+export * from './exclusions.ts';
+export * from './crowd.ts';
 export * from './streak.ts';
 export * from './sync.ts';
 export * from './superset.ts';

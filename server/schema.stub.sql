@@ -8,3 +8,20 @@ create or replace function auth.uid() returns uuid
 language sql stable as $$
   select nullif(current_setting('test.uid', true), '')::uuid
 $$;
+
+/*
+ * Supabase가 기본으로 만들어 두는 역할들.
+ *
+ * 정책에 `to authenticated`를 쓰면 이 역할이 있어야 스키마가 붙는다.
+ * 실제 Supabase에는 이미 있으므로, 여기서만 만들어 준다.
+ */
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then
+    create role anon nologin;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+    create role authenticated nologin;
+  end if;
+end
+$$;

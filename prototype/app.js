@@ -518,6 +518,11 @@
     /* 진짜 GPS 좌표. 모르면 null이고, 그때는 아무 데도 좌표를 안 보낸다. */
     here: null,
     hereAsked: false,
+    /*
+     * 뺀 종목. "싫어요" 하나가 아니라 이유가 같이 남는다 — 이유에 따라
+     * 하는 일이 완전히 다르고, 아파서 뺀 것은 남에게 보내지 않는다.
+     */
+    exclusions: [],
     maxTest: null,
     /*
      * 오늘을 시작했는가. 시작 전에는 목록만 보여주고, 시작한 뒤에는
@@ -755,6 +760,76 @@
     });
   }
 
+  /**
+   * 이 헬스장에서 할 수 있는 종목.
+   *
+   * 기구 id 목록을 대체 찾기에 그대로 넘기면 안 된다 — 헬스장 기구는
+   * 'leg-press-machine' 같은 id이고 종목의 equipment는 'machine' 같은
+   * 갈래라 서로 안 맞는다. 그러면 "대체가 없습니다"가 늘 뜬다.
+   */
+  function gymPool(entry) {
+    return entry ? E.availableExercises(entry.equipmentIds) : undefined;
+  }
+
+  /** 지금 빠져 있는 종목 id. */
+  function excludedSet() {
+    return E.excludedIds(state.exclusions, state.todayDate);
+  }
+
+  /** 지금 가벼운 무게로 배우는 중인 종목 id. */
+  function coachingSet() {
+    var out = {};
+    E.coaching(state.exclusions, state.todayDate).forEach(function (item) {
+      out[item.exerciseId] = true;
+    });
+    return out;
+  }
+
+  /**
+   * 뺀 종목 자리에 대체를 끼운다.
+   *
+   * 대체를 고를 때 오늘 이미 하는 종목과 이미 뺀 종목은 후보에서 뺀다.
+   * 같은 종목이 두 번 나오거나, 빼 달라고 한 종목이 대체로 다시 들어오면
+   * 사용자는 앱이 말을 안 듣는다고 느낀다.
+   */
+  function withExclusions(template) {
+    var excluded = excludedSet();
+    if (excluded.size === 0) return template;
+
+    var entry = currentGymEntry();
+    var taken = {};
+    template.slots.forEach(function (slot) { taken[slot.exerciseId] = true; });
+
+    var slots = [];
+    template.slots.forEach(function (slot) {
+      if (!excluded.has(slot.exerciseId)) { slots.push(slot); return; }
+
+      var exercise = index.get(slot.exerciseId);
+      if (!exercise) return;
+
+      var banned = new Set(excluded);
+      Object.keys(taken).forEach(function (id) { banned.add(id); });
+
+      var replacement = E.replacementFor(exercise, {
+        excluded: banned,
+        pool: gymPool(entry),
+        limit: 1,
+      });
+      var pick = replacement.substitutes[0];
+      if (!pick) return;   // 대체가 없으면 그 자리는 빈다
+
+      taken[pick.id] = true;
+      slots.push({
+        exerciseId: pick.id,
+        sets: slot.sets,
+        repRange: slot.repRange,
+        replacedFrom: slot.exerciseId,
+      });
+    });
+
+    return { name: template.name, slots: slots };
+  }
+
   function rebuildSession() {
     // 통증이 바뀌어 세션을 다시 짜도, 이미 끝낸 세트까지 되돌리면 안 된다.
     var previous = {};
@@ -801,6 +876,15 @@
           }),
       ),
     };
+
+    /*
+     * 뺀 종목을 대체로 바꾼다.
+     *
+     * 슬롯을 지우지 않고 **갈아 끼운다.** 세트 수와 반복 범위를 그대로
+     * 물려주면 그 부위 주간 볼륨이 유지된다 — 그냥 지우면 사용자는 왜
+     * 등이 안 크는지 모르게 된다. 대체가 없을 때만 슬롯이 빠진다.
+     */
+    template = withExclusions(template);
 
     var built = E.buildSession({
       template: template,
@@ -854,6 +938,15 @@
     state.session = built;
 
     var warmed = [];
+    /*
+     * 가벼운 무게로 배우는 중인 종목은 여기서 무게를 낮춘다.
+     *
+     * "자신 없어요"라고 한 사람에게 필요한 건 안 하는 것이 아니라 가벼운
+     * 무게로 여러 번 해 보는 것이다. 화면이 "가벼운 무게로 배우는 중"이라고
+     * 말하는 이상, 실제로 가벼워야 한다.
+     */
+    var learning = coachingSet();
+
     state.lifts = state.session.exercises.map(function (item) {
       // 워밍업은 본세트 중량에 맞춘 램프다. 앞 종목이 데운 부위는 짧게 끝낸다.
       var firstSet = item.sets[0];
@@ -887,6 +980,11 @@
           var kept = (previous[item.exercise.id] || [])[order];
           if (kept && kept.done) return kept;
           var planned = set.weightKg === null ? (START_WEIGHT[item.exercise.id] || 40) : set.weightKg;
+          if (learning[item.exercise.id]) {
+            planned = item.loading
+              ? E.nearestLoadable(planned * E.COACH_LOAD_RATIO, item.loading, 'down')
+              : Math.round(planned * E.COACH_LOAD_RATIO);
+          }
           return {
             weightKg: planned,
             /*
@@ -2666,6 +2764,12 @@
     screen.appendChild(streakCard(currentStreak()));
     var nudge = reportNudge();
     if (nudge) screen.appendChild(nudge);
+    /*
+     * 뺀 지 4주가 된 종목을 여기서 묻는다. 오늘 할 것을 보는 순간이라
+     * "이거 다시 해볼래요?"가 자연스럽게 읽힌다.
+     */
+    var review = excludeReviewCard();
+    if (review) screen.appendChild(review);
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       /*
@@ -3208,6 +3312,11 @@
         run: function () { openMissingEquipment(lift.exercise); },
       });
     }
+    options.push({
+      label: '이 종목 빼기',
+      hint: '왜 빼는지에 따라 하는 일이 다릅니다',
+      run: function () { openExclude(lift.exercise); },
+    });
 
     openModal(lift.exercise.name, liftSummaryLine(lift), [
       el('div', { class: 'summary-list' }, options.map(function (option) {
@@ -3222,6 +3331,223 @@
           el('span', { class: 'detail', text: '›' }),
         ]);
       })),
+    ]);
+  }
+
+  /* ── 종목 빼기 ─────────────────────────────────── */
+
+  /**
+   * "왜요?"를 먼저 묻는다.
+   *
+   * 종목 옆에 "싫어요" 하나만 달면 초보는 해야 할 것을 전부 뺀다. 스쿼트는
+   * 힘들어서, 데드는 무서워서, 풀업은 하나도 못 해서 — 남는 건 머신 컬이다.
+   * 트레이너는 그렇게 하지 않는다.
+   *
+   * 이유를 물으면 네 갈래가 되는데 진짜 "빼기"는 하나뿐이다. 나머지 셋은
+   * 앱이 이미 더 잘 처리하는 길이 있다.
+   */
+  function openExclude(exercise) {
+    var body = [];
+
+    body.push(el('p', { class: 'asset-note', text:
+      '왜 빼려고 하시는지에 따라 하는 일이 다릅니다. 아파서 빼는 것과 ' +
+      '기구가 없어서 빼는 것은 같은 문제가 아닙니다.' }));
+
+    body.push(el('div', { class: 'summary-list' }, E.EXCLUDE_REASONS.map(function (spec) {
+      return el('button', {
+        type: 'button', class: 'menu-row',
+        onclick: function () { pickExcludeReason(exercise, spec); },
+      }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: spec.label }),
+          el('span', { class: 'plan-sets', text: spec.hint }),
+        ]),
+        el('span', { class: 'detail', text: '›' }),
+      ]);
+    })));
+
+    openModal(exercise.name, '이 종목 빼기', body);
+  }
+
+  function pickExcludeReason(exercise, spec) {
+    if (spec.route === 'equipment') {
+      // 이미 있는 길이 더 낫다 — 그 기구를 쓰는 종목이 한 번에 정리된다.
+      openMissingEquipment(exercise);
+      return;
+    }
+    if (spec.route === 'pain') { openExcludePain(exercise); return; }
+    if (spec.route === 'coach') { startCoaching(exercise); return; }
+    openExcludeConfirm(exercise);
+  }
+
+  /**
+   * 어디가 아픈지 묻는다.
+   *
+   * 관절을 알면 이 종목 하나가 아니라 **그 관절에 부담이 큰 종목 전부**가
+   * 같이 조정된다. 종목 하나만 빼면 다음 주에 같은 자리가 또 아프다.
+   */
+  function openExcludePain(exercise) {
+    var joints = Object.keys(exercise.jointStress || {})
+      .filter(function (joint) { return (exercise.jointStress[joint] || 0) >= 0.4; })
+      .sort(function (a, b) { return exercise.jointStress[b] - exercise.jointStress[a]; });
+    if (joints.length === 0) joints = Object.keys(E.JOINT_LABELS_KO);
+
+    var body = [];
+    body.push(el('p', { class: 'asset-note', text:
+      '어디가 아프신가요? 관절을 알면 이 종목만이 아니라 그 관절에 부담이 큰 ' +
+      '종목이 같이 조정됩니다. 이 기록은 서버의 공유 목록에 올라가지 않습니다.' }));
+
+    body.push(el('div', { class: 'summary-list' }, joints.map(function (joint) {
+      return el('button', {
+        type: 'button', class: 'menu-row',
+        onclick: function () {
+          state.exclusions = E.addExclusion(state.exclusions, {
+            exerciseId: exercise.id, reason: 'pain', today: state.todayDate, joint: joint,
+          });
+          modal.close();
+          rebuildSession();
+          pushLog('종목 빼기', '<b>' + exercise.name + '</b>' +
+            particleOf(exercise.name, '을/를') + ' 뺐습니다 — ' +
+            E.JOINT_LABELS_KO[joint] + '이 아파서. 체크인에 통증을 적으시면 ' +
+            '다른 종목도 같이 조정됩니다.');
+          render();
+        },
+      }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: E.JOINT_LABELS_KO[joint] || joint }),
+        ]),
+        el('span', { class: 'detail', text: '›' }),
+      ]);
+    })));
+
+    openModal(exercise.name, '어디가 아프신가요', body);
+  }
+
+  /**
+   * 빼지 않고 가르친다.
+   *
+   * 못 하는 것과 하기 싫은 것은 다르다. 무서운 동작을 빼 버리면 영영 못
+   * 하게 되고, 그 부위는 영영 안 큰다.
+   */
+  function startCoaching(exercise) {
+    state.exclusions = E.addExclusion(state.exclusions, {
+      exerciseId: exercise.id, reason: 'unsure', today: state.todayDate,
+    });
+    modal.close();
+    rebuildSession();
+    pushLog('배우는 중', '<b>' + exercise.name + '</b>' +
+      particleOf(exercise.name, '은/는') + ' 빼지 않습니다. ' +
+      Math.round(E.COACH_LOAD_RATIO * 100) + '% 무게로 ' + E.REVIEW_WEEKS +
+      '주 해 보고, 그래도 아니면 그때 뺍니다.');
+    render();
+    openDemo(exercise);
+  }
+
+  /**
+   * 진짜 빼기. 기간을 고르게 하고, 빠진 자리를 뭘로 채우는지 먼저 보여준다.
+   *
+   * 기본은 "당분간"이다. 영구를 기본으로 두면 한 번 힘들었던 날의 기분이
+   * 프로그램에 영영 남는다.
+   */
+  function openExcludeConfirm(exercise) {
+    var entry = currentGymEntry();
+    var replacement = E.replacementFor(exercise, {
+      excluded: excludedSet(),
+      pool: gymPool(entry),
+    });
+
+    var body = [];
+    body.push(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '빠진 자리는 이렇게 채웁니다' }),
+      el('div', { text: replacement.text }),
+    ]));
+
+    var commit = function (forever) {
+      state.exclusions = E.addExclusion(state.exclusions, {
+        exerciseId: exercise.id, reason: 'dislike', today: state.todayDate, forever: forever,
+      });
+      modal.close();
+      rebuildSession();
+      pushLog('종목 빼기', '<b>' + exercise.name + '</b>' +
+        particleOf(exercise.name, '을/를') + ' 뺐습니다. ' +
+        (forever ? '다시 여쭤보지 않습니다.' : E.REVIEW_WEEKS + '주 뒤에 한 번 여쭤봅니다.'));
+      render();
+    };
+
+    body.push(el('button', {
+      type: 'button', class: 'finish',
+      text: '당분간 빼기 (' + E.REVIEW_WEEKS + '주)',
+      onclick: function () { commit(false); },
+    }));
+    body.push(el('button', {
+      type: 'button', class: 'finish quiet',
+      text: '영원히 빼기',
+      onclick: function () { commit(true); },
+    }));
+    body.push(el('p', { class: 'hint-line', text:
+      '당분간을 고르시면 ' + E.REVIEW_WEEKS + '주 뒤에 딱 한 번 여쭤봅니다. ' +
+      '사람은 바뀝니다 — 어깨가 나으면 오버헤드를 다시 합니다.' }));
+
+    openModal(exercise.name, '얼마나 뺄까요', body);
+  }
+
+  /**
+   * 다시 여쭤보는 줄.
+   *
+   * 기간이 끝난 것을 슬그머니 되돌리지 않는다. 사용자가 뺀 것을 앱이 말없이
+   * 되살리면, 그때부터 프로그램이 자기 것이 아니게 된다.
+   */
+  function excludeReviewCard() {
+    var due = E.dueForReview(state.exclusions, state.todayDate);
+    if (due.length === 0) return null;
+
+    var item = due[0];
+    var exercise = index.get(item.exerciseId);
+    if (!exercise) return null;
+
+    var after = function () { modal.close(); rebuildSession(); render(); };
+
+    return el('button', {
+      type: 'button', class: 'report-nudge',
+      onclick: function () {
+        openModal(exercise.name, E.REVIEW_WEEKS + '주가 지났습니다', [
+          el('p', { class: 'asset-note', text: E.reviewQuestion(item, exercise) }),
+          el('button', {
+            type: 'button', class: 'finish', text: '다시 해볼게요',
+            onclick: function () {
+              state.exclusions = E.removeExclusion(state.exclusions, item.exerciseId);
+              pushLog('다시 넣기', '<b>' + exercise.name + '</b>' +
+                particleOf(exercise.name, '을/를') + ' 다시 넣었습니다.');
+              after();
+            },
+          }),
+          el('button', {
+            type: 'button', class: 'finish quiet', text: '계속 빼둘게요',
+            onclick: function () {
+              state.exclusions = E.keepExcluded(state.exclusions, item.exerciseId, state.todayDate);
+              pushLog('종목 빼기', '<b>' + exercise.name + '</b>' +
+                particleOf(exercise.name, '은/는') + ' 계속 뺍니다. ' +
+                E.REVIEW_WEEKS + '주 뒤에 한 번 더 여쭤봅니다.');
+              after();
+            },
+          }),
+          el('button', {
+            type: 'button', class: 'ghost', text: '다시는 여쭤보지 마세요',
+            onclick: function () {
+              state.exclusions = E.excludeForever(state.exclusions, item.exerciseId);
+              pushLog('종목 빼기', '<b>' + exercise.name + '</b>' +
+                particleOf(exercise.name, '은/는') + ' 이제 여쭤보지 않습니다.');
+              after();
+            },
+          }),
+        ]);
+      },
+    }, [
+      el('span', { class: 'plan-main' }, [
+        el('span', { class: 'name', text: exercise.name + ' — 다시 해보시겠어요?' }),
+        el('span', { class: 'plan-sets', text: E.describeExclusion(item, state.todayDate) }),
+      ]),
+      el('span', { class: 'detail', text: '보기 ›' }),
     ]);
   }
 
@@ -5141,7 +5467,7 @@
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
     'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'voiceRate',
-    'consent', 'consentRecord', 'landmarks',
+    'consent', 'consentRecord', 'landmarks', 'exclusions',
   ];
 
   function sharedSettings() {
