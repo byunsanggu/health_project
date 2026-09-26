@@ -7,7 +7,9 @@ name: Deploy prototype to Pages
 
 on:
   push:
-    branches: [main, master]
+    # 이 저장소에는 아직 main이 없다. 작업 브랜치가 기본 브랜치라서
+    # main만 걸어 두면 이 워크플로는 영영 안 돈다.
+    branches: [main, master, 'claude/**']
     paths:
       - 'prototype/**'
       - 'src/engine/**'
