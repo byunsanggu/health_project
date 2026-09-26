@@ -176,6 +176,8 @@
         voiceRate: state.voiceRate,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
+        cardioToday: state.cardioToday,
+        cardioLog: state.cardioLog,
         wodResults: state.wodResults,
         sessionStartedAt: state.sessionStartedAt,
         gymBook: state.gymBook,
@@ -226,6 +228,8 @@
       state.voiceRate = settings.voiceRate || 1;
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
+      state.cardioToday = settings.cardioToday || [];
+      state.cardioLog = settings.cardioLog || [];
       state.wodResults = settings.wodResults || [];
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
@@ -448,9 +452,18 @@
     voiceRate: 1,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
     reportSeenWeek: null,
+    /* 오늘 한 유산소. [{exerciseId, minutes, zone, distanceKm, before}] */
+    cardioToday: [],
+    /* 이번 주 유산소 (날짜별) — 주간 부담을 세는 데 쓴다 */
+    cardioLog: [],
+    cardioDraft: null,
     /* 마지막으로 서버와 맞춘 때 */
     lastSyncedAt: null,
     syncing: false,
+    /* 로그인 화면을 띄우고 있는가. 탭바를 가리고 화면 하나만 쓴다. */
+    authOpen: false,
+    /* 로그인 화면의 입력값 — 화면을 다시 그려도 날아가면 안 된다 */
+    authForm: { email: '', password: '', mode: 'signin', notice: null, busy: false },
     /* 지금 세는 중인 세트. { liftIndex, setIndex, startedAt, rep, timers } */
     counting: null,
     // 와드 설정. 길이와 바벨 여부가 성격을 크게 바꾼다.
@@ -1349,6 +1362,7 @@
    */
   function viewKey() {
     if (state.onboarding.active) return 'onboarding:' + state.onboarding.step;
+    if (state.authOpen) return 'auth:' + state.authForm.mode;
     return state.tab + ':' + (state.started ? 'lift:' + state.liftCursor : 'plan');
   }
   var lastViewKey = null;
@@ -1405,7 +1419,13 @@
 
   function render() {
     var onboarding = state.onboarding.active;
-    tabbar.hidden = onboarding;
+    /*
+     * 로그인은 화면 하나를 통째로 쓴다. 모달 안에 넣어 봤더니 주소·열쇠·
+     * 이메일·비밀번호가 한 상자에 다 들어가서, 뭘 하는 화면인지 알 수가
+     * 없었다. 계정은 계정 화면에서 만든다.
+     */
+    var auth = state.authOpen && !onboarding;
+    tabbar.hidden = onboarding || auth;
 
     var key = viewKey();
     var moved = key !== lastViewKey;
@@ -1415,6 +1435,9 @@
     if (onboarding) {
       statusMeta.textContent = '초기 설정';
       renderOnboarding();
+    } else if (auth) {
+      statusMeta.textContent = '계정';
+      renderAuth();
     } else {
       renderTabs();
       renderStatus();
@@ -2529,6 +2552,7 @@
     ]));
 
     renderMaxTest();
+    renderCardio();
     renderConditioning();
 
     var doneSets = state.todaySets.length;
@@ -3381,6 +3405,7 @@
 
     if (last) {
       renderMaxTest();
+      renderCardio();
       renderConditioning();
     }
   }
@@ -4145,6 +4170,159 @@
     render();
   }
 
+  /* ── 유산소 ────────────────────────────────────── */
+
+  /** 오늘 근력으로 쓴 부위 — 간섭을 보려면 이게 있어야 한다. */
+  function todayMuscleList() {
+    var seen = [];
+    state.lifts.forEach(function (lift) {
+      var muscle = E.primaryMuscle(lift.exercise);
+      if (muscle && seen.indexOf(muscle) < 0) seen.push(muscle);
+    });
+    return seen;
+  }
+
+  function cardioWeekLogs() {
+    var sunday = E.addDays(state.monday, 6);
+    return state.cardioLog
+      .filter(function (item) { return item.date >= state.monday && item.date <= sunday; })
+      .concat(state.cardioToday.map(function (item) {
+        return Object.assign({ date: state.todayDate }, item);
+      }));
+  }
+
+  /**
+   * 유산소 붙이기.
+   *
+   * 근력 앱에 유산소를 그냥 목록으로 끼워 넣으면, 다리 하고 나서 바로
+   * 뛰어서 방금 한 하체 운동을 반쯤 버리는 사람이 나온다. 그래서 종목을
+   * 고르는 자리에서 **오늘 근력 세션과 부딪히는지**를 같이 보여준다.
+   */
+  function renderCardio() {
+    var body = el('div', { class: 'sheet-body' }, []);
+    var muscles = todayMuscleList();
+    var draft = state.cardioDraft;
+
+    if (!draft) {
+      body.appendChild(el('p', { class: 'hint-line', text:
+        '오늘 근력으로 쓴 부위와 겹치는 것은 아래로 내려 둡니다. ' +
+        '겹치는 유산소는 방금 한 운동의 효과를 깎습니다.' }));
+
+      var ranked = E.rankForToday(muscles);
+      var list = el('div', { class: 'summary-list' }, ranked.map(function (exercise) {
+        var check = E.interference({
+          exercise: exercise, zone: 'steady', minutes: 25,
+          todayMuscles: muscles, before: false,
+        });
+        return el('button', {
+          type: 'button',
+          class: 'cardio-row' + (check.level === 'avoid' ? ' blocked' : ''),
+          onclick: function () {
+            state.cardioDraft = { exerciseId: exercise.id, minutes: 20, zone: 'steady', before: false };
+            render();
+          },
+        }, [
+          el('span', { class: 'cardio-mark ' + check.level, 'aria-hidden': 'true' }),
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: exercise.name }),
+            el('span', { class: 'plan-sets', text:
+              check.level === 'none' ? exercise.note : check.text }),
+          ]),
+          el('span', { class: 'detail', text: '›' }),
+        ]);
+      }));
+      body.appendChild(list);
+    } else {
+      var exercise = E.cardioById(draft.exerciseId);
+      var check = E.interference({
+        exercise: exercise, zone: draft.zone, minutes: draft.minutes,
+        todayMuscles: muscles, before: draft.before,
+      });
+
+      body.appendChild(el('div', { class: 'cardio-head' }, [
+        el('b', { text: exercise.name }),
+        el('button', {
+          type: 'button', class: 'demo-open', text: '다른 종목',
+          onclick: function () { state.cardioDraft = null; render(); },
+        }),
+      ]));
+
+      if (check.level !== 'none') {
+        body.appendChild(el('div', { class: 'notice' + (check.level === 'avoid' ? ' stop' : '') }, [
+          el('div', { class: 'label', text: check.level === 'avoid' ? '권하지 않습니다' : '알아두세요' }),
+          el('div', { text: check.text }),
+          check.fix ? el('div', { class: 'hint-line', text: '→ ' + check.fix }) : null,
+        ]));
+      }
+
+      body.appendChild(el('div', { class: 'list-label', text: '얼마나' }));
+      body.appendChild(el('div', { class: 'chip-row' }, [10, 20, 30, 45, 60].map(function (minutes) {
+        return el('button', {
+          type: 'button', class: 'pick', 'aria-pressed': String(draft.minutes === minutes),
+          text: minutes + '분',
+          onclick: function () { draft.minutes = minutes; render(); },
+        });
+      })));
+
+      body.appendChild(el('div', { class: 'list-label', text: '강도 — 숨이 어떤지로 정합니다' }));
+      body.appendChild(el('div', { class: 'chip-row' }, E.ZONES.map(function (zone) {
+        return el('button', {
+          type: 'button', class: 'pick', 'aria-pressed': String(draft.zone === zone.id),
+          title: zone.talk,
+          text: zone.label,
+          onclick: function () { draft.zone = zone.id; render(); },
+        });
+      })));
+      body.appendChild(el('p', { class: 'hint-line', text:
+        E.cardioZoneOf(draft.zone).talk + ' · 심박계가 있으면 최대심박의 '
+        + E.cardioZoneOf(draft.zone).hrPercent.join('~') + '%' }));
+
+      body.appendChild(el('button', {
+        type: 'button', class: 'finish', text: '기록하기',
+        onclick: function () {
+          state.cardioToday = state.cardioToday.concat([{
+            exerciseId: draft.exerciseId,
+            minutes: draft.minutes,
+            zone: draft.zone,
+            before: draft.before,
+          }]);
+          state.cardioDraft = null;
+          pushLog('유산소', '<b>' + exercise.name + '</b> ' + draft.minutes + '분 · '
+            + E.cardioZoneOf(draft.zone).label);
+          render();
+        },
+      }));
+    }
+
+    // 오늘 한 것
+    if (state.cardioToday.length > 0) {
+      state.cardioToday.forEach(function (log, index) {
+        body.appendChild(el('div', { class: 'cardio-done' }, [
+          el('span', { text: E.describeCardio(log) }),
+          el('button', {
+            type: 'button', class: 'demo-open', text: '지우기',
+            'aria-label': E.describeCardio(log) + ' 기록 지우기',
+            onclick: function () {
+              state.cardioToday = state.cardioToday.filter(function (_, i) { return i !== index; });
+              render();
+            },
+          }),
+        ]));
+      });
+    }
+
+    var load = E.weeklyLoad(cardioWeekLogs());
+    body.appendChild(el('p', { class: 'hint-line', text: load.text }));
+
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '유산소 추가' }),
+        el('span', { class: 'meta', text: '근력과 따로 계산' }),
+      ]),
+      body,
+    ]));
+  }
+
   function renderConditioning() {
     var body = el('div', { class: 'sheet-body' }, []);
 
@@ -4654,6 +4832,175 @@
   }
 
   /**
+   * 로그인 화면.
+   *
+   * 화면 하나를 통째로 쓴다. 모달 안에 이메일·비밀번호를 끼워 넣으면
+   * "설정 어딘가에 있는 것"이 되는데, 계정은 설정이 아니라 문이다.
+   *
+   * **로그인을 강요하지 않는다.** 앱은 계정 없이도 전부 돌아간다 —
+   * 서버는 같은 사람의 다른 기기를 잇는 역할만 한다. 그래서 "나중에
+   * 할게요"가 늘 있고, 눌러도 아무것도 잃지 않는다.
+   */
+  function renderAuth() {
+    var form = state.authForm;
+    var signUp = form.mode === 'signup';
+
+    screen.appendChild(el('div', { class: 'auth-head' }, [
+      el('div', { class: 'auth-mark', text: '볼륨 코치' }),
+      el('h2', { text: signUp ? '계정 만들기' : '로그인' }),
+      el('p', { class: 'auth-why', text: signUp
+        ? '폰을 바꿔도 기록이 남습니다. 지금까지 이 기기에 쌓인 기록은 그대로 올라갑니다.'
+        : '다른 기기에 있던 기록을 이 기기로 가져옵니다.' }),
+    ]));
+
+    if (!Remote.configured()) {
+      /*
+       * 주소와 열쇠가 없으면 로그인할 곳이 없다. 로그인 칸을 띄워 놓고
+       * 눌렀을 때 실패하게 두면 사용자는 자기 비밀번호를 의심한다.
+       */
+      screen.appendChild(el('div', { class: 'notice stop' }, [
+        el('div', { class: 'label', text: '서버가 아직 없습니다' }),
+        el('div', { text: '먼저 서버 주소와 열쇠를 넣어야 합니다. 처음 한 번만 하면 됩니다.' }),
+      ]));
+      screen.appendChild(el('button', {
+        type: 'button', class: 'finish', text: '서버 연결하기',
+        onclick: function () { state.authOpen = false; render(); openServerSettings(); },
+      }));
+      screen.appendChild(el('button', {
+        type: 'button', class: 'finish quiet', text: '나중에 할게요',
+        onclick: closeAuth,
+      }));
+      return;
+    }
+
+    if (form.notice) {
+      screen.appendChild(el('div', { class: 'notice' + (form.notice.bad ? ' stop' : '') }, [
+        el('div', { class: 'label', text: form.notice.bad ? '확인 필요' : '알림' }),
+        el('div', { text: form.notice.text }),
+      ]));
+    }
+
+    var mailInput = el('input', {
+      type: 'email', class: 'text-input', placeholder: '이메일',
+      value: form.email, 'aria-label': '이메일',
+      autocomplete: 'username', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
+      oninput: function (event) { form.email = event.target.value; },
+    });
+    var passInput = el('input', {
+      type: 'password', class: 'text-input',
+      placeholder: signUp ? '비밀번호 (6자 이상)' : '비밀번호',
+      value: form.password, 'aria-label': '비밀번호',
+      autocomplete: signUp ? 'new-password' : 'current-password',
+      oninput: function (event) { form.password = event.target.value; },
+      onkeydown: function (event) { if (event.key === 'Enter') submit(); },
+    });
+
+    screen.appendChild(el('div', { class: 'auth-form' }, [mailInput, passInput]));
+
+    function submit() {
+      form.email = mailInput.value;
+      form.password = passInput.value;
+
+      if (!form.email.trim()) {
+        form.notice = { bad: true, text: '이메일을 넣어 주세요.' };
+        return render();
+      }
+      if (form.password.length < 6) {
+        form.notice = { bad: true, text: '비밀번호는 6자 이상이어야 합니다.' };
+        return render();
+      }
+
+      form.busy = true;
+      form.notice = { bad: false, text: signUp ? '계정을 만드는 중…' : '로그인하는 중…' };
+      render();
+
+      var run = signUp ? Remote.signUp : Remote.signIn;
+      run(form.email.trim(), form.password).then(function (result) {
+        form.busy = false;
+        // 비밀번호는 성공하든 말든 화면에 남겨 두지 않는다.
+        form.password = '';
+
+        if (result && result.needsConfirm) {
+          form.mode = 'signin';
+          form.notice = { bad: false, text:
+            '가입했습니다. 받은 메일의 확인 링크를 누른 뒤 로그인하세요. ' +
+            '(Supabase에서 Confirm email을 끄면 이 단계가 없습니다.)' };
+          return render();
+        }
+
+        return Remote.checkSchema().then(function (check) {
+          if (!check.ok) {
+            form.notice = { bad: true, text: check.reason };
+            return render();
+          }
+          /*
+           * 로그인하자마자 맞춘다. 로그인의 목적이 그것이므로, 버튼을
+           * 한 번 더 누르게 할 이유가 없다.
+           */
+          Remote.patch({ email: form.email.trim() });
+          return syncNow().then(function () {
+            closeAuth();
+            pushLog('서버', '<b>' + (Remote.email() || '계정') + '</b>으로 로그인했습니다.');
+            renderLog();
+          });
+        });
+      }, function (error) {
+        form.busy = false;
+        form.password = '';
+        form.notice = { bad: true, text: error.message };
+        render();
+      });
+    }
+
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish',
+      text: form.busy ? '잠시만요…' : (signUp ? '계정 만들기' : '로그인'),
+      disabled: form.busy ? '' : null,
+      onclick: submit,
+    }));
+
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish quiet',
+      text: signUp ? '이미 계정이 있어요 — 로그인' : '처음이에요 — 계정 만들기',
+      onclick: function () {
+        form.mode = signUp ? 'signin' : 'signup';
+        form.notice = null;
+        form.password = '';
+        render();
+      },
+    }));
+
+    screen.appendChild(el('button', {
+      type: 'button', class: 'auth-skip', text: '나중에 할게요',
+      onclick: closeAuth,
+    }));
+
+    screen.appendChild(el('p', { class: 'asset-note', text:
+      '계정 없이도 앱은 그대로 돌아갑니다. 기록은 늘 이 기기에 먼저 저장되고, ' +
+      '로그인은 그 기록을 다른 기기와 잇는 역할만 합니다. ' +
+      '건강 기록은 민감정보라 올리기 전에 동의를 받았고, 언제든 서버에서 지울 수 있습니다.' }));
+  }
+
+  function openAuth(mode) {
+    state.authForm = {
+      email: Remote.email() || '',
+      password: '',
+      mode: mode || 'signin',
+      notice: null,
+      busy: false,
+    };
+    state.authOpen = true;
+    if (modal.open) modal.close();
+    render();
+  }
+
+  function closeAuth() {
+    state.authOpen = false;
+    state.authForm.password = '';
+    render();
+  }
+
+  /**
    * 서버 설정 화면.
    *
    * 세 단계다. ① 주소와 열쇠 넣기 ② 로그인 ③ 맞추기. 각 단계가 끝나야
@@ -4747,51 +5094,13 @@
             }),
           ]));
         } else {
-          var mailInput = el('input', {
-            type: 'email', class: 'text-input', placeholder: '이메일',
-            value: form.email, 'aria-label': '이메일',
-            autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
-            oninput: function (event) { form.email = event.target.value; },
-          });
-          var passInput = el('input', {
-            type: 'password', class: 'text-input', placeholder: '비밀번호 (6자 이상)',
-            value: form.password, 'aria-label': '비밀번호',
-            oninput: function (event) { form.password = event.target.value; },
-          });
-          body.push(mailInput);
-          body.push(passInput);
-
-          var attempt = function (run, label) {
-            form.email = mailInput.value;
-            form.password = passInput.value;
-            notice = { bad: false, text: label + ' 중…' };
-            draw();
-            run(form.email.trim(), form.password).then(function (result) {
-              if (result && result.needsConfirm) {
-                notice = { bad: false, text:
-                  '가입했습니다. 받은 메일의 확인 링크를 누른 뒤 로그인하세요. ' +
-                  '(Supabase에서 Confirm email을 끄면 이 단계가 없습니다.)' };
-                return draw();
-              }
-              return Remote.checkSchema().then(function (check) {
-                notice = check.ok
-                  ? { bad: false, text: '연결됐습니다. 아래에서 맞춰 보세요.' }
-                  : { bad: true, text: check.reason };
-                draw();
-              });
-            }, function (error) {
-              notice = { bad: true, text: error.message };
-              draw();
-            });
-          };
-
+          /*
+           * 계정은 여기서 만들지 않는다. 주소·열쇠와 이메일·비밀번호가
+           * 한 상자에 있으면 뭘 하는 화면인지 알 수가 없다.
+           */
           body.push(el('button', {
-            type: 'button', class: 'finish', text: '로그인',
-            onclick: function () { attempt(Remote.signIn, '로그인'); },
-          }));
-          body.push(el('button', {
-            type: 'button', class: 'finish quiet', text: '처음이에요 — 가입하기',
-            onclick: function () { attempt(Remote.signUp, '가입'); },
+            type: 'button', class: 'finish', text: '로그인 / 계정 만들기',
+            onclick: function () { modal.close(); openAuth('signin'); },
           }));
         }
       }
@@ -6030,7 +6339,12 @@
      * 아니라 설정 화면에서 바로 보이는 자리에 둔다.
      */
     screen.appendChild(el('button', {
-      type: 'button', class: 'server-cta', onclick: openServerSettings,
+      type: 'button', class: 'server-cta',
+      // 연결은 됐는데 로그인만 안 됐으면 곧바로 로그인 화면으로 보낸다.
+      onclick: function () {
+        if (Remote.configured() && !Remote.signedIn()) openAuth('signin');
+        else openServerSettings();
+      },
     }, [
       el('span', { class: 'plan-main' }, [
         el('span', { class: 'name', text: '서버에 기록 남기기' }),

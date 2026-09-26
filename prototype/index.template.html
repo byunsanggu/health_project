@@ -1411,6 +1411,57 @@ input[type="search"] {
   color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px;
 }
 
+/* ── 유산소 ─────────────────────────────────────── */
+.cardio-row {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px;
+  align-items: center; width: 100%; text-align: left;
+  border: 0; border-top: 1px solid var(--line-soft);
+  background: var(--surface); padding: 10px 12px;
+}
+.cardio-row:first-child { border-top: 0; }
+.cardio-row:hover { background: var(--surface-2); }
+.cardio-row.blocked { opacity: .6; }
+.cardio-row .detail { font-size: 15px; color: var(--muted); }
+/*
+ * 오늘 근력과 부딪히는 정도를 점 하나로. 글로만 쓰면 목록을 훑을 때
+ * 안 읽히고, 색만 쓰면 색을 못 보는 사람이 못 읽는다 — 줄 안의 설명이
+ * 늘 같이 있으므로 점은 훑기용이다.
+ */
+.cardio-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--zone-ok); }
+.cardio-mark.mild { background: var(--zone-hard); }
+.cardio-mark.notable { background: var(--zone-hard); }
+.cardio-mark.avoid { background: var(--zone-over); }
+.cardio-head { display: flex; align-items: center; gap: 8px; }
+.cardio-head b { font-size: 15px; font-weight: 600; }
+.cardio-head .demo-open { margin-left: auto; }
+.cardio-done {
+  display: flex; align-items: center; gap: 8px;
+  border-top: 1px solid var(--line-soft); padding-top: 8px;
+  font-size: 12.5px; color: var(--muted);
+}
+.cardio-done .demo-open { margin-left: auto; }
+
+/* ── 로그인 화면 ────────────────────────────────── */
+/*
+ * 화면 하나를 통째로 쓴다. 계정은 설정 어딘가에 끼워 넣는 것이 아니라
+ * 문이고, 문은 문처럼 생겨야 한다.
+ */
+.auth-head { display: grid; gap: 8px; padding: 18px 0 6px; }
+.auth-mark {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--accent);
+}
+.auth-head h2 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+.auth-why { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+.auth-form { display: grid; gap: 9px; }
+.auth-form .text-input { font-size: 15px; padding: 13px 14px; }
+/* 건너뛰는 길은 늘 있어야 한다 — 눌러도 아무것도 잃지 않는다 */
+.auth-skip {
+  width: 100%; border: 0; background: none; color: var(--muted);
+  padding: 10px; font-size: 13px; text-decoration: underline; text-underline-offset: 3px;
+}
+.auth-skip:hover { color: var(--accent); }
+
 /* ── 서버 ───────────────────────────────────────── */
 .server-cta {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
