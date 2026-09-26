@@ -2500,10 +2500,33 @@ var Remote = (function () {
     if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/?$/i.test(trimmed)) {
       problems.push('주소는 https://xxxx.supabase.co 모양이어야 합니다.');
     }
+    /*
+     * 열쇠 형식이 두 가지다.
+     *
+     * 예전 것은 JWT(점 두 개로 나뉜 긴 문자열)이고, 새 것은
+     * sb_publishable_... / sb_secret_... 이다. 둘 다 받아야 한다 —
+     * 새로 만든 프로젝트는 새 형식만 보여주는 경우가 있고, 그걸
+     * "열쇠 모양이 아닙니다"로 막으면 사용자는 맞는 값을 들고도
+     * 앞으로 못 간다.
+     *
+     * 막아야 하는 건 형식이 아니라 **권한**이다. service_role과
+     * sb_secret_은 보안 정책을 전부 무시하므로 앱에 들어가면 안 된다.
+     */
     var trimmedKey = (key || '').trim();
-    if (trimmedKey.split('.').length !== 3) {
-      problems.push('열쇠 모양이 아닙니다. Settings → API의 anon / public 값을 복사하세요.');
-    } else if (/service_role/.test(atobSafe(trimmedKey.split('.')[1]))) {
+    var isJwt = trimmedKey.split('.').length === 3;
+    var isNew = /^sb_(publishable|secret)_/.test(trimmedKey);
+
+    if (!trimmedKey) {
+      problems.push('열쇠를 넣어 주세요. Settings → API Keys 에서 복사합니다.');
+    } else if (!isJwt && !isNew) {
+      problems.push(
+        '열쇠 모양이 아닙니다. Settings → API Keys 의 anon / public ' +
+        '(또는 publishable) 값을 복사하세요.');
+    } else if (/^sb_secret_/.test(trimmedKey)) {
+      problems.push(
+        'secret 열쇠입니다. 이 열쇠는 보안 정책을 전부 무시하므로 앱에 넣으면 안 됩니다 — ' +
+        'publishable 열쇠를 쓰세요.');
+    } else if (isJwt && /service_role/.test(atobSafe(trimmedKey.split('.')[1]))) {
       problems.push(
         'service_role 열쇠입니다. 이 열쇠는 보안 정책을 전부 무시하므로 앱에 넣으면 안 됩니다 — ' +
         'anon / public 열쇠를 쓰세요.');
