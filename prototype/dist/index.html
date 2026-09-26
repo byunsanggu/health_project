@@ -4026,6 +4026,9 @@ var GymSearch = (function () {
     placeBusy: false,
     /* 서버 주소를 직접 넣는 칸을 펼쳤는가. 박아 넣은 값이 있을 때만 쓴다. */
     showServerFields: false,
+    /* 진짜 GPS 좌표. 모르면 null이고, 그때는 아무 데도 좌표를 안 보낸다. */
+    here: null,
+    hereAsked: false,
     maxTest: null,
     /*
      * 오늘을 시작했는가. 시작 전에는 목록만 보여주고, 시작한 뒤에는
@@ -10488,6 +10491,13 @@ var GymSearch = (function () {
       el('p', { class: 'meta', text: '여러 곳을 등록해 두고 그날 가는 곳으로 바꿉니다' }),
     ]));
 
+    /*
+     * 헬스장 화면에 왔을 때 위치를 물어본다. 앱 켜자마자 묻지 않는 이유는,
+     * 왜 묻는지 모르는 채로 받는 허락은 허락이 아니기 때문이다. 여기서는
+     * 화면이 이미 헬스장 이야기를 하고 있다.
+     */
+    requestLocation();
+
     renderPendingMerges();
 
     // 내 헬스장 목록
@@ -10931,11 +10941,42 @@ var GymSearch = (function () {
    * 지금 위치.
    *
    * 위치 동의가 없으면 없는 셈 친다 — 화면에서만 감추고 좌표를 계속 쓰면
-   * 동의를 받은 게 아니다. 프로토타입에는 GPS가 없어 고정값을 쓴다.
+   * 동의를 받은 게 아니다.
+   *
+   * **모르면 모른다고 한다.** 예전에는 GPS가 없을 때 강남 좌표를 대신
+   * 넣었는데, 그게 실제로 검색을 망가뜨렸다: 좌표를 보내면 카카오가 그
+   * 점에서 가까운 순으로 15개를 주므로, 수원 헬스장을 이름으로 찾아도
+   * 강남 근처 것들에 밀려 안 나왔다. 좌표를 아예 안 보내면 카카오가
+   * 이름이 맞는 순으로 전국에서 준다. 거리를 모르는 쪽이 틀린 거리보다 낫다.
    */
   function myLocation() {
     if (!E.allows(state.consent, 'nearbyGyms')) return undefined;
-    return { lat: 37.5, lng: 127.03 };
+    return state.here || undefined;
+  }
+
+  /**
+   * 진짜 위치를 한 번 물어본다.
+   *
+   * 동의한 사람에게만, 그리고 세션에 한 번만 묻는다. 거절하거나 실패해도
+   * 아무것도 안 한다 — 검색은 좌표 없이도 되고, 그때는 거리만 안 보인다.
+   */
+  function requestLocation() {
+    if (state.hereAsked) return;
+    if (!E.allows(state.consent, 'nearbyGyms')) return;
+    if (!navigator.geolocation) return;
+    state.hereAsked = true;
+
+    navigator.geolocation.getCurrentPosition(
+      function (position) {
+        state.here = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        render();
+      },
+      function () { /* 거절했거나 못 잡았다. 좌표 없이 간다. */ },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 },
+    );
   }
 
   /**
