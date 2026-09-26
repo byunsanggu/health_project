@@ -144,6 +144,8 @@
   }
 
   function persist() {
+    // 화면 상태와 별개로, 오늘 기록은 저장소의 세션으로도 남겨야 서버에 간다.
+    if (state.todaySets && state.todaySets.length > 0 && state.todayDate) recordTodaySession();
     storage.patch({
       answers: state.answers,
       program: state.program,
@@ -173,6 +175,7 @@
         tempo: state.tempo,
         voiceRate: state.voiceRate,
         reportSeenWeek: state.reportSeenWeek,
+        lastSyncedAt: state.lastSyncedAt,
         wodResults: state.wodResults,
         sessionStartedAt: state.sessionStartedAt,
         gymBook: state.gymBook,
@@ -222,6 +225,7 @@
       state.tempo = settings.tempo || null;
       state.voiceRate = settings.voiceRate || 1;
       state.reportSeenWeek = settings.reportSeenWeek || null;
+      state.lastSyncedAt = settings.lastSyncedAt || null;
       state.wodResults = settings.wodResults || [];
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
@@ -444,6 +448,9 @@
     voiceRate: 1,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
     reportSeenWeek: null,
+    /* 마지막으로 서버와 맞춘 때 */
+    lastSyncedAt: null,
+    syncing: false,
     /* 지금 세는 중인 세트. { liftIndex, setIndex, startedAt, rep, timers } */
     counting: null,
     // 와드 설정. 길이와 바벨 여부가 성격을 크게 바꾼다.
@@ -2325,6 +2332,28 @@
   function todaySessionLog() {
     if (state.todaySets.length === 0) return [];
     return [{ date: state.todayDate, sets: state.todaySets }];
+  }
+
+  /**
+   * 오늘 기록을 저장소에 남긴다.
+   *
+   * 지금까지는 화면 상태(settings)에만 있었다. 그걸로 앱은 돌아가지만
+   * 서버로는 못 간다 — 동기화는 저장소의 세션과 아웃박스를 보기 때문이다.
+   *
+   * 날짜 하나에 세션 하나다. id를 날짜로 고정해야 세트를 더할 때마다
+   * 새 세션이 생기지 않고, 아웃박스도 한 줄로 유지된다.
+   */
+  function recordTodaySession() {
+    if (state.todaySets.length === 0) return;
+    var existing = storage.load().sessions.filter(function (item) {
+      return item.date === state.todayDate;
+    })[0];
+    storage.putSession({
+      id: (existing && existing.id) || 'session-' + state.todayDate,
+      date: state.todayDate,
+      sets: state.todaySets.slice(),
+      gymId: activeGymId(),
+    });
   }
 
   function renderWarnings() {
@@ -4580,6 +4609,243 @@
   }
 
   /* 주간 */
+  /* ── 서버 ──────────────────────────────────────── */
+
+  /*
+   * 접속 정보는 관장님이 앱에 직접 넣는다. 코드에 박아 두지 않는다 —
+   * 열쇠를 남한테 보낼 일도 없고, 나중에 다른 사람이 자기 서버로 쓰고
+   * 싶을 때도 그대로 된다.
+   */
+
+  function syncStatusLine() {
+    var pending = storage.outbox().length;
+    return E.syncAgeLine(state.lastSyncedAt || null, Date.now(), pending);
+  }
+
+  /** 지금 한 번 맞춘다. 실패해도 기록은 이 기기에 그대로 있다. */
+  function syncNow(after) {
+    if (!Remote.configured() || !Remote.signedIn()) return Promise.resolve(null);
+    if (state.syncing) return Promise.resolve(null);
+    state.syncing = true;
+    if (after) after();
+
+    return E.syncOnce(storage, Remote.transport(), { cursor: Remote.read().cursor || null })
+      .then(function (result) {
+        state.syncing = false;
+        Remote.patch({ cursor: result.cursor });
+        if (!result.error) {
+          state.lastSyncedAt = new Date().toISOString();
+          storage.patch({});
+        }
+        if (result.pulled > 0) {
+          // 받은 기록을 화면에 반영한다.
+          state.history = storage.load().sessions.filter(function (item) { return !item.deleted; });
+        }
+        pushLog('서버', result.message);
+        persist();
+        if (after) after();
+        return result;
+      }, function (error) {
+        state.syncing = false;
+        pushLog('서버', '맞추지 못했습니다 — ' + error.message);
+        if (after) after();
+        return null;
+      });
+  }
+
+  /**
+   * 서버 설정 화면.
+   *
+   * 세 단계다. ① 주소와 열쇠 넣기 ② 로그인 ③ 맞추기. 각 단계가 끝나야
+   * 다음이 열리게 해서, 뭘 해야 하는지 화면이 말하게 한다.
+   */
+  function openServerSettings() {
+    var notice = null;
+    /*
+     * 친 값을 들고 있는다.
+     *
+     * 화면을 다시 그릴 때마다 저장된 값에서 칸을 채우면, 주소 하나가
+     * 틀렸다고 말해 주는 사이에 방금 붙여 넣은 긴 열쇠가 날아간다.
+     * 저장 전의 값도 화면의 상태다.
+     */
+    var form = {
+      url: Remote.read().url || '',
+      key: Remote.read().anonKey || '',
+      email: Remote.read().email || '',
+      password: '',
+    };
+
+    var draw = function () {
+      var conf = Remote.read();
+      var body = [];
+
+      body.push(el('p', { class: 'asset-note', text:
+        '서버는 같은 사람의 다른 기기를 잇는 역할만 합니다. 앱은 서버 없이도 그대로 돌아가고, ' +
+        '기록은 늘 이 기기에 먼저 저장됩니다 — 서버가 죽어도 운동은 계속됩니다.' }));
+
+      if (notice) {
+        body.push(el('div', { class: 'notice' + (notice.bad ? ' stop' : '') }, [
+          el('div', { class: 'label', text: notice.bad ? '확인 필요' : '알림' }),
+          el('div', { text: notice.text }),
+        ]));
+      }
+
+      // ── ① 주소와 열쇠
+      body.push(el('div', { class: 'list-label', text: '① 서버 주소와 열쇠' }));
+      var urlInput = el('input', {
+        type: 'url', class: 'text-input', placeholder: 'https://xxxx.supabase.co',
+        value: form.url, 'aria-label': '서버 주소',
+        autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
+        oninput: function (event) { form.url = event.target.value; },
+      });
+      var keyInput = el('input', {
+        type: 'password', class: 'text-input', placeholder: 'anon / public 열쇠',
+        value: form.key, 'aria-label': 'anon 열쇠',
+        autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
+        oninput: function (event) { form.key = event.target.value; },
+      });
+      void conf;
+      body.push(urlInput);
+      body.push(keyInput);
+      body.push(el('p', { class: 'hint-line', text:
+        'Supabase → Settings → API 에서 Project URL과 anon / public 을 복사하세요. ' +
+        'service_role 열쇠는 넣으면 안 됩니다 — 보안 정책을 전부 무시하는 열쇠입니다.' }));
+      body.push(el('button', {
+        type: 'button', class: 'finish quiet', text: '저장하고 확인',
+        onclick: function () {
+          form.url = urlInput.value;
+          form.key = keyInput.value;
+          var problems = Remote.looksValid(form.url, form.key);
+          if (problems.length > 0) {
+            notice = { bad: true, text: problems.join(' ') };
+            return draw();
+          }
+          Remote.patch({ url: form.url.trim(), anonKey: form.key.trim() });
+          notice = { bad: false, text: '저장했습니다. 이제 아래에서 가입하거나 로그인하세요.' };
+          draw();
+        },
+      }));
+
+      // ── ② 로그인
+      if (Remote.configured()) {
+        body.push(el('div', { class: 'list-label', text: '② 계정' }));
+
+        if (Remote.signedIn()) {
+          body.push(el('div', { class: 'server-row' }, [
+            el('span', { class: 'plan-main' }, [
+              el('span', { class: 'name', text: Remote.email() || '로그인됨' }),
+              el('span', { class: 'plan-sets', text: syncStatusLine() }),
+            ]),
+            el('button', {
+              type: 'button', class: 'demo-open', text: '로그아웃',
+              onclick: function () {
+                Remote.signOut().then(function () {
+                  notice = { bad: false, text: '로그아웃했습니다. 이 기기의 기록은 그대로 있습니다.' };
+                  draw();
+                });
+              },
+            }),
+          ]));
+        } else {
+          var mailInput = el('input', {
+            type: 'email', class: 'text-input', placeholder: '이메일',
+            value: form.email, 'aria-label': '이메일',
+            autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
+            oninput: function (event) { form.email = event.target.value; },
+          });
+          var passInput = el('input', {
+            type: 'password', class: 'text-input', placeholder: '비밀번호 (6자 이상)',
+            value: form.password, 'aria-label': '비밀번호',
+            oninput: function (event) { form.password = event.target.value; },
+          });
+          body.push(mailInput);
+          body.push(passInput);
+
+          var attempt = function (run, label) {
+            form.email = mailInput.value;
+            form.password = passInput.value;
+            notice = { bad: false, text: label + ' 중…' };
+            draw();
+            run(form.email.trim(), form.password).then(function (result) {
+              if (result && result.needsConfirm) {
+                notice = { bad: false, text:
+                  '가입했습니다. 받은 메일의 확인 링크를 누른 뒤 로그인하세요. ' +
+                  '(Supabase에서 Confirm email을 끄면 이 단계가 없습니다.)' };
+                return draw();
+              }
+              return Remote.checkSchema().then(function (check) {
+                notice = check.ok
+                  ? { bad: false, text: '연결됐습니다. 아래에서 맞춰 보세요.' }
+                  : { bad: true, text: check.reason };
+                draw();
+              });
+            }, function (error) {
+              notice = { bad: true, text: error.message };
+              draw();
+            });
+          };
+
+          body.push(el('button', {
+            type: 'button', class: 'finish', text: '로그인',
+            onclick: function () { attempt(Remote.signIn, '로그인'); },
+          }));
+          body.push(el('button', {
+            type: 'button', class: 'finish quiet', text: '처음이에요 — 가입하기',
+            onclick: function () { attempt(Remote.signUp, '가입'); },
+          }));
+        }
+      }
+
+      // ── ③ 맞추기
+      if (Remote.signedIn()) {
+        body.push(el('div', { class: 'list-label', text: '③ 기록 맞추기' }));
+        body.push(el('p', { class: 'hint-line', text:
+          '올릴 것 ' + storage.outbox().length + '개 · ' + syncStatusLine() }));
+        body.push(el('button', {
+          type: 'button', class: 'finish', text: state.syncing ? '맞추는 중…' : '지금 맞추기',
+          disabled: state.syncing ? '' : null,
+          onclick: function () { syncNow(draw); },
+        }));
+
+        /*
+         * 지우는 길이 없으면 개인정보를 받을 자격이 없다. 되돌릴 수 없는
+         * 일이므로 한 번 더 묻는다.
+         */
+        body.push(el('button', {
+          type: 'button', class: 'finish danger', text: '서버에서 내 기록 지우기',
+          onclick: function () {
+            notice = { bad: true, text: '정말 지울까요? 서버의 기록이 모두 사라집니다. 이 기기의 기록은 남습니다.' };
+            draw();
+            body.push(null);
+            var confirmBtn = el('button', {
+              type: 'button', class: 'finish danger', text: '네, 서버에서 지웁니다',
+              onclick: function () {
+                Remote.deleteEverything().then(function () {
+                  Remote.patch({ cursor: null });
+                  notice = { bad: false, text: '서버에서 지웠습니다.' };
+                  draw();
+                }, function (error) {
+                  notice = { bad: true, text: error.message };
+                  draw();
+                });
+              },
+            });
+            modal.querySelector('.modal-body').appendChild(confirmBtn);
+          },
+        }));
+      }
+
+      body.push(el('p', { class: 'asset-note', text:
+        '건강 기록은 민감정보입니다. 서버에 올리면 개인정보 처리방침에 위탁·보관 위치를 ' +
+        '적어야 합니다. 자세한 내용은 저장소의 server/README.md에 있습니다.' }));
+
+      openModal('서버', Remote.signedIn() ? (Remote.email() || '로그인됨')
+        : (Remote.configured() ? '로그인 필요' : '설정 안 됨'), body);
+    };
+
+    draw();
+  }
+
   /* ── 약속을 지킨 주 ────────────────────────────── */
 
   /**
@@ -5757,6 +6023,23 @@
         el('span', { class: 'meta', text: 'PWA' }),
       ]),
       el('div', { class: 'sheet-body' }, rows),
+    ]));
+
+    /*
+     * 서버. 폰을 바꿔도 기록이 남게 하는 유일한 길이라서, "언젠가 하는 것"이
+     * 아니라 설정 화면에서 바로 보이는 자리에 둔다.
+     */
+    screen.appendChild(el('button', {
+      type: 'button', class: 'server-cta', onclick: openServerSettings,
+    }, [
+      el('span', { class: 'plan-main' }, [
+        el('span', { class: 'name', text: '서버에 기록 남기기' }),
+        el('span', { class: 'plan-sets', text:
+          !Remote.configured() ? '폰을 바꾸면 기록이 사라집니다 — 눌러서 연결하세요'
+            : !Remote.signedIn() ? '연결됨 · 로그인이 필요합니다'
+            : syncStatusLine() }),
+      ]),
+      el('span', { class: 'detail', text: '›' }),
     ]));
 
     screen.appendChild(el('div', { class: 'notice' }, [

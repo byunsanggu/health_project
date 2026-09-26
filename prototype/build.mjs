@@ -25,6 +25,7 @@ const demo3d = await readFile(new URL('demo3d.js', root), 'utf8');
 const equipmentArt = await readFile(new URL('equipmentArt.js', root), 'utf8');
 const bodyMap = await readFile(new URL('bodyMap.js', root), 'utf8');
 const demoClips = await readFile(new URL('demoClips.js', root), 'utf8');
+const remote = await readFile(new URL('remote.js', root), 'utf8');
 const template = await readFile(new URL('index.template.html', root), 'utf8');
 
 const page = template
@@ -32,6 +33,7 @@ const page = template
   .replace('/*EQUIPMENT_ART*/', () => equipmentArt)
   .replace('/*BODY_MAP*/', () => bodyMap)
   .replace('/*DEMO_CLIPS*/', () => demoClips)
+  .replace('/*REMOTE_SCRIPT*/', () => remote)
   .replace('/*DEMO3D_SCRIPT*/', () => demo3d)
   .replace('/*APP_SCRIPT*/', () => app);
 

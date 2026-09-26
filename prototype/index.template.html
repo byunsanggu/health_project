@@ -1411,6 +1411,31 @@ input[type="search"] {
   color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px;
 }
 
+/* ── 서버 ───────────────────────────────────────── */
+.server-cta {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); color: var(--ink); padding: 12px 13px;
+}
+.server-cta:hover { border-color: var(--accent); }
+.server-cta .detail { margin-left: auto; font-size: 15px; color: var(--muted); }
+.server-row {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2); padding: 10px 12px;
+}
+.server-row .demo-open { margin-left: auto; }
+/* 주소·열쇠·이메일을 치는 칸. 긴 문자열이라 한 줄을 다 쓴다. */
+.text-input {
+  width: 100%; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--surface-2); color: var(--ink);
+  font: inherit; font-size: 13px; font-family: var(--mono);
+}
+.text-input:focus { border-color: var(--accent); outline: none; }
+.finish.danger { background: var(--surface); border-color: var(--zone-over); color: var(--zone-over); font-weight: 500; }
+.finish.danger:hover { background: var(--zone-over); color: #fff; }
+
 /* ── 약속을 지킨 주 ─────────────────────────────── */
 /*
  * "며칠 연속"이 아니라 "이번 주 약속을 지켰나"다. 그래서 불이 꺼지는
@@ -1841,5 +1866,6 @@ input[type="search"] {
 <script>/*EQUIPMENT_ART*/</script>
 <script>/*BODY_MAP*/</script>
 <script>/*DEMO_CLIPS*/</script>
+<script>/*REMOTE_SCRIPT*/</script>
 <script>/*DEMO3D_SCRIPT*/</script>
 <script>/*APP_SCRIPT*/</script>
