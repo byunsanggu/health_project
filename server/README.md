@@ -92,6 +92,36 @@ https://supabase.com → **Start your project** → GitHub 또는 이메일로 �
 
 ---
 
+## 스키마는 확인하고 드립니다
+
+붙여넣고 나서 "안 되는데요"를 주고받는 것보다, 먼저 틀려 보는 편이 쌉니다. `schema.sql`은 로컬
+PostgreSQL 16(Supabase와 같은 버전)에서 실제로 돌려 확인했습니다.
+
+```
+[가] 올리기 → 1줄
+[가] 내 기록 보임 → 1줄
+[나] 가의 기록 보임 → 0줄              ← RLS가 막습니다
+[나] 남의 id로 INSERT → 막힘 ✓         ← with check가 막습니다
+[가] 오래된 것 올리기 → 0줄 바뀜        ← 새 기록을 안 덮습니다
+[가] synced_at이 updated_at보다 뒤 → ✓  ← 서버가 적습니다
+[가] 설정 user_id 자동 → ✓
+[가] 탈퇴 후 남은 기록 → 0줄
+```
+
+다시 돌려 보려면:
+
+```bash
+initdb -D /tmp/pgcheck -A trust -U postgres
+pg_ctl -D /tmp/pgcheck -o "-k /tmp -p 5433" start
+psql -h /tmp -p 5433 -U postgres -f server/schema.stub.sql   # auth.uid() 흉내
+psql -h /tmp -p 5433 -U postgres -f server/schema.sql
+psql -h /tmp -p 5433 -U postgres -f server/schema.roles.sql  # RLS 우회 안 하는 역할
+psql -h /tmp -p 5433 -U app_user -d postgres -f server/schema.test.sql
+```
+
+`postgres` 역할은 **BYPASSRLS**라서 그대로 시험하면 정책이 늘 통과합니다 — 그러면 아무것도
+확인하지 못한 것입니다. 그래서 따로 역할을 만들어 씁니다.
+
 ## 설계에서 신경 쓴 것
 
 ### 시계가 다른 폰 때문에 기록을 잃지 않기
