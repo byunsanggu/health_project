@@ -259,6 +259,30 @@ var Remote = (function () {
         });
       },
 
+      /* 설정은 사람마다 한 줄이라 합칠 일이 없다. 통째로 주고받는다. */
+      pullSettings: function () {
+        return withAuth(function () {
+          return request('/rest/v1/settings?select=updated_at,body&limit=1');
+        }).then(function (rows) {
+          var row = (rows || [])[0];
+          return row ? { updatedAt: row.updated_at, body: row.body } : null;
+        }, function (error) {
+          // 표가 없으면 설정 없이 간다. 기록 동기화까지 막을 일은 아니다.
+          if (error.status === 404) return null;
+          throw error;
+        });
+      },
+
+      pushSettings: function (settings) {
+        return withAuth(function () {
+          return request('/rest/v1/settings?on_conflict=user_id', {
+            method: 'POST',
+            headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+            body: [{ updated_at: settings.updatedAt, body: settings.body }],
+          });
+        }).then(function () {});
+      },
+
       push: function (records) {
         if (!records || records.length === 0) return Promise.resolve();
         return withAuth(function () {

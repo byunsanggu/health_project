@@ -122,6 +122,33 @@ export interface SessionLog extends Syncable {
    * 고를 때 이 값으로 걸러낸다. 없으면 헬스장을 가리지 않고 전부 본다.
    */
   gymId?: string;
+
+  /*
+   * 그날 한 유산소.
+   *
+   * 따로 저장하지 않는다. 하루 운동은 근력 + 유산소이고, 둘을 갈라
+   * 두면 동기화도 두 번 해야 하고 주간 요약에서도 한쪽이 빠진다.
+   * 같은 날에 한 것은 같은 기록에 담는다.
+   */
+  cardio?: CardioEntry[];
+
+  /** 그날 한 와드 점수. 위와 같은 이유로 여기 담는다. */
+  wod?: unknown[];
+}
+
+/**
+ * 유산소 한 줄.
+ *
+ * cardio.ts의 CardioLog와 같은 모양이지만, 타입이 순환 참조가 되지
+ * 않도록 여기에 최소한만 둔다.
+ */
+export interface CardioEntry {
+  exerciseId: string;
+  minutes: number;
+  zone: string;
+  distanceKm?: number;
+  avgHr?: number;
+  before?: boolean;
 }
 
 export interface PainReport {

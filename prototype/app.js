@@ -145,7 +145,7 @@
 
   function persist() {
     // 화면 상태와 별개로, 오늘 기록은 저장소의 세션으로도 남겨야 서버에 간다.
-    if (state.todaySets && state.todaySets.length > 0 && state.todayDate) recordTodaySession();
+    if (state.todayDate && state.lifts) recordTodaySession();
     storage.patch({
       answers: state.answers,
       program: state.program,
@@ -176,6 +176,7 @@
         voiceRate: state.voiceRate,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
+        settingsUpdatedAt: state.settingsUpdatedAt,
         cardioToday: state.cardioToday,
         cardioLog: state.cardioLog,
         wodResults: state.wodResults,
@@ -228,6 +229,7 @@
       state.voiceRate = settings.voiceRate || 1;
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
+      state.settingsUpdatedAt = settings.settingsUpdatedAt || null;
       state.cardioToday = settings.cardioToday || [];
       state.cardioLog = settings.cardioLog || [];
       state.wodResults = settings.wodResults || [];
@@ -457,6 +459,9 @@
     /* 이번 주 유산소 (날짜별) — 주간 부담을 세는 데 쓴다 */
     cardioLog: [],
     cardioDraft: null,
+    /* 같이 가야 하는 설정이 마지막으로 바뀐 때 */
+    settingsUpdatedAt: null,
+    lastSettingsBody: null,
     /* 마지막으로 서버와 맞춘 때 */
     lastSyncedAt: null,
     syncing: false,
@@ -810,8 +815,17 @@
   function weekSessions() {
     var sunday = E.addDays(state.monday, 6);
     var sessions = state.history.filter(function (s) { return s.date >= state.monday && s.date <= sunday; });
-    if (state.todaySets.length > 0) {
-      sessions = sessions.concat([{ date: state.todayDate, sets: state.todaySets, gymId: activeGymId() }]);
+    /*
+     * 오늘 것은 아직 history에 없다. 여기서 붙일 때 유산소도 같이 붙여야
+     * 한다 — 안 그러면 주간 요약에서 오늘 한 유산소만 조용히 빠진다.
+     */
+    if (state.todaySets.length > 0 || state.cardioToday.length > 0) {
+      sessions = sessions.concat([{
+        date: state.todayDate,
+        sets: state.todaySets,
+        gymId: activeGymId(),
+        cardio: state.cardioToday,
+      }]);
     }
     return sessions;
   }
@@ -2367,7 +2381,8 @@
    * 새 세션이 생기지 않고, 아웃박스도 한 줄로 유지된다.
    */
   function recordTodaySession() {
-    if (state.todaySets.length === 0) return;
+    // 유산소만 한 날도 운동한 날이다.
+    if (state.todaySets.length === 0 && state.cardioToday.length === 0) return;
     var existing = storage.load().sessions.filter(function (item) {
       return item.date === state.todayDate;
     })[0];
@@ -2376,6 +2391,12 @@
       date: state.todayDate,
       sets: state.todaySets.slice(),
       gymId: activeGymId(),
+      /*
+       * 유산소와 와드를 같은 기록에 담는다. 따로 두면 동기화도 두 번
+       * 해야 하고, 주간 요약에서 한쪽이 빠진다.
+       */
+      cardio: state.cardioToday.slice(),
+      wod: state.wodResults.filter(function (item) { return item.date === state.todayDate; }),
     });
   }
 
@@ -4795,6 +4816,52 @@
    * 싶을 때도 그대로 된다.
    */
 
+  /*
+   * 기기를 건너가야 하는 설정과, 이 기기에만 있어야 하는 설정.
+   *
+   * 프로그램·헬스장·기구·휴식 띠는 같이 가야 한다 — 폰을 바꿨는데
+   * 처음부터 다시 고르게 하면 서버를 붙인 뜻이 없다.
+   *
+   * 반대로 "지금 몇 번째 종목인가", "어느 탭을 보고 있었나"는 같이
+   * 가면 안 된다. 집 태블릿이 헬스장 폰의 화면을 끌고 가면 그건
+   * 도와주는 게 아니라 방해다.
+   */
+  var SHARED_SETTINGS = [
+    'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
+    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'voiceRate',
+    'consent', 'consentRecord', 'landmarks',
+  ];
+
+  function sharedSettings() {
+    var out = {};
+    SHARED_SETTINGS.forEach(function (key) {
+      if (state[key] !== undefined && state[key] !== null) out[key] = state[key];
+    });
+    return out;
+  }
+
+  /** 같이 가야 하는 설정이 마지막으로 바뀐 때. */
+  function settingsStamp() {
+    var body = JSON.stringify(sharedSettings());
+    if (body !== state.lastSettingsBody) {
+      state.lastSettingsBody = body;
+      state.settingsUpdatedAt = new Date().toISOString();
+    }
+    return { updatedAt: state.settingsUpdatedAt || new Date(0).toISOString(), body: sharedSettings() };
+  }
+
+  /** 서버에서 받은 설정을 얹는다. 받은 것이 이겼으므로 그대로 쓴다. */
+  function applyRemoteSettings(settings) {
+    var body = settings && settings.body;
+    if (!body || typeof body !== 'object') return;
+    SHARED_SETTINGS.forEach(function (key) {
+      if (body[key] !== undefined) state[key] = body[key];
+    });
+    state.settingsUpdatedAt = settings.updatedAt;
+    state.lastSettingsBody = JSON.stringify(sharedSettings());
+    rebuildSession();
+  }
+
   function syncStatusLine() {
     var pending = storage.outbox().length;
     return E.syncAgeLine(state.lastSyncedAt || null, Date.now(), pending);
@@ -4807,7 +4874,11 @@
     state.syncing = true;
     if (after) after();
 
-    return E.syncOnce(storage, Remote.transport(), { cursor: Remote.read().cursor || null })
+    return E.syncOnce(storage, Remote.transport(), {
+      cursor: Remote.read().cursor || null,
+      settings: settingsStamp(),
+      onSettings: applyRemoteSettings,
+    })
       .then(function (result) {
         state.syncing = false;
         Remote.patch({ cursor: result.cursor });
@@ -4817,7 +4888,16 @@
         }
         if (result.pulled > 0) {
           // 받은 기록을 화면에 반영한다.
-          state.history = storage.load().sessions.filter(function (item) { return !item.deleted; });
+          var saved = storage.load().sessions.filter(function (item) { return !item.deleted; });
+          state.history = saved;
+          /*
+           * 오늘 기록을 다른 기기에서 먼저 했을 수 있다. 그 날의 유산소를
+           * 화면에도 되살려야 "올라갔는데 안 보인다"가 안 생긴다.
+           */
+          var today = saved.filter(function (item) { return item.date === state.todayDate; })[0];
+          if (today && today.cardio && state.cardioToday.length === 0) {
+            state.cardioToday = today.cardio.slice();
+          }
         }
         pushLog('서버', result.message);
         persist();
@@ -5349,6 +5429,17 @@
       ctx.fillText(stat.key, x, y + 44);
     });
     y += 96;
+
+    /*
+     * 유산소. 근력 숫자와 같은 줄에 섞지 않는다 — 세트와 분은 단위가
+     * 다르고, 섞으면 둘 다 안 읽힌다. 한 줄 아래에 조용히 둔다.
+     */
+    if (report.cardio && report.cardio.count > 0) {
+      ctx.fillStyle = muted;
+      ctx.font = '400 28px ' + sans;
+      ctx.fillText('유산소 ' + report.cardio.count + '회 · ' + report.cardio.minutes + '분', pad, y);
+      y += 46;
+    }
 
     ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(CARD_W - pad, y); ctx.stroke();
     y += 58;

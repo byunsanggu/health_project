@@ -292,3 +292,96 @@ describe('마지막으로 맞춘 때', () => {
     assert.equal(syncAgeLine('2026-09-26T12:05:00.000Z', now, 0), '방금 맞췄습니다');
   });
 });
+
+describe('설정 맞추기', () => {
+  /** 설정까지 아는 가짜 서버. */
+  function withSettings(seed: { updatedAt: string; body: unknown } | null = null) {
+    let stored = seed;
+    const transport: SyncTransport = {
+      async push() {},
+      async pull() { return { records: [], cursor: null }; },
+      async pullSettings() { return stored; },
+      async pushSettings(next) { stored = next; },
+    };
+    return { transport, current: () => stored };
+  }
+
+  const mine = (updatedAt: string, body: unknown) => ({ updatedAt, body });
+
+  it('서버에 없으면 올린다', async () => {
+    const server = withSettings(null);
+    const result = await syncOnce(newStore(), server.transport, {
+      settings: mine('2026-09-26T10:00:00.000Z', { daysPerWeek: 4 }),
+    });
+    assert.equal(result.settings, 'pushed');
+    assert.deepEqual(server.current()?.body, { daysPerWeek: 4 });
+  });
+
+  it('내 것이 더 새 것이면 올린다', async () => {
+    const server = withSettings(mine('2026-09-20T00:00:00.000Z', { daysPerWeek: 3 }));
+    const result = await syncOnce(newStore(), server.transport, {
+      settings: mine('2026-09-26T10:00:00.000Z', { daysPerWeek: 5 }),
+    });
+    assert.equal(result.settings, 'pushed');
+    assert.deepEqual(server.current()?.body, { daysPerWeek: 5 });
+  });
+
+  it('서버 것이 더 새 것이면 받는다', async () => {
+    const server = withSettings(mine('2026-09-26T12:00:00.000Z', { daysPerWeek: 6 }));
+    let got: unknown = null;
+    const result = await syncOnce(newStore(), server.transport, {
+      settings: mine('2026-09-26T10:00:00.000Z', { daysPerWeek: 4 }),
+      onSettings: (settings) => { got = settings.body; },
+    });
+    assert.equal(result.settings, 'pulled');
+    assert.deepEqual(got, { daysPerWeek: 6 });
+    // 받았으면 덮어쓰지 않는다 — 서버 것이 이겼다.
+    assert.deepEqual(server.current()?.body, { daysPerWeek: 6 });
+  });
+
+  it('같으면 아무것도 안 한다', async () => {
+    const server = withSettings(mine('2026-09-26T10:00:00.000Z', { daysPerWeek: 4 }));
+    const result = await syncOnce(newStore(), server.transport, {
+      settings: mine('2026-09-26T10:00:00.000Z', { daysPerWeek: 4 }),
+    });
+    assert.equal(result.settings, 'same');
+  });
+
+  it('설정을 안 주면 건드리지 않는다', async () => {
+    // 설정을 안 쓰는 화면에서도 기록 동기화는 돌아야 한다.
+    const server = withSettings(mine('2026-09-26T10:00:00.000Z', { daysPerWeek: 4 }));
+    const result = await syncOnce(newStore(), server.transport);
+    assert.equal(result.settings, undefined);
+  });
+
+  it('설정이 실패해도 올린 기록은 올린 것이다', async () => {
+    /*
+     * 기록은 하나도 잃으면 안 되는 것이고 설정은 다시 고르면 되는
+     * 것이다. 설정 실패로 전체를 실패로 돌리면 다음에 기록을 처음부터
+     * 다시 올린다.
+     */
+    const store = newStore();
+    store.putSession(session('', '2026-09-26', ''));
+    const transport: SyncTransport = {
+      async push() {},
+      async pull() { return { records: [], cursor: 'c-1' }; },
+      async pullSettings() { throw new Error('offline'); },
+      async pushSettings() {},
+    };
+    const result = await syncOnce(store, transport, {
+      settings: mine('2026-09-26T10:00:00.000Z', {}),
+    });
+    assert.equal(result.pushed, 1);
+    assert.equal(store.outbox().length, 0);
+    assert.match(result.message, /설정은 맞추지 못했/);
+  });
+
+  it('설정만 받아도 그렇게 말한다', async () => {
+    const server = withSettings(mine('2026-09-26T12:00:00.000Z', { a: 1 }));
+    const result = await syncOnce(newStore(), server.transport, {
+      settings: mine('2026-09-26T10:00:00.000Z', { a: 0 }),
+      onSettings: () => {},
+    });
+    assert.match(result.message, /설정을 가져왔습니다/);
+  });
+});

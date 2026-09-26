@@ -66,7 +66,12 @@ create index if not exists records_user_synced_idx
 -- 기록과 달리 합칠 일이 없으므로 통째로 덮어쓴다.
 
 create table if not exists public.settings (
-  user_id    uuid        primary key references auth.users on delete cascade,
+  /*
+   * 기본값이 auth.uid()다. 앱은 자기 user_id를 모르고, 알 필요도 없다 —
+   * 로그인한 사람의 id는 서버가 안다. 이게 없으면 앱이 user_id를
+   * 채워 보내야 하고, 그러면 남의 id를 써 보낼 여지가 생긴다.
+   */
+  user_id    uuid        primary key default auth.uid() references auth.users on delete cascade,
   updated_at timestamptz not null,
   synced_at  timestamptz not null default now(),
   body       jsonb       not null

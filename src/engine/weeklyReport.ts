@@ -2,6 +2,8 @@ import { MUSCLE_LABELS_KO } from './muscles.ts';
 import { withParticle } from './korean.ts';
 import { volumeReport } from './volume.ts';
 import type { MuscleVolumeStatus, VolumeOptions } from './volume.ts';
+import { weeklyLoad } from './cardio.ts';
+import type { CardioLog } from './cardio.ts';
 import type { Exercise, LandmarksByMuscle, SessionLog } from './types.ts';
 
 /**
@@ -43,6 +45,13 @@ export interface WeeklyReport {
   effectiveSets: number;
   /** 들어 올린 총 무게 (kg) */
   tonnage: number;
+  /*
+   * 그 주의 유산소.
+   *
+   * 근력과 따로 세지만 한 장에는 같이 나와야 한다. 유산소를 했는데
+   * 주간 요약에 없으면 "이 앱은 유산소를 안 친다"로 읽힌다.
+   */
+  cardio: { count: number; minutes: number; text: string };
   muscles: ReportMuscle[];
   gains: ReportGain[];
   /** 한 줄 제목 — 이 주를 한마디로 */
@@ -206,6 +215,15 @@ export function buildWeeklyReport(input: WeeklyReportInput): WeeklyReport {
   const sets = sessions.flatMap(workingSets);
   const tonnage = sets.reduce((sum, set) => sum + set.weightKg * set.reps, 0);
 
+  /*
+   * 유산소는 세션 안에 들어 있다. 따로 받지 않는다 — 인자가 하나 더
+   * 늘면 부르는 쪽에서 빠뜨리고, 빠뜨리면 조용히 0이 된다.
+   */
+  const cardioLogs = sessions.flatMap(
+    (session) => (session.cardio ?? []) as unknown as CardioLog[],
+  );
+  const cardioLoad = weeklyLoad(cardioLogs);
+
   const report = volumeReport(sessions, input.landmarks, input.index, input.options);
   const muscles: ReportMuscle[] = report
     .filter((row) => row.effectiveSets > 0)
@@ -230,6 +248,11 @@ export function buildWeeklyReport(input: WeeklyReportInput): WeeklyReport {
     setCount: sets.length,
     effectiveSets: round(muscles.reduce((sum, row) => sum + row.sets, 0)),
     tonnage: Math.round(tonnage),
+    cardio: {
+      count: cardioLogs.length,
+      minutes: cardioLoad.minutes,
+      text: cardioLoad.text,
+    },
     muscles,
     gains,
     headline: headlineOf(days.length, target, muscles, gains),
@@ -252,6 +275,10 @@ export function reportText(report: WeeklyReport): string {
     for (const row of report.muscles.slice(0, 6)) {
       lines.push(`· ${row.label} ${row.sets}세트 ${zoneWord(row.zone)}`);
     }
+  }
+
+  if (report.cardio.count > 0) {
+    lines.push('', `유산소 ${report.cardio.count}회 · ${report.cardio.minutes}분`);
   }
 
   if (report.gains.length > 0) {

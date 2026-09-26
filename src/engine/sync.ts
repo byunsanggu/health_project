@@ -36,11 +36,26 @@ export interface PullResult {
   cursor: string | null;
 }
 
+/**
+ * 설정 한 덩어리.
+ *
+ * 기록과 달리 합칠 일이 없다. 프로그램을 바꿨으면 바꾼 것이지, 두
+ * 기기의 프로그램을 섞을 수는 없다. 그래서 통째로 나중 것이 이긴다.
+ */
+export interface RemoteSettings {
+  updatedAt: string;
+  body: unknown;
+}
+
 export interface SyncTransport {
   /** cursor 이후에 서버에서 바뀐 것 */
   pull(cursor: string | null): Promise<PullResult>;
   /** 올린다. 서버가 "더 새 것일 때만" 받아들인다 */
   push(records: readonly RemoteRecord[]): Promise<void>;
+  /** 설정 받기. 없으면 null */
+  pullSettings?(): Promise<RemoteSettings | null>;
+  /** 설정 올리기 */
+  pushSettings?(settings: RemoteSettings): Promise<void>;
 }
 
 /** 동기화가 읽고 쓰는 저장소 — storage.ts의 Store가 이 모양을 만족한다. */
@@ -56,11 +71,22 @@ export interface SyncOptions {
   batchSize?: number;
   /** 지난번 표시 */
   cursor?: string | null;
+  /**
+   * 이 기기의 설정과 그것이 마지막으로 바뀐 때.
+   *
+   * 없으면 설정은 건드리지 않는다 — 설정을 안 쓰는 화면에서도 기록
+   * 동기화는 돌아야 한다.
+   */
+  settings?: { updatedAt: string; body: unknown } | null;
+  /** 서버 설정이 더 새 것일 때 불린다 */
+  onSettings?: (settings: RemoteSettings) => void;
 }
 
 export interface SyncResult {
   pushed: number;
   pulled: number;
+  /** 설정이 어느 쪽으로 움직였는가 */
+  settings?: 'pushed' | 'pulled' | 'same';
   /** 다음에 쓸 표시. 실패했으면 넣어 준 값 그대로다 */
   cursor: string | null;
   /** 왜 멈췄는가. 성공이면 없다 */
@@ -214,14 +240,59 @@ export async function syncOnce(
     };
   }
 
-  return { pushed, pulled, cursor, message: describe(pushed, pulled) };
+  /*
+   * 설정.
+   *
+   * 기록보다 뒤에 한다. 기록은 하나도 잃으면 안 되는 것이고 설정은
+   * 다시 고르면 되는 것이라, 끊길 때 살아남아야 하는 쪽이 먼저다.
+   */
+  let settingsMoved: SyncResult['settings'];
+  if (options.settings && transport.pullSettings && transport.pushSettings) {
+    try {
+      const mine = options.settings;
+      const theirs = await transport.pullSettings();
+
+      if (!theirs || theirs.updatedAt < mine.updatedAt) {
+        await transport.pushSettings({ updatedAt: mine.updatedAt, body: mine.body });
+        settingsMoved = 'pushed';
+      } else if (theirs.updatedAt > mine.updatedAt) {
+        if (options.onSettings) options.onSettings(theirs);
+        settingsMoved = 'pulled';
+      } else {
+        settingsMoved = 'same';
+      }
+    } catch (error) {
+      /*
+       * 설정이 안 맞아도 기록은 이미 맞췄다. 그걸 실패로 돌리면
+       * 다음에 기록을 처음부터 다시 올린다.
+       */
+      return {
+        pushed,
+        pulled,
+        cursor,
+        error: messageOf(error),
+        message: describe(pushed, pulled) + ' 설정은 맞추지 못했습니다.',
+      };
+    }
+  }
+
+  return {
+    pushed,
+    pulled,
+    cursor,
+    settings: settingsMoved,
+    message: describe(pushed, pulled, settingsMoved),
+  };
 }
 
-function describe(pushed: number, pulled: number): string {
-  if (pushed === 0 && pulled === 0) return '이미 맞춰져 있습니다.';
-  if (pulled === 0) return `${pushed}개를 서버에 올렸습니다.`;
-  if (pushed === 0) return `서버에서 ${pulled}개를 받았습니다.`;
-  return `${pushed}개를 올리고 ${pulled}개를 받았습니다.`;
+function describe(pushed: number, pulled: number, settings?: SyncResult['settings']): string {
+  const tail = settings === 'pulled' ? ' 설정도 가져왔습니다.' : '';
+  if (pushed === 0 && pulled === 0) {
+    return settings === 'pulled' ? '설정을 가져왔습니다.' : '이미 맞춰져 있습니다.';
+  }
+  if (pulled === 0) return `${pushed}개를 서버에 올렸습니다.` + tail;
+  if (pushed === 0) return `서버에서 ${pulled}개를 받았습니다.` + tail;
+  return `${pushed}개를 올리고 ${pulled}개를 받았습니다.` + tail;
 }
 
 function messageOf(error: unknown): string {
