@@ -490,6 +490,13 @@
     wodResults: [],
     wodDraft: null,
     gymQuery: '',
+    /*
+     * 실제 헬스장 검색 결과. null은 "아직 안 찾아봤다"이고 빈 배열은
+     * "찾아봤는데 없다"다. 둘을 한 값으로 뭉뚱그리면 화면이 처음부터
+     * "없습니다"라고 말하게 된다.
+     */
+    placeResults: null,
+    placeBusy: false,
     maxTest: null,
     /*
      * 오늘을 시작했는가. 시작 전에는 목록만 보여주고, 시작한 뒤에는
@@ -6938,37 +6945,57 @@
     var searchInput = el('input', {
       type: 'search', id: 'gym-search', value: state.gymQuery,
       placeholder: '이름이나 지역으로 검색',
-      oninput: function (event) { state.gymQuery = event.target.value; renderSearchResults(); },
+      oninput: function (event) {
+        state.gymQuery = event.target.value;
+        if (searchIsOn()) queuePlaceSearch();
+        renderSearchResults();
+      },
     });
 
     var resultsHost = el('div', { class: 'search-results', id: 'gym-results' }, []);
+
     /*
-     * 검색에 나오는 건 아직 예시 네 곳뿐이다.
+     * 검색이 켜져 있으면 검색이 주 경로고, 꺼져 있으면 직접 등록이 주
+     * 경로다. 둘을 같은 무게로 늘어놓으면 어느 쪽을 눌러야 하는지 모른다.
      *
-     * 지도 API를 붙이기 전까지는 "찾기"가 주 경로가 아니라 "직접 등록"이
-     * 주 경로다. 그걸 감추고 검색창만 띄우면 실제 헬스장 이름을 쳤다가
-     * 아무것도 안 나오고, 그때 사용자는 앱이 고장 난 줄 안다.
-     *
-     * 게다가 지도 API가 붙어도 "여기 핵스쿼트 있나"는 어차피 손으로
-     * 넣어야 한다 — 그게 이 앱이 필요한 정보다.
+     * 검색이 켜져 있어도 "여기 핵스쿼트 있나"는 어차피 손으로 넣어야
+     * 한다 — 그게 이 앱이 필요한 정보이고, 검색은 그 앞의 "어느
+     * 헬스장인지 정하기"까지만 해 준다.
      */
+    var live = searchIsOn();
+    var body = [];
+
+    if (live) {
+      searchInput.placeholder = '지역이나 이름 (예: 경기도, 분당구, 스포애니)';
+      body.push(el('p', { class: 'asset-note', text:
+        '지역을 치면 그 동네 헬스장이 나옵니다. 고르면 이름과 주소가 채워지고, ' +
+        '있는 기구만 확인하면 끝입니다.' }));
+      body.push(searchInput);
+      body.push(resultsHost);
+    } else {
+      body.push(el('p', { class: 'asset-note', text:
+        '다니는 헬스장을 직접 등록하세요. 이름과 있는 기구만 넣으면 됩니다 — ' +
+        '아파트·회사 헬스장도 됩니다.' }));
+      body.push(registerButton());
+      body.push(el('button', {
+        type: 'button', class: 'ghost search-setup',
+        text: '실제 헬스장 검색 켜기',
+        onclick: openGymSearchSetup,
+      }));
+      body.push(el('div', { class: 'list-label', text: '예시로 둘러보기' }));
+      body.push(el('p', { class: 'hint-line', text:
+        '아래 네 곳은 앱을 시험해 보시라고 넣어 둔 가상의 헬스장입니다. ' +
+        '실제 헬스장을 찾으려면 위에서 검색을 켜세요.' }));
+      body.push(searchInput);
+      body.push(resultsHost);
+    }
+
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '헬스장 추가' }),
-        el('span', { class: 'meta', text: '직접 등록' }),
+        el('span', { class: 'meta', text: live ? '전국 검색' : '직접 등록' }),
       ]),
-      el('div', { class: 'sheet-body' }, [
-        el('p', { class: 'asset-note', text:
-          '다니는 헬스장을 직접 등록하세요. 이름과 있는 기구만 넣으면 됩니다 — ' +
-          '아파트·회사 헬스장도 됩니다.' }),
-        registerButton(),
-        el('div', { class: 'list-label', text: '예시로 둘러보기' }),
-        el('p', { class: 'hint-line', text:
-          '아래 네 곳은 앱을 시험해 보시라고 넣어 둔 가상의 헬스장입니다. ' +
-          '실제 헬스장 검색은 아직 안 됩니다 — 지도 연동은 나중에 붙입니다.' }),
-        searchInput,
-        resultsHost,
-      ]),
+      el('div', { class: 'sheet-body' }, body),
     ]));
     renderSearchResults();
 
@@ -7028,10 +7055,224 @@
     ]));
   }
 
+  /* ── 실제 헬스장 찾기 ───────────────────────────── */
+
+  /** 검색이 켜져 있는가. 열쇠를 넣었을 때만 켜진다. */
+  function searchIsOn() {
+    return typeof GymSearch !== 'undefined' && GymSearch.configured();
+  }
+
+  /*
+   * 한 글자마다 보내지 않는다.
+   *
+   * "경기도"는 세 번의 입력이고, 그대로 보내면 세 번 부른다. 하루 한도는
+   * 사용자 것이라 우리가 대신 써 버리면 안 된다. 그리고 앞의 응답이 뒤에
+   * 도착하면 목록이 뒤섞이므로, 마지막 요청만 화면에 그린다.
+   */
+  var placeTimer = null;
+  var placeToken = 0;
+
+  function queuePlaceSearch() {
+    if (placeTimer) clearTimeout(placeTimer);
+    placeTimer = setTimeout(runPlaceSearch, 350);
+  }
+
+  function runPlaceSearch() {
+    placeTimer = null;
+    var parsed = E.parsePlaceQuery(state.gymQuery);
+    if (!parsed.searchable) {
+      state.placeResults = null;
+      state.placeBusy = false;
+      renderSearchResults();
+      return;
+    }
+
+    var token = (placeToken += 1);
+    state.placeBusy = true;
+    renderSearchResults();
+
+    GymSearch.search(state.gymQuery, { near: myLocation() }).then(function (result) {
+      if (token !== placeToken) return; // 더 최근 요청이 있다
+      state.placeBusy = false;
+      state.placeResults = result;
+      renderSearchResults();
+    });
+  }
+
+  /**
+   * 검색에서 고른 곳을 등록으로 넘긴다.
+   *
+   * 바로 등록해 버리지 않는다. 기구 목록이 이 앱의 전부인데 검색은 그걸
+   * 모르므로, 유형이라도 고르게 해야 쓸 수 있는 프로그램이 나온다.
+   */
+  function registerFromPlace(place) {
+    var draft = E.placeToDraft(place);
+    openGymRegister({
+      presetId: null,
+      name: draft.name,
+      address: draft.address,
+      location: draft.location,
+      sourceId: draft.sourceId,
+      floor: '',
+      step: 'type',
+    });
+  }
+
+  /**
+   * 검색 열쇠 넣기.
+   *
+   * 열쇠가 이 기기 밖으로 안 나간다는 것과, 그래도 이 기기 안에서는
+   * 보인다는 것을 둘 다 적어 둔다. 앞엣것만 적으면 반만 말한 것이다.
+   */
+  function openGymSearchSetup() {
+    var body = [];
+    var message = el('p', { class: 'hint-line' }, []);
+
+    body.push(el('p', { class: 'asset-note', text:
+      '카카오 개발자 사이트에서 열쇠를 하나 받으면 전국 헬스장이 검색됩니다. ' +
+      '무료이고 5분이면 됩니다.' }));
+
+    body.push(el('div', { class: 'list-label', text: '받는 곳' }));
+    body.push(el('div', { class: 'summary-list' }, [
+      el('div', { class: 'option-row' }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: 'developers.kakao.com' }),
+          el('span', { class: 'plan-sets', text:
+            '내 애플리케이션 → 앱 만들기 → 앱 키 → REST API 키' }),
+        ]),
+      ]),
+      el('div', { class: 'option-row' }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: '카카오맵 켜기' }),
+          el('span', { class: 'plan-sets', text:
+            '그 앱의 [제품 설정 → 카카오맵]을 켜야 장소 검색이 열립니다.' }),
+        ]),
+      ]),
+    ]));
+
+    body.push(el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: '열쇠는 이 기기에만 둡니다' }),
+      el('div', { text:
+        '서버로 올리지 않고 다른 기기로도 안 갑니다 — 기록 동기화에 얹히지 않습니다. ' +
+        '다만 앱이 이 기기에서 직접 부르기 때문에, 이 기기를 들여다보면 열쇠는 보입니다. ' +
+        '하루 검색 한도도 이 열쇠 주인 것입니다.' }),
+    ]));
+
+    var input = el('input', {
+      type: 'password', class: 'text-input', autocomplete: 'off',
+      placeholder: 'REST API 키 (32자리)',
+      'aria-label': '카카오 REST API 키',
+    });
+    body.push(el('div', { class: 'list-label', text: 'REST API 키' }));
+    body.push(input);
+    body.push(message);
+
+    body.push(el('button', {
+      type: 'button', class: 'finish', text: '켜기',
+      onclick: function () {
+        message.textContent = '확인하는 중…';
+        message.className = 'hint-line';
+        GymSearch.verify(input.value).then(function (result) {
+          if (!result.ok) {
+            message.textContent = E.describeSearchFailure(result.failure);
+            message.className = 'hint-line warn';
+            return;
+          }
+          pushLog('헬스장 검색', '검색을 켰습니다. 이제 지역을 치면 그 동네 헬스장이 나옵니다.');
+          state.placeResults = null;
+          modal.close();
+          render();
+        });
+      },
+    }));
+
+    if (searchIsOn()) {
+      body.push(el('button', {
+        type: 'button', class: 'ghost', text: '검색 끄고 열쇠 지우기',
+        onclick: function () {
+          GymSearch.forget();
+          state.placeResults = null;
+          pushLog('헬스장 검색', '열쇠를 지웠습니다. 등록해 둔 헬스장은 그대로 있습니다.');
+          modal.close();
+          render();
+        },
+      }));
+    }
+
+    openModal('헬스장 검색 켜기', '카카오 로컬', body);
+  }
+
+  /** 검색 결과 한 줄. */
+  function placeRow(place) {
+    var already = state.gymBook.gyms.some(function (g) { return g.name === place.name; });
+    return el('div', { class: 'search-row' }, [
+      el('div', { class: 'search-main' }, [
+        el('span', { class: 'gym-name', text: place.name }),
+        el('span', { class: 'gym-meta', text: E.placeLine(place) }),
+      ]),
+      el('button', {
+        type: 'button', class: 'pick', text: already ? '등록됨' : '추가',
+        disabled: already ? 'disabled' : null,
+        onclick: function () { if (!already) registerFromPlace(place); },
+      }),
+    ]);
+  }
+
+  /** 검색이 켜져 있을 때의 결과 칸. */
+  function renderPlaceResults(host) {
+    if (state.placeBusy) {
+      host.appendChild(el('p', { class: 'hint-line', text: '찾는 중…' }));
+      return;
+    }
+
+    var result = state.placeResults;
+    if (!result) {
+      host.appendChild(el('p', { class: 'hint-line', text:
+        '지역이나 헬스장 이름을 쳐 보세요. "경기도"처럼 넓게 쳐도 됩니다.' }));
+      return;
+    }
+
+    if (!result.ok) {
+      host.appendChild(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: '검색이 안 됩니다' }),
+        el('div', { text: E.describeSearchFailure(result.failure) }),
+      ]));
+      host.appendChild(registerButton());
+      return;
+    }
+
+    if (result.places.length === 0) {
+      host.appendChild(el('p', { class: 'hint-line', text:
+        '그 이름으로는 안 나옵니다. 지역을 넓혀 보거나 아래에서 직접 등록하세요.' }));
+      host.appendChild(registerButton());
+      return;
+    }
+
+    /*
+     * 우리가 '헬스장'을 붙여서 찾았으면 그렇게 말해 준다. 안 그러면
+     * 사용자는 자기가 친 말과 결과가 안 맞는다고 느낀다.
+     */
+    if (result.parsed.appendedGymWord) {
+      host.appendChild(el('p', { class: 'hint-line', text:
+        '"' + result.parsed.query + '"으로 찾았습니다.' }));
+    }
+
+    result.places.forEach(function (place) { host.appendChild(placeRow(place)); });
+    host.appendChild(registerButton());
+    host.appendChild(el('p', { class: 'hint-line', text:
+      '기구 목록은 검색으로 알 수 없습니다. 고르면 유형만 정하고, 나머지는 ' +
+      '운동하면서 "이 기구 없어요"로 맞춥니다.' }));
+  }
+
   function renderSearchResults() {
     var host = document.getElementById('gym-results');
     if (!host) return;
     host.textContent = '';
+
+    if (searchIsOn()) {
+      renderPlaceResults(host);
+      return;
+    }
 
     var results = E.searchGyms(state.gymQuery, {
       // 위치 동의가 없으면 좌표를 아예 넘기지 않는다.
@@ -7256,6 +7497,14 @@
     ]));
     body.push(el('div', { class: 'list-label', text: '이름' }));
     body.push(nameInput);
+    /*
+     * 검색으로 왔으면 주소를 보여만 준다. 고치게 두면 검색이 준 정확한
+     * 주소가 오타로 덮인다 — 다른 사람 기록과 합칠 근거가 거기 있다.
+     */
+    if (draft.address) {
+      body.push(el('div', { class: 'list-label', text: '주소' }));
+      body.push(el('p', { class: 'hint-line', text: draft.address }));
+    }
     body.push(el('div', { class: 'list-label', text: '층' }));
     body.push(floorInput);
     body.push(el('p', { class: 'asset-note', text:
@@ -7285,10 +7534,22 @@
     var name = (draft.name || '').trim();
     if (name.length === 0) return;
 
+    var floorText = (draft.floor || '').trim();
+    var addressText = (draft.address || '').trim();
+
     var result = E.registerGym({
+      /*
+       * 주소와 층을 한 줄로 붙이면 안 된다. "정자일로 9" + "3층"이
+       * "정자일로 9 3층"이 되고, 거기서 층을 다시 읽으면 93층이 나온다.
+       * 층은 따로 넘긴다 — 층만 놓고 읽으면 틀릴 수가 없다.
+       *
+       * 직접 등록이면 진짜 주소가 없으므로 예전 그대로 층 문자열이 주소
+       * 자리에 들어간다. 층이라도 있어야 같은 건물의 다른 헬스장과 갈린다.
+       */
       name: name,
-      address: draft.floor,
-      location: myLocation(),
+      address: addressText || floorText,
+      floor: E.parseFloor(floorText),
+      location: draft.location || myLocation(),
       presetId: draft.presetId,
       directory: fullDirectory(),
       force: options.force,

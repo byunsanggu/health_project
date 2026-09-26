@@ -270,3 +270,29 @@ describe('findDuplicates', () => {
     assert.equal(hits[0]!.entry.id, 'b');
   });
 });
+
+describe('주소와 층을 붙이면 안 된다', () => {
+  it('주소 끝 번지와 층이 붙어 한 숫자로 읽힌다', () => {
+    /*
+     * 실제로 났던 일이다. 검색이 준 "정자일로 9"에 사용자가 적은 "3층"을
+     * 한 줄로 붙였더니 "정자일로 9 3층"이 됐고, 거기서 층을 읽으니 93층이
+     * 나왔다. 화면에 "93층"이 뜨는 건 웃기고 끝이지만, 층은 id에 들어가는
+     * 값이라 같은 헬스장이 사람마다 다른 곳이 된다.
+     */
+    assert.equal(parseFloor('경기 성남시 분당구 정자일로 9 3층'), 93);
+    assert.equal(parseFloor('3층'), 3);
+  });
+
+  it('층을 따로 넘기면 주소에 숫자가 있어도 안 틀린다', () => {
+    const result = registerGym({
+      name: '정자헬스클럽',
+      address: '경기 성남시 분당구 정자일로 9',
+      floor: parseFloor('3층'),
+      location: HERE,
+      directory: [],
+      today: '2026-09-26',
+    });
+    assert.equal(result.outcome, 'created');
+    assert.equal(result.entry?.floor, 3);
+  });
+});
