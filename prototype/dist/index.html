@@ -11739,21 +11739,150 @@ var GymSearch = (function () {
 
   /* ── 온보딩 ────────────────────────────────────── */
 
-  var STEPS = [
+  var ALL_STEPS = [
     { id: 'consent', title: '동의', render: stepConsent },
     { id: 'level', title: '경력', render: stepLevel },
     { id: 'profile', title: '내 정보', render: stepProfile },
     { id: 'gym', title: '헬스장 기구', render: stepGym },
     { id: 'measure', title: '실측', render: stepMeasure },
     { id: 'result', title: '프로그램', render: stepResult },
+    { id: 'account', title: '저장', render: stepAccount },
   ];
+
+  /**
+   * 오늘 보여줄 단계.
+   *
+   * 가입 단계는 **프로그램을 보여준 다음**이다. 앞에 세우면 아직 아무것도
+   * 못 받아 본 사람에게 이메일부터 달라는 것이 된다 — 거기서 절반이 나간다.
+   * 프로그램이 나온 뒤에는 지킬 것이 생겼으므로 물어볼 만하다.
+   *
+   * 서버가 없으면 이 단계는 아예 없다. 눌러 봐야 안 되는 화면을 띄우는 것은
+   * 없는 것보다 나쁘다.
+   */
+  function steps() {
+    var usable = typeof Remote !== 'undefined' && Remote.configured();
+    return ALL_STEPS.filter(function (step) {
+      return step.id !== 'account' || usable;
+    });
+  }
+
+  /**
+   * 가입 — 건너뛸 수 있고, 건너뛰어도 아무것도 잃지 않는다.
+   *
+   * 여기서 가입하지 않아도 앱은 전부 돌아간다. 기록은 이 기기에 남고,
+   * 나중에 체크인 탭에서 언제든 계정을 만들 수 있다. 그 사실을 감추지
+   * 않고 그대로 적는다 — 감추면 가입률은 오르겠지만 그건 속인 것이다.
+   */
+  function stepAccount() {
+    var form = state.onboarding.account || (state.onboarding.account = {
+      email: '', password: '', notice: null, busy: false,
+    });
+
+    // 제목은 마법사가 이미 단계 이름으로 달았다. 여기서 또 달면 h2가 둘이 된다.
+    screen.appendChild(el('p', { class: 'asset-note', text:
+      '건너뛰어도 앱은 전부 돌아갑니다. 지금 정하지 않으셔도 됩니다.' }));
+
+    screen.appendChild(el('div', { class: 'summary-list' }, [
+      el('div', { class: 'option-row' }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: '계정을 만들면' }),
+          el('span', { class: 'plan-sets', text:
+            '폰을 바꿔도 기록이 남고, 집 태블릿과 헬스장 폰이 같은 기록을 봅니다' }),
+        ]),
+      ]),
+      el('div', { class: 'option-row' }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: '안 만들면' }),
+          el('span', { class: 'plan-sets', text:
+            '기록은 이 기기에만 남습니다. 앱을 지우면 같이 사라집니다' }),
+        ]),
+      ]),
+    ]));
+
+    if (form.notice) {
+      screen.appendChild(el('div', { class: 'notice' + (form.notice.bad ? ' stop' : '') }, [
+        el('div', { class: 'label', text: form.notice.bad ? '확인 필요' : '알림' }),
+        el('div', { text: form.notice.text }),
+      ]));
+    }
+
+    var mailInput = el('input', {
+      type: 'email', class: 'text-input', placeholder: '이메일',
+      value: form.email, 'aria-label': '이메일',
+      autocomplete: 'username', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
+      oninput: function (event) { form.email = event.target.value; },
+    });
+    var passInput = el('input', {
+      type: 'password', class: 'text-input', placeholder: '비밀번호 (6자 이상)',
+      value: form.password, 'aria-label': '비밀번호',
+      autocomplete: 'new-password',
+      oninput: function (event) { form.password = event.target.value; },
+      onkeydown: function (event) { if (event.key === 'Enter') submit(); },
+    });
+    screen.appendChild(el('div', { class: 'auth-form' }, [mailInput, passInput]));
+
+    function submit() {
+      form.email = mailInput.value;
+      form.password = passInput.value;
+
+      if (!form.email.trim()) {
+        form.notice = { bad: true, text: '이메일을 넣어 주세요.' };
+        return render();
+      }
+      if (form.password.length < 6) {
+        form.notice = { bad: true, text: '비밀번호는 6자 이상이어야 합니다.' };
+        return render();
+      }
+
+      form.busy = true;
+      form.notice = { bad: false, text: '계정을 만드는 중…' };
+      render();
+
+      Remote.signUp(form.email.trim(), form.password).then(function (result) {
+        form.busy = false;
+        // 비밀번호는 성공하든 말든 화면에 남겨 두지 않는다.
+        form.password = '';
+        Remote.patch({ email: form.email.trim() });
+
+        /*
+         * 메일 확인이 필요해도 여기서 멈추지 않는다. 확인 링크를 누르러
+         * 간 사이에 온보딩이 끝나지 않은 채로 남으면, 돌아와서 처음부터
+         * 다시 하게 된다. 기록은 어차피 이 기기에 먼저 쌓이므로, 나중에
+         * 로그인하면 그때 올라간다.
+         */
+        if (result && result.needsConfirm) {
+          pushLog('계정', '가입했습니다. 받은 메일의 확인 링크를 누른 뒤 ' +
+            '체크인 탭에서 로그인하시면 기록이 올라갑니다.');
+        } else {
+          pushLog('계정', '<b>' + form.email.trim() + '</b>으로 가입했습니다.');
+        }
+        completeOnboarding();
+      }, function (error) {
+        form.busy = false;
+        form.password = '';
+        form.notice = { bad: true, text: error.message };
+        render();
+      });
+    }
+
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish',
+      disabled: form.busy ? '' : null,
+      text: form.busy ? '만드는 중…' : '계정 만들고 시작하기',
+      onclick: submit,
+    }));
+
+    screen.appendChild(el('p', { class: 'hint-line', text:
+      '건강 기록은 민감정보라 올리기 전에 동의를 받았고, 언제든 서버에서 지울 수 ' +
+      '있습니다. 나중에 체크인 탭에서 만드셔도 됩니다 — 그때까지의 기록도 같이 올라갑니다.' }));
+  }
 
   function startOnboarding() {
     storage.reset();
     state.todaySets = [];
     state.answers = JSON.parse(JSON.stringify(DEFAULT_ANSWERS));
     state.answers.gym.measurements = {};
-    state.onboarding = { active: true, step: 0 };
+    state.onboarding = { active: true, step: 0, account: null };
     render();
   }
 
@@ -11778,6 +11907,7 @@ var GymSearch = (function () {
   }
 
   function renderOnboarding() {
+    var STEPS = steps();
     var step = STEPS[state.onboarding.step];
 
     var dots = el('div', { class: 'steps' }, []);
@@ -11806,10 +11936,22 @@ var GymSearch = (function () {
     // 필수 동의 전에는 아무것도 묻지 않는다. 동의가 수집보다 먼저다.
     var blocked = step.id === 'consent' && !E.canUseService(state.consent);
 
+    /*
+     * 가입 단계의 주 버튼은 그 화면 안에 있다(계정 만들고 시작하기).
+     * 여기서는 건너뛰는 길만 둔다 — 건너뛰기가 "다음"과 똑같이 생기면
+     * 둘 중 뭘 누른 건지 모르게 된다.
+     */
     nav.appendChild(el('button', {
-      type: 'button', class: 'primary',
+      type: 'button',
+      class: step.id === 'account' ? 'ghost' : 'primary',
       disabled: blocked ? '' : null,
-      text: isLast ? '이 프로그램으로 시작' : '다음',
+      /*
+       * "이 프로그램으로 시작"은 프로그램을 본 그 화면에 있어야 한다.
+       * 뒤에 가입 단계가 붙었다고 그 자리가 "다음"으로 바뀌면, 정작
+       * 고르는 순간에 아무 말도 안 하는 버튼이 놓인다.
+       */
+      text: step.id === 'account' ? '나중에 할게요'
+        : (step.id === 'result' || isLast) ? '이 프로그램으로 시작' : '다음',
       onclick: function () {
         if (blocked) return;
         if (isLast) completeOnboarding();
@@ -12192,10 +12334,11 @@ var GymSearch = (function () {
   }
 
   function stepIndex(id) {
-    for (var i = 0; i < STEPS.length; i += 1) {
-      if (STEPS[i].id === id) return i;
+    var list = steps();
+    for (var i = 0; i < list.length; i += 1) {
+      if (list[i].id === id) return i;
     }
-    return STEPS.length - 1;
+    return list.length - 1;
   }
 
   function stepMeasure() {
