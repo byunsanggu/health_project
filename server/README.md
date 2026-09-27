@@ -82,31 +82,90 @@ Authentication → URL Configuration → Redirect URLs 에 추가
 
 지도 때문에 만드신 그 앱을 그대로 씁니다. 새로 만들 것 없습니다.
 
+**1. 로그인 켜기**
+
 ```
 developers.kakao.com → 볼륨 코치 → 제품 설정 → 카카오 로그인 → 활성화 ON
-  → Redirect URI 에 추가:
-     https://<프로젝트-ref>.supabase.co/auth/v1/callback
-  → 앱 키의 REST API 키 + 보안의 Client Secret
-
-Supabase → Authentication → Providers → Kakao → 켜고 둘 다 넣기
 ```
 
-카카오에서 **이메일을 받으려면 비즈앱 전환**이 필요합니다. 다만 이 앱은 이메일이 꼭
-필요하지 않습니다 — 신원은 카카오 계정 자체이고, 이메일이 비어 있어도 그대로 돕니다.
+**2. 돌아올 주소와 Client Secret** — 둘 다 같은 화면에 있습니다.
+
+```
+앱 설정 → 플랫폼 키 → REST API 키 → [수정]
+  · Redirect URI 에 추가:  https://<프로젝트-ref>.supabase.co/auth/v1/callback
+  · Client Secret 발급 → 사용함(ON)
+```
+
+옛날 콘솔에서는 "카카오 로그인" 안에 Redirect URI가, "보안" 메뉴에 Client Secret이
+따로 있었습니다. 지금은 **플랫폼 키 한 곳에 모여 있습니다.** 안 보인다고 헤매지 마세요.
+
+**3. 동의항목 — 이걸 빼먹으면 로그인이 통째로 막힙니다.**
+
+```
+제품 설정 → 카카오 로그인 → 동의항목
+  · 닉네임 (profile_nickname) → 선택 동의
+```
+
+**4. Supabase에 넣기**
+
+```
+Authentication → Providers → Kakao → 켜기
+  REST API Key      ← 앱 키의 REST API 키   (Client Secret 아님. 자주 바꿔 넣습니다)
+  Client Secret     ← 2번에서 발급한 값
+  Allow users without an email → 반드시 ON
+```
+
+마지막 줄이 중요합니다. 카카오는 이메일을 안 주는데, 이게 꺼져 있으면 Supabase가
+"이메일 없는 사용자"를 거부해서 동의까지 다 하고도 계정이 안 만들어집니다.
+
+**이메일은 받지 않습니다.** 카카오에서 이메일을 받으려면 비즈앱 전환이 필요한데,
+이 앱은 이메일이 필요 없습니다 — 신원은 카카오 계정 자체입니다. 그래서 앱은
+`scopes=profile_nickname`만 요청합니다(`prototype/remote.js`의 `SCOPES`).
+
+> **KOE205 (잘못된 요청)** 이 뜨면 설정되지 않은 동의항목을 요청한 것입니다.
+> 3번의 닉네임이 켜져 있는지 보세요. Supabase 기본값은 이메일까지 요청하는데,
+> 카카오는 비즈앱이 아니면 이메일 동의항목 자체를 켤 수 없어서 통째로 막힙니다.
+> 우리가 `scopes`를 직접 붙이는 이유입니다.
 
 #### 구글
 
-```
-console.cloud.google.com → API 및 서비스 → OAuth 동의 화면 (외부)
-  → 사용자 인증 정보 → OAuth 클라이언트 ID (웹 애플리케이션)
-  → 승인된 리디렉션 URI 에 추가:
-     https://<프로젝트-ref>.supabase.co/auth/v1/callback
+**1. 동의 화면 만들기** — 클라이언트를 만들기 전에 먼저 해야 합니다.
 
-Supabase → Authentication → Providers → Google → 클라이언트 ID/시크릿 넣기
+```
+console.cloud.google.com → 프로젝트 만들기 (이름: volume-coach)
+  → API 및 서비스 → OAuth 동의 화면 → 외부(External)
+  · 앱 이름: 볼륨 코치
+  · 사용자 지원 이메일 / 개발자 연락처: 관장님 메일
+  · 범위(Scopes): 건드리지 않습니다 — 기본 이메일·프로필로 충분합니다
 ```
 
-동의 화면을 **테스트** 상태로 두면 지정한 사람 몇 명까지만 로그인됩니다. 회원을 받으려면
-**게시** 상태로 바꿔야 하는데, 이메일·프로필 같은 기본 정보만 받으면 심사는 없습니다.
+**2. 클라이언트 ID 만들기**
+
+```
+→ 사용자 인증 정보 → 사용자 인증 정보 만들기 → OAuth 클라이언트 ID
+  · 유형: 웹 애플리케이션
+  · 승인된 자바스크립트 원본:  https://<프로젝트-ref>.supabase.co
+  · 승인된 리디렉션 URI:       https://<프로젝트-ref>.supabase.co/auth/v1/callback
+```
+
+리디렉션 URI는 **Supabase 주소**입니다. GitHub Pages 주소가 아닙니다 — 구글은
+Supabase로 돌려보내고, Supabase가 다시 앱으로 보냅니다.
+
+**3. Supabase에 넣기**
+
+```
+Authentication → Providers → Google → 켜기
+  Client ID / Client Secret ← 2번에서 나온 값
+```
+
+**4. 게시하기**
+
+동의 화면이 **테스트** 상태면 거기 적어 둔 사람만 로그인됩니다. 회원을 받으려면
+**게시(In production)** 로 바꾸세요. 이메일·프로필 같은 기본 범위만 쓰면 구글 심사는
+없고, 누르면 바로 바뀝니다.
+
+카카오와 달리 구글은 이메일을 줍니다. 그래서 `scopes`를 따로 붙이지 않고 기본값을
+그대로 씁니다.
 
 #### 붙이지 말 것 — 개인 Gmail을 SMTP로
 
