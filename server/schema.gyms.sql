@@ -176,7 +176,22 @@ create policy skips_mine on public.gym_skips
 -- 앱이 확인 기록을 통째로 받아서 세면, 사람이 많은 헬스장일수록 느려지고
 -- 남들의 기록이 통째로 기기에 내려간다. 서버에서 세서 숫자만 보낸다.
 
-create or replace view public.gym_equipment_summary as
+/*
+ * security_invoker를 켠다.
+ *
+ * PostgreSQL의 뷰는 기본이 "만든 사람 권한으로 도는 것"이다. 이 뷰는
+ * postgres가 만들고 postgres는 RLS를 우회하므로, 그대로 두면 **뷰가 밑에
+ * 깔린 표의 RLS를 건너뛴다.**
+ *
+ * 지금은 gym_equipment의 읽기 정책이 using (true)라 새는 것이 없지만,
+ * 나중에 읽기를 좁히는 순간 이 뷰만 조용히 옛날처럼 다 보여주게 된다.
+ * 그때는 좁힌 줄 알고 있으니 아무도 안 본다.
+ *
+ * 켜 두면 뷰가 **부르는 사람의 권한**으로 돌고, 밑의 RLS가 그대로 적용된다.
+ * (PostgreSQL 15부터. Supabase는 충족한다.)
+ */
+create or replace view public.gym_equipment_summary
+with (security_invoker = true) as
 select
   gym_id,
   equipment_id,

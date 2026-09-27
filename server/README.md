@@ -269,6 +269,30 @@ SQL Editor → New query → `server/schema.gyms.sql` 전체 → Run.
 psql -h /tmp -p 5433 -U app_user -d postgres -f server/schema.gyms.test.sql
 ```
 
+### 뷰에 security_invoker를 켜는 이유
+
+Supabase가 `gym_equipment_summary`에 **UNRESTRICTED · Security Definer view**
+라고 빨간 딱지를 붙이면 맞는 지적입니다.
+
+PostgreSQL의 뷰는 기본이 "만든 사람 권한으로 도는 것"입니다. 이 뷰는
+`postgres`가 만들고 `postgres`는 RLS를 우회하므로, 그대로 두면 **뷰가 밑에
+깔린 표의 RLS를 건너뜁니다.**
+
+지금은 `gym_equipment`의 읽기 정책이 `using (true)`라 실제로 새는 것은
+없습니다. 다만 나중에 읽기를 좁히는 순간 **이 뷰만 조용히 옛날처럼 다
+보여주게 됩니다.** 그때는 좁힌 줄 알고 있으니 아무도 안 봅니다.
+
+```sql
+create or replace view public.gym_equipment_summary
+with (security_invoker = true) as ...
+```
+
+이미 돌리신 뒤에 이 줄이 없다면, 이것만 따로 돌리면 됩니다:
+
+```sql
+alter view public.gym_equipment_summary set (security_invoker = true);
+```
+
 ### 탈퇴
 
 `delete_my_data()`(기록·설정)와 `delete_my_gym_data()`(기구 확인·뺀 종목)를
