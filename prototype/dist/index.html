@@ -2501,7 +2501,7 @@ html[data-standalone] .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px)
   };
 })();
 </script>
-
+<script>window.__VOLUME_COACH_SERVER__={"url":"https://demo.supabase.co","anonKey":"sb_publishable_abcdefghijklmnop"};</script>
 <script>/*
  * 서버와 이야기하기 — Supabase(PostgREST · GoTrue)에 대고 fetch만 쓴다.
  *
@@ -2880,6 +2880,23 @@ var Remote = (function () {
     google: '구글',
   };
 
+  /*
+   * 제공자에게 **무엇까지 달라고 할 것인가.**
+   *
+   * 카카오는 비즈앱이 아니면 이메일 동의항목을 켤 수가 없다. 그런데
+   * 기본값은 이메일까지 요청하므로, 요청하는 순간 카카오가 KOE205
+   * (설정되지 않은 동의항목)로 막는다. 우리는 이메일이 필요 없다 —
+   * 신원은 카카오 계정 id이지 이메일이 아니다.
+   *
+   * 그래서 닉네임만 달라고 한다. 안 쓰는 것을 달라고 하면 동의 화면만
+   * 길어지고, 동의항목 하나 설정이 빠질 때마다 로그인이 통째로 막힌다.
+   *
+   * 구글은 기본값(이메일·프로필)이 그대로 맞아서 비워 둔다.
+   */
+  var SCOPES = {
+    kakao: 'profile_nickname',
+  };
+
   /** 돌아올 자리. 조각(#)과 물음표(?)를 뗀 이 페이지 주소다. */
   function returnUrl() {
     return location.origin + location.pathname;
@@ -2893,9 +2910,11 @@ var Remote = (function () {
    */
   function oauthStart(provider) {
     if (!PROVIDERS[provider]) return;
-    location.href = baseUrl() + '/auth/v1/authorize' +
+    var url = baseUrl() + '/auth/v1/authorize' +
       '?provider=' + encodeURIComponent(provider) +
       '&redirect_to=' + encodeURIComponent(returnUrl());
+    if (SCOPES[provider]) url += '&scopes=' + encodeURIComponent(SCOPES[provider]);
+    location.href = url;
   }
 
   /**
