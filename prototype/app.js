@@ -515,6 +515,8 @@
     placeBusy: false,
     /* 서버 주소를 직접 넣는 칸을 펼쳤는가. 박아 넣은 값이 있을 때만 쓴다. */
     showServerFields: false,
+    /* 이 헬스장에 대해 남들이 올린 것. gymId가 바뀔 때만 다시 받는다. */
+    crowd: null,
     /* 진짜 GPS 좌표. 모르면 null이고, 그때는 아무 데도 좌표를 안 보낸다. */
     here: null,
     hereAsked: false,
@@ -2218,6 +2220,21 @@
     };
 
     modal.close();
+    /*
+     * 없다는 사실도 올린다. "없음"이 안 올라가면 아무도 없음을 못 세고,
+     * 그러면 잘못 올라간 기구가 영영 안 지워진다.
+     */
+    shareGymNow(E.activeGym(state.gymBook));
+    /*
+     * 이 기구를 쓰는 종목들도 "기구가 없어서 못 한다"로 같이 센다.
+     * 그래야 "열 중 여섯이 기구가 없다고 했다"가 만들어지고, 관장이
+     * 기구를 사야 하는지 알 수 있다.
+     */
+    (result.lost || []).forEach(function (lost) {
+      shareSkipNow(lost.id, 'noEquipment');
+    });
+    state.crowd = null;
+
     // 오늘 세션을 다시 짜야 그 기구를 쓰는 종목이 대체된다.
     loadScenario(state.scenario, true);
     pushLog('기구 없음', '<b>' + ((E.equipmentItem(equipmentId) || {}).name || equipmentId) +
@@ -3369,6 +3386,30 @@
     openModal(exercise.name, '이 종목 빼기', body);
   }
 
+  /**
+   * 뺀 종목을 남들 것과 같이 센다.
+   *
+   * **아파서 뺀 것은 안 올린다.** 건강 정보라서 익명으로 모아도 "이 헬스장
+   * 사람들이 허리가 아프다"는 말이 만들어지는데, 그건 우리가 만들어도 되는
+   * 말이 아니다. 여기서 한 번, DB의 check 제약에서 한 번 막는다 — 앱은
+   * 여러 버전이 돌아다니지만 DB는 하나다.
+   */
+  function shareSkipNow(exerciseId, reason) {
+    if (typeof Remote === 'undefined' || !Remote.signedIn()) return;
+    if (reason !== 'noEquipment' && reason !== 'dislike') return;
+    var entry = currentGymEntry();
+    if (!shareableGym(entry)) return;
+    Remote.shareSkip(entry.id, exerciseId, reason).catch(function () { /* 조용히 */ });
+  }
+
+  /** 다시 하기로 했으면 집계에서도 뺀다. */
+  function unshareSkipNow(exerciseId) {
+    if (typeof Remote === 'undefined' || !Remote.signedIn()) return;
+    var entry = currentGymEntry();
+    if (!shareableGym(entry)) return;
+    Remote.unshareSkip(entry.id, exerciseId).catch(function () { /* 조용히 */ });
+  }
+
   function pickExcludeReason(exercise, spec) {
     if (spec.route === 'equipment') {
       // 이미 있는 길이 더 낫다 — 그 기구를 쓰는 종목이 한 번에 정리된다.
@@ -3404,12 +3445,37 @@
           state.exclusions = E.addExclusion(state.exclusions, {
             exerciseId: exercise.id, reason: 'pain', today: state.todayDate, joint: joint,
           });
+
+          /*
+           * 통증도 같이 적는다.
+           *
+           * 이 종목 하나만 빼면 다음 주에 같은 자리가 또 아프다 — 그 관절에
+           * 부담이 큰 종목이 프로그램에 여럿 있기 때문이다. 화면에 "그 관절에
+           * 부담이 큰 종목이 같이 조정됩니다"라고 적어 놓고 이 종목만 빼면,
+           * 그건 말과 동작이 갈라진 것이다.
+           *
+           * 이미 더 아프다고 적어 둔 것이 있으면 덮어쓰지 않는다. 종목 하나
+           * 빼려고 누른 것이 체크인에 적은 값을 낮추면 안 된다.
+           */
+          var PAIN_FROM_SKIP = 4;   // pain.ts가 "대체"로 넘어가는 선
+          state.pain = state.pain.map(function (report) {
+            if (report.joint !== joint) return report;
+            return { joint: joint, score: Math.max(report.score || 0, PAIN_FROM_SKIP) };
+          });
+
           modal.close();
           rebuildSession();
+
+          var moved = (state.session ? state.session.exercises : []).filter(function (item) {
+            return item.substitutedFrom;
+          }).length;
+
           pushLog('종목 빼기', '<b>' + exercise.name + '</b>' +
             particleOf(exercise.name, '을/를') + ' 뺐습니다 — ' +
-            E.JOINT_LABELS_KO[joint] + '이 아파서. 체크인에 통증을 적으시면 ' +
-            '다른 종목도 같이 조정됩니다.');
+            E.JOINT_LABELS_KO[joint] + '이 아파서. ' +
+            (moved > 0
+              ? '같은 관절에 부담이 큰 종목 ' + moved + '개도 같이 바꿨습니다.'
+              : '체크인에서 통증 정도를 더 정확히 적으실 수 있습니다.'));
           render();
         },
       }, [
@@ -3466,6 +3532,7 @@
       state.exclusions = E.addExclusion(state.exclusions, {
         exerciseId: exercise.id, reason: 'dislike', today: state.todayDate, forever: forever,
       });
+      shareSkipNow(exercise.id, 'dislike');
       modal.close();
       rebuildSession();
       pushLog('종목 빼기', '<b>' + exercise.name + '</b>' +
@@ -3516,6 +3583,7 @@
             type: 'button', class: 'finish', text: '다시 해볼게요',
             onclick: function () {
               state.exclusions = E.removeExclusion(state.exclusions, item.exerciseId);
+              unshareSkipNow(item.exerciseId);
               pushLog('다시 넣기', '<b>' + exercise.name + '</b>' +
                 particleOf(exercise.name, '을/를') + ' 다시 넣었습니다.');
               after();
@@ -7292,8 +7360,174 @@
       pushLog('헬스장 전환', '<b>' + entry.name + '</b>' + particleOf(entry.name, '으로/로') + ' 옮겼습니다. ' +
         (diff.lost.length ? '못 하게 되는 종목 ' + diff.lost.length + '개 → 대체됩니다.' : '종목 손실 없음.'));
     }
+
+    // 내가 아는 기구를 올린다. 같은 곳 다니는 사람이 덕을 본다.
+    shareGymNow(entry);
+    state.crowd = null;
+
     loadScenario(state.scenario, true);
     render();
+  }
+
+  /* ── 헬스장 나누기 ─────────────────────────────── */
+
+  /**
+   * 이 헬스장을 남과 나눠도 되는가.
+   *
+   * 홈짐은 안 된다 — 남의 집 주소다. 아파트·회사는 된다(restricted):
+   * 밖에서는 뭐가 있는지 알 길이 없어서 같은 단지 사람이 채워 준 목록이
+   * 제일 값어치가 크다.
+   */
+  /*
+   * 온보딩이 만들어 주는 기본 헬스장. 이름도 id도 자리 표시자다.
+   *
+   * **이건 절대 안 올린다.** id가 'my-gym'으로 고정이라 올리면 모든
+   * 사용자가 같은 한 줄에 써 넣게 되고, 공개 목록에는 "내 헬스장"이라는
+   * 이름의 헬스장 하나가 남의 기구 정보로 뒤섞인 채 뜬다. 등록도 검색도
+   * 안 거친 자리 표시자를 남에게 보낼 이유가 없다.
+   */
+  var PLACEHOLDER_GYM_ID = 'my-gym';
+
+  function shareableGym(entry) {
+    if (!entry) return false;
+    if (entry.id === PLACEHOLDER_GYM_ID) return false;
+    return (entry.visibility || 'public') !== 'private';
+  }
+
+  /**
+   * 내가 아는 것을 올린다.
+   *
+   * 기구는 **있는 것과 없는 것을 둘 다** 보낸다. 없다는 말이 안 올라가면
+   * 아무도 "없음"을 못 세고, 그러면 잘못 올라간 기구가 영영 안 지워진다.
+   *
+   * 실패해도 아무 말 안 한다. 운동하다가 기구 하나 고쳤는데 "서버 오류"가
+   * 뜨면 그건 방해다. 기록은 이미 이 기기에 남았고, 다음에 또 고칠 때
+   * 다시 올라간다.
+   */
+  /**
+   * 목록에 있는 원본을 찾는다.
+   *
+   * 지금 쓰는 헬스장(GymEntry)에는 이름과 기구밖에 없다 — 주소·층·좌표·
+   * 공개 범위는 목록 쪽(GymDirectoryEntry)에만 있다. 그걸 안 찾고 그냥
+   * 올리면 **아파트 헬스장이 public으로 올라가서 "입주민 전용" 딱지가
+   * 사라지고**, 층이 빠져서 같은 건물 3층과 5층이 한 곳으로 합쳐진다.
+   */
+  function directoryEntryFor(id) {
+    var all = fullDirectory();
+    for (var i = 0; i < all.length; i += 1) {
+      if (all[i].id === id) return all[i];
+    }
+    return null;
+  }
+
+  function shareGymNow(entry) {
+    if (typeof Remote === 'undefined' || !Remote.signedIn()) return;
+    if (!entry) return;
+    entry = directoryEntryFor(entry.id) || entry;
+    if (!shareableGym(entry)) return;
+
+    var known = {};
+    (entry.equipmentIds || []).forEach(function (id) { known[id] = true; });
+    (entry.absentEquipmentIds || []).forEach(function (id) { known[id] = false; });
+
+    var equipment = Object.keys(known).map(function (id) {
+      return { id: id, present: known[id] };
+    });
+
+    Remote.shareGym({
+      id: entry.id,
+      name: entry.name,
+      address: entry.address || '',
+      floor: entry.floor,
+      lat: entry.location ? entry.location.lat : null,
+      lng: entry.location ? entry.location.lng : null,
+      visibility: entry.visibility || 'public',
+    }, equipment).catch(function () { /* 조용히 넘어간다 */ });
+  }
+
+  /**
+   * 남들이 뭐라고 했는지 가져온다.
+   *
+   * 로그인 없이도 읽는다 — 처음 켠 사람이 헬스장을 고를 때 이미 채워진
+   * 목록이 보여야 하고, 그 앞에 회원가입을 세우면 이 기능의 값어치가
+   * 절반으로 준다.
+   */
+  function loadGymCrowd(entry) {
+    if (typeof Remote === 'undefined' || !Remote.configured()) return;
+    if (!shareableGym(entry)) return;
+    if (state.crowd && state.crowd.gymId === entry.id) return;   // 한 번만
+
+    state.crowd = { gymId: entry.id, loading: true, equipment: [], signals: [], people: 0 };
+
+    Promise.all([
+      Remote.sharedEquipment(entry.id).catch(function () { return []; }),
+      Remote.gymPeople(entry.id).catch(function () { return 0; }),
+      Remote.gymSkips(entry.id).catch(function () { return []; }),
+    ]).then(function (out) {
+      var equipment = out[0] || [];
+      var people = typeof out[1] === 'number' ? out[1] : 0;
+      var skips = out[2] || [];
+
+      /*
+       * 서버가 준 것은 "몇 명이 무엇을 뺐나"까지다. 몇 명부터 말할지,
+       * 몇 %부터 신호로 볼지는 제품 판단이라 앱에서 낸다 — 고치기 쉽다.
+       */
+      var reports = [];
+      skips.forEach(function (row) {
+        for (var i = 0; i < row.people; i += 1) {
+          reports.push({ exerciseId: row.exercise_id, reason: row.reason });
+        }
+      });
+
+      state.crowd = {
+        gymId: entry.id,
+        loading: false,
+        equipment: equipment,
+        people: people,
+        signals: E.crowdSignals({ reports: reports, people: people, index: index }),
+      };
+      render();
+    });
+  }
+
+  /**
+   * "몇 명이 확인했나" 칸.
+   *
+   * 확인한 사람 수와 마지막 확인 시각을 같이 보여준다. 숫자만 있으면
+   * 6개월 전에 한 명이 찍은 것과 어제 셋이 확인한 것이 같아 보인다.
+   */
+  function crowdCard() {
+    var crowd = state.crowd;
+    if (!crowd || crowd.loading) return null;
+    if (crowd.people === 0 && crowd.signals.length === 0) return null;
+
+    var body = el('div', { class: 'sheet-body' }, []);
+
+    body.push = body.appendChild.bind(body);
+    body.push(el('p', { class: 'hint-line', text:
+      crowd.people + '명이 이 헬스장 기구를 확인했습니다. ' +
+      '기구 ' + crowd.equipment.length + '개가 "있음"으로 모였습니다.' }));
+
+    crowd.signals.forEach(function (signal) {
+      var note = E.memberNote(signal);
+      body.push(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: signal.name }),
+        el('div', { text: note || signal.text }),
+      ]));
+    });
+
+    if (crowd.signals.length === 0) {
+      body.push(el('p', { class: 'hint-line', text:
+        '아직 눈에 띄는 것은 없습니다. 사람이 다섯은 모여야 무슨 말이든 할 수 있습니다.' }));
+    }
+
+    return el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '여기 다니는 분들' }),
+        el('span', { class: 'meta', text: crowd.people + '명' }),
+      ]),
+      body,
+    ]);
   }
 
   function renderGym() {
@@ -7312,6 +7546,8 @@
      * 화면이 이미 헬스장 이야기를 하고 있다.
      */
     requestLocation();
+    var activeEntry = currentGymEntry();
+    if (activeEntry) loadGymCrowd(activeEntry);
 
     renderPendingMerges();
 
@@ -7338,6 +7574,10 @@
       ]),
       list,
     ]));
+
+    // 같은 곳 다니는 사람들이 올린 것
+    var crowd = crowdCard();
+    if (crowd) screen.appendChild(crowd);
 
     // 찾기
     var searchInput = el('input', {
@@ -8264,29 +8504,14 @@
    */
   function stepAccount() {
     var form = state.onboarding.account || (state.onboarding.account = {
-      email: '', password: '', notice: null, busy: false,
+      email: '', password: '', notice: null, busy: false, mode: 'signup',
     });
+    var signUp = form.mode !== 'signin';
 
     // 제목은 마법사가 이미 단계 이름으로 달았다. 여기서 또 달면 h2가 둘이 된다.
     screen.appendChild(el('p', { class: 'asset-note', text:
-      '건너뛰어도 앱은 전부 돌아갑니다. 지금 정하지 않으셔도 됩니다.' }));
-
-    screen.appendChild(el('div', { class: 'summary-list' }, [
-      el('div', { class: 'option-row' }, [
-        el('span', { class: 'plan-main' }, [
-          el('span', { class: 'name', text: '계정을 만들면' }),
-          el('span', { class: 'plan-sets', text:
-            '폰을 바꿔도 기록이 남고, 집 태블릿과 헬스장 폰이 같은 기록을 봅니다' }),
-        ]),
-      ]),
-      el('div', { class: 'option-row' }, [
-        el('span', { class: 'plan-main' }, [
-          el('span', { class: 'name', text: '안 만들면' }),
-          el('span', { class: 'plan-sets', text:
-            '기록은 이 기기에만 남습니다. 앱을 지우면 같이 사라집니다' }),
-        ]),
-      ]),
-    ]));
+      '기록은 계정에 붙습니다. 폰을 바꿔도 남고, 집 태블릿과 헬스장 폰이 ' +
+      '같은 기록을 봅니다. 같은 헬스장 다니는 분들과 기구 정보도 여기서 모입니다.' }));
 
     if (form.notice) {
       screen.appendChild(el('div', { class: 'notice' + (form.notice.bad ? ' stop' : '') }, [
@@ -8302,9 +8527,10 @@
       oninput: function (event) { form.email = event.target.value; },
     });
     var passInput = el('input', {
-      type: 'password', class: 'text-input', placeholder: '비밀번호 (6자 이상)',
+      type: 'password', class: 'text-input',
+      placeholder: signUp ? '비밀번호 (6자 이상)' : '비밀번호',
       value: form.password, 'aria-label': '비밀번호',
-      autocomplete: 'new-password',
+      autocomplete: signUp ? 'new-password' : 'current-password',
       oninput: function (event) { form.password = event.target.value; },
       onkeydown: function (event) { if (event.key === 'Enter') submit(); },
     });
@@ -8324,10 +8550,11 @@
       }
 
       form.busy = true;
-      form.notice = { bad: false, text: '계정을 만드는 중…' };
+      form.notice = { bad: false, text: signUp ? '계정을 만드는 중…' : '로그인하는 중…' };
       render();
 
-      Remote.signUp(form.email.trim(), form.password).then(function (result) {
+      var run = signUp ? Remote.signUp : Remote.signIn;
+      run(form.email.trim(), form.password).then(function (result) {
         form.busy = false;
         // 비밀번호는 성공하든 말든 화면에 남겨 두지 않는다.
         form.password = '';
@@ -8343,7 +8570,8 @@
           pushLog('계정', '가입했습니다. 받은 메일의 확인 링크를 누른 뒤 ' +
             '체크인 탭에서 로그인하시면 기록이 올라갑니다.');
         } else {
-          pushLog('계정', '<b>' + form.email.trim() + '</b>으로 가입했습니다.');
+          pushLog('계정', '<b>' + form.email.trim() + '</b>' +
+            (signUp ? '으로 가입했습니다.' : '으로 로그인했습니다.'));
         }
         completeOnboarding();
       }, function (error) {
@@ -8357,13 +8585,32 @@
     screen.appendChild(el('button', {
       type: 'button', class: 'finish',
       disabled: form.busy ? '' : null,
-      text: form.busy ? '만드는 중…' : '계정 만들고 시작하기',
+      text: form.busy ? (signUp ? '만드는 중…' : '로그인하는 중…')
+        : (signUp ? '계정 만들고 시작하기' : '로그인하고 시작하기'),
       onclick: submit,
+    }));
+
+    /*
+     * 이미 계정이 있는 사람이 들어올 길이 반드시 있어야 한다.
+     *
+     * 가입만 있으면 폰을 바꿨거나 앱을 지웠다 깐 사람이 못 들어온다 —
+     * 기록을 지키라고 만든 계정인데 정작 그 기록을 못 찾게 되는 것이다.
+     */
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish quiet',
+      text: signUp ? '이미 계정이 있어요 — 로그인' : '처음이에요 — 계정 만들기',
+      onclick: function () {
+        form.mode = signUp ? 'signin' : 'signup';
+        form.notice = null;
+        form.password = '';
+        render();
+      },
     }));
 
     screen.appendChild(el('p', { class: 'hint-line', text:
       '건강 기록은 민감정보라 올리기 전에 동의를 받았고, 언제든 서버에서 지울 수 ' +
-      '있습니다. 나중에 체크인 탭에서 만드셔도 됩니다 — 그때까지의 기록도 같이 올라갑니다.' }));
+      '있습니다. 가입 확인 메일이 늦게 와도 앱은 바로 쓰실 수 있고, 그동안의 기록은 ' +
+      '확인되는 대로 올라갑니다.' }));
   }
 
   function startOnboarding() {
@@ -8430,23 +8677,32 @@
      * 여기서는 건너뛰는 길만 둔다 — 건너뛰기가 "다음"과 똑같이 생기면
      * 둘 중 뭘 누른 건지 모르게 된다.
      */
-    nav.appendChild(el('button', {
-      type: 'button',
-      class: step.id === 'account' ? 'ghost' : 'primary',
-      disabled: blocked ? '' : null,
-      /*
-       * "이 프로그램으로 시작"은 프로그램을 본 그 화면에 있어야 한다.
-       * 뒤에 가입 단계가 붙었다고 그 자리가 "다음"으로 바뀌면, 정작
-       * 고르는 순간에 아무 말도 안 하는 버튼이 놓인다.
-       */
-      text: step.id === 'account' ? '나중에 할게요'
-        : (step.id === 'result' || isLast) ? '이 프로그램으로 시작' : '다음',
-      onclick: function () {
-        if (blocked) return;
-        if (isLast) completeOnboarding();
-        else { state.onboarding.step += 1; render(); }
-      },
-    }));
+    /*
+     * 가입 단계에는 "다음"이 없다. 그 화면의 버튼으로만 넘어간다.
+     *
+     * 계정을 안 만들면 기구 정보를 나눌 수도, 폰을 바꿨을 때 기록을 찾을
+     * 수도 없다. 그 둘이 이 앱의 뼈대라서 건너뛰는 길을 두지 않았다.
+     *
+     * 대신 **가입 확인 메일을 기다리게 하지는 않는다.** 계정만 만들어지면
+     * 바로 넘어가고, 메일 확인은 나중에 해도 된다 — 링크 누르러 간 사이에
+     * 설정이 반쯤 된 채로 남으면 돌아와서 처음부터 다시 하게 된다.
+     *
+     * "이 프로그램으로 시작"은 프로그램을 본 그 화면에 있어야 한다. 뒤에
+     * 가입 단계가 붙었다고 그 자리가 "다음"으로 바뀌면, 정작 고르는 순간에
+     * 아무 말도 안 하는 버튼이 놓인다.
+     */
+    if (step.id !== 'account') {
+      nav.appendChild(el('button', {
+        type: 'button', class: 'primary',
+        disabled: blocked ? '' : null,
+        text: (step.id === 'result' || isLast) ? '이 프로그램으로 시작' : '다음',
+        onclick: function () {
+          if (blocked) return;
+          if (isLast) completeOnboarding();
+          else { state.onboarding.step += 1; render(); }
+        },
+      }));
+    }
     screen.appendChild(nav);
   }
 

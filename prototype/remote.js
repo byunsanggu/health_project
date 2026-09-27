@@ -359,10 +359,80 @@ var Remote = (function () {
     };
   }
 
+  /* ── 헬스장 나누기 ────────────────────────────── */
+
+  /**
+   * DB 함수 부르기.
+   *
+   * 읽기(집계)는 로그인 없이도 된다 — 처음 켠 사람이 헬스장을 고를 때
+   * 이미 채워진 기구 목록이 보여야 하고, 그 앞에 회원가입을 세우면
+   * 크라우드소싱의 값어치가 절반으로 준다.
+   */
+  function rpc(name, body, options) {
+    var run = function () {
+      return request('/rest/v1/rpc/' + name, { method: 'POST', body: body || {} });
+    };
+    return (options && options.anon) ? run() : withAuth(run);
+  }
+
+  /**
+   * 내가 아는 헬스장과 기구를 올린다.
+   *
+   * 로그인 안 했으면 조용히 넘어간다. 여기서 막아 세우면 기구 하나 고치려다
+   * 로그인 화면을 만나게 되는데, 그건 고치려던 사람을 쫓아내는 것이다.
+   */
+  function shareGym(gym, equipment) {
+    if (!signedIn()) return Promise.resolve(0);
+    return rpc('share_gym', { gym: gym, equipment: equipment || [] });
+  }
+
+  /** 이 헬스장에 뭐가 있다고들 하는가. 로그인 없이도 읽는다. */
+  function sharedEquipment(gymId) {
+    return rpc('gym_equipment_ids', { target: gymId }, { anon: true });
+  }
+
+  /** 이 헬스장을 쓰는 사람 수. 비율의 분모다. */
+  function gymPeople(gymId) {
+    return rpc('gym_people', { target: gymId }, { anon: true });
+  }
+
+  /** 몇 명이 무엇을 뺐는가. 아파서 뺀 것은 애초에 안 올라가 있다. */
+  function gymSkips(gymId) {
+    return rpc('gym_skip_counts', { target: gymId }, { anon: true });
+  }
+
+  /**
+   * 내가 뺀 종목을 남긴다.
+   *
+   * **아파서 뺀 것은 절대 여기 오면 안 된다.** 건강 정보라서 익명으로
+   * 모아도 "이 헬스장 사람들이 허리가 아프다"는 말이 만들어진다. 앱에서
+   * 한 번, DB의 check 제약에서 한 번 막는다 — 앱은 여러 버전이 돌아다니지만
+   * DB는 하나다.
+   */
+  function shareSkip(gymId, exerciseId, reason) {
+    if (!signedIn()) return Promise.resolve(null);
+    if (reason !== 'noEquipment' && reason !== 'dislike') return Promise.resolve(null);
+    return rpc('share_skip', { target: gymId, exercise: exerciseId, skip_reason: reason });
+  }
+
+  function unshareSkip(gymId, exerciseId) {
+    if (!signedIn()) return Promise.resolve(null);
+    return rpc('unshare_skip', { target: gymId, exercise: exerciseId });
+  }
+
   /** 서버에서 내 기록을 지운다. 지우는 길이 없으면 개인정보를 받을 자격이 없다. */
   function deleteEverything() {
     return withAuth(function () {
       return request('/rest/v1/rpc/delete_my_data', { method: 'POST', body: {} });
+    }).then(function () {
+      /*
+       * 헬스장 쪽도 같이 지운다. 기구 확인과 뺀 종목에는 내 user_id가
+       * 붙어 있다. 헬스장 자체는 남는다 — 다른 사람들이 쓰고 있고,
+       * 거기엔 내 정보가 없다.
+       *
+       * 이게 없으면 "다 지웠습니다"가 거짓말이 된다.
+       */
+      return rpc('delete_my_gym_data', {}).catch(function () { return null; });
     });
   }
 
@@ -407,6 +477,12 @@ var Remote = (function () {
     signOut: signOut,
     checkSchema: checkSchema,
     transport: transport,
+    shareGym: shareGym,
+    sharedEquipment: sharedEquipment,
+    gymPeople: gymPeople,
+    gymSkips: gymSkips,
+    shareSkip: shareSkip,
+    unshareSkip: unshareSkip,
     deleteEverything: deleteEverything,
   };
 })();
