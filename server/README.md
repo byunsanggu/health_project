@@ -59,10 +59,79 @@ https://supabase.com → **Start your project** → GitHub 또는 이메일로 �
 
 - **Email** — 기본으로 켜져 있습니다. 그대로 두세요.
 - **Confirm email** 을 잠깐 꺼 두면 테스트가 편합니다 (Authentication → Sign In / Providers → Email).
-  실제로 쓰기 전에 다시 켜세요.
 
-카카오 로그인은 나중에 붙일 수 있습니다. 카카오 개발자 등록이 따로 필요해서(15분쯤) 우선
-이메일로 돌려 보고, 쓸 만하면 그때 하시는 게 낫습니다.
+**메일 발송이 진짜 벽입니다.** Supabase 기본 발송은 **시간당 두 통**이라, 회원 세 분이
+한꺼번에 가입하면 세 번째 분은 메일을 못 받습니다. 아래 카카오·구글을 켜면 그 문제가
+통째로 없어집니다 — **메일을 아예 안 보내기 때문입니다.**
+
+### ⑥ 카카오·구글 로그인 (권장)
+
+앱에는 이미 **`카카오로 시작하기` · `구글로 시작하기`** 버튼이 있습니다. Supabase와
+각 콘솔에서 켜 주기만 하면 됩니다.
+
+**먼저 Supabase에서 돌아올 주소를 등록합니다.**
+
+```
+Authentication → URL Configuration → Redirect URLs 에 추가
+  https://byunsanggu.github.io/health_project/
+```
+
+이게 없으면 로그인하고 돌아오지 못합니다.
+
+#### 카카오
+
+지도 때문에 만드신 그 앱을 그대로 씁니다. 새로 만들 것 없습니다.
+
+```
+developers.kakao.com → 볼륨 코치 → 제품 설정 → 카카오 로그인 → 활성화 ON
+  → Redirect URI 에 추가:
+     https://<프로젝트-ref>.supabase.co/auth/v1/callback
+  → 앱 키의 REST API 키 + 보안의 Client Secret
+
+Supabase → Authentication → Providers → Kakao → 켜고 둘 다 넣기
+```
+
+카카오에서 **이메일을 받으려면 비즈앱 전환**이 필요합니다. 다만 이 앱은 이메일이 꼭
+필요하지 않습니다 — 신원은 카카오 계정 자체이고, 이메일이 비어 있어도 그대로 돕니다.
+
+#### 구글
+
+```
+console.cloud.google.com → API 및 서비스 → OAuth 동의 화면 (외부)
+  → 사용자 인증 정보 → OAuth 클라이언트 ID (웹 애플리케이션)
+  → 승인된 리디렉션 URI 에 추가:
+     https://<프로젝트-ref>.supabase.co/auth/v1/callback
+
+Supabase → Authentication → Providers → Google → 클라이언트 ID/시크릿 넣기
+```
+
+동의 화면을 **테스트** 상태로 두면 지정한 사람 몇 명까지만 로그인됩니다. 회원을 받으려면
+**게시** 상태로 바꿔야 하는데, 이메일·프로필 같은 기본 정보만 받으면 심사는 없습니다.
+
+#### 붙이지 말 것 — 개인 Gmail을 SMTP로
+
+Gmail을 발송 서버로 쓸 수는 있지만 권하지 않습니다. 하루 발송 한도가 낮고, 보내는
+도메인이 안 맞아 스팸함으로 잘 가고, 갑자기 늘면 **개인 계정이 정지될 수 있습니다.**
+같은 수고로 Resend 같은 곳을 붙이는 편이 안전합니다(월 몇천 통까지 무료).
+
+### 로그인이 도는 방식
+
+앱은 SDK 없이 주소만 씁니다.
+
+```
+[카카오로 시작하기]
+  → {supabase}/auth/v1/authorize?provider=kakao&redirect_to={앱 주소}
+  → 카카오 로그인
+  → 앱 주소#access_token=... 로 돌아옴
+  → 앱이 거두고 **주소창에서 즉시 지움**
+```
+
+주소에 토큰이 남아 있으면 그 주소를 복사해 공유하는 순간 로그인 정보가 같이 갑니다.
+그래서 거두자마자 `history.replaceState`로 지웁니다.
+
+떠나기 전에 **온보딩을 먼저 끝내 둡니다.** 페이지를 통째로 다른 주소로 보내는 것이라,
+저장하지 않고 보내면 돌아왔을 때 설문을 처음부터 다시 하게 됩니다. 로그인하러 갔다가
+설문을 다시 하게 되면 그때 앱을 지웁니다.
 
 ---
 

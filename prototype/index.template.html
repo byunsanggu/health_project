@@ -1904,6 +1904,11 @@ html[data-standalone] .device {
 html[data-standalone] .statusbar { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); }
 html[data-standalone] .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
+/* 카카오·구글 줄 — 이메일 칸보다 먼저 눈에 들어와야 한다 */
+.oauth-row { border: 1px solid var(--accent); background: var(--accent-soft); }
+.oauth-row + .oauth-row { border-top: 1px solid var(--accent); }
+.oauth-row .name { color: var(--ink); }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

@@ -1904,6 +1904,11 @@ html[data-standalone] .device {
 html[data-standalone] .statusbar { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); }
 html[data-standalone] .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
+/* 카카오·구글 줄 — 이메일 칸보다 먼저 눈에 들어와야 한다 */
+.oauth-row { border: 1px solid var(--accent); background: var(--accent-soft); }
+.oauth-row + .oauth-row { border-top: 1px solid var(--accent); }
+.oauth-row .name { color: var(--ink); }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -2858,6 +2863,98 @@ var Remote = (function () {
     };
   }
 
+  /* ── 카카오·구글로 로그인 ─────────────────────── */
+
+  /**
+   * 왜 OAuth를 붙이는가.
+   *
+   * 이메일 가입은 확인 메일을 보내야 하는데, Supabase 기본 발송은 시간당
+   * 두 통이다. 회원 세 분이 동시에 가입하면 세 번째 분은 메일을 못 받는다.
+   * 카카오·구글로 들어오면 **메일을 아예 안 보낸다.**
+   *
+   * 그리고 한국에서 이메일·비밀번호를 새로 만들라는 것은 그 자체로 벽이다.
+   * 헬스장 회원분들께는 "카카오로 시작" 한 번이 훨씬 낮다.
+   */
+  var PROVIDERS = {
+    kakao: '카카오',
+    google: '구글',
+  };
+
+  /** 돌아올 자리. 조각(#)과 물음표(?)를 뗀 이 페이지 주소다. */
+  function returnUrl() {
+    return location.origin + location.pathname;
+  }
+
+  /**
+   * 제공자 화면으로 보낸다.
+   *
+   * 페이지를 떠나므로, 부르는 쪽은 **떠나기 전에 저장을 끝내 놓아야 한다.**
+   * 온보딩 도중에 그냥 보내면 돌아왔을 때 처음부터 다시 하게 된다.
+   */
+  function oauthStart(provider) {
+    if (!PROVIDERS[provider]) return;
+    location.href = baseUrl() + '/auth/v1/authorize' +
+      '?provider=' + encodeURIComponent(provider) +
+      '&redirect_to=' + encodeURIComponent(returnUrl());
+  }
+
+  /**
+   * 돌아왔을 때 주소에 붙어 온 것을 거둔다.
+   *
+   * Supabase는 토큰을 주소의 # 뒤에 붙여서 돌려준다. 그대로 두면 **주소를
+   * 복사해 공유하는 순간 로그인 정보가 같이 간다.** 거두자마자 주소창에서
+   * 지운다.
+   *
+   * 돌아온 게 아니면 null을 준다.
+   */
+  function captureOAuth() {
+    var hash = (location.hash || '').replace(/^#/, '');
+    if (!hash) return null;
+    if (hash.indexOf('access_token=') < 0 && hash.indexOf('error') < 0) return null;
+
+    var params = new URLSearchParams(hash);
+    try {
+      history.replaceState(null, '', returnUrl());
+    } catch (err) {
+      void err;
+      location.hash = '';
+    }
+
+    var failure = params.get('error_description') || params.get('error');
+    if (failure) return { ok: false, message: decodeURIComponent(failure) };
+
+    var token = params.get('access_token');
+    if (!token) return { ok: false, message: '로그인 정보를 받지 못했습니다.' };
+
+    patch({
+      accessToken: token,
+      refreshToken: params.get('refresh_token') || null,
+    });
+
+    return { ok: true, provider: params.get('provider') || null };
+  }
+
+  /**
+   * 내 계정 정보를 받아 이메일을 채운다.
+   *
+   * 카카오는 비즈앱이 아니면 이메일을 안 준다. 그때는 이메일이 비는데,
+   * 그게 정상이다 — 신원은 계정 id이지 이메일이 아니다. 화면이 빈 칸을
+   * 보여주지 않게 없으면 없는 대로 둔다.
+   */
+  function loadIdentity() {
+    return withAuth(function () {
+      return request('/auth/v1/user', { method: 'GET' });
+    }).then(function (user) {
+      var email = (user && user.email) || '';
+      if (email) patch({ email: email });
+      return user;
+    }, function () { return null; });
+  }
+
+  function providerLabel(provider) {
+    return PROVIDERS[provider] || provider;
+  }
+
   /* ── 헬스장 나누기 ────────────────────────────── */
 
   /**
@@ -2976,6 +3073,10 @@ var Remote = (function () {
     signOut: signOut,
     checkSchema: checkSchema,
     transport: transport,
+    oauthStart: oauthStart,
+    captureOAuth: captureOAuth,
+    loadIdentity: loadIdentity,
+    providerLabel: providerLabel,
     shareGym: shareGym,
     sharedEquipment: sharedEquipment,
     gymPeople: gymPeople,
@@ -6997,6 +7098,64 @@ var GymSearch = (function () {
     Remote.unshareSkip(entry.id, exerciseId).catch(function () { /* 조용히 */ });
   }
 
+  /**
+   * 카카오·구글 화면으로 떠난다.
+   *
+   * **떠나기 전에 온보딩을 끝내 둔다.** 이 함수는 페이지를 통째로 다른
+   * 주소로 보내므로, 여기까지 답한 것(동의·경력·헬스장·프로그램)이 저장돼
+   * 있지 않으면 돌아왔을 때 처음부터 다시 하게 된다. 로그인하러 갔다가
+   * 설문을 다시 하게 되면 그때 앱을 지운다.
+   *
+   * 돌아와서 로그인이 안 됐으면 로그인 화면이 다시 뜬다 — 그때는 프로그램이
+   * 이미 만들어져 있으므로 잃는 것이 없다.
+   */
+  function startOAuth(provider) {
+    if (state.onboarding && state.onboarding.active) completeOnboarding();
+    persist();
+    Remote.oauthStart(provider);
+  }
+
+  /**
+   * 돌아왔을 때 거둔다.
+   *
+   * 앱이 켜질 때 딱 한 번 본다. 토큰은 주소의 # 뒤에 실려 오는데 거두는
+   * 즉시 주소창에서 지운다 — 그대로 두면 주소를 복사해 공유하는 순간
+   * 로그인 정보가 같이 간다.
+   */
+  function finishOAuth() {
+    if (typeof Remote === 'undefined' || !Remote.configured()) return;
+    var result = Remote.captureOAuth();
+    if (!result) return;
+
+    if (!result.ok) {
+      pushLog('로그인', '로그인하지 못했습니다 — ' + result.message +
+        ' 체크인 탭에서 다시 해 보실 수 있습니다.');
+      openAuth('signin');
+      return;
+    }
+
+    Remote.loadIdentity().then(function () {
+      pushLog('로그인', '<b>' + (Remote.email() || '계정') + '</b>으로 로그인했습니다.');
+      return syncNow();
+    }).then(function () { render(); }, function () { render(); });
+  }
+
+  /** 카카오·구글 줄. 두 화면이 같이 쓴다. */
+  function oauthRows() {
+    return el('div', { class: 'summary-list' }, ['kakao', 'google'].map(function (provider) {
+      return el('button', {
+        type: 'button', class: 'menu-row oauth-row',
+        onclick: function () { startOAuth(provider); },
+      }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: Remote.providerLabel(provider) + '로 시작하기' }),
+          el('span', { class: 'plan-sets', text: '이미 쓰시는 계정으로 — 비밀번호를 새로 만들지 않습니다' }),
+        ]),
+        el('span', { class: 'detail', text: '›' }),
+      ]);
+    }));
+  }
+
   function pickExcludeReason(exercise, spec) {
     if (spec.route === 'equipment') {
       // 이미 있는 길이 더 낫다 — 그 기구를 쓰는 종목이 한 번에 정리된다.
@@ -9267,6 +9426,15 @@ var GymSearch = (function () {
       oninput: function (event) { form.password = event.target.value; },
       onkeydown: function (event) { if (event.key === 'Enter') submit(); },
     });
+
+    /*
+     * 카카오·구글을 위에 둔다.
+     *
+     * 이메일 가입은 확인 메일을 기다려야 하고, 새 비밀번호를 하나 더
+     * 만들어야 한다. 대부분은 이미 가진 계정으로 들어오는 편이 빠르다.
+     */
+    screen.appendChild(oauthRows());
+    screen.appendChild(el('div', { class: 'list-label', text: '또는 이메일로' }));
 
     screen.appendChild(el('div', { class: 'auth-form' }, [mailInput, passInput]));
 
@@ -12100,6 +12268,16 @@ var GymSearch = (function () {
       '기록은 계정에 붙습니다. 폰을 바꿔도 남고, 집 태블릿과 헬스장 폰이 ' +
       '같은 기록을 봅니다. 같은 헬스장 다니는 분들과 기구 정보도 여기서 모입니다.' }));
 
+    /*
+     * 카카오·구글을 위에 둔다.
+     *
+     * 이메일 가입은 확인 메일을 기다려야 하고, 새 비밀번호를 하나 더
+     * 만들어야 한다. 대부분은 이미 가진 계정으로 들어오는 편이 빠르다.
+     */
+    screen.appendChild(oauthRows());
+    screen.appendChild(el('div', { class: 'list-label', text: '또는 이메일로' }));
+
+
     if (form.notice) {
       screen.appendChild(el('div', { class: 'notice' + (form.notice.bad ? ' stop' : '') }, [
         el('div', { class: 'label', text: form.notice.bad ? '확인 필요' : '알림' }),
@@ -12771,6 +12949,8 @@ var GymSearch = (function () {
   state.program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
 
   if (!restore()) loadScenario('normal', true);
+  // 카카오·구글에서 돌아왔으면 여기서 거둔다. 주소에 실려 온 토큰도 같이 지운다.
+  finishOAuth();
   markStandalone();
   registerWorker();
   render();

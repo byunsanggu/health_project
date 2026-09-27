@@ -359,6 +359,98 @@ var Remote = (function () {
     };
   }
 
+  /* ── 카카오·구글로 로그인 ─────────────────────── */
+
+  /**
+   * 왜 OAuth를 붙이는가.
+   *
+   * 이메일 가입은 확인 메일을 보내야 하는데, Supabase 기본 발송은 시간당
+   * 두 통이다. 회원 세 분이 동시에 가입하면 세 번째 분은 메일을 못 받는다.
+   * 카카오·구글로 들어오면 **메일을 아예 안 보낸다.**
+   *
+   * 그리고 한국에서 이메일·비밀번호를 새로 만들라는 것은 그 자체로 벽이다.
+   * 헬스장 회원분들께는 "카카오로 시작" 한 번이 훨씬 낮다.
+   */
+  var PROVIDERS = {
+    kakao: '카카오',
+    google: '구글',
+  };
+
+  /** 돌아올 자리. 조각(#)과 물음표(?)를 뗀 이 페이지 주소다. */
+  function returnUrl() {
+    return location.origin + location.pathname;
+  }
+
+  /**
+   * 제공자 화면으로 보낸다.
+   *
+   * 페이지를 떠나므로, 부르는 쪽은 **떠나기 전에 저장을 끝내 놓아야 한다.**
+   * 온보딩 도중에 그냥 보내면 돌아왔을 때 처음부터 다시 하게 된다.
+   */
+  function oauthStart(provider) {
+    if (!PROVIDERS[provider]) return;
+    location.href = baseUrl() + '/auth/v1/authorize' +
+      '?provider=' + encodeURIComponent(provider) +
+      '&redirect_to=' + encodeURIComponent(returnUrl());
+  }
+
+  /**
+   * 돌아왔을 때 주소에 붙어 온 것을 거둔다.
+   *
+   * Supabase는 토큰을 주소의 # 뒤에 붙여서 돌려준다. 그대로 두면 **주소를
+   * 복사해 공유하는 순간 로그인 정보가 같이 간다.** 거두자마자 주소창에서
+   * 지운다.
+   *
+   * 돌아온 게 아니면 null을 준다.
+   */
+  function captureOAuth() {
+    var hash = (location.hash || '').replace(/^#/, '');
+    if (!hash) return null;
+    if (hash.indexOf('access_token=') < 0 && hash.indexOf('error') < 0) return null;
+
+    var params = new URLSearchParams(hash);
+    try {
+      history.replaceState(null, '', returnUrl());
+    } catch (err) {
+      void err;
+      location.hash = '';
+    }
+
+    var failure = params.get('error_description') || params.get('error');
+    if (failure) return { ok: false, message: decodeURIComponent(failure) };
+
+    var token = params.get('access_token');
+    if (!token) return { ok: false, message: '로그인 정보를 받지 못했습니다.' };
+
+    patch({
+      accessToken: token,
+      refreshToken: params.get('refresh_token') || null,
+    });
+
+    return { ok: true, provider: params.get('provider') || null };
+  }
+
+  /**
+   * 내 계정 정보를 받아 이메일을 채운다.
+   *
+   * 카카오는 비즈앱이 아니면 이메일을 안 준다. 그때는 이메일이 비는데,
+   * 그게 정상이다 — 신원은 계정 id이지 이메일이 아니다. 화면이 빈 칸을
+   * 보여주지 않게 없으면 없는 대로 둔다.
+   */
+  function loadIdentity() {
+    return withAuth(function () {
+      return request('/auth/v1/user', { method: 'GET' });
+    }).then(function (user) {
+      var email = (user && user.email) || '';
+      if (email) patch({ email: email });
+      return user;
+    }, function () { return null; });
+  }
+
+  function providerLabel(provider) {
+    return PROVIDERS[provider] || provider;
+  }
+
   /* ── 헬스장 나누기 ────────────────────────────── */
 
   /**
@@ -477,6 +569,10 @@ var Remote = (function () {
     signOut: signOut,
     checkSchema: checkSchema,
     transport: transport,
+    oauthStart: oauthStart,
+    captureOAuth: captureOAuth,
+    loadIdentity: loadIdentity,
+    providerLabel: providerLabel,
     shareGym: shareGym,
     sharedEquipment: sharedEquipment,
     gymPeople: gymPeople,
