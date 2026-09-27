@@ -1459,7 +1459,7 @@ input[type="search"] {
 
 /* ── 유산소 ─────────────────────────────────────── */
 .cardio-row {
-  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px;
+  display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 10px;
   align-items: center; width: 100%; text-align: left;
   border: 0; border-top: 1px solid var(--line-soft);
   background: var(--surface); padding: 10px 12px;
@@ -1474,6 +1474,17 @@ input[type="search"] {
  * 늘 같이 있으므로 점은 훑기용이다.
  */
 .cardio-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--zone-ok); }
+/*
+ * 그림이 들어오면서 점이 그림 모서리로 올라갔다. 배경색과 같은 테두리를
+ * 둘러 그림 선 위에 놓여도 점으로 읽히게 한다.
+ */
+.cardio-thumb { position: relative; }
+.cardio-thumb .cardio-mark {
+  position: absolute; top: 4px; right: 4px;
+  box-shadow: 0 0 0 2.5px var(--surface-2);
+}
+.cardio-head .cardio-thumb { width: 34px; height: 34px; }
+.cardio-head .cardio-thumb .thumb-art { width: 26px; height: 20px; }
 .cardio-mark.mild { background: var(--zone-hard); }
 .cardio-mark.notable { background: var(--zone-hard); }
 .cardio-mark.avoid { background: var(--zone-over); }

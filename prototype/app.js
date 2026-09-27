@@ -2688,6 +2688,29 @@
     return box;
   }
 
+  /**
+   * 유산소 썸네일.
+   *
+   * 근력 줄과 달리 **점 하나를 같이 지고 있다.** 오늘 근력과 얼마나
+   * 부딪히는지를 색으로 알려 주던 점인데, 그림이 들어오면서 자리를
+   * 빼앗길 뻔했다. 지우지 않고 그림 모서리에 얹는다 — 목록을 훑을 때
+   * 색으로 거르는 사람이 있고, 그 사람의 길을 그림 때문에 막을 이유가 없다.
+   *
+   * 색만으로는 못 읽는 사람이 있으므로 줄 안의 설명은 그대로 둔다.
+   *
+   * **level을 안 주면 점도 안 찍는다.** 하나를 고른 뒤의 화면에는 바로
+   * 아래에 경고가 문장으로 다 나와 있다. 훑을 목록이 없는 자리에 훑기용
+   * 점을 또 찍으면, 그림 위에 겹쳐 앉아 그림만 지저분해진다.
+   */
+  function cardioThumb(exercise, level) {
+    var art = window.FitEquipmentArt;
+    var svg = art && art.hasCardio(exercise.id) ? art.renderCardio(exercise.id, '') : null;
+    var box = el('span', { class: 'lift-thumb cardio-thumb' }, []);
+    if (svg) { svg.setAttribute('class', 'thumb-art'); box.appendChild(svg); }
+    if (level) box.appendChild(el('span', { class: 'cardio-mark ' + level, 'aria-hidden': 'true' }));
+    return box;
+  }
+
   /** 위쪽 요약 카드 하나. 누르면 펼쳐진다. */
   function statCard(key, label, value, unit, body) {
     var open = state.statOpen === key;
@@ -5007,7 +5030,7 @@
             render();
           },
         }, [
-          el('span', { class: 'cardio-mark ' + check.level, 'aria-hidden': 'true' }),
+          cardioThumb(exercise, check.level),
           el('span', { class: 'plan-main' }, [
             el('span', { class: 'name', text: exercise.name }),
             el('span', { class: 'plan-sets', text:
@@ -5025,6 +5048,7 @@
       });
 
       body.appendChild(el('div', { class: 'cardio-head' }, [
+        cardioThumb(exercise),
         el('b', { text: exercise.name }),
         el('button', {
           type: 'button', class: 'demo-open', text: '다른 종목',

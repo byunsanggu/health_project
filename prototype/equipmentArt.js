@@ -254,6 +254,110 @@
       '<path d="M29 32 V45"/><path d="M22 45 h14"/>',
   };
 
+  /*
+   * 유산소 그림.
+   *
+   * 기구 표와 따로 둔다. 키가 기구 id가 아니라 **유산소 종목 id**라서,
+   * 한 표에 섞으면 언젠가 같은 이름이 겹쳤을 때 엉뚱한 그림이 조용히
+   * 나온다 — 빈칸은 눈에 띄지만 틀린 그림은 안 띈다.
+   *
+   * 그릴 때 신경 쓴 것은 **옆엣것과 구별되는가** 하나다. 트레드밀 두
+   * 종목은 같은 기계라서, 걷기는 앞을 들어 경사를 주고 달리기는 평평하게
+   * 두고 속도선을 붙였다. 목록에서 위아래로 붙어 나오기 때문이다.
+   */
+  var CARDIO_ART = {
+    'treadmill-walk':
+      // 앞이 들린 데크 — 경사가 이 종목의 전부다
+      '<path d="M12 36 L46 24"/>' +
+      '<path d="M12 41 L46 29"/>' +
+      '<path d="M12 36 V41 M46 24 V29"/>' +
+      '<path d="M44 25 V15"/>' +
+      '<rect x="36" y="8" width="16" height="7" rx="2"/>' +
+      '<path d="M16 41 V44 M42 31 V44"/>',
+
+    'treadmill-run':
+      // 같은 기계, 평평하게. 속도선으로 걷기와 갈린다
+      '<rect x="12" y="30" width="34" height="5" rx="2"/>' +
+      '<path d="M44 30 V15"/>' +
+      '<rect x="36" y="8" width="16" height="7" rx="2"/>' +
+      '<path d="M16 35 V44 M42 35 V44"/>' +
+      '<path d="M2 28 h8 M4 34 h6"/>',
+
+    bike:
+      // 앞 기둥에 걸린 큰 플라이휠 — 실내 자전거는 이 바퀴로 알아본다
+      '<path d="M6 43 h18 M38 43 h18"/>' +
+      '<path d="M15 41 V13 M8 13 h14"/>' +
+      '<circle cx="25" cy="31" r="8"/>' +
+      '<path d="M15 19 L47 26"/>' +
+      '<path d="M47 41 V21"/>' +
+      '<rect x="40" y="16" width="14" height="5" rx="2"/>' +
+      '<path d="M15 36 H47"/>' +
+      '<circle cx="36" cy="36" r="3.5"/>',
+
+    elliptical:
+      // 옆에서 본 모습. 뒤 구동휠에서 앞으로 길게 뻗은 발판 암이 특징이다
+      '<circle cx="49" cy="26" r="7"/>' +
+      '<path d="M49 33 V42 M42 42 h14"/>' +
+      '<path d="M14 42 h14"/>' +
+      '<path d="M21 42 V13"/>' +
+      '<rect x="13" y="6" width="16" height="7" rx="2"/>' +
+      '<path d="M21 17 L33 28"/>' +
+      '<path d="M49 26 L13 35"/>' +
+      '<rect x="9" y="33" width="12" height="4" rx="1.5"/>',
+
+    row:
+      // 긴 레일 위를 미끄러지는 시트 — 이게 로잉을 로잉으로 보이게 한다
+      '<path d="M14 36 H54"/>' +
+      '<path d="M19 36 V42 M50 36 V42"/>' +
+      '<rect x="31" y="29" width="13" height="5" rx="2"/>' +
+      '<path d="M37 34 V36"/>' +
+      '<circle cx="15" cy="25" r="7"/>' +
+      '<path d="M15 32 V42 M10 42 h10"/>' +
+      '<path d="M22 25 H36"/>' +
+      '<path d="M36 20 V30"/>',
+
+    stair:
+      // 올라가는 계단과 손잡이
+      '<path d="M7 42 h9 v-6 h9 v-6 h9 v-6 h9 v-6 h9"/>' +
+      '<path d="M11 32 L52 12"/>' +
+      '<path d="M11 32 V42 M52 12 V18"/>',
+
+    'outdoor-run':
+      // 기계가 없는 유일한 종목. 기구 대신 **장소**를 그린다
+      '<path d="M15 44 L28 15 M49 44 L36 15"/>' +
+      '<path d="M32 19 v4 M31 28 v5 M30 37 v6"/>' +
+      '<circle cx="51" cy="13" r="5"/>',
+
+    'jump-rope':
+      // 손잡이 둘과 아래로 늘어진 줄
+      '<rect x="8" y="10" width="5" height="13" rx="2.5"/>' +
+      '<rect x="51" y="10" width="5" height="13" rx="2.5"/>' +
+      '<path d="M13 21 Q 32 46 51 21"/>',
+
+    swim:
+      // 레인이 보이는 물. 기구가 아니라 장소로 알아본다
+      '<rect x="7" y="13" width="50" height="28" rx="3"/>' +
+      '<path d="M12 24 q5 -4 10 0 t10 0 t10 0 t10 0"/>' +
+      '<path d="M12 33 q5 -4 10 0 t10 0 t10 0 t10 0"/>',
+  };
+
+  /** 표 하나를 SVG로. 부르는 쪽이 어느 표인지 골라 넘긴다. */
+  function draw(table, id, label) {
+    if (!table[id]) return null;
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 64 48');
+    svg.setAttribute('class', 'equip-art');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', label || '');
+    svg.innerHTML = table[id];
+    return svg;
+  }
+
   window.FitEquipmentArt = {
     /** 이 기구의 그림이 있는가. 없으면 호출한 쪽이 조용히 넘어간다. */
     has: function (id) { return Object.prototype.hasOwnProperty.call(ART, id); },
@@ -262,23 +366,14 @@
      * 그림 하나를 SVG 엘리먼트로 돌려준다.
      * 없으면 null — 그림이 없다고 목록이 비어 보이면 안 된다.
      */
-    render: function (id, label) {
-      if (!ART[id]) return null;
-      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 64 48');
-      svg.setAttribute('class', 'equip-art');
-      svg.setAttribute('fill', 'none');
-      svg.setAttribute('stroke', 'currentColor');
-      svg.setAttribute('stroke-width', '2');
-      svg.setAttribute('stroke-linecap', 'round');
-      svg.setAttribute('stroke-linejoin', 'round');
-      svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', label || '');
-      svg.innerHTML = ART[id];
-      return svg;
-    },
+    render: function (id, label) { return draw(ART, id, label); },
+
+    /** 유산소 종목 그림. 기구 id와 같은 이름을 써도 서로 안 섞인다. */
+    hasCardio: function (id) { return Object.prototype.hasOwnProperty.call(CARDIO_ART, id); },
+    renderCardio: function (id, label) { return draw(CARDIO_ART, id, label); },
 
     /** 그림이 있는 기구 수 — 콘텐츠 진척을 재는 데 쓴다. */
     coverage: function () { return Object.keys(ART).length; },
+    cardioCoverage: function () { return Object.keys(CARDIO_ART).length; },
   };
 })();
