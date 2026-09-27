@@ -10,7 +10,20 @@ import { EQUIPMENT_CATALOG } from './equipment.ts';
  * 틀려도 괜찮게 설계했다 — 실제로 그 종목이 처방됐을 때 "이 기구 없어요"를
  * 누르면 그때 빠진다. 첫 화면에서 전부 맞출 필요가 없다.
  */
-export type GymVisibility = 'public' | 'private';
+/**
+ * 이 헬스장을 누가 볼 수 있는가.
+ *
+ * 선은 "상업 헬스장이냐"가 아니라 **"남의 집이냐"**다. 처음에는 아파트·회사
+ * 헬스장을 홈짐과 같이 묶었는데, 그건 잘못 그은 선이었다. 같은 단지 주민
+ * 둘이 각자 등록하면 기구 목록이 두 벌로 쪼개지고, 크라우드소싱이 제일
+ * 필요한 곳에서 안 되는 셈이 된다 — 아파트 헬스장은 뭐가 있는지 밖에서
+ * 알 길이 아예 없다.
+ *
+ *   public     — 누구나 갈 수 있는 곳. 검색에 나온다.
+ *   restricted — 입주민·직원·투숙객만. 검색에 나오되 그렇게 표시하고 뒤로 민다.
+ *   private    — 홈짐. **남의 집 주소다. 절대 안 나눈다.**
+ */
+export type GymVisibility = 'public' | 'restricted' | 'private';
 
 export interface GymPreset {
   id: string;
@@ -18,12 +31,6 @@ export interface GymPreset {
   /** 어떤 곳인지 한 줄 — 사용자가 자기 헬스장을 알아볼 수 있어야 한다 */
   hint: string;
   equipmentIds: string[];
-  /**
-   * 검색에 나오는 곳인가.
-   *
-   * 아파트 커뮤니티 헬스장, 회사 헬스장, 홈짐은 공개 디렉터리에 없다.
-   * 있어서도 안 된다 — 주민이나 직원만 쓰는 곳을 지도에 올릴 이유가 없다.
-   */
   visibility: GymVisibility;
 }
 
@@ -85,14 +92,22 @@ export const GYM_PRESETS: readonly GymPreset[] = [
   {
     id: 'residence',
     label: '아파트 · 회사 · 호텔',
-    hint: '단지나 사옥 안에 있는 곳. 검색에는 안 나옵니다',
+    hint: '입주민·직원만 쓰는 곳. 같은 곳 다니는 사람끼리 기구 정보를 나눕니다',
     // 랙이 없는 경우가 많다. 덤벨과 머신 몇 대가 전부인 곳이 흔하다.
     equipmentIds: [
       ...BASE, 'dumbbells', 'bench-incline',
       'cable-station', 'lat-pulldown-machine', 'chest-press-machine',
       'leg-press-machine', 'leg-extension-machine', 'leg-curl-machine', 'smith-machine',
     ],
-    visibility: 'private',
+    /*
+     * 나눈다. 아파트 헬스장에 뭐가 있는지는 밖에서 알 길이 없고, 그래서
+     * 같은 단지 주민이 채워 준 목록이 제일 값어치가 크다.
+     *
+     * 다만 아무나 갈 수 있는 곳이 아니므로 검색에서 그렇게 표시하고 뒤로
+     * 민다. "강남"을 친 사람에게 못 들어가는 단지 헬스장 쉰 곳이 먼저 뜨면
+     * 그건 검색이 아니다.
+     */
+    visibility: 'restricted',
   },
   {
     id: 'home',

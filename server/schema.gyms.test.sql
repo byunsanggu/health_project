@@ -90,7 +90,14 @@ begin
 end
 $$;
 
--- ── 아파트·홈짐은 안 올라간다
+-- ── 아파트는 올라가고 홈짐은 안 올라간다
+select '[단지] 아파트 헬스장 올리기 → ' || public.share_gym(
+  '{"id":"gym-apt-1","name":"예시아파트 커뮤니티 헬스장","visibility":"restricted","floor":-1}'::jsonb,
+  '[{"id":"dumbbells","present":true}]'::jsonb
+) || '개 (1이어야 함 — 같은 단지 주민끼리 나눈다)';
+
+select '[단지] 딱지가 남았나 → ' || visibility from public.gyms where id = 'gym-apt-1';
+
 select '[사생활] 홈짐 올리기 → ' || public.share_gym(
   '{"id":"gym-home-1","name":"우리집","visibility":"private"}'::jsonb, '[]'::jsonb
 ) || '개 (0이어야 함)';

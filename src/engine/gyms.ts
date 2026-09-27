@@ -212,7 +212,7 @@ export function searchGyms(query: string, options: GymSearchOptions = {}): GymSe
   const needle = query.trim().toLowerCase();
 
   const matched = directory.filter((entry) =>
-    // 아파트·회사 헬스장은 검색에 뜨지 않는다.
+    // 홈짐은 검색에 뜨지 않는다. 남의 집 주소다.
     entry.visibility !== 'private',
   ).filter((entry) =>
     needle.length === 0 ||
@@ -223,12 +223,32 @@ export function searchGyms(query: string, options: GymSearchOptions = {}): GymSe
   const results = matched.map((entry) => describeGym(entry, options, pool));
 
   results.sort((a, b) => {
+    /*
+     * 아무나 갈 수 있는 곳을 먼저 둔다.
+     *
+     * 아파트·회사 헬스장도 검색에는 나오지만(같은 단지 주민이 서로
+     * 찾아야 한다), "강남"을 친 사람에게 못 들어가는 단지 헬스장이 먼저
+     * 뜨면 그건 검색이 아니다. 이름을 정확히 치면 어차피 몇 개 안 남는다.
+     */
+    const openness = restrictedRank(a.entry) - restrictedRank(b.entry);
+    if (openness !== 0) return openness;
+
     if (a.distanceKm !== undefined && b.distanceKm !== undefined) return a.distanceKm - b.distanceKm;
     if (options.program) return (b.programFit ?? 0) - (a.programFit ?? 0);
     return b.exerciseCount - a.exerciseCount;
   });
 
   return results.slice(0, options.limit ?? 20);
+}
+
+/** 아무나 갈 수 있는 곳이 0, 입주민·직원 전용이 1. 정렬에만 쓴다. */
+function restrictedRank(entry: GymDirectoryEntry): number {
+  return entry.visibility === 'restricted' ? 1 : 0;
+}
+
+/** 검색 결과에 붙는 딱지. 갈 수 있는 곳인지 먼저 알려준다. */
+export function accessLabel(entry: GymDirectoryEntry): string | undefined {
+  return entry.visibility === 'restricted' ? '입주민·직원 전용' : undefined;
 }
 
 /** 이 헬스장이 내 프로그램을 얼마나 받아낼 수 있는지. */
@@ -415,9 +435,18 @@ export function registerGym(input: RegisterInput): RegisterResult {
    * 같은 단지 주민이 올린 항목과 합쳐질 이유가 없고, 옆 동 사람의 홈짐이
    * 후보로 뜨는 건 사생활 문제다.
    */
-  const pool = visibility === 'private'
-    ? directory.filter((entry) => entry.visibility === 'private')
-    : directory.filter((entry) => entry.visibility !== 'private');
+  /*
+   * 같은 갈래끼리만 중복을 본다.
+   *
+   * 옆 동 사람의 홈짐이 후보로 뜨는 건 사생활 문제고, 상가 헬스장과 단지
+   * 헬스장이 이름이 비슷하다고 합쳐지면 없는 기구로 처방이 나간다.
+   *
+   * 단지 헬스장끼리는 **합쳐져야 한다** — 같은 아파트 주민 둘이 각자
+   * 등록했는데 안 합쳐지면, 기구 정보가 두 벌로 쪼개져서 크라우드소싱이
+   * 제일 필요한 곳에서 안 되는 셈이 된다.
+   */
+  const bucket = visibility === 'public' ? 'public' : visibility;
+  const pool = directory.filter((entry) => (entry.visibility ?? 'public') === bucket);
 
   const hits = findDuplicates(identity, pool);
   const exact = hits.find((hit) => hit.match.verdict === 'same');

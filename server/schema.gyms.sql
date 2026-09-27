@@ -45,13 +45,20 @@ create table if not exists public.gyms (
   lng         double precision,
 
   /*
-   * 아파트·회사·홈짐은 공유하지 않는다.
+   * 누가 갈 수 있는 곳인가.
    *
-   * 옆 동 사람의 홈짐이 검색에 뜨는 건 사생활 문제고, 같은 단지 주민이
-   * 올린 항목과 합쳐질 이유도 없다. 앱이 이런 곳은 애초에 안 보내지만,
-   * DB에서도 한 번 더 막는다 — 앱은 여러 버전이 돌아다니지만 DB는 하나다.
+   *   public     — 누구나. 상업 헬스장.
+   *   restricted — 입주민·직원·투숙객만. 아파트 단지, 사옥, 호텔.
+   *
+   * 아파트 헬스장도 나눈다. 밖에서는 뭐가 있는지 알 길이 없어서, 같은 단지
+   * 주민이 채워 준 목록이 제일 값어치가 크다. 대신 앱이 "입주민·직원 전용"을
+   * 붙이고 검색에서 뒤로 민다.
+   *
+   * **홈짐(private)은 여기 못 들어온다.** 그건 남의 집 주소다. 앱이 애초에
+   * 안 보내지만 DB에서도 막는다 — 앱은 여러 버전이 돌아다니지만 DB는 하나다.
    */
-  visibility  text        not null default 'public' check (visibility = 'public'),
+  visibility  text        not null default 'public'
+                          check (visibility in ('public', 'restricted')),
 
   -- 처음 올린 사람. 지워도 헬스장은 남는다(다른 사람들이 쓰고 있다).
   created_by  uuid        references auth.users on delete set null,
@@ -128,7 +135,7 @@ create policy gyms_read on public.gyms
 -- 만드는 건 로그인한 사람만. 익명으로 목록을 더럽힐 수 없어야 한다.
 create policy gyms_insert on public.gyms
   for insert to authenticated
-  with check (auth.uid() = created_by and visibility = 'public');
+  with check (auth.uid() = created_by and visibility in ('public', 'restricted'));
 
 /*
  * 고치는 것도 로그인한 사람이면 누구나 — 간판이 바뀌거나 층이 틀렸을 때
@@ -138,7 +145,7 @@ create policy gyms_insert on public.gyms
 create policy gyms_update on public.gyms
   for update to authenticated
   using (true)
-  with check (visibility = 'public');
+  with check (visibility in ('public', 'restricted'));
 
 /*
  * 기구 확인은 누구나 읽고, **자기 것만** 쓴다.
@@ -258,12 +265,12 @@ begin
     raise exception '로그인이 필요합니다';
   end if;
 
-  -- 아파트·회사·홈짐은 올리지 않는다. 앱도 막지만 여기서 한 번 더 막는다.
-  if coalesce(gym ->> 'visibility', 'public') <> 'public' then
+  -- 홈짐은 올리지 않는다. 앱도 막지만 여기서 한 번 더 막는다.
+  if coalesce(gym ->> 'visibility', 'public') not in ('public', 'restricted') then
     return 0;
   end if;
 
-  insert into public.gyms (id, name, address, floor, lat, lng, created_by)
+  insert into public.gyms (id, name, address, floor, lat, lng, visibility, created_by)
   values (
     target,
     gym ->> 'name',
@@ -271,6 +278,7 @@ begin
     (gym ->> 'floor')::integer,
     (gym ->> 'lat')::double precision,
     (gym ->> 'lng')::double precision,
+    coalesce(gym ->> 'visibility', 'public'),
     auth.uid()
   )
   on conflict (id) do nothing;

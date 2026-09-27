@@ -7714,6 +7714,7 @@
         el('div', { class: 'search-main' }, [
           el('span', { class: 'gym-name', text: result.entry.name }),
           el('span', { class: 'gym-meta', text:
+            (E.accessLabel(result.entry) ? E.accessLabel(result.entry) + ' · ' : '') +
             (result.distanceKm !== undefined ? result.distanceKm + 'km · ' : '') +
             '종목 ' + result.exerciseCount + '개 · 프로그램 ' + fit + '%' }),
         ]),
@@ -7732,9 +7733,13 @@
       host.appendChild(card);
     });
 
-    host.appendChild(registerButton());
+    /*
+     * 여기서는 등록 버튼을 또 달지 않는다. 이 칸 위에 이미 같은 버튼이
+     * 크게 있다. 똑같은 버튼이 한 화면에 둘이면 어느 쪽을 눌러야 하는지
+     * 모르게 되고, 둘 다 같은 일을 한다는 것도 알 수 없다.
+     */
     host.appendChild(el('p', { class: 'hint-line', text:
-      '표시된 목록은 구조를 보여주는 예시 데이터입니다. 실제로는 지도 API와 사용자가 올린 기구 정보로 채워집니다.' }));
+      '예시 네 곳은 구조를 보여주는 가상 데이터입니다. 직접 등록한 곳은 실제 기록입니다.' }));
   }
 
   /**
@@ -7956,10 +7961,25 @@
       '같은 건물 3층과 5층에 다른 헬스장이 있는 경우가 흔합니다. 층을 적어두면 ' +
       '다른 사람이 등록한 곳과 헷갈리지 않습니다.' }));
 
+    /*
+     * 무엇이 남에게 보이는지 등록하기 전에 말한다.
+     *
+     * 다 만들고 나서 "사실 이거 공유됩니다"를 알게 되면, 그때는 이미 올라간
+     * 뒤다. 올리기 전에 말해야 고를 기회가 있다.
+     */
     if (preset.visibility === 'private') {
       body.push(el('div', { class: 'notice' }, [
         el('div', { class: 'label', text: '나만 봅니다' }),
-        el('div', { text: withParticleJs(preset.label, '은/는') + ' 검색에 올리지 않습니다. 이 기록은 내 목록에만 남습니다.' }),
+        el('div', { text: withParticleJs(preset.label, '은/는') +
+          ' 검색에 올리지 않습니다. 이 기록은 내 목록에만 남습니다.' }),
+      ]));
+    } else if (preset.visibility === 'restricted') {
+      body.push(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: '같은 곳 다니는 사람끼리 나눕니다' }),
+        el('div', { text:
+          '여기 뭐가 있는지는 밖에서 알 길이 없어서, 같은 단지·회사 사람이 채워 준 ' +
+          '기구 목록이 제일 도움이 됩니다. 검색에는 "입주민·직원 전용"으로 나오고 ' +
+          '아무나 갈 수 있는 곳보다 뒤에 놓입니다. 내 운동 기록은 올라가지 않습니다.' }),
       ]));
     }
 
