@@ -183,6 +183,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 7px; padding: 5px 10px; font-size: 12px; color: var(--muted);
 }
 .rest-skip:hover { color: var(--accent); border-color: var(--accent); }
+/* 시간 자체가 설정을 여는 버튼이다. 버튼처럼 보이되 튀지는 않는다. */
+.rest-info { border: 0; background: none; padding: 0; text-align: left; }
+.rest-info:hover .rest-time { color: var(--accent); }
+.rest-fix {
+  display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+  padding: 0 12px 8px; font-size: 12px; color: var(--muted);
+}
 .rest-actions { display: flex; gap: 5px; }
 
 .reliability { display: flex; align-items: center; gap: 9px; }
@@ -1609,6 +1616,23 @@ input[type="search"] {
   margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted);
 }
 /*
+ * 시작 버튼 · 속도 · 세트마다 자동을 한 묶음으로. 쓰는 자리에 설정이
+ * 같이 있어야 찾는다 — 모달 안에 있던 것들을 여기로 내렸다.
+ */
+.count-panel { display: grid; gap: 7px; }
+.count-speed { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.count-speed .hint-line { margin: 0; }
+/* 켜고 끄는 한 줄. 시작 버튼과 같은 폭이되 조용하다. */
+.count-auto {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  border: 1px dashed var(--line); border-radius: 10px; background: none;
+  padding: 8px 12px; font-size: 12.5px; color: var(--muted);
+}
+.count-auto[aria-pressed="true"] { border-style: solid; border-color: var(--accent); color: var(--ink); }
+.count-auto[aria-pressed="true"] .count-tempo { color: var(--accent); }
+/* 답이 한 줄에 들어가야 다섯 개가 한 줄로 선다. */
+.now-rir .chip { white-space: nowrap; }
+/*
  * 세는 중에는 숫자 하나만 남는다. 세트 중에 볼 수 있는 건 하나뿐이고,
  * 그 하나는 "지금 몇 개째"다.
  */
@@ -1618,6 +1642,8 @@ input[type="search"] {
   font-family: var(--mono); font-size: 76px; font-weight: 600; line-height: 1;
   color: var(--accent); font-variant-numeric: tabular-nums; letter-spacing: -.03em;
 }
+/* '준비 8'처럼 길어지면 줄인다 — 76px로 두면 화면 밖으로 나간다. */
+.count-num b.wide { font-size: 44px; letter-spacing: 0; }
 .count-num span { font-size: 13px; color: var(--muted); min-height: 20px; }
 .count-live .finish { max-width: 240px; }
 

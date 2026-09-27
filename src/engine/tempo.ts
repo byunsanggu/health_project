@@ -66,6 +66,65 @@ export const TEMPO_PRESETS: readonly {
   },
 ];
 
+/**
+ * 속도.
+ *
+ * 위의 프리셋은 **의도**를 고르는 것이라 초가 같은 것도 있다(기본과
+ * 폭발적으로는 둘 다 3초다 — 다른 건 올릴 때 마음가짐이다). 그건
+ * 트레이너의 언어이지, 처음 쓰는 사람이 "빠르게 해 주세요"라고 할 때
+ * 찾는 것이 아니다.
+ *
+ * 그래서 **초로 줄 세운 축**을 따로 둔다. 셋 다 실제로 쓰는 템포다 —
+ * 빠르기만 바꾼 가짜 눈금이 아니다.
+ *
+ * 빠르게에 주의를 붙인 이유가 있다. 내리는 구간을 1초로 줄이면 무거운
+ * 날에는 반동으로 받게 된다. 고를 수는 있어야 하지만, 고를 때 그 말을
+ * 같이 봐야 한다.
+ */
+export const TEMPO_SPEEDS: readonly {
+  id: 'slow' | 'normal' | 'fast';
+  label: string;
+  tempo: Tempo;
+  note: string;
+}[] = [
+  {
+    id: 'slow',
+    label: '천천히',
+    tempo: { eccentric: 3, bottom: 1, concentric: 1, top: 0 },
+    note: '내리는 데만 3초. 자세가 무너질 때, 가벼운 날.',
+  },
+  {
+    id: 'normal',
+    label: '보통',
+    tempo: DEFAULT_TEMPO,
+    note: '2초에 내리고 1초에 올립니다. 대부분의 날.',
+  },
+  {
+    id: 'fast',
+    label: '빠르게',
+    tempo: { eccentric: 1, bottom: 0, concentric: 1, top: 0 },
+    note: '가벼운 날·파워 작업용. 무거운 날에는 반동으로 받게 되니 권하지 않습니다.',
+  },
+];
+
+/**
+ * 지금 템포가 어느 속도인가.
+ *
+ * 네 숫자를 전부 본다. 초만 맞춰 보면 "멈췄다"(2-2-1-0)가 "천천히"
+ * (3-1-1-0)로 둔갑한다 — 둘 다 5초지만 전혀 다른 세트다.
+ *
+ * 어디에도 안 맞으면 undefined. 그때 화면은 아무것도 고르지 않은 채로
+ * 두어야 한다. 가까운 것을 골라 주면 사용자가 정한 템포가 조용히 바뀐다.
+ */
+export function speedOf(tempo: Tempo): 'slow' | 'normal' | 'fast' | undefined {
+  const found = TEMPO_SPEEDS.find((speed) =>
+    speed.tempo.eccentric === tempo.eccentric &&
+    speed.tempo.bottom === tempo.bottom &&
+    speed.tempo.concentric === tempo.concentric &&
+    speed.tempo.top === tempo.top);
+  return found?.id;
+}
+
 /** `2-0-1-0` 처럼 현장 표기로. */
 export function tempoLabel(tempo: Tempo): string {
   return [tempo.eccentric, tempo.bottom, tempo.concentric, tempo.top].join('-');

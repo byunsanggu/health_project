@@ -191,6 +191,7 @@
         extraLifts: state.extraLifts,
         voiceOn: state.voiceOn,
         tempo: state.tempo,
+        autoCount: state.autoCount,
         voiceRate: state.voiceRate,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
@@ -245,6 +246,7 @@
       state.extraLifts = settings.extraLifts || [];
       state.voiceOn = Boolean(settings.voiceOn);
       state.tempo = settings.tempo || null;
+      state.autoCount = Boolean(settings.autoCount);
       state.voiceRate = settings.voiceRate || 1;
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
@@ -478,6 +480,8 @@
      */
     voiceOn: false,
     tempo: null,
+    autoCount: false,
+    autoCountedFor: null,
     voiceRate: 1,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
     reportSeenWeek: null,
@@ -1274,6 +1278,7 @@
     var reason = override ? override.reason : prescription.reason;
 
     state.rest = {
+      exerciseId: lift.exercise.id,
       exerciseName: lift.exercise.name,
       setNumber: setIndex + 1,
       total: seconds,
@@ -1308,6 +1313,7 @@
     if (!state.rest) return;
     if (restRemaining() + seconds <= 0) return stopRest();
 
+    state.rest.adjusted = true;
     state.rest.endsAt += seconds * 1000;
     // 진행 막대가 100%를 넘지 않게 총량도 같이 줄인다.
     state.rest.total = Math.max(restRemaining(), state.rest.total + seconds);
@@ -1377,6 +1383,14 @@
     releaseWakeLock();
     notifyWorker({ type: 'rest:stop' });
     renderRest();
+    /*
+     * 평소에는 휴식 막대만 다시 그린다 — 쉬는 동안 손대던 숫자칸이
+     * 끊기지 않게 하려는 것이다.
+     *
+     * 세트마다 자동으로 셀 때는 그러면 안 된다. 쉬는 동안 미뤄 둔 시작이
+     * 이 순간에 열리는데, 세트 화면을 안 그리면 그 순간이 영영 안 온다.
+     */
+    if (state.autoCount) render();
   }
 
   /*
@@ -1413,7 +1427,17 @@
       }),
     ]));
     host.appendChild(el('div', { class: 'rest-body' }, [
-      el('div', { class: 'rest-info' }, [
+      /*
+       * 시간을 누르면 휴식 설정이 열린다.
+       *
+       * 설정은 원래 종목 메뉴 안에만 있었다. 쉬는 중에 "좀 길다" 싶은
+       * 사람이 그걸 찾아 들어갈 리가 없다 — 지금 눈에 보이는 건 이 숫자뿐이다.
+       */
+      el('button', {
+        type: 'button', class: 'rest-info',
+        title: '휴식 길이를 바꿉니다',
+        onclick: function () { openRestSettings(state.rest && state.rest.exerciseId); },
+      }, [
         el('span', { class: 'rest-label', text: '휴식' }),
         el('span', { class: 'rest-time', id: 'rest-remaining', text: E.formatDuration(remaining) }),
       ]),
@@ -1436,6 +1460,31 @@
           title: '휴식을 끝내고 다음 세트로', onclick: stopRest }),
       ]),
     ]));
+
+    /*
+     * ±30초는 이번 한 번만이다. 매 세트 같은 만큼 늘리는 사람은 그걸
+     * 세트마다 다시 누르게 된다 — 그건 앱이 아직 못 알아들은 것이다.
+     * 한 번 고친 뒤에만 묻는다. 묻지도 않고 고정해 버리면, 오늘만 길게
+     * 쉬려던 사람의 설정이 조용히 바뀐다.
+     */
+    var fixable = state.rest.exerciseId && state.rest.adjusted;
+    if (fixable && state.restOverrides[state.rest.exerciseId] !== state.rest.total) {
+      host.appendChild(el('div', { class: 'rest-fix' }, [
+        el('span', { text: '이 종목은 앞으로 ' + E.formatDuration(state.rest.total) + '로 할까요?' }),
+        el('button', {
+          type: 'button', class: 'rest-skip', text: '고정',
+          title: state.rest.exerciseName + ' 휴식을 ' + E.formatDuration(state.rest.total) + '로 고정합니다',
+          onclick: function () {
+            state.restOverrides[state.rest.exerciseId] = state.rest.total;
+            pushLog('휴식', '<b>' + state.rest.exerciseName + '</b> 휴식을 ' +
+              E.formatDuration(state.rest.total) + '로 고정했습니다');
+            persist();
+            // 기록 줄도 같이 갱신돼야 한다 — 막대만 다시 그리면 로그가 안 바뀐다.
+            render();
+          },
+        }),
+      ]));
+    }
 
     // 알림 권한은 여기서 묻는다 — 필요한 순간에 물어야 의미가 전달된다.
     if (notificationState() === 'default') {
@@ -3806,27 +3855,81 @@
     render();
   }
 
-  function startCounting(liftIndex, setIndex) {
+  /**
+   * 저절로 시작할 때 주는 준비 시간.
+   *
+   * 손으로 누를 때는 3초면 된다 — 이미 바 앞에 서서 누른 것이기 때문이다.
+   * 저절로 시작하는 카운트는 그렇지 않다. 앉아 있다가, 물 마시다가,
+   * 원판 갈다가 시작된다. 랙에서 바를 빼기 전에 "하나"가 나가면 그 세트는
+   * 내내 박자가 어긋나고, 어긋난 박자는 없느니만 못하다.
+   */
+  var AUTO_LEAD_SECONDS = 8;
+
+  /**
+   * 세는 중의 큰 숫자와 그 아래 한마디.
+   *
+   * 전체를 다시 그리지 않고 두 칸만 바꾼다 — 세트 중에 화면이 통째로
+   * 깜빡이면 숫자를 놓친다.
+   *
+   * '준비 8'처럼 글자가 길어질 때는 작게 쓴다. 76px 그대로 두면 화면
+   * 밖으로 나가서, 정작 기다리라는 그 숫자가 안 보인다.
+   */
+  function showCount(big, word) {
+    var box = document.getElementById('count-now');
+    if (box) {
+      box.textContent = big;
+      box.classList.toggle('wide', big.length > 2);
+    }
+    var say = document.getElementById('count-say');
+    if (say) say.textContent = word;
+  }
+
+  function startCounting(liftIndex, setIndex, leadSeconds) {
     stopCounting(false);
     var lift = state.lifts[liftIndex];
     var set = lift && lift.sets[setIndex];
     if (!set) return;
 
-    var input = { repRange: set.targetReps, tempo: tempoOf() };
+    var lead = typeof leadSeconds === 'number' ? leadSeconds : 3;
+    var input = { repRange: set.targetReps, tempo: tempoOf(), leadInSeconds: lead };
     var cues = E.buildCues(input);
     var run = { liftIndex: liftIndex, setIndex: setIndex, rep: 0, timers: [], startedAt: Date.now() };
     state.counting = run;
 
+    /*
+     * 준비 시간을 세어 보여 준다.
+     *
+     * 안 그러면 화면이 "준비"에서 멈춰 있다. 언제 시작하는지 모르는 채로
+     * 8초를 보는 것은 고장난 화면을 보는 것과 같다.
+     *
+     * 그리고 **"시작"은 준비가 끝나는 자리로 옮긴다.** 엔진은 0초에
+     * "시작"을 넣어 두는데, 화면은 8초를 세고 있는데 소리는 벌써
+     * 시작이라고 하면 둘 중 하나를 믿어야 한다. 셋 다 같은 순간을 가리키게
+     * 맞춘다 — 준비 1 다음이 시작이고, 그다음이 하나다.
+     */
+    for (var left = lead; left > 0; left -= 1) {
+      (function (remaining) {
+        run.timers.push(setTimeout(function () {
+          if (state.counting !== run) return;
+          showCount('준비 ' + remaining, '');
+        }, (lead - remaining) * 1000));
+      })(left);
+    }
+    run.timers.push(setTimeout(function () {
+      if (state.counting !== run) return;
+      showCount('시작', '');
+      speak('시작');
+    }, lead * 1000));
+
     cues.forEach(function (cue) {
+      // 0번 신호("시작")는 준비가 끝나는 자리에서 이미 내보냈다.
+      if (cue.rep === 0) return;
       run.timers.push(setTimeout(function () {
         if (state.counting !== run) return;
         run.rep = cue.rep;
         speak(cue.say);
         // 화면의 숫자도 같이 올라간다 — 소리가 안 나는 기기에서도 세어진다.
-        var box = document.getElementById('count-now');
-        if (box) box.textContent = cue.rep > 0 ? String(cue.rep) : '준비';
-        var word = document.getElementById('count-say');
-        if (word) word.textContent = cue.say;
+        showCount(String(cue.rep), cue.say);
         if (cue.rep >= set.targetReps.max) {
           run.timers.push(setTimeout(function () {
             if (state.counting === run) stopCounting(true);
@@ -3836,6 +3939,94 @@
     });
 
     render();
+  }
+
+  /**
+   * 세어 주기 판 — 시작 버튼, 속도, 세트마다 자동.
+   *
+   * 셋 다 여기 둔다. 속도와 자동은 원래 설정 모달 안에 있었는데, 거기
+   * 있다는 걸 아무도 몰랐다. 쓰는 자리에 없는 설정은 없는 설정이다.
+   */
+  function countPanel(liftIndex, setIndex) {
+    var tempo = tempoOf();
+    var speed = E.speedOf(tempo);
+    var box = el('div', { class: 'count-panel' }, []);
+
+    box.appendChild(el('button', {
+      type: 'button', class: 'count-start',
+      title: '한 회에 ' + E.repSeconds(tempo) + '초로 세어 줍니다 (' + E.tempoLabel(tempo) + ')',
+      onclick: function () { startCounting(liftIndex, setIndex); },
+    }, [
+      el('span', { class: 'count-play', text: '▶', 'aria-hidden': 'true' }),
+      el('span', { text: '박자 맞춰 세어주기' }),
+      el('span', { class: 'count-tempo', text: '한 회 ' + E.repSeconds(tempo) + '초' }),
+    ]));
+
+    /*
+     * 속도는 초로 줄 세운 축이다. 유튜브 배속과 다른 점이 하나 있다 —
+     * 배속은 같은 것을 빨리 돌리는 것이지만, 여기서는 **다른 세트가 된다.**
+     * 그래서 고를 때 그 말을 같이 띄운다.
+     */
+    var speeds = el('div', { class: 'count-speed' }, [
+      el('span', { class: 'rir-label', text: '속도' }),
+    ]);
+    E.TEMPO_SPEEDS.forEach(function (item) {
+      var on = speed === item.id;
+      speeds.appendChild(el('button', {
+        type: 'button', class: 'chip', 'aria-pressed': String(on),
+        title: item.note,
+        text: item.label,
+        onclick: function () {
+          state.tempo = item.tempo;
+          pushLog('템포', '<b>' + item.label + '</b> · 한 회 ' +
+            E.repSeconds(item.tempo) + '초 — ' + item.note);
+          persist();
+          render();
+        },
+      }));
+    });
+    /*
+     * 어느 속도에도 안 맞으면(멈췄다 같은 것) 아무것도 켜지 않고, 대신
+     * 지금 템포를 적어 둔다. 가까운 것을 켜 주면 사용자가 정한 템포가
+     * 조용히 바뀐 것처럼 보인다.
+     */
+    if (!speed) speeds.appendChild(el('span', { class: 'count-tempo', text: E.tempoLabel(tempo) }));
+    box.appendChild(speeds);
+
+    /*
+     * 세트마다 자동.
+     *
+     * 여섯 세트면 ▶를 여섯 번 누른다. 그 여섯 번이 전부 **바벨을 잡기
+     * 직전**에 온다 — 제일 누르기 싫은 순간이다.
+     *
+     * 켜면 휴식이 끝나고 준비 시간을 준 뒤 저절로 시작한다. 준비 시간을
+     * 길게 잡는 이유는, 저절로 시작하는 카운트는 랙에서 바를 빼기 전에
+     * 이미 "하나"를 세고 있으면 그 세트 내내 박자가 어긋나기 때문이다.
+     */
+    var auto = Boolean(state.autoCount);
+    box.appendChild(el('button', {
+      type: 'button', class: 'count-auto', 'aria-pressed': String(auto),
+      title: auto ? '끄면 ▶를 누를 때만 셉니다' : '켜면 세트마다 저절로 시작합니다',
+      onclick: function () {
+        state.autoCount = !auto;
+        if (!state.autoCount) stopCounting(false);
+        /*
+         * 켜는 순간 지금 세트를 시작하지 않는다.
+         *
+         * 스위치를 켠 사람은 화면을 보고 있지, 바를 잡고 있지 않다. 켜자마자
+         * 등 뒤에서 카운트가 돌면 그 세트는 버린 세트가 된다. **다음
+         * 세트부터** 적용한다 — 지금 세고 싶으면 ▶가 바로 위에 있다.
+         */
+        state.autoCountedFor = liftIndex + ':' + setIndex;
+        persist();
+        render();
+      },
+    }, [
+      el('span', { text: '세트마다 자동으로 시작' }),
+      el('span', { class: 'count-tempo', text: auto ? '켜짐 · 준비 ' + AUTO_LEAD_SECONDS + '초' : '꺼짐' }),
+    ]));
+
+    return box;
   }
 
   /** 지금 세는 중인 세트의 화면. 숫자가 크고, 멈추는 버튼 하나뿐이다. */
@@ -4321,8 +4512,34 @@
     return (planned > 0 ? planned + 'kg' : '맨몸') + ' × ' + reps;
   }
 
+  /**
+   * 세트마다 자동으로 셀 때, 지금 세트를 시작할 때가 됐는지 본다.
+   *
+   * 지키는 것 셋.
+   *   · 쉬는 중에는 시작하지 않는다 — 쉬는 사람에게 "하나"를 세면 안 된다.
+   *   · 세트 하나당 한 번만 시작한다. 그러지 않으면 화면을 다시 그릴 때마다
+   *     카운트가 처음으로 돌아간다.
+   *   · **멈추기를 누른 세트는 다시 시작하지 않는다.** 그 사람은 지금
+   *     세지 말라고 말한 것이다.
+   */
+  function maybeAutoCount(liftIndex, setIndex) {
+    if (!state.autoCount || state.rest || state.counting) return;
+    var key = liftIndex + ':' + setIndex;
+    if (state.autoCountedFor === key) return;
+    state.autoCountedFor = key;
+    // 그리는 중에 다시 그릴 수 없다. 이번 그리기가 끝난 뒤로 미룬다.
+    setTimeout(function () {
+      if (!state.autoCount || state.rest || state.counting) return;
+      var lift = state.lifts[liftIndex];
+      var set = lift && lift.sets[setIndex];
+      if (!set || set.done) return;
+      startCounting(liftIndex, setIndex, AUTO_LEAD_SECONDS);
+    }, 0);
+  }
+
   /** 지금 할 세트. 화면에서 제일 커야 한다 — 지금 할 일은 이것 하나다. */
   function renderCurrentSet(lift, liftIndex, set, setIndex) {
+    maybeAutoCount(liftIndex, setIndex);
     var plates = set.weightKg > 0 && lift.loading ? E.platePlan(set.weightKg, lift.loading) : null;
     var target = set.targetReps.min === set.targetReps.max
       ? set.targetReps.max + '회'
@@ -4436,19 +4653,7 @@
       ]),
     ]));
 
-    /*
-     * 박자를 받으며 하고 싶은 날이 있다. 누르면 템포대로 세어 주고,
-     * 멈춘 자리까지를 반복 수로 제안한다 — 앱이 실제 반복을 본 건 아니다.
-     */
-    body.push(el('button', {
-      type: 'button', class: 'count-start',
-      title: E.tempoLabel(tempoOf()) + ' 템포로 세어 줍니다',
-      onclick: function () { startCounting(liftIndex, setIndex); },
-    }, [
-      el('span', { class: 'count-play', text: '▶', 'aria-hidden': 'true' }),
-      el('span', { text: '박자 맞춰 세어주기' }),
-      el('span', { class: 'count-tempo', text: E.tempoLabel(tempoOf()) }),
-    ]));
+    body.push(countPanel(liftIndex, setIndex));
 
     /*
      * 세트를 넘기는 버튼이 따로 없다는 게 문제였다. RIR 숫자를 누르면
@@ -4461,26 +4666,39 @@
       : '이 종목을 마칩니다';
     body.push(el('div', { class: 'rir-ask' }, [
       el('b', { text: (setIndex + 1) + '세트 끝내기' }),
-      el('span', {
-        title: 'RIR = 이 세트에서 몇 회 더 할 수 있었는지. 0 = 실패 지점.',
-        text: '몇 회 더 할 수 있었나요?',
-      }),
+      el('span', { text: '방금 세트, 몇 회 더 할 수 있었나요?' }),
     ]));
 
+    /*
+     * 버튼에 숫자만 있으면 무엇을 묻는지 안 보인다.
+     *
+     * 20년 하신 트레이너가 "이 1 2 3 4 실패가 뭘 요구하는 거냐"고 물으셨다.
+     * 위에 질문을 써 뒀지만, 사람은 질문이 아니라 **버튼을 읽는다.** 버튼이
+     * 스스로 답이 되게 쓴다 — "2"가 아니라 "2회 더".
+     *
+     * 실패도 글자를 바꾼다. 실패까지 가는 건 일부러 하는 일인데 "실패"라고
+     * 적어 두면 잘못한 것처럼 읽힌다.
+     */
     var chips = el('div', { class: 'rir-row now-rir' }, []);
     [0, 1, 2, 3, 4].forEach(function (rir) {
+      var label = rir === 0 ? '못 함' : rir === 4 ? '4회+' : rir + '회';
       chips.appendChild(el('button', {
         type: 'button',
         class: 'chip' + (rir === 0 ? ' fail' : ''),
         'aria-pressed': 'false',
-        'aria-label': (rir === 0 ? '실패 지점까지 수행' : '남은 반복 ' + rir + '회') +
+        'aria-label': (rir === 0 ? '더 못 들었음, 실패 지점까지 수행' : rir + '회 더 할 수 있었음') +
           '으로 기록하고 ' + nextLabel,
-        text: rir === 0 ? '실패' : String(rir),
+        text: label,
         onclick: function () { completeSet(liftIndex, setIndex, rir); },
       }));
     });
     body.push(chips);
-    body.push(el('p', { class: 'hint-line', text: '누르면 기록되고 ' + nextLabel + '.' }));
+    /*
+     * **왜 묻는지**까지 써 둔다. 아무 뜻 없이 누르는 버튼이 되면 사람은
+     * 대충 누르고, 대충 누른 값으로 다음 주 무게가 정해진다.
+     */
+    body.push(el('p', { class: 'hint-line', text:
+      '누르면 기록되고 ' + nextLabel + '. 이 답으로 다음 세트와 다음 주 무게가 정해집니다.' }));
 
     return el('div', { class: 'set-now' }, [
       el('div', { class: 'now-body' }, body),
@@ -5616,7 +5834,7 @@
    */
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
-    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'voiceRate',
+    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'voiceRate', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions',
   ];
 

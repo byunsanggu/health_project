@@ -4,11 +4,13 @@ import { describe, it } from 'node:test';
 import {
   DEFAULT_TEMPO,
   TEMPO_PRESETS,
+  TEMPO_SPEEDS,
   buildCues,
   koreanCount,
   repSeconds,
   repsAt,
   setSeconds,
+  speedOf,
   tempoLabel,
 } from '../tempo.ts';
 
@@ -126,5 +128,44 @@ describe('멈춘 자리', () => {
 
   it('한 세트에 걸리는 시간을 준다', () => {
     assert.equal(setSeconds(input), 33);
+  });
+});
+
+describe('속도', () => {
+  it('느린 것부터 빠른 것 순으로 놓여 있다', () => {
+    /*
+     * 화면에 그대로 뿌리는 순서다. 뒤섞여 있으면 "천천히 · 빠르게 · 보통"
+     * 처럼 나와서 눈금으로 안 읽힌다.
+     */
+    const seconds = TEMPO_SPEEDS.map((speed) => repSeconds(speed.tempo));
+    assert.deepEqual(seconds, [...seconds].sort((a, b) => b - a));
+    assert.deepEqual(seconds, [5, 3, 2]);
+  });
+
+  it('지금 템포가 어느 속도인지 찾는다', () => {
+    for (const speed of TEMPO_SPEEDS) assert.equal(speedOf(speed.tempo), speed.id);
+    assert.equal(speedOf(DEFAULT_TEMPO), 'normal');
+  });
+
+  it('초가 같아도 다른 템포면 속도로 치지 않는다', () => {
+    /*
+     * "멈췄다"(2-2-1-0)와 "천천히"(3-1-1-0)는 둘 다 5초다. 초만 보고
+     * 맞히면 사용자가 고른 템포가 조용히 다른 것으로 바뀐다.
+     */
+    const pause = { eccentric: 2, bottom: 2, concentric: 1, top: 0 };
+    assert.equal(repSeconds(pause), 5);
+    assert.equal(speedOf(pause), undefined);
+  });
+
+  it('속도마다 실제로 쓰는 템포다', () => {
+    /*
+     * 빠르기만 곱한 가짜 눈금이 아니라는 확인. 내리는 구간이 올리는
+     * 구간보다 짧은 템포는 없어야 한다 — 그건 떨어뜨리는 것이다.
+     */
+    for (const speed of TEMPO_SPEEDS) {
+      assert.ok(speed.tempo.eccentric >= speed.tempo.concentric,
+        `${speed.label}: 내리는 구간이 올리는 구간보다 짧습니다`);
+      assert.ok(speed.note.length > 0);
+    }
   });
 });
