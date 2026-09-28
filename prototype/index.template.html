@@ -1647,6 +1647,20 @@ input[type="search"] {
 .count-num span { font-size: 13px; color: var(--muted); min-height: 20px; }
 .count-live .finish { max-width: 240px; }
 
+/*
+ * 설문 첫 화면의 "이미 계정이 있나요" 줄. 조용해야 한다 — 처음 온 사람은
+ * 지나쳐야 하고, 폰을 바꾼 사람만 알아보면 된다.
+ */
+.have-account {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--muted); margin-bottom: 10px;
+}
+.linkish {
+  border: 0; background: none; padding: 0;
+  font-size: 12.5px; font-weight: 600; color: var(--accent);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+
 /* ── 휴식 시간 설정 ─────────────────────────────── */
 .rest-presets { padding: 0; }
 .rest-presets .pick { padding: 7px 12px; font-size: 12.5px; font-variant-numeric: tabular-nums; }

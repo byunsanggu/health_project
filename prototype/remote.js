@@ -244,6 +244,7 @@ var Remote = (function () {
       auth: false,
       body: { email: userEmail, password: password },
     }).then(function (payload) {
+      forgetDeviceLink();
       saveSession(payload);
       /*
        * 이메일 확인이 켜져 있으면 토큰 없이 사용자만 돌아온다. 가입은
@@ -262,14 +263,31 @@ var Remote = (function () {
       auth: false,
       body: { email: userEmail, password: password },
     }).then(function (payload) {
+      forgetDeviceLink();
       saveSession(payload);
       return { signedIn: true };
     });
   }
 
+  /**
+   * 새 로그인이다 — 이 기기가 이 계정과 맞춰 본 적이 없는 상태로 되돌린다.
+   *
+   * 이 표시가 남아 있으면 다음 동기화가 이 기기 설정을 계정에 밀어 넣는다.
+   * 폰을 물려받았거나 다른 계정으로 갈아탄 경우, 남의 설정이 내 계정을
+   * 덮어쓰게 된다.
+   *
+   * 토큰 갱신에서는 부르지 않는다. 갱신은 같은 사람이 계속 쓰는 중인데,
+   * 거기서 지우면 다음 동기화가 이 기기에서 방금 고친 것을 버리고 서버
+   * 것을 되살린다.
+   */
+  function forgetDeviceLink() {
+    patch({ cursor: null, settingsSynced: false });
+  }
+
   function signOut() {
     var done = function () {
-      patch({ accessToken: null, refreshToken: null, cursor: null });
+      patch({ accessToken: null, refreshToken: null });
+      forgetDeviceLink();
     };
     if (!signedIn()) { done(); return Promise.resolve(); }
     return request('/auth/v1/logout', { method: 'POST' }).then(done, done);
@@ -445,6 +463,7 @@ var Remote = (function () {
     var token = params.get('access_token');
     if (!token) return { ok: false, message: '로그인 정보를 받지 못했습니다.' };
 
+    forgetDeviceLink();
     patch({
       accessToken: token,
       refreshToken: params.get('refresh_token') || null,

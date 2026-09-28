@@ -80,13 +80,29 @@ export interface SyncOptions {
   settings?: { updatedAt: string; body: unknown } | null;
   /** 서버 설정이 더 새 것일 때 불린다 */
   onSettings?: (settings: RemoteSettings) => void;
+  /**
+   * 이 기기가 **이 계정과 설정을 맞춰 본 적이 없다**는 표시.
+   *
+   * 평소의 규칙은 나중에 고친 쪽이 이기는 것이다. 두 기기가 같은 계정을
+   * 같이 써 온 사이라면 그게 맞다.
+   *
+   * 처음 붙는 기기는 다르다. 폰을 바꾼 사람이 설문을 처음부터 다시 하고
+   * 로그인하면, 방금 만든 설문이 "제일 나중"이라서 **서버에 쌓인 진짜
+   * 프로그램을 덮어쓴다.** 쓰던 프로그램도, 헬스장 기구도, 뺀 종목도
+   * 같이 사라진다.
+   *
+   * 처음 붙을 때는 계정 쪽이 이긴다. 방금 한 설문을 잃는 것과 몇 달치
+   * 설정을 잃는 것은 비교할 일이 아니다. 새로 가입한 사람은 서버가
+   * 비어 있으므로 그대로 올라간다 — 손해 보는 사람이 없다.
+   */
+  settingsFirstPull?: boolean;
 }
 
 export interface SyncResult {
   pushed: number;
   pulled: number;
   /** 설정이 어느 쪽으로 움직였는가 */
-  settings?: 'pushed' | 'pulled' | 'same';
+  settings?: 'pushed' | 'pulled' | 'same' | 'restored';
   /** 다음에 쓸 표시. 실패했으면 넣어 준 값 그대로다 */
   cursor: string | null;
   /** 왜 멈췄는가. 성공이면 없다 */
@@ -252,7 +268,11 @@ export async function syncOnce(
       const mine = options.settings;
       const theirs = await transport.pullSettings();
 
-      if (!theirs || theirs.updatedAt < mine.updatedAt) {
+      if (theirs && options.settingsFirstPull) {
+        // 처음 붙는 기기다. 시각을 보지 않는다 — 계정에 있는 것이 진짜다.
+        if (options.onSettings) options.onSettings(theirs);
+        settingsMoved = 'restored';
+      } else if (!theirs || theirs.updatedAt < mine.updatedAt) {
         await transport.pushSettings({ updatedAt: mine.updatedAt, body: mine.body });
         settingsMoved = 'pushed';
       } else if (theirs.updatedAt > mine.updatedAt) {
@@ -286,6 +306,14 @@ export async function syncOnce(
 }
 
 function describe(pushed: number, pulled: number, settings?: SyncResult['settings']): string {
+  /*
+   * 되살린 것은 따로 말한다. "설정을 가져왔습니다"로 뭉뚱그리면, 방금
+   * 답한 설문 대신 옛 프로그램이 떠 있는 것을 보고 고장난 줄 안다.
+   */
+  if (settings === 'restored') {
+    const head = '계정에 저장돼 있던 프로그램·헬스장을 되살렸습니다.';
+    return pulled > 0 ? `${head} 기록 ${pulled}개도 받았습니다.` : head;
+  }
   const tail = settings === 'pulled' ? ' 설정도 가져왔습니다.' : '';
   if (pushed === 0 && pulled === 0) {
     return settings === 'pulled' ? '설정을 가져왔습니다.' : '이미 맞춰져 있습니다.';

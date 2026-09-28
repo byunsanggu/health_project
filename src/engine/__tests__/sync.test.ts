@@ -347,6 +347,51 @@ describe('설정 맞추기', () => {
     assert.equal(result.settings, 'same');
   });
 
+  it('처음 붙는 기기는 계정 것을 되살린다 — 새로 한 설문이 더 새 것이어도', async () => {
+    /*
+     * 폰을 바꾼 사람이 설문을 처음부터 다시 하고 로그인하는 길이다.
+     * 방금 만든 설문이 "제일 나중"이라서, 시각만 보면 **서버에 쌓인
+     * 진짜 프로그램을 덮어쓴다.** 쓰던 프로그램·헬스장·뺀 종목이 같이
+     * 사라진다 — 한 번 사라지면 되돌릴 데가 없다.
+     */
+    const server = withSettings(mine('2026-01-02T00:00:00.000Z', { program: '쓰던 것' }));
+    let got: unknown = null;
+    const result = await syncOnce(newStore(), server.transport, {
+      settings: mine('2026-09-26T10:00:00.000Z', { program: '방금 한 설문' }),
+      settingsFirstPull: true,
+      onSettings: (settings) => { got = settings.body; },
+    });
+    assert.equal(result.settings, 'restored');
+    assert.deepEqual(got, { program: '쓰던 것' });
+    assert.deepEqual(server.current()?.body, { program: '쓰던 것' });
+    assert.match(result.message, /되살렸습니다/);
+  });
+
+  it('처음 붙는 기기라도 서버가 비어 있으면 올린다', async () => {
+    // 새로 가입한 사람이다. 되살릴 것이 없으니 방금 한 설문이 맞다.
+    const server = withSettings(null);
+    const result = await syncOnce(newStore(), server.transport, {
+      settings: mine('2026-09-26T10:00:00.000Z', { program: '방금 한 설문' }),
+      settingsFirstPull: true,
+    });
+    assert.equal(result.settings, 'pushed');
+    assert.deepEqual(server.current()?.body, { program: '방금 한 설문' });
+  });
+
+  it('한 번 맞춰 본 뒤에는 나중에 고친 쪽이 이긴다', async () => {
+    /*
+     * 처음만 계정이 이긴다. 그 뒤로도 계속 서버가 이기면 이 기기에서
+     * 고친 것이 영영 안 올라간다.
+     */
+    const server = withSettings(mine('2026-01-02T00:00:00.000Z', { program: '쓰던 것' }));
+    const result = await syncOnce(newStore(), server.transport, {
+      settings: mine('2026-09-26T10:00:00.000Z', { program: '여기서 고친 것' }),
+      settingsFirstPull: false,
+    });
+    assert.equal(result.settings, 'pushed');
+    assert.deepEqual(server.current()?.body, { program: '여기서 고친 것' });
+  });
+
   it('설정을 안 주면 건드리지 않는다', async () => {
     // 설정을 안 쓰는 화면에서도 기록 동기화는 돌아야 한다.
     const server = withSettings(mine('2026-09-26T10:00:00.000Z', { daysPerWeek: 4 }));

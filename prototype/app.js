@@ -1689,7 +1689,15 @@
      * 이메일·비밀번호가 한 상자에 다 들어가서, 뭘 하는 화면인지 알 수가
      * 없었다. 계정은 계정 화면에서 만든다.
      */
-    var auth = state.authOpen && !onboarding;
+    /*
+     * 로그인 화면은 설문보다 앞에 온다.
+     *
+     * 전에는 설문이 이겼다. 그래서 설문 첫 화면에서 "로그인"을 눌러도
+     * 아무 일이 안 일어났다 — 누른 사람은 앱이 고장났다고 본다.
+     * 닫으면 설문의 그 자리로 되돌아가므로 잃는 것은 없다.
+     */
+    var auth = state.authOpen;
+    if (auth) onboarding = false;
     tabbar.hidden = onboarding || auth;
 
     var key = viewKey();
@@ -5868,6 +5876,24 @@
     rebuildSession();
   }
 
+  /**
+   * 계정에 있던 프로그램을 그대로 쓴다 — 설문은 건너뛴다.
+   *
+   * 폰을 바꾼 사람이 로그인했을 때 부른다. 프로그램도 헬스장도 동의 기록도
+   * 서버에서 이미 받아 왔으므로, 설문을 다시 돌려 **계산할 것이 없다.**
+   * completeOnboarding()을 부르면 안 되는 이유가 그것이다 — 그건 답을
+   * 가지고 프로그램을 새로 짜는 함수라, 받아 온 프로그램을 덮어쓴다.
+   *
+   * 앱을 껐다 켠 사람이 지나는 길(restore)과 같은 자리에 내려놓는다.
+   */
+  function adoptAccountProgram() {
+    state.onboarding = { active: false, step: 0 };
+    state.tab = 'today';
+    loadScenario(state.scenario || 'normal', true);
+    persist();
+    pushLog('로그인', '쓰던 프로그램을 불러왔습니다 — <b>설문은 건너뜁니다.</b>');
+  }
+
   function syncStatusLine() {
     var pending = storage.outbox().length;
     return E.syncAgeLine(state.lastSyncedAt || null, Date.now(), pending);
@@ -5880,14 +5906,26 @@
     state.syncing = true;
     if (after) after();
 
+    /*
+     * 이 기기가 이 계정과 설정을 맞춰 본 적이 있는가.
+     *
+     * 없으면 계정 쪽이 이긴다. 그러지 않으면 폰을 바꾼 사람이 설문을
+     * 다시 하고 로그인했을 때, 방금 만든 설문이 제일 나중이라 서버의
+     * 진짜 프로그램을 덮어쓴다.
+     */
+    var firstPull = !Remote.read().settingsSynced;
+
     return E.syncOnce(storage, Remote.transport(), {
       cursor: Remote.read().cursor || null,
       settings: settingsStamp(),
+      settingsFirstPull: firstPull,
       onSettings: applyRemoteSettings,
     })
       .then(function (result) {
         state.syncing = false;
         Remote.patch({ cursor: result.cursor });
+        // 설정이 한 번이라도 오갔으면 이제 이 기기도 이 계정의 기기다.
+        if (result.settings && result.settings !== undefined) Remote.patch({ settingsSynced: true });
         if (!result.error) {
           state.lastSyncedAt = new Date().toISOString();
           storage.patch({});
@@ -5906,6 +5944,19 @@
           }
         }
         pushLog('서버', result.message);
+        /*
+         * 설문 도중에 로그인했고, 계정에 프로그램이 있었다면 남은 설문은
+         * 물어볼 것이 없다. 답은 이미 서버에서 왔다.
+         *
+         * 'pushed'일 때는 하지 않는다 — 그건 서버가 비어 있어서 방금 한
+         * 설문이 올라간 경우다. 새로 가입한 사람의 설문을 건너뛰면
+         * 프로그램이 없는 채로 앱이 열린다.
+         */
+        var restored = result.settings === 'restored' || result.settings === 'pulled';
+        if (restored && state.onboarding && state.onboarding.active &&
+            state.program && state.answers) {
+          adoptAccountProgram();
+        }
         persist();
         if (after) after();
         return result;
@@ -6053,6 +6104,17 @@
       disabled: form.busy ? '' : null,
       onclick: submit,
     }));
+
+    /*
+     * 설문 도중에 들어왔으면 되돌아갈 길이 있어야 한다. 없으면 계정이
+     * 없는 사람이 이 화면에 갇힌다.
+     */
+    if (state.onboarding && state.onboarding.active) {
+      screen.appendChild(el('button', {
+        type: 'button', class: 'finish quiet', text: '← 설문으로 돌아가기',
+        onclick: closeAuth,
+      }));
+    }
 
     screen.appendChild(el('button', {
       type: 'button', class: 'finish quiet',
@@ -8892,7 +8954,35 @@
           pushLog('계정', '<b>' + form.email.trim() + '</b>' +
             (signUp ? '으로 가입했습니다.' : '으로 로그인했습니다.'));
         }
-        completeOnboarding();
+
+        /*
+         * 가입과 로그인은 여기서 갈린다.
+         *
+         * **가입**은 빈 계정이다. 방금 한 설문이 전부이므로 먼저 프로그램을
+         * 만들고 올린다.
+         *
+         * **로그인**은 다르다. 계정에 쓰던 프로그램이 있을 수 있고, 그
+         * 사람에게 필요한 건 방금 한 설문이 아니라 그것이다. 먼저 맞춰
+         * 보고, 되살아났으면 설문 결과를 덮어쓰지 않는다 —
+         * completeOnboarding()은 답을 가지고 프로그램을 새로 짜는 함수라,
+         * 되살린 프로그램을 그 자리에서 날려 버린다.
+         */
+        var finish = function () {
+          if (state.onboarding && state.onboarding.active) {
+            // 되살릴 것이 없었다. 방금 한 설문으로 프로그램을 만든다.
+            completeOnboarding();
+            syncNow();
+            return;
+          }
+          // 되살아났다 — 이미 앱으로 들어와 있다. 화면만 바꿔 준다.
+          render();
+        };
+        if (signUp || !Remote.signedIn()) {
+          completeOnboarding();
+          syncNow();
+        } else {
+          syncNow().then(finish, finish);
+        }
       }, function (error) {
         form.busy = false;
         form.password = '';
@@ -9036,6 +9126,27 @@
    * 그리고 이 화면이 첫 화면이다 — 체중을 묻기 전에 동의를 받는다.
    */
   function stepConsent() {
+    /*
+     * 이미 계정이 있는 사람의 문을 **맨 앞에** 낸다.
+     *
+     * 전에는 가입 단계가 맨 뒤에만 있었다. 폰을 바꾼 사람은 동의부터
+     * 경력·헬스장·실측까지 전부 다시 답한 뒤에야 로그인 칸을 만났다.
+     * 그 사람에게 필요한 것은 설문이 아니라 쓰던 프로그램이다.
+     *
+     * 조용하게 둔다. 처음 온 사람에게는 상관없는 줄이라, 크게 띄우면
+     * 아직 계정이 없는 사람이 여기서 멈춘다.
+     */
+    if (typeof Remote !== 'undefined' && Remote.configured() && !Remote.signedIn()) {
+      screen.appendChild(el('div', { class: 'have-account' }, [
+        el('span', { text: '폰을 바꾸셨거나 쓰던 계정이 있으신가요?' }),
+        el('button', {
+          type: 'button', class: 'linkish', text: '로그인',
+          title: '로그인하면 쓰던 프로그램과 기록을 불러오고 설문은 건너뜁니다',
+          onclick: function () { openAuth('signin'); },
+        }),
+      ]));
+    }
+
     screen.appendChild(el('div', { class: 'notice' }, [
       el('div', { class: 'label', text: '먼저 확인해 주세요' }),
       el('div', { text:
