@@ -554,6 +554,34 @@ var Remote = (function () {
     return rpc('unshare_skip', { target: gymId, exercise: exerciseId });
   }
 
+  /**
+   * 다시 부를 시각과 할 말을 올린다.
+   *
+   * **판단은 앱이 이미 끝냈다.** 여기서 올라가는 것은 결론뿐이라, 서버는
+   * 통증도 세션 기록도 볼 필요가 없다.
+   */
+  function queueNudge(subscription, at, title, body) {
+    if (!signedIn() || !subscription) return Promise.resolve(null);
+    return rpc('queue_nudge', {
+      sub: subscription,
+      at: at,
+      nudge_title: title,
+      nudge_body: body,
+    });
+  }
+
+  /**
+   * 예약을 지운다.
+   *
+   * 운동하고 나왔거나 아프다고 적었을 때 부른다. 이게 안 불리면 앱이
+   * 거짓말을 한다 — 방금 헬스장에서 나왔는데 두 시간 뒤에 "오늘 한 번
+   * 어떠세요"가 울린다.
+   */
+  function cancelNudge() {
+    if (!signedIn()) return Promise.resolve(null);
+    return rpc('cancel_nudge', {});
+  }
+
   /** 서버에서 내 기록을 지운다. 지우는 길이 없으면 개인정보를 받을 자격이 없다. */
   function deleteEverything() {
     return withAuth(function () {
@@ -567,6 +595,9 @@ var Remote = (function () {
        * 이게 없으면 "다 지웠습니다"가 거짓말이 된다.
        */
       return rpc('delete_my_gym_data', {}).catch(function () { return null; });
+    }).then(function () {
+      // 알림 예약도 같이. 지웠다면서 며칠 뒤에 알림이 울리면 안 된다.
+      return rpc('delete_my_push_data', {}).catch(function () { return null; });
     });
   }
 
@@ -621,6 +652,8 @@ var Remote = (function () {
     gymSkips: gymSkips,
     shareSkip: shareSkip,
     unshareSkip: unshareSkip,
+    queueNudge: queueNudge,
+    cancelNudge: cancelNudge,
     deleteEverything: deleteEverything,
   };
 })();

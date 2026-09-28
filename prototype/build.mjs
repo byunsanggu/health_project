@@ -27,6 +27,7 @@ const bodyMap = await readFile(new URL('bodyMap.js', root), 'utf8');
 const demoClips = await readFile(new URL('demoClips.js', root), 'utf8');
 const remote = await readFile(new URL('remote.js', root), 'utf8');
 const gymSearch = await readFile(new URL('gymSearch.js', root), 'utf8');
+const push = await readFile(new URL('push.js', root), 'utf8');
 const template = await readFile(new URL('index.template.html', root), 'utf8');
 
 /*
@@ -66,9 +67,34 @@ if (serverUrl && !/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/?$/i.test(serverUrl
   throw new Error('SUPABASE_URL이 https://xxxx.supabase.co 모양이 아닙니다.');
 }
 
+/*
+ * 알림 공개 열쇠(VAPID).
+ *
+ * 이건 **공개하라고 만든 값이다** — 브라우저가 구독할 때 그대로 쓴다.
+ * 짝인 비밀 열쇠는 Edge Function 비밀값에만 넣는다. 그쪽이 새면 남의
+ * 사용자에게 알림을 보낼 수 있게 되므로, 여기 섞여 들어오면 막는다.
+ */
+const vapidPublic = (process.env.VAPID_PUBLIC_KEY ?? '').trim();
+
+if (vapidPublic) {
+  /*
+   * 공개 열쇠는 비압축 P-256 점(65바이트)이라 base64url로 87자다.
+   * 비밀 열쇠는 32바이트라 43자 — 길이만 봐도 갈린다.
+   */
+  if (vapidPublic.length < 80) {
+    throw new Error(
+      'VAPID_PUBLIC_KEY가 공개 열쇠 모양이 아닙니다(87자여야 합니다). ' +
+      '비밀 열쇠를 넣으신 것은 아닌지 보세요 — 그건 Edge Function 비밀값에만 들어갑니다.');
+  }
+  if (!/^[A-Za-z0-9_-]+$/.test(vapidPublic)) {
+    throw new Error('VAPID_PUBLIC_KEY에 base64url이 아닌 글자가 있습니다.');
+  }
+}
+
 const bakedServer = serverUrl && serverKey
   ? `<script>window.__VOLUME_COACH_SERVER__=${JSON.stringify({
       url: serverUrl.replace(/\/+$/, ''), anonKey: serverKey,
+      ...(vapidPublic ? { vapidPublicKey: vapidPublic } : {}),
     })};</script>`
   : '';
 
@@ -80,6 +106,7 @@ const page = template
   .replace('<!--BAKED_SERVER-->', () => bakedServer)
   .replace('/*REMOTE_SCRIPT*/', () => remote)
   .replace('/*GYM_SEARCH_SCRIPT*/', () => gymSearch)
+  .replace('/*PUSH_SCRIPT*/', () => push)
   .replace('/*DEMO3D_SCRIPT*/', () => demo3d)
   .replace('/*APP_SCRIPT*/', () => app);
 

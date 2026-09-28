@@ -193,6 +193,7 @@
         voiceOn: state.voiceOn,
         tempo: state.tempo,
         autoCount: state.autoCount,
+        nudgeOn: state.nudgeOn,
         voiceRate: state.voiceRate,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
@@ -206,6 +207,8 @@
         consentRecord: state.consentRecord,
       },
     });
+    // 판단이 달라질 만한 것이 바뀌었으면 알림 예약도 다시 올린다.
+    scheduleNudgeSoon();
   }
 
   /**
@@ -249,6 +252,7 @@
       state.voiceOn = Boolean(settings.voiceOn);
       state.tempo = settings.tempo || null;
       state.autoCount = Boolean(settings.autoCount);
+      state.nudgeOn = Boolean(settings.nudgeOn);
       state.voiceRate = settings.voiceRate || 1;
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
@@ -485,6 +489,7 @@
     voiceOn: false,
     tempo: null,
     autoCount: false,
+    nudgeOn: false,
     autoCountedFor: null,
     voiceRate: 1,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
@@ -6570,6 +6575,163 @@
   }
 
   /** 연속 카드. 숫자 하나와 이번 주 점, 그리고 한 줄. */
+  /* ── 다시 부르기 ───────────────────────────────── */
+
+  /**
+   * 다음에 부를 시각.
+   *
+   * 늘 가던 시각 한 시간 전이다(nudge.ts). 다만 **지금으로부터 두 시간
+   * 안이면 내일로 미룬다** — 방금 앱을 연 사람에게 한 시간 뒤에 "나오세요"는
+   * 도움이 아니라 잔소리다.
+   */
+  var NUDGE_MIN_LEAD_MS = 2 * 60 * 60 * 1000;
+
+  function nudgeSlots() {
+    var starts = state.history
+      .map(function (session) { return session.startedAt; })
+      .filter(Boolean)
+      .slice(-12)
+      .map(function (stamp) { return new Date(stamp).getHours(); });
+
+    var hour = E.nudgeHour(starts);
+    var first = new Date();
+    first.setHours(hour, 0, 0, 0);
+    if (first.getTime() - Date.now() < NUDGE_MIN_LEAD_MS) first.setDate(first.getDate() + 1);
+
+    /*
+     * 하루만 보고 포기하지 않는다.
+     *
+     * 오늘 이미 운동한 사람은 오늘 부를 이유가 없다. 그렇다고 예약을
+     * 지워 버리면, 그 사람이 앱을 다시 안 여는 한 이번 주 내내 아무
+     * 알림도 안 간다. 부를 만한 첫날을 찾을 때까지 앞으로 걸어 본다.
+     *
+     * 이번 주까지만 본다. 다음 주가 되면 횟수도 남은 날도 달라져서,
+     * 지금 정한 말이 그때는 틀린 말이 된다.
+     */
+    var slots = [];
+    for (var i = 0; i < 7; i += 1) {
+      var at = new Date(first);
+      at.setDate(at.getDate() + i);
+      if (isoOf(at) > E.addDays(E.weekStart(isoOf(first)), 6)) break;
+      slots.push(at);
+    }
+    return slots;
+  }
+
+  /** 그 날짜(YYYY-MM-DD) 기준으로 이번 주에 몇 번 나왔고 며칠 남았나. */
+  function weekShapeOn(dateISO) {
+    var monday = E.weekStart(dateISO);
+    var sunday = E.addDays(monday, 6);
+    var sessions = state.history.concat(
+      state.todaySets.length > 0 ? [{ date: state.todayDate, sets: state.todaySets }] : []);
+
+    var days = {};
+    sessions.forEach(function (session) {
+      if (session.date < monday || session.date > sunday) return;
+      if (!session.sets || session.sets.length === 0) return;
+      days[session.date] = true;
+    });
+
+    var left = 0;
+    for (var d = dateISO; d <= sunday; d = E.addDays(d, 1)) left += 1;
+
+    return {
+      daysThisWeek: Object.keys(days).length,
+      daysLeftInWeek: left,
+      trainedOnThatDay: Boolean(days[dateISO]),
+      isThisWeek: monday === state.monday,
+    };
+  }
+
+  /**
+   * 알림을 예약한다 — 또는 지운다.
+   *
+   * 앱을 열 때, 세트를 기록할 때, 체크인할 때마다 다시 계산해 덮어쓴다.
+   * 쌓이지 않고 늘 하나만 남는다.
+   *
+   * **판단은 여기서 끝낸다.** 서버로 올라가는 것은 "언제, 뭐라고"뿐이라
+   * 서버는 통증도 세션도 볼 필요가 없다.
+   */
+  function scheduleNudge() {
+    if (typeof FitPush === 'undefined' || !FitPush.configured()) return Promise.resolve(null);
+    if (!Remote.configured() || !Remote.signedIn()) return Promise.resolve(null);
+
+    return FitPush.current().then(function (subscription) {
+      if (!subscription) return null;
+
+      var streak = currentStreak();
+      var worstPain = state.pain.reduce(function (worst, report) {
+        return Math.max(worst, report.score || 0);
+      }, 0);
+      var slots = nudgeSlots();
+
+      for (var i = 0; i < slots.length; i += 1) {
+        var at = slots[i];
+        var shape = weekShapeOn(isoOf(at));
+        var decision = E.decideNudge({
+          daysThisWeek: shape.daysThisWeek,
+          target: shape.isThisWeek ? streak.thisWeek.target : trainingDays().length,
+          daysLeftInWeek: shape.daysLeftInWeek,
+          worstPain: worstPain,
+          streakWeeks: streak.current,
+          sentThisWeek: 0,
+          trainedToday: shape.trainedOnThatDay,
+        });
+
+        if (decision.send) {
+          return Remote.queueNudge(subscription, at.toISOString(), decision.title, decision.body);
+        }
+        /*
+         * 아프거나 이번 주 약속을 이미 지켰으면 그 뒤 날을 봐도 같은
+         * 답이다. 더 걸어 보지 않는다.
+         */
+        if (decision.skip === 'pain' || decision.skip === 'done') break;
+      }
+
+      /*
+       * 부를 날이 없으면 예약을 지운다. 남겨 두면 어제 정한 말이 오늘
+       * 울린다 — 이미 운동하고 나온 사람에게.
+       */
+      return Remote.cancelNudge();
+    }).catch(function () {
+      // 예약에 실패해도 앱은 그대로 돈다. 알림은 있으면 좋은 것이지 기록이 아니다.
+      return null;
+    });
+  }
+
+  /**
+   * 다시 계산할 때가 됐을 때만 부른다.
+   *
+   * persist()는 세트를 하나 칠 때마다 돌기 때문에, 거기서 바로 예약을
+   * 올리면 한 세션에 스무 번 넘게 서버를 부른다. **판단이 달라질 만한
+   * 것이 바뀌었을 때만** 올린다 — 오늘 처음 한 세트, 통증, 날이 바뀐 것.
+   */
+  var nudgeKey = null;
+  var nudgeTimer = null;
+
+  function scheduleNudgeSoon() {
+    if (!state.nudgeOn) return;
+    var worst = state.pain.reduce(function (max, report) {
+      return Math.max(max, report.score || 0);
+    }, 0);
+    var key = [state.todayDate, state.todaySets.length > 0, worst, state.history.length].join('|');
+    if (key === nudgeKey) return;
+    nudgeKey = key;
+
+    // 연달아 바뀌면 마지막 것만 올린다.
+    if (nudgeTimer) clearTimeout(nudgeTimer);
+    nudgeTimer = setTimeout(function () {
+      nudgeTimer = null;
+      scheduleNudge();
+    }, 4000);
+  }
+
+  /** Date → YYYY-MM-DD. 그 기기의 달력 기준이다. */
+  function isoOf(date) {
+    var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+  }
+
   function streakCard(streak) {
     var dots = E.weekDots(streak.thisWeek);
     var row = el('span', { class: 'streak-dots', 'aria-hidden': 'true' }, []);
@@ -6594,6 +6756,75 @@
       streak.freezeAvailable
         ? el('p', { class: 'hint-line', text: '쉼표 1개 — 한 주 쉬어도 연속이 이어집니다.' })
         : null,
+      nudgeRow(),
+    ]);
+  }
+
+  /**
+   * "다시 불러 드릴까요" 한 줄.
+   *
+   * 연속 카드 안에 둔다. 알림을 켤 마음이 드는 자리는 설정 화면이 아니라
+   * **"한 번만 더 나오면 이번 주도 지킵니다"를 읽은 직후**다.
+   *
+   * 권한은 누른 그 순간에 묻는다. 앱을 켜자마자 뜨는 브라우저 창은 대개
+   * 거절당하고, 한 번 거절되면 다시 못 묻는다.
+   */
+  function nudgeRow() {
+    if (typeof FitPush === 'undefined' || !FitPush.configured()) return null;
+    if (!Remote.configured() || !Remote.signedIn()) return null;
+
+    /*
+     * iOS는 홈 화면에 설치한 PWA만 알림을 받는다. 사파리 탭에서는 권한
+     * 창조차 안 뜬다 — 눌러도 아무 일이 없는 버튼 대신 왜 안 되는지 적는다.
+     */
+    var iosTab = /iphone|ipad|ipod/i.test(navigator.userAgent) && !state.standalone;
+    if (iosTab) {
+      return el('p', { class: 'hint-line', text:
+        '다시 불러 드리려면 홈 화면에 설치하셔야 합니다 — 아이폰은 설치한 앱에만 알림이 옵니다.' });
+    }
+
+    if (FitPush.permission() === 'denied') {
+      return el('p', { class: 'hint-line', text:
+        '알림이 막혀 있습니다. 브라우저 설정에서 이 사이트의 알림을 허용해 주세요.' });
+    }
+
+    if (state.nudgeOn) {
+      return el('button', {
+        type: 'button', class: 'nudge-row', 'aria-pressed': 'true',
+        onclick: function () {
+          state.nudgeOn = false;
+          persist();
+          FitPush.disable();
+          Remote.cancelNudge();
+          pushLog('알림', '다시 부르기를 껐습니다.');
+          render();
+        },
+      }, [
+        el('span', { text: '이번 주가 빡빡하면 한 번 불러 드립니다' }),
+        el('span', { class: 'count-tempo', text: '켜짐' }),
+      ]);
+    }
+
+    return el('button', {
+      type: 'button', class: 'nudge-row', 'aria-pressed': 'false',
+      onclick: function () {
+        FitPush.enable().then(function (result) {
+          if (!result.ok) {
+            pushLog('알림', result.reason === 'denied'
+              ? '알림이 거절됐습니다. 브라우저 설정에서 허용하시면 켤 수 있습니다.'
+              : '알림을 켜지 못했습니다.');
+            return render();
+          }
+          state.nudgeOn = true;
+          persist();
+          pushLog('알림', '이번 주가 빡빡하면 한 번 불러 드립니다. ' +
+            '<b>아프다고 적으신 날은 부르지 않습니다.</b>');
+          return scheduleNudge().then(render, render);
+        });
+      },
+    }, [
+      el('span', { text: '이번 주가 빡빡하면 불러 드릴까요?' }),
+      el('span', { class: 'count-tempo', text: '꺼짐' }),
     ]);
   }
 
@@ -9769,4 +10000,9 @@
   markStandalone();
   registerWorker();
   render();
+  /*
+   * 며칠 만에 연 사람의 예약은 오래된 판단으로 들어 있다. 화면을 다 그린
+   * 뒤에 한 번 다시 올린다 — 첫 화면이 늦어지면 안 되므로 뒤로 미룬다.
+   */
+  setTimeout(scheduleNudge, 3000);
 })();

@@ -26,3 +26,13 @@ grant execute on function
   public.gym_people(text),
   public.delete_my_gym_data()
   to app_user;
+
+-- 알림 예약 쪽(schema.push.sql).
+-- 실제 Supabase는 public 스키마의 새 표에 authenticated 권한을 자동으로 준다.
+-- 여기서는 그걸 손으로 흉내 낸다.
+grant select, insert, update, delete on public.push_queue to app_user;
+grant execute on function
+  public.queue_nudge(jsonb, timestamptz, text, text),
+  public.cancel_nudge(),
+  public.delete_my_push_data()
+  to app_user;

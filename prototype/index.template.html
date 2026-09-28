@@ -1673,6 +1673,17 @@ input[type="search"] {
 .short-day.on { border-color: var(--accent); }
 .short-day.on .sheet-head .meta { color: var(--accent); }
 
+/* 연속 카드 안의 "불러 드릴까요" 한 줄. 카드를 흐트러뜨리지 않게 조용히. */
+.nudge-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  margin-top: 4px; padding: 8px 10px;
+  border: 1px dashed var(--line); border-radius: 9px; background: none;
+  font-size: 12px; color: var(--muted); text-align: left;
+}
+.nudge-row .count-tempo { margin-left: auto; }
+.nudge-row[aria-pressed="true"] { border-style: solid; border-color: var(--accent); color: var(--ink); }
+.nudge-row[aria-pressed="true"] .count-tempo { color: var(--accent); }
+
 /* ── 휴식 시간 설정 ─────────────────────────────── */
 .rest-presets { padding: 0; }
 .rest-presets .pick { padding: 7px 12px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -2086,5 +2097,6 @@ html[data-standalone] .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px)
 <!--BAKED_SERVER-->
 <script>/*REMOTE_SCRIPT*/</script>
 <script>/*GYM_SEARCH_SCRIPT*/</script>
+<script>/*PUSH_SCRIPT*/</script>
 <script>/*DEMO3D_SCRIPT*/</script>
 <script>/*APP_SCRIPT*/</script>
