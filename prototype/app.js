@@ -4012,7 +4012,40 @@
      * 이미 "하나"를 세고 있으면 그 세트 내내 박자가 어긋나기 때문이다.
      */
     var auto = Boolean(state.autoCount);
-    box.appendChild(el('button', {
+    var toggles = el('div', { class: 'count-toggles' }, []);
+
+    /*
+     * 소리를 여기에 둔다.
+     *
+     * "박자 맞춰 세어주기"를 누른 사람은 **목소리를 기대한다.** 그런데
+     * 소리는 기본이 꺼짐이고, 켜는 자리가 설정 모달 안에 있었다. 화면
+     * 숫자만 올라가는 것을 보고 고장난 줄 안다. 속도와 자동을 여기로
+     * 내리면서 소리만 두고 온 것이 잘못이었다.
+     *
+     * 켜는 순간 한마디 읽는다. 보기 좋으라고가 아니라 **iOS 때문이다** —
+     * 손으로 누른 그 순간에 한 번 소리를 내지 않으면, 그 뒤로는 앱이
+     * 말하려 해도 브라우저가 막는다.
+     */
+    var voice = Boolean(state.voiceOn);
+    var canSpeak = 'speechSynthesis' in window;
+    toggles.appendChild(el('button', {
+      type: 'button', class: 'count-auto', 'aria-pressed': String(voice && canSpeak),
+      disabled: canSpeak ? null : '',
+      title: canSpeak
+        ? (voice ? '끄면 화면 숫자로만 셉니다' : '켜면 목소리로 세어 줍니다')
+        : '이 기기는 말하기를 지원하지 않습니다. 화면 숫자로 셉니다.',
+      onclick: function () {
+        state.voiceOn = !voice;
+        if (state.voiceOn) speak('하나');
+        persist();
+        render();
+      },
+    }, [
+      el('span', { text: '소리' }),
+      el('span', { class: 'count-tempo', text: !canSpeak ? '안 됨' : voice ? '켜짐' : '꺼짐' }),
+    ]));
+
+    toggles.appendChild(el('button', {
       type: 'button', class: 'count-auto', 'aria-pressed': String(auto),
       title: auto ? '끄면 ▶를 누를 때만 셉니다' : '켜면 세트마다 저절로 시작합니다',
       onclick: function () {
@@ -4030,9 +4063,15 @@
         render();
       },
     }, [
-      el('span', { text: '세트마다 자동으로 시작' }),
-      el('span', { class: 'count-tempo', text: auto ? '켜짐 · 준비 ' + AUTO_LEAD_SECONDS + '초' : '꺼짐' }),
+      el('span', { text: '세트마다 자동' }),
+      el('span', { class: 'count-tempo', text: auto ? '켜짐' : '꺼짐' }),
     ]));
+
+    box.appendChild(toggles);
+    if (auto) {
+      box.appendChild(el('p', { class: 'hint-line', text:
+        '휴식이 끝나면 준비 ' + AUTO_LEAD_SECONDS + '초를 세고 저절로 시작합니다.' }));
+    }
 
     return box;
   }

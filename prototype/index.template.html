@@ -1630,6 +1630,10 @@ input[type="search"] {
 }
 .count-auto[aria-pressed="true"] { border-style: solid; border-color: var(--accent); color: var(--ink); }
 .count-auto[aria-pressed="true"] .count-tempo { color: var(--accent); }
+.count-auto:disabled { opacity: .5; }
+/* 소리와 자동은 나란히. 속도 칩과 달리 켜고 끄는 것이라 생김새를 달리한다. */
+.count-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.count-toggles .count-auto { gap: 6px; }
 /* 답이 한 줄에 들어가야 다섯 개가 한 줄로 선다. */
 .now-rir .chip { white-space: nowrap; }
 /*
