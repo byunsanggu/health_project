@@ -51,6 +51,7 @@ export * from './gymWeight.ts';
 export * from './gyms.ts';
 export * from './strength.ts';
 export * from './session.ts';
+export * from './shortSession.ts';
 export * from './schedule.ts';
 export * from './rest.ts';
 export * from './warmup.ts';

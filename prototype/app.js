@@ -175,6 +175,7 @@
         style: state.style,
         blockHistory: state.blockHistory,
         timeBudget: state.timeBudget,
+        shortDay: state.shortDay,
         /*
          * 어디까지 했는지도 저장한다. 헬스장에서 화면이 꺼지거나 앱이
          * 다시 뜨는 일은 늘 있는데, 그때마다 목록 화면으로 돌아가서
@@ -235,6 +236,7 @@
       state.tab = settings.tab || 'today';
       state.style = settings.style || 'hypertrophy';
       state.timeBudget = settings.timeBudget || null;
+      state.shortDay = settings.shortDay || null;
       state.started = Boolean(settings.started);
       state.sessionClosed = Boolean(settings.sessionClosed);
       state.liftCursor = settings.liftCursor || 0;
@@ -440,6 +442,8 @@
     blockHistory: ['hypertrophy'],
     conditioning: null,
     timeBudget: null,
+    /* 오늘 하루만 짧게 — { date, minutes }. 내일이면 저절로 풀린다. */
+    shortDay: null,
     timeFit: null,
     warmupOpen: {},
     doneOpen: {},
@@ -907,9 +911,10 @@
 
     // 오늘 운동 할 수 있는 시간이 정해져 있으면 그 안에 들어오게 줄인다.
     state.timeFit = null;
-    if (state.timeBudget) {
+    var budget = shortBudget() || state.timeBudget;
+    if (budget) {
       var profile = E.styleProfile(state.style);
-      state.timeFit = E.fitToTimeBudget(built, state.timeBudget, {
+      state.timeFit = E.fitToTimeBudget(built, budget, {
         restMultiplier: profile.restMultiplier,
         // 휴식을 2분으로 늘렸는데 "50분이면 6종목"이라고 하면 거짓말이 된다
         restBand: state.restBand || undefined,
@@ -2796,6 +2801,109 @@
   }
 
   /** 시작 전 — 오늘 할 것 목록. */
+  /* ── 시간이 없는 날 ─────────────────────────────── */
+
+  /**
+   * 오늘만 짧게 가기로 한 시간.
+   *
+   * **날짜를 같이 들고 있는 것이 전부다.** 야근한 화요일에 15분을 눌렀는데
+   * 그게 설정으로 굳으면, 그 사람은 다음 주에도 15분짜리를 받는다. 오늘이
+   * 지나면 저절로 풀린다.
+   */
+  function shortBudget() {
+    var short = state.shortDay;
+    if (!short || short.date !== state.todayDate) return null;
+    return short.minutes;
+  }
+
+  function shortFitOptions() {
+    return {
+      restMultiplier: E.styleProfile(state.style).restMultiplier,
+      restBand: state.restBand || undefined,
+      restOverrides: state.restOverrides,
+      allowShortRest: state.style === 'density',
+    };
+  }
+
+  /**
+   * "오늘 시간이 없으신가요" 카드.
+   *
+   * 습관 앱이 사람을 붙잡는 진짜 장치는 연속 기록이 아니라 **"한 문제만
+   * 풀어도 인정"** 이다. 야근하고 온 사람에게 "60분 6종목"을 보여주면
+   * 앱을 끈다. 그 사람이 여는 것은 "15분이면 됩니다"다.
+   *
+   * 종목 목록보다 **위**에 둔다. 아래에 두면 이미 긴 목록을 보고 닫은
+   * 뒤라서 아무도 못 본다.
+   */
+  function shortDayCard() {
+    var minutes = shortBudget();
+
+    if (minutes) {
+      var kept = E.keptLine(state.session);
+      return el('div', { class: 'sheet short-day on' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: '오늘은 짧게' }),
+          el('span', { class: 'meta', text: minutes + '분 안에' }),
+        ]),
+        el('div', { class: 'sheet-body' }, [
+          el('p', { class: 'hint-line', text: kept }),
+          /*
+           * 이 문장이 이 기능의 전부다. 짧게 한 날이 "안 한 날"로 세어지면
+           * 아무도 안 누른다. streak.ts는 본 세트가 하나라도 있으면 그날을
+           * 센다 — 그래서 이 말은 참이다(shortSession.test.ts가 지킨다).
+           */
+          el('p', { class: 'hint-line', text:
+            '짧게 해도 이번 주 나온 날로 셉니다.' }),
+          el('button', {
+            type: 'button', class: 'finish quiet', text: '원래대로 되돌리기',
+            onclick: function () {
+              state.shortDay = null;
+              rebuildSession();
+              persist();
+              render();
+            },
+          }),
+        ]),
+      ]);
+    }
+
+    var full = E.estimateSessionTime(state.session, shortFitOptions()).totalMinutes;
+    var options = E.shortOptions(state.session, full, shortFitOptions());
+    if (options.length === 0) return null;
+
+    var rows = el('div', { class: 'summary-list' }, options.map(function (option) {
+      return el('button', {
+        type: 'button', class: 'menu-row',
+        onclick: function () {
+          state.shortDay = { date: state.todayDate, minutes: option.budgetMinutes };
+          rebuildSession();
+          pushLog('오늘', '<b>' + option.budgetMinutes + '분</b> 안에 끝내기로 했습니다 — ' + option.kept);
+          persist();
+          render();
+        },
+      }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: option.budgetMinutes + '분 안에 끝내기' }),
+          el('span', { class: 'plan-sets', text: option.kept }),
+        ]),
+        el('span', { class: 'detail', text: '\u203a' }),
+      ]);
+    }));
+
+    return el('div', { class: 'sheet short-day' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '시간이 없는 날' }),
+        el('span', { class: 'meta', text: '오늘 ' + Math.round(full) + '분' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        el('p', { class: 'hint-line', text:
+          '고립 운동부터 덜어내고 제일 중요한 것만 남깁니다. ' +
+          '아무것도 안 한 주보다 짧게 세 번이 낫습니다.' }),
+        rows,
+      ]),
+    ]);
+  }
+
   function renderPlanList() {
     var head = sessionHead();
     screen.appendChild(head.node);
@@ -2812,6 +2920,9 @@
     ]));
 
     renderWarnings();
+
+    var short = shortDayCard();
+    if (short) screen.appendChild(short);
 
     var rows = [];
 
