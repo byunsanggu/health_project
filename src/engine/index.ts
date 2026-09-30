@@ -41,6 +41,7 @@ export * from './exclusions.ts';
 export * from './crowd.ts';
 export * from './streak.ts';
 export * from './nudge.ts';
+export * from './friends.ts';
 export * from './sync.ts';
 export * from './superset.ts';
 export * from './tempo.ts';

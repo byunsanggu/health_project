@@ -554,6 +554,66 @@ var Remote = (function () {
     return rpc('unshare_skip', { target: gymId, exercise: exerciseId });
   }
 
+  /* ── 친구 ──────────────────────────────────────── */
+
+  /**
+   * 친구에게 보일 이름을 정하고 내 코드를 받는다.
+   *
+   * 코드는 처음 한 번만 정해진다. 이름을 바꿔도 그대로여야 한다 —
+   * 친구가 적어 둔 코드가 죽으면 안 된다.
+   */
+  function setProfile(name) {
+    if (!signedIn()) return Promise.resolve(null);
+    return rpc('set_my_profile', { name: name });
+  }
+
+  /**
+   * 이번 주 요약을 올린다 — 친구에게 보이는 것 전부.
+   *
+   * 나온 날 수·목표·연속뿐이다. 무게도 종목도 통증도 담지 않는다.
+   * 서버가 내 기록을 뒤져 만들지 않고 **내가 직접 올린다** — 그 통로를
+   * 안 여는 것이 이 설계의 요점이다.
+   */
+  function putWeek(weekStart, days, target, streak) {
+    if (!signedIn()) return Promise.resolve(null);
+    return rpc('put_week_summary', {
+      week: weekStart, days_done: days, week_target: target, streak_weeks: streak,
+    });
+  }
+
+  function addFriend(code) {
+    if (!signedIn()) return Promise.resolve({ ok: false, reason: 'signedOut' });
+    return rpc('add_friend', { code: code });
+  }
+
+  function removeFriend(userId) {
+    if (!signedIn()) return Promise.resolve(null);
+    return rpc('remove_friend', { other: userId });
+  }
+
+  function sendCheer(userId, kind) {
+    if (!signedIn()) return Promise.resolve(false);
+    return rpc('send_cheer', { other: userId, cheer_kind: kind });
+  }
+
+  function myFriends(weekStart) {
+    if (!signedIn()) return Promise.resolve([]);
+    return rpc('my_friends', { week: weekStart }).then(function (rows) {
+      return rows || [];
+    }, function () { return []; });
+  }
+
+  function myCheers() {
+    if (!signedIn()) return Promise.resolve([]);
+    return rpc('my_cheers', {}).then(function (rows) { return rows || []; },
+      function () { return []; });
+  }
+
+  function markCheersSeen() {
+    if (!signedIn()) return Promise.resolve(null);
+    return rpc('mark_cheers_seen', {});
+  }
+
   /**
    * 다시 부를 시각과 할 말을 올린다.
    *
@@ -598,6 +658,9 @@ var Remote = (function () {
     }).then(function () {
       // 알림 예약도 같이. 지웠다면서 며칠 뒤에 알림이 울리면 안 된다.
       return rpc('delete_my_push_data', {}).catch(function () { return null; });
+    }).then(function () {
+      // 친구·응원·주간 요약도. 남겨 두면 친구 목록에 유령이 남는다.
+      return rpc('delete_my_friend_data', {}).catch(function () { return null; });
     });
   }
 
@@ -652,6 +715,14 @@ var Remote = (function () {
     gymSkips: gymSkips,
     shareSkip: shareSkip,
     unshareSkip: unshareSkip,
+    setProfile: setProfile,
+    putWeek: putWeek,
+    addFriend: addFriend,
+    removeFriend: removeFriend,
+    sendCheer: sendCheer,
+    myFriends: myFriends,
+    myCheers: myCheers,
+    markCheersSeen: markCheersSeen,
     queueNudge: queueNudge,
     cancelNudge: cancelNudge,
     deleteEverything: deleteEverything,

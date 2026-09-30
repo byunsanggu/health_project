@@ -1684,6 +1684,46 @@ input[type="search"] {
 .nudge-row[aria-pressed="true"] { border-style: solid; border-color: var(--accent); color: var(--ink); }
 .nudge-row[aria-pressed="true"] .count-tempo { color: var(--accent); }
 
+/* ── 친구 ──────────────────────────────────────── */
+.friends-card .sheet-body { display: grid; gap: 9px; }
+.friend-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px;
+  align-items: center; padding: 8px 0; border-top: 1px solid var(--line-soft);
+}
+.friend-row:first-of-type { border-top: 0; }
+.friend-row.kept .name { color: var(--accent); }
+.friend-row .chip:disabled { opacity: .45; }
+
+/*
+ * 챌린지 막대. 목표는 나와 친구들이 각자 하기로 한 횟수의 합이라,
+ * 다 차는 것이 "무리했다"가 아니라 "각자 약속을 지켰다"는 뜻이다.
+ */
+.quest { display: grid; gap: 6px; padding: 10px; border-radius: 10px; background: var(--surface-2); }
+.quest-top { display: flex; align-items: baseline; gap: 8px; }
+.quest-text { font-size: 13px; font-weight: 600; }
+.quest-count { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.quest-track { height: 6px; border-radius: 3px; background: var(--line-soft); overflow: hidden; }
+.quest-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.quest.kept .quest-fill { background: var(--zone-ok); }
+.quest .hint-line { margin: 0; }
+
+.my-code { display: flex; align-items: baseline; gap: 10px; }
+.my-code b { font-family: var(--mono); font-size: 22px; letter-spacing: .12em; color: var(--accent); }
+
+.text-input {
+  width: 100%; padding: 10px 12px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+  font-size: 15px;
+}
+
+/* 받은 응원. 읽으면 사라진다 — 쌓이는 알림함을 만들지 않는다. */
+.cheer-banner {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 12px; margin-bottom: 10px;
+  border: 1px solid var(--accent); border-radius: 10px;
+  background: var(--surface); color: var(--ink); font-size: 13px; text-align: left;
+}
+
 /* ── 휴식 시간 설정 ─────────────────────────────── */
 .rest-presets { padding: 0; }
 .rest-presets .pick { padding: 7px 12px; font-size: 12.5px; font-variant-numeric: tabular-nums; }

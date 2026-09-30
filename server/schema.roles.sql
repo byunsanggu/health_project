@@ -1,7 +1,9 @@
 -- 사람 둘을 만든다
 insert into auth.users (id) values
   ('11111111-1111-1111-1111-111111111111'),
-  ('22222222-2222-2222-2222-222222222222')
+  ('22222222-2222-2222-2222-222222222222'),
+  -- 친구가 **아닌** 사람. 친구에게만 보이는 것을 시험하려면 남이 하나 있어야 한다.
+  ('33333333-3333-3333-3333-333333333333')
 on conflict (id) do nothing;   -- 두 번 돌려도 안전하게
 
 -- RLS를 우회하지 않는 역할로 시험해야 뜻이 있다. postgres는 BYPASSRLS라서.
@@ -35,4 +37,20 @@ grant execute on function
   public.queue_nudge(jsonb, timestamptz, text, text),
   public.cancel_nudge(),
   public.delete_my_push_data()
+  to app_user;
+
+-- 친구 쪽(schema.friends.sql).
+grant select, insert, update, delete on
+  public.profiles, public.friendships, public.week_summaries, public.cheers to app_user;
+grant execute on function
+  public.set_my_profile(text),
+  public.put_week_summary(date, smallint, smallint, smallint),
+  public.add_friend(text),
+  public.remove_friend(uuid),
+  public.send_cheer(uuid, text),
+  public.my_friends(date),
+  public.my_cheers(),
+  public.mark_cheers_seen(),
+  public.delete_my_friend_data(),
+  public.new_friend_code()
   to app_user;

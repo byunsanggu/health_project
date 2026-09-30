@@ -194,6 +194,8 @@
         tempo: state.tempo,
         autoCount: state.autoCount,
         nudgeOn: state.nudgeOn,
+        friendName: state.friendName,
+        friendCode: state.friendCode,
         voiceRate: state.voiceRate,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
@@ -209,6 +211,8 @@
     });
     // 판단이 달라질 만한 것이 바뀌었으면 알림 예약도 다시 올린다.
     scheduleNudgeSoon();
+    // 친구에게 보이는 주간 요약도. 안에서 안 바뀌었으면 그냥 넘어간다.
+    pushMyWeek();
   }
 
   /**
@@ -253,6 +257,8 @@
       state.tempo = settings.tempo || null;
       state.autoCount = Boolean(settings.autoCount);
       state.nudgeOn = Boolean(settings.nudgeOn);
+      state.friendName = settings.friendName || null;
+      state.friendCode = settings.friendCode || null;
       state.voiceRate = settings.voiceRate || 1;
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
@@ -490,6 +496,10 @@
     tempo: null,
     autoCount: false,
     nudgeOn: false,
+    friendName: null,
+    friendCode: null,
+    friends: [],
+    cheersIn: [],
     autoCountedFor: null,
     voiceRate: 1,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
@@ -2929,6 +2939,9 @@
     var short = shortDayCard();
     if (short) screen.appendChild(short);
 
+    var cheers = cheersBanner();
+    if (cheers) screen.appendChild(cheers);
+
     var rows = [];
 
     // 워밍업은 종목이 아니라 준비라 맨 위에 한 줄로 둔다.
@@ -2975,6 +2988,8 @@
      * 이어지는 게 보여야 나올 이유가 생긴다.
      */
     screen.appendChild(streakCard(currentStreak()));
+    var friends = friendsCard();
+    if (friends) screen.appendChild(friends);
     var nudge = reportNudge();
     if (nudge) screen.appendChild(nudge);
     /*
@@ -5011,6 +5026,8 @@
 
     // 막 마친 자리가 이번 주를 돌아볼 마음이 제일 드는 자리다.
     screen.appendChild(streakCard(currentStreak()));
+    var closedFriends = friendsCard();
+    if (closedFriends) screen.appendChild(closedFriends);
     var closedNudge = reportNudge();
     if (closedNudge) screen.appendChild(closedNudge);
 
@@ -6575,6 +6592,331 @@
   }
 
   /** 연속 카드. 숫자 하나와 이번 주 점, 그리고 한 줄. */
+  /* ── 친구 ──────────────────────────────────────── */
+
+  /**
+   * 친구에게 보이는 것을 올린다.
+   *
+   * **나온 날 수·목표·연속뿐이다.** 무게도 종목도 통증도 안 올라간다.
+   * 서버가 내 기록을 뒤져 만들지 않고 내가 직접 올린다 — 그 통로를 안
+   * 여는 것이 이 설계의 요점이다.
+   */
+  var lastWeekKey = null;
+
+  function pushMyWeek() {
+    if (!Remote.configured() || !Remote.signedIn() || !state.friendName) return Promise.resolve(null);
+    var streak = currentStreak();
+    var key = [state.monday, streak.thisWeek.days, streak.thisWeek.target, streak.current].join('|');
+    if (key === lastWeekKey) return Promise.resolve(null);
+    lastWeekKey = key;
+    return Remote.putWeek(state.monday, streak.thisWeek.days, streak.thisWeek.target, streak.current)
+      .catch(function () { return null; });
+  }
+
+  /** 친구 목록과 받은 응원을 새로 읽는다. */
+  function loadFriends() {
+    if (!Remote.configured() || !Remote.signedIn() || !state.friendName) return Promise.resolve(null);
+    return Promise.all([Remote.myFriends(state.monday), Remote.myCheers()])
+      .then(function (both) {
+        state.friends = both[0] || [];
+        state.cheersIn = both[1] || [];
+        render();
+      }, function () { return null; });
+  }
+
+  /**
+   * 친구 카드.
+   *
+   * 연속 카드 바로 아래다. "한 번만 더 나오면 이번 주도 지킵니다"를 읽은
+   * 직후가 남이 어떻게 하고 있는지 궁금해지는 자리다.
+   */
+  function friendsCard() {
+    if (!Remote.configured() || !Remote.signedIn()) return null;
+
+    var body = el('div', { class: 'sheet-body' }, []);
+
+    /*
+     * 이름부터 정한다. 본명이 아니라 헬스장에서 쓰는 별명이면 된다 —
+     * 본명을 받아 두면 언젠가 그게 새는 사고가 난다.
+     */
+    if (!state.friendName) {
+      body.appendChild(el('p', { class: 'hint-line', text:
+        '친구와 서로 이번 주에 몇 번 나왔는지만 봅니다. ' +
+        '무게도 종목도 아픈 곳도 보이지 않습니다.' }));
+      body.appendChild(el('button', {
+        type: 'button', class: 'finish', text: '친구 기능 켜기',
+        onclick: openFriendName,
+      }));
+      return el('div', { class: 'sheet friends-card' }, [
+        el('div', { class: 'sheet-head' }, [el('h3', { text: '함께' })]),
+        body,
+      ]);
+    }
+
+    var streak = currentStreak();
+    var rows = (state.friends || []).map(function (row) {
+      return E.friendRow({
+        userId: row.user_id,
+        name: row.name,
+        days: row.days,
+        target: row.target,
+        streakWeeks: row.streak,
+        lastCheerAt: row.last_cheer_at || undefined,
+      // 하루 한 번은 **진짜 달력** 기준이다. 서버도 current_date로 막는다.
+      // state.todayDate는 "오늘 할 날"이라 이번 주 뒤쪽 날짜일 수 있다.
+      }, isoOf(new Date()));
+    });
+
+    /*
+     * 챌린지.
+     *
+     * 목표는 나와 친구들이 **각자 하기로 한 횟수의 합**이다. 앱이 "이번 주
+     * 10번!"을 정해 주면 주 3회 하기로 한 사람이 친구 때문에 5번 나온다.
+     * 그건 챌린지가 아니라 부상이다.
+     */
+    var quest = E.groupQuest(
+      { days: streak.thisWeek.days, target: streak.thisWeek.target },
+      rows);
+
+    if (quest) {
+      var pct = Math.min(100, Math.round((quest.done / quest.target) * 100));
+      body.appendChild(el('div', { class: 'quest' + (quest.kept ? ' kept' : '') }, [
+        el('div', { class: 'quest-top' }, [
+          el('span', { class: 'quest-text', text: quest.text }),
+          el('span', { class: 'quest-count', text: quest.done + ' / ' + quest.target }),
+        ]),
+        el('div', { class: 'quest-track' }, [
+          el('div', { class: 'quest-fill', style: 'width:' + pct + '%' }),
+        ]),
+        el('p', { class: 'hint-line', text: quest.kept
+          ? '각자 자기 약속을 지켜서 채운 것입니다.'
+          : '각자 하기로 한 횟수를 합친 목표입니다 — 더 하실 필요 없습니다.' }),
+      ]));
+    }
+
+    if (rows.length === 0) {
+      body.appendChild(el('p', { class: 'hint-line', text:
+        '아직 친구가 없습니다. 코드를 주고받으면 서로 보입니다.' }));
+    }
+
+    rows.forEach(function (row) {
+      /*
+       * 점을 안 찍는다. 내 연속 카드에는 점이 있지만 여기서는 글이 이미
+       * 같은 말을 하고 있어서("3번 다 채웠습니다"), 점을 더하면 좁은 줄에
+       * 같은 정보가 두 번 들어가 글만 접힌다.
+       */
+      body.appendChild(el('div', { class: 'friend-row' + (row.kept ? ' kept' : '') }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: row.name }),
+          el('span', { class: 'plan-sets', text: row.text +
+            (row.streakWeeks > 0 ? ' · ' + row.streakWeeks + '주 연속' : '') }),
+        ]),
+        el('button', {
+          type: 'button', class: 'chip',
+          disabled: row.canCheer ? null : '',
+          title: row.canCheer ? row.name + '에게 응원 보내기' : '오늘은 이미 보냈습니다',
+          text: row.canCheer ? '응원' : '보냄',
+          onclick: function () { openCheer(row); },
+        }),
+      ]));
+    });
+
+    body.appendChild(el('button', {
+      type: 'button', class: 'finish quiet', text: '친구 추가 · 내 코드',
+      onclick: openFriendCode,
+    }));
+
+    return el('div', { class: 'sheet friends-card' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '함께' }),
+        el('span', { class: 'meta', text: rows.length > 0 ? rows.length + '명' : '' }),
+      ]),
+      body,
+    ]);
+  }
+
+  /** 처음 켤 때 — 별명을 정하고 코드를 받는다. */
+  function openFriendName() {
+    var draft = { name: state.friendName || '', notice: null };
+    var draw = function () {
+      var body = [];
+      body.push(el('p', { class: 'asset-note', text:
+        '친구에게 보일 이름입니다. 본명이 아니어도 됩니다 — 헬스장에서 부르는 이름이면 충분합니다.' }));
+      if (draft.notice) {
+        body.push(el('div', { class: 'notice' }, [el('div', { text: draft.notice })]));
+      }
+      var input = el('input', {
+        type: 'text', class: 'text-input', maxlength: String(E.NAME_MAX),
+        value: draft.name, placeholder: '예: 짐맨',
+        oninput: function (event) { draft.name = event.target.value; },
+      });
+      body.push(input);
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: '정하기',
+        onclick: function () {
+          if (!E.nameIsUsable(draft.name)) {
+            draft.notice = '이름을 한 글자 이상 적어 주세요.';
+            return draw();
+          }
+          var clean = E.cleanDisplayName(draft.name);
+          Remote.setProfile(clean).then(function (code) {
+            if (!code) {
+              draft.notice = '이름을 저장하지 못했습니다. 잠시 뒤 다시 해 보세요.';
+              return draw();
+            }
+            state.friendName = clean;
+            state.friendCode = code;
+            persist();
+            /*
+             * 닫았다 바로 여는 대신 내용만 갈아끼운다. 닫는 순간에
+             * 딸려 오는 정리 작업과 다시 여는 것이 겹치면 빈 모달이 뜬다.
+             */
+            pushLog('함께', '<b>' + clean + '</b>' + E.particle(clean, '으로/로') +
+              ' 친구 기능을 켰습니다. 내 코드는 ' + E.formatFriendCode(code) + '입니다.');
+            pushMyWeek();
+            loadFriends();
+            render();
+            openFriendCode();
+          }, function () {
+            draft.notice = '이름을 저장하지 못했습니다.';
+            draw();
+          });
+        },
+      }));
+      openModal('친구에게 보일 이름', null, body);
+      input.focus();
+    };
+    draw();
+  }
+
+  /** 내 코드를 보여주고 남의 코드를 받는다. */
+  function openFriendCode() {
+    var draft = { code: '', notice: null, busy: false };
+    var draw = function () {
+      var body = [];
+
+      body.push(el('div', { class: 'my-code' }, [
+        el('span', { class: 'list-label', text: '내 코드' }),
+        el('b', { text: E.formatFriendCode(state.friendCode || '') }),
+      ]));
+      body.push(el('p', { class: 'hint-line', text:
+        '이 코드를 아는 사람만 친구가 될 수 있습니다. ' +
+        '이름이나 번호로는 찾을 수 없습니다 — 모르는 사람이 붙지 않게 하려는 것입니다.' }));
+
+      body.push(el('div', { class: 'list-label', text: '친구 코드 넣기' }));
+      if (draft.notice) {
+        body.push(el('div', { class: 'notice' }, [el('div', { text: draft.notice })]));
+      }
+      var input = el('input', {
+        type: 'text', class: 'text-input', maxlength: '8',
+        value: draft.code, placeholder: 'ABC-123', autocapitalize: 'characters',
+        oninput: function (event) { draft.code = event.target.value; },
+      });
+      body.push(input);
+      body.push(el('button', {
+        type: 'button', class: 'finish', disabled: draft.busy ? '' : null,
+        text: draft.busy ? '찾는 중…' : '친구 추가',
+        onclick: function () {
+          var code = E.normalizeFriendCode(draft.code);
+          if (!code) {
+            draft.notice = '코드는 여섯 글자입니다. 0·O·1·I·L은 쓰지 않습니다.';
+            return draw();
+          }
+          draft.busy = true; draw();
+          Remote.addFriend(code).then(function (result) {
+            draft.busy = false;
+            if (!result || !result.ok) {
+              draft.notice = result && result.reason === 'notFound'
+                ? '그런 코드를 쓰는 분이 없습니다. 다시 확인해 주세요.'
+                : result && result.reason === 'self'
+                  ? '본인 코드입니다.'
+                  : '코드를 확인해 주세요.';
+              return draw();
+            }
+            draft.code = '';
+            draft.notice = null;
+            modal.close();
+            pushLog('함께', '<b>' + result.name + '</b> 님과 친구가 됐습니다.');
+            loadFriends();
+          }, function () {
+            draft.busy = false;
+            draft.notice = '지금은 추가하지 못했습니다.';
+            draw();
+          });
+        },
+      }));
+
+      if ((state.friends || []).length > 0) {
+        body.push(el('div', { class: 'list-label', text: '친구 끊기' }));
+        body.push(el('p', { class: 'hint-line', text:
+          '끊으면 서로 안 보입니다. 상대에게는 알리지 않습니다.' }));
+        (state.friends || []).forEach(function (row) {
+          body.push(el('div', { class: 'friend-row' }, [
+            el('span', { class: 'plan-main' }, [el('span', { class: 'name', text: row.name })]),
+            el('button', {
+              type: 'button', class: 'chip', text: '끊기',
+              onclick: function () {
+                Remote.removeFriend(row.user_id).then(function () {
+                  pushLog('함께', row.name + ' 님과 친구를 끊었습니다.');
+                  return loadFriends();
+                }).then(function () { modal.close(); });
+              },
+            }),
+          ]));
+        });
+      }
+
+      openModal('친구', state.friendName || null, body);
+    };
+    draw();
+  }
+
+  /** 응원 보내기 — 정해진 문구만. */
+  function openCheer(row) {
+    var body = [];
+    body.push(el('p', { class: 'asset-note', text:
+      row.name + ' 님에게 보낼 말을 고르세요. 하루에 한 번 보낼 수 있습니다.' }));
+    body.push(el('div', { class: 'summary-list' }, E.CHEERS.map(function (cheer) {
+      return el('button', {
+        type: 'button', class: 'menu-row',
+        onclick: function () {
+          Remote.sendCheer(row.userId, cheer.kind).then(function () {
+            modal.close();
+            pushLog('함께', row.name + ' 님에게 <b>' + cheer.text + '</b> 보냈습니다.');
+            return loadFriends();
+          });
+        },
+      }, [
+        el('span', { class: 'plan-main' }, [el('span', { class: 'name', text: cheer.text })]),
+        el('span', { class: 'detail', text: '›' }),
+      ]);
+    })));
+    openModal('응원 보내기', row.name, body);
+  }
+
+  /** 받은 응원 한 줄. 읽으면 지운다. */
+  function cheersBanner() {
+    var cheers = state.cheersIn || [];
+    if (cheers.length === 0) return null;
+
+    var names = cheers.slice(0, 3).map(function (item) {
+      return item.name + ' 님이 "' + E.cheerText(item.kind) + '"';
+    }).join(' · ');
+
+    return el('button', {
+      type: 'button', class: 'cheer-banner',
+      onclick: function () {
+        Remote.markCheersSeen().then(function () {
+          state.cheersIn = [];
+          render();
+        });
+      },
+    }, [
+      el('span', { text: names }),
+      el('span', { class: 'count-tempo', text: '확인' }),
+    ]);
+  }
+
   /* ── 다시 부르기 ───────────────────────────────── */
 
   /**
@@ -10005,4 +10347,6 @@
    * 뒤에 한 번 다시 올린다 — 첫 화면이 늦어지면 안 되므로 뒤로 미룬다.
    */
   setTimeout(scheduleNudge, 3000);
+  // 친구 목록과 받은 응원. 첫 화면이 늦어지면 안 되므로 뒤로 미룬다.
+  setTimeout(function () { pushMyWeek(); loadFriends(); }, 1200);
 })();
