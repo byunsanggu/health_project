@@ -4395,6 +4395,8 @@ var GymSearch = (function () {
     scheduleNudgeSoon();
     // 친구에게 보이는 주간 요약도. 안에서 안 바뀌었으면 그냥 넘어간다.
     pushMyWeek();
+    // 기록과 설정을 서버로. 올릴 것이 없으면 안에서 그냥 돌아간다.
+    syncSoon();
   }
 
   /**
@@ -7997,16 +7999,19 @@ var GymSearch = (function () {
   /**
    * 카카오·구글 화면으로 떠난다.
    *
-   * **떠나기 전에 온보딩을 끝내 둔다.** 이 함수는 페이지를 통째로 다른
-   * 주소로 보내므로, 여기까지 답한 것(동의·경력·헬스장·프로그램)이 저장돼
-   * 있지 않으면 돌아왔을 때 처음부터 다시 하게 된다. 로그인하러 갔다가
-   * 설문을 다시 하게 되면 그때 앱을 지운다.
+   * 이 함수는 페이지를 통째로 다른 주소로 보낸다. 그래서 떠나기 전에
+   * **여기까지 답한 것을 저장해 둬야** 돌아왔을 때 다시 묻지 않는다.
    *
-   * 돌아와서 로그인이 안 됐으면 로그인 화면이 다시 뜬다 — 그때는 프로그램이
-   * 이미 만들어져 있으므로 잃는 것이 없다.
+   * 다만 **설문을 끝내 버리지는 않는다.** 가입이 맨 앞으로 오기 전에는
+   * 여기서 completeOnboarding()을 불렀다 — 그때는 뒤에 남은 단계가 없어서
+   * 그게 맞았다. 지금 그러면 아무것도 안 물어본 기본값으로 프로그램이
+   * 만들어지고, 돌아온 사람은 자기가 고른 적 없는 프로그램을 받는다.
+   *
+   * 돌아와서 할 일은 두 갈래이고 둘 다 저절로 된다.
+   *   · 쓰던 계정 → 동기화가 프로그램을 되살리고 설문을 건너뛴다
+   *   · 새 계정  → 가입 단계가 목록에서 빠져 동의부터 이어서 한다
    */
   function startOAuth(provider) {
-    if (state.onboarding && state.onboarding.active) completeOnboarding();
     persist();
     Remote.oauthStart(provider);
   }
@@ -10439,6 +10444,35 @@ var GymSearch = (function () {
     pushLog('로그인', wasOnboarding
       ? '쓰던 프로그램을 불러왔습니다 — <b>설문은 건너뜁니다.</b>'
       : '쓰던 프로그램을 불러왔습니다.');
+  }
+
+  /**
+   * 알아서 맞춘다.
+   *
+   * 이게 없으면 기록이 이 기기에만 쌓인다. 로그인을 필수로 만들어 둔 이유가
+   * "폰을 바꿔도 남는다"인데, 올라가지 않으면 그 말이 거짓말이 된다.
+   *
+   * 예전에는 가입 직후에 한 번 올리고 그 뒤로는 사람이 **버튼을 눌러야**
+   * 올라갔다. 그 버튼을 누르는 사람은 없다.
+   *
+   * 바로 안 올리고 8초 미룬다. 세트를 칠 때마다 persist가 도는데 거기서
+   * 바로 올리면 한 세션에 스무 번 넘게 서버를 부른다. 올릴 것이 없으면
+   * 깨어나서 그냥 돌아간다.
+   */
+  var syncTimer = null;
+
+  function settingsChanged() {
+    return JSON.stringify(sharedSettings()) !== state.lastSettingsBody;
+  }
+
+  function syncSoon() {
+    if (!Remote.configured() || !Remote.signedIn()) return;
+    if (syncTimer) return;
+    syncTimer = setTimeout(function () {
+      syncTimer = null;
+      if (storage.outbox().length === 0 && !settingsChanged()) return;
+      syncNow();
+    }, 8000);
   }
 
   function syncStatusLine() {
@@ -13953,29 +13987,40 @@ var GymSearch = (function () {
   /* ── 온보딩 ────────────────────────────────────── */
 
   var ALL_STEPS = [
+    { id: 'account', title: '시작', render: stepAccount },
     { id: 'consent', title: '동의', render: stepConsent },
     { id: 'level', title: '경력', render: stepLevel },
     { id: 'profile', title: '내 정보', render: stepProfile },
     { id: 'gym', title: '헬스장 기구', render: stepGym },
     { id: 'measure', title: '실측', render: stepMeasure },
     { id: 'result', title: '프로그램', render: stepResult },
-    { id: 'account', title: '저장', render: stepAccount },
   ];
 
   /**
    * 오늘 보여줄 단계.
    *
-   * 가입 단계는 **프로그램을 보여준 다음**이다. 앞에 세우면 아직 아무것도
-   * 못 받아 본 사람에게 이메일부터 달라는 것이 된다 — 거기서 절반이 나간다.
-   * 프로그램이 나온 뒤에는 지킬 것이 생겼으므로 물어볼 만하다.
+   * 가입이 **맨 앞**이다.
    *
-   * 서버가 없으면 이 단계는 아예 없다. 눌러 봐야 안 되는 화면을 띄우는 것은
+   * 처음엔 프로그램을 보여준 뒤에 뒀었다 — 아무것도 못 받아 본 사람에게
+   * 이메일부터 달라고 하면 거기서 나간다는 생각이었다. 그 논리는 **로그인이
+   * 선택일 때만** 맞는다. 어차피 필수라면, 설문 다섯 단계를 다 시켜 놓고
+   * 마지막에 벽을 세우는 것이 된다 — 거기서 나가는 사람은 수고를 다 하고
+   * 나간다.
+   *
+   * 폰을 바꾼 사람에게도 이쪽이 낫다. 전에는 첫 화면의 작은 글씨를 찾아야
+   * 했는데, 이제 첫 화면이 곧 로그인이다.
+   *
+   * **로그인한 사람에게는 이 단계가 없다.** 목록에서 빠지면 그다음인 동의가
+   * 저절로 첫 화면이 되므로, 돌아온 자리를 따로 계산할 필요가 없다.
+   *
+   * 서버가 없으면(로컬 빌드) 역시 없다. 눌러 봐야 안 되는 화면을 띄우는 것은
    * 없는 것보다 나쁘다.
    */
   function steps() {
     var usable = typeof Remote !== 'undefined' && Remote.configured();
     return ALL_STEPS.filter(function (step) {
-      return step.id !== 'account' || usable;
+      if (step.id !== 'account') return true;
+      return usable && !Remote.signedIn();
     });
   }
 
@@ -13994,8 +14039,8 @@ var GymSearch = (function () {
 
     // 제목은 마법사가 이미 단계 이름으로 달았다. 여기서 또 달면 h2가 둘이 된다.
     screen.appendChild(el('p', { class: 'asset-note', text:
-      '기록은 계정에 붙습니다. 폰을 바꿔도 남고, 집 태블릿과 헬스장 폰이 ' +
-      '같은 기록을 봅니다. 같은 헬스장 다니는 분들과 기구 정보도 여기서 모입니다.' }));
+      '폰을 바꿔도 기록이 남고, 같은 헬스장 다니는 분들과 기구 정보가 모입니다. ' +
+      '이미 쓰시던 계정이 있으면 로그인만 하세요 — 설문은 건너뜁니다.' }));
 
     /*
      * 카카오·구글을 위에 둔다.
@@ -14080,22 +14125,22 @@ var GymSearch = (function () {
          * completeOnboarding()은 답을 가지고 프로그램을 새로 짜는 함수라,
          * 되살린 프로그램을 그 자리에서 날려 버린다.
          */
-        var finish = function () {
-          if (state.onboarding && state.onboarding.active) {
-            // 되살릴 것이 없었다. 방금 한 설문으로 프로그램을 만든다.
-            completeOnboarding();
-            syncNow();
-            return;
-          }
-          // 되살아났다 — 이미 앱으로 들어와 있다. 화면만 바꿔 준다.
-          render();
-        };
-        if (signUp || !Remote.signedIn()) {
-          completeOnboarding();
-          syncNow();
-        } else {
-          syncNow().then(finish, finish);
-        }
+        /*
+         * **여기서 프로그램을 만들지 않는다.**
+         *
+         * 가입이 맨 뒤에 있을 때는 이 자리가 마지막이라 completeOnboarding()을
+         * 불렀다. 지금은 설문이 뒤에 남아 있다 — 여기서 만들면 아무것도 안
+         * 물어본 기본값으로 프로그램이 나온다.
+         *
+         * 그릴 일만 남는다. 로그인한 사람에게는 가입 단계가 목록에서
+         * 빠지므로(steps), 다음인 동의가 저절로 첫 화면이 된다.
+         *
+         * 로그인은 하나 더 한다 — 계정에 쓰던 프로그램이 있으면 설문을
+         * 통째로 건너뛴다(syncNow → adoptAccountProgram).
+         */
+        var finish = function () { render(); };
+        if (signUp || !Remote.signedIn()) render();
+        else syncNow().then(finish, finish);
       }, function (error) {
         form.busy = false;
         form.password = '';
@@ -14108,9 +14153,24 @@ var GymSearch = (function () {
       type: 'button', class: 'finish',
       disabled: form.busy ? '' : null,
       text: form.busy ? (signUp ? '만드는 중…' : '로그인하는 중…')
-        : (signUp ? '계정 만들고 시작하기' : '로그인하고 시작하기'),
+        : (signUp ? '계정 만들기' : '로그인'),
       onclick: submit,
     }));
+
+    /*
+     * 동의를 두 번에 나눠 받는다.
+     *
+     * 여기서 받는 것은 계정을 만드는 데 필요한 것(이메일·계정 정보)뿐이다.
+     * **체중·통증·운동 기록은 민감정보라 따로 받아야 한다** — 개인정보보호법은
+     * 이걸 다른 동의와 묶지 말라고 하고, 묶어서 한 번에 받으면 동의로 치지
+     * 않는다.
+     *
+     * 그래서 다음 화면이 동의 화면이고, 여기서는 그 사실만 미리 말해 둔다.
+     * 가입 버튼을 누르는 사람이 "이걸로 다 끝났다"고 생각하면 안 된다.
+     */
+    screen.appendChild(el('p', { class: 'hint-line', text:
+      '계정을 만들 때는 이메일과 계정 정보만 씁니다. ' +
+      '체중·통증·운동 기록 같은 건강 정보는 다음 화면에서 따로 여쭤봅니다.' }));
 
     /*
      * 이미 계정이 있는 사람이 들어올 길이 반드시 있어야 한다.
@@ -14129,10 +14189,17 @@ var GymSearch = (function () {
       },
     }));
 
+    /*
+     * 이 줄은 가입이 맨 뒤에 있을 때 "동의를 받았고"라고 과거형으로 적혀
+     * 있었다. 그때는 동의가 이미 지나간 단계였으니 맞는 말이었다.
+     *
+     * 가입이 맨 앞으로 오면서 그 문장이 거짓말이 됐다 — 아직 아무 동의도
+     * 안 받았다. 화면이 하는 말과 실제가 어긋나는 것은 기능이 하나 빠진
+     * 것보다 나쁘다.
+     */
     screen.appendChild(el('p', { class: 'hint-line', text:
-      '건강 기록은 민감정보라 올리기 전에 동의를 받았고, 언제든 서버에서 지울 수 ' +
-      '있습니다. 가입 확인 메일이 늦게 와도 앱은 바로 쓰실 수 있고, 그동안의 기록은 ' +
-      '확인되는 대로 올라갑니다.' }));
+      '가입 확인 메일이 늦게 와도 앱은 바로 쓰실 수 있고, 그동안의 기록은 ' +
+      '확인되는 대로 올라갑니다. 계정과 기록은 언제든 서버에서 지울 수 있습니다.' }));
   }
 
   function startOnboarding() {
@@ -14161,6 +14228,11 @@ var GymSearch = (function () {
     state.tab = 'today';
     loadScenario('normal');
     result.notes.forEach(function (note) { pushLog('온보딩', note); });
+    /*
+     * 방금 만든 프로그램이 이 계정의 첫 내용이다. 여기서 안 올리면 폰을
+     * 바꿨을 때 되살릴 것이 없다 — 8초를 기다릴 이유가 없는 순간이다.
+     */
+    if (Remote.configured() && Remote.signedIn()) syncNow();
     render();
   }
 
@@ -14195,7 +14267,7 @@ var GymSearch = (function () {
     var blocked = step.id === 'consent' && !E.canUseService(state.consent);
 
     /*
-     * 가입 단계의 주 버튼은 그 화면 안에 있다(계정 만들고 시작하기).
+     * 가입 단계의 주 버튼은 그 화면 안에 있다(계정 만들기 · 로그인).
      * 여기서는 건너뛰는 길만 둔다 — 건너뛰기가 "다음"과 똑같이 생기면
      * 둘 중 뭘 누른 건지 모르게 된다.
      */
@@ -14240,25 +14312,10 @@ var GymSearch = (function () {
    */
   function stepConsent() {
     /*
-     * 이미 계정이 있는 사람의 문을 **맨 앞에** 낸다.
-     *
-     * 전에는 가입 단계가 맨 뒤에만 있었다. 폰을 바꾼 사람은 동의부터
-     * 경력·헬스장·실측까지 전부 다시 답한 뒤에야 로그인 칸을 만났다.
-     * 그 사람에게 필요한 것은 설문이 아니라 쓰던 프로그램이다.
-     *
-     * 조용하게 둔다. 처음 온 사람에게는 상관없는 줄이라, 크게 띄우면
-     * 아직 계정이 없는 사람이 여기서 멈춘다.
+     * 전에는 여기에 "이미 계정이 있으신가요? 로그인" 한 줄이 있었다.
+     * 가입이 맨 앞으로 오면서 **첫 화면이 곧 로그인**이 됐으므로 지운다 —
+     * 로그인하고 들어온 사람에게 또 로그인을 권하는 줄이 된다.
      */
-    if (typeof Remote !== 'undefined' && Remote.configured() && !Remote.signedIn()) {
-      screen.appendChild(el('div', { class: 'have-account' }, [
-        el('span', { text: '폰을 바꾸셨거나 쓰던 계정이 있으신가요?' }),
-        el('button', {
-          type: 'button', class: 'linkish', text: '로그인',
-          title: '로그인하면 쓰던 프로그램과 기록을 불러오고 설문은 건너뜁니다',
-          onclick: function () { openAuth('signin'); },
-        }),
-      ]));
-    }
 
     screen.appendChild(el('div', { class: 'notice' }, [
       el('div', { class: 'label', text: '먼저 확인해 주세요' }),
@@ -14737,6 +14794,8 @@ var GymSearch = (function () {
    * 뒤에 한 번 다시 올린다 — 첫 화면이 늦어지면 안 되므로 뒤로 미룬다.
    */
   setTimeout(scheduleNudge, 3000);
+  // 지난번에 못 올린 것이 있을 수 있다. 첫 화면을 다 그린 뒤에 맞춘다.
+  setTimeout(syncSoon, 2500);
   // 친구 목록과 받은 응원. 첫 화면이 늦어지면 안 되므로 뒤로 미룬다.
   setTimeout(function () { pushMyWeek(); loadFriends(); }, 1200);
 })();
