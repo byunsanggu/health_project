@@ -176,6 +176,8 @@
         blockHistory: state.blockHistory,
         timeBudget: state.timeBudget,
         shortDay: state.shortDay,
+        comeback: state.comeback,
+        comebackDeclined: state.comebackDeclined,
         /*
          * 어디까지 했는지도 저장한다. 헬스장에서 화면이 꺼지거나 앱이
          * 다시 뜨는 일은 늘 있는데, 그때마다 목록 화면으로 돌아가서
@@ -244,6 +246,8 @@
       state.style = settings.style || 'hypertrophy';
       state.timeBudget = settings.timeBudget || null;
       state.shortDay = settings.shortDay || null;
+      state.comeback = settings.comeback || null;
+      state.comebackDeclined = settings.comebackDeclined || null;
       state.started = Boolean(settings.started);
       state.sessionClosed = Boolean(settings.sessionClosed);
       state.liftCursor = settings.liftCursor || 0;
@@ -454,6 +458,9 @@
     timeBudget: null,
     /* 오늘 하루만 짧게 — { date, minutes }. 내일이면 저절로 풀린다. */
     shortDay: null,
+    /* 복귀 — { startedOn, plan }. 다 끝나면 저절로 풀린다. */
+    comeback: null,
+    comebackDeclined: null,
     timeFit: null,
     warmupOpen: {},
     doneOpen: {},
@@ -923,6 +930,38 @@
       gymId: state.gymBook ? state.gymBook.activeId : undefined,
       lifter: state.lifter,
     });
+
+    /*
+     * 쉬었다 돌아온 사람은 무게부터 내린다.
+     *
+     * 시간 예산보다 **먼저** 먹인다. 복귀가 이미 세트를 줄였으면 세션이
+     * 짧아져서 시간 예산이 더 깎을 일이 없어진다. 순서가 반대면 같은
+     * 종목을 두 번 깎는다.
+     */
+    var comeback = activeComeback();
+    if (comeback) {
+      var factor = E.loadFactorAt(comeback.plan, comeback.week);
+      var setDrop = E.setDropAt(comeback.plan, comeback.week);
+      built = Object.assign({}, built, {
+        exercises: built.exercises.map(function (item) {
+          var keep = E.setsAfterDrop(item.sets.length, setDrop);
+          return Object.assign({}, item, {
+            sets: item.sets.slice(0, keep).map(function (set) {
+              if (set.weightKg == null || factor >= 1) return set;
+              /*
+               * 끼울 수 있는 무게로 내린다. 87.3kg이라고 적어 두면 그걸
+               * 맞추려다 사람이 시간을 버린다. 아래쪽으로 맞춘다 —
+               * 복귀 주에 반올림으로 올라가면 안 된다.
+               */
+              var scaled = item.loading
+                ? E.nearestLoadable(set.weightKg * factor, item.loading, 'down')
+                : E.roundToIncrement(set.weightKg * factor, item.exercise.increment);
+              return Object.assign({}, set, { weightKg: scaled });
+            }),
+          });
+        }),
+      });
+    }
 
     // 오늘 운동 할 수 있는 시간이 정해져 있으면 그 안에 들어오게 줄인다.
     state.timeFit = null;
@@ -2816,6 +2855,153 @@
   }
 
   /** 시작 전 — 오늘 할 것 목록. */
+  /* ── 돌아왔을 때 ───────────────────────────────── */
+
+  /**
+   * 마지막으로 **실제로 운동한** 날.
+   *
+   * state.history를 보면 안 된다. 거기엔 앱이 첫날부터 돌아가게 만들어 둔
+   * **데모 이력**이 들어 있어서, 누가 언제 오든 "방금 했음"으로 읽힌다 —
+   * 그러면 복귀 조정은 영원히 안 뜬다.
+   *
+   * 저장소에 실제로 적힌 세션만 본다. 한 번도 안 한 사람은 null이고,
+   * 그때는 묻지 않는다 — 처음 온 사람에게 "오랜만이네요"는 이상하다.
+   *
+   * 날을 세는 기준은 주간 기록과 같게 맞춘다(streak.ts). 두 곳이 갈리면
+   * "이번 주 3번 나왔다"면서 "한 달 쉬었다"고 하는 화면이 나온다.
+   */
+  function lastTrainedDate() {
+    var saved = storage.load().sessions || [];
+    var dates = saved
+      .filter(function (session) {
+        if (session.deleted || !session.sets) return false;
+        return session.sets.some(function (set) { return !set.warmup && set.reps > 0; });
+      })
+      .map(function (session) { return session.date; })
+      .sort();
+    if (state.todaySets.length > 0) dates.push(state.todayDate);
+    return dates.length > 0 ? dates[dates.length - 1] : null;
+  }
+
+  /**
+   * 하는 중인 복귀. 다 끝났으면 null이고, 그때 스스로 치운다.
+   *
+   * 끝난 계획을 들고 있으면 다음 달에 앱을 열었을 때 "복귀 3주차"가
+   * 다시 뜬다. 끝난 것은 끝난 것으로 지운다.
+   */
+  function activeComeback() {
+    var saved = state.comeback;
+    if (!saved || !saved.plan) return null;
+    var week = E.comebackWeek(saved.startedOn, state.todayDate);
+    if (week >= saved.plan.weeks) {
+      state.comeback = null;
+      return null;
+    }
+    return { plan: saved.plan, week: week };
+  }
+
+  /** 물어볼 만한 공백이 있는가. 이미 하는 중이거나 거절했으면 안 묻는다. */
+  function pendingComeback() {
+    if (state.comeback) return null;
+    var last = lastTrainedDate();
+    if (!last || state.comebackDeclined === last) return null;
+    var plan = E.planComeback({ lastTrainedISO: last, today: state.todayDate });
+    return plan.needed ? { plan: plan, last: last } : null;
+  }
+
+  /**
+   * 복귀 카드.
+   *
+   * 화면 제일 위다. 오늘 세션의 **무게를 통째로 바꾸는 이야기**라, 종목
+   * 목록을 보기 전에 정해져 있어야 한다.
+   *
+   * 이유를 먼저 묻는다. 바빠서 쉰 2주와 다쳐서 쉰 2주는 전혀 다른 2주다 —
+   * 종목을 뺄 때 "왜요?"를 먼저 묻는 것과 같은 이유다.
+   */
+  function comebackCard() {
+    var running = activeComeback();
+    if (running) {
+      return el('div', { class: 'sheet comeback on' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: '돌아오는 중' }),
+          el('span', { class: 'meta', text: (running.week + 1) + ' / ' + running.plan.weeks + '주차' }),
+        ]),
+        el('div', { class: 'sheet-body' }, [
+          el('p', { class: 'hint-line', text: E.comebackLine(running.plan, running.week) }),
+          el('button', {
+            type: 'button', class: 'finish quiet', text: '그만두고 원래 무게로',
+            onclick: function () {
+              state.comeback = null;
+              state.comebackDeclined = lastTrainedDate();
+              rebuildSession();
+              persist();
+              pushLog('복귀', '복귀 조정을 껐습니다. 오늘부터 원래 무게입니다.');
+              render();
+            },
+          }),
+        ]),
+      ]);
+    }
+
+    var pending = pendingComeback();
+    if (!pending) return null;
+
+    var body = el('div', { class: 'sheet-body' }, [
+      el('p', { class: 'hint-line', text: '왜 쉬셨나요? 답에 따라 내리는 폭이 다릅니다.' }),
+    ]);
+
+    body.appendChild(el('div', { class: 'summary-list' }, E.LAYOFF_REASONS.map(function (item) {
+      return el('button', {
+        type: 'button', class: 'menu-row',
+        onclick: function () { startComeback(pending.last, item.reason); },
+      }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: item.label }),
+          el('span', { class: 'plan-sets', text: item.note }),
+        ]),
+        el('span', { class: 'detail', text: '›' }),
+      ]);
+    })));
+
+    body.appendChild(el('button', {
+      type: 'button', class: 'finish quiet', text: '아니요, 원래 무게로 하겠습니다',
+      onclick: function () {
+        state.comebackDeclined = pending.last;
+        persist();
+        pushLog('복귀', '원래 무게로 갑니다. 무겁거든 세트 화면에서 내리셔도 됩니다.');
+        render();
+      },
+    }));
+
+    return el('div', { class: 'sheet comeback' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: pending.plan.title }),
+        el('span', { class: 'meta', text: pending.plan.gapDays + '일' }),
+      ]),
+      body,
+    ]);
+  }
+
+  function startComeback(lastTrained, reason) {
+    var plan = E.planComeback({
+      lastTrainedISO: lastTrained, today: state.todayDate, reason: reason,
+    });
+    state.comeback = { startedOn: state.todayDate, plan: plan };
+    state.comebackDeclined = null;
+    rebuildSession();
+    persist();
+    pushLog('복귀', '<b>' + plan.title + '</b> ' + plan.note);
+
+    /*
+     * 다쳐서 쉬었다고 한 사람은 통증부터 적게 한다. 무게를 내리는 것과
+     * 아픈 관절을 피하는 것은 다른 일이고, 둘 다 필요하다.
+     */
+    if (reason === 'injury') {
+      pushLog('복귀', '아픈 곳을 <b>체크인</b>에 적어 주시면 그 관절에 부담이 큰 종목도 같이 바꿉니다.');
+    }
+    render();
+  }
+
   /* ── 시간이 없는 날 ─────────────────────────────── */
 
   /**
@@ -2935,6 +3121,13 @@
     ]));
 
     renderWarnings();
+
+    /*
+     * 복귀가 제일 위다. 오늘 세션의 무게를 통째로 바꾸는 이야기라,
+     * 종목 목록을 보기 전에 정해져 있어야 한다.
+     */
+    var back = comebackCard();
+    if (back) screen.appendChild(back);
 
     var short = shortDayCard();
     if (short) screen.appendChild(short);
@@ -6015,7 +6208,7 @@
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
     'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'voiceRate', 'autoCount',
-    'consent', 'consentRecord', 'landmarks', 'exclusions',
+    'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback',
   ];
 
   function sharedSettings() {

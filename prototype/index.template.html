@@ -1684,6 +1684,12 @@ input[type="search"] {
 .nudge-row[aria-pressed="true"] { border-style: solid; border-color: var(--accent); color: var(--ink); }
 .nudge-row[aria-pressed="true"] .count-tempo { color: var(--accent); }
 
+/* 돌아왔을 때. 오늘 무게를 통째로 바꾸는 이야기라 눈에 띄어야 한다. */
+.comeback { border-color: var(--accent); }
+.comeback .sheet-head .meta { color: var(--accent); font-family: var(--mono); }
+.comeback.on { border-color: var(--line); }
+.comeback.on .sheet-head .meta { color: var(--muted); }
+
 /* ── 친구 ──────────────────────────────────────── */
 .friends-card .sheet-body { display: grid; gap: 9px; }
 .friend-row {
