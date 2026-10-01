@@ -10431,12 +10431,14 @@ var GymSearch = (function () {
    *
    * 앱을 껐다 켠 사람이 지나는 길(restore)과 같은 자리에 내려놓는다.
    */
-  function adoptAccountProgram() {
+  function adoptAccountProgram(wasOnboarding) {
     state.onboarding = { active: false, step: 0 };
     state.tab = 'today';
     loadScenario(state.scenario || 'normal', true);
     persist();
-    pushLog('로그인', '쓰던 프로그램을 불러왔습니다 — <b>설문은 건너뜁니다.</b>');
+    pushLog('로그인', wasOnboarding
+      ? '쓰던 프로그램을 불러왔습니다 — <b>설문은 건너뜁니다.</b>'
+      : '쓰던 프로그램을 불러왔습니다.');
   }
 
   function syncStatusLine() {
@@ -10497,10 +10499,25 @@ var GymSearch = (function () {
          * 설문이 올라간 경우다. 새로 가입한 사람의 설문을 건너뛰면
          * 프로그램이 없는 채로 앱이 열린다.
          */
-        var restored = result.settings === 'restored' || result.settings === 'pulled';
-        if (restored && state.onboarding && state.onboarding.active &&
-            state.program && state.answers) {
-          adoptAccountProgram();
+        /*
+         * 이 기기가 이 계정과 처음 만난 순간이다('restored'). 방금 계정
+         * 쪽 프로그램을 통째로 받았으므로, 주간 처방도 그 프로그램 기준으로
+         * 다시 세워야 한다.
+         *
+         * **설문 중인지를 조건으로 걸면 안 된다.** 카카오·구글로 들어오는
+         * 사람은 떠나기 전에 온보딩이 이미 끝나 있다(startOAuth) — 돌아온
+         * 시점에는 "설문 중"이 아니라서, 그 조건이면 이 길에서만 조용히
+         * 안 돈다. 받아 온 프로그램에 엉뚱한 주차·목표 RIR이 붙는다.
+         *
+         * 'pulled'(두 기기가 같이 써 온 사이의 평범한 당겨오기)는 설문
+         * 중일 때만 본다. 평소에 그걸로 세션을 다시 세우면, 운동 중에
+         * 동기화가 돌 때 화면이 통째로 갈아엎인다.
+         */
+        var firstContact = result.settings === 'restored';
+        var midOnboarding = Boolean(state.onboarding && state.onboarding.active);
+        var adopt = firstContact || (result.settings === 'pulled' && midOnboarding);
+        if (adopt && state.program && state.answers) {
+          adoptAccountProgram(midOnboarding);
         }
         persist();
         if (after) after();
