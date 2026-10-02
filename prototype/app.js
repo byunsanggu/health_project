@@ -176,6 +176,7 @@
         blockHistory: state.blockHistory,
         timeBudget: state.timeBudget,
         shortDay: state.shortDay,
+        promise: state.promise,
         comeback: state.comeback,
         comebackDeclined: state.comebackDeclined,
         /*
@@ -248,6 +249,7 @@
       state.style = settings.style || 'hypertrophy';
       state.timeBudget = settings.timeBudget || null;
       state.shortDay = settings.shortDay || null;
+      state.promise = settings.promise || null;
       state.comeback = settings.comeback || null;
       state.comebackDeclined = settings.comebackDeclined || null;
       state.started = Boolean(settings.started);
@@ -461,6 +463,7 @@
     /* 오늘 하루만 짧게 — { date, minutes }. 내일이면 저절로 풀린다. */
     shortDay: null,
     /* 복귀 — { startedOn, plan }. 다 끝나면 저절로 풀린다. */
+    promise: null,
     comeback: null,
     comebackDeclined: null,
     timeFit: null,
@@ -2857,6 +2860,254 @@
   }
 
   /** 시작 전 — 오늘 할 것 목록. */
+  /* ── 약속 ──────────────────────────────────────── */
+
+  /**
+   * 이번 주 약속.
+   *
+   * 없으면 프로그램이 고른 요일에 기본 시각을 붙여 만든다. 빈칸으로
+   * 두고 고르라고 하면 아무도 안 고른다.
+   *
+   * 프로그램의 요일이 바뀌면(주 3회 → 4회) 약속도 따라간다. 요일 수가
+   * 안 맞는 약속을 들고 있으면, 화면은 셋을 약속받았다고 하면서 볼륨은
+   * 넷으로 계산한다.
+   */
+  function promiseSlots() {
+    var want = trainingDays();
+    var saved = state.promise;
+    if (saved && saved.length === want.length) {
+      var sameDays = saved.every(function (slot, i) { return slot.weekday === want[i]; });
+      if (sameDays) return saved;
+      // 요일만 바뀌었으면 시각은 지킨다 — 사람이 정한 값이다.
+      return want.map(function (weekday, i) {
+        return { weekday: weekday, minutes: saved[i] ? saved[i].minutes : E.DEFAULT_WEEKDAY_MINUTES };
+      });
+    }
+    return E.defaultSlots(want);
+  }
+
+  /** 오늘 요일(월=0)과 지금 몇 분인지. 진짜 시계로 본다. */
+  function nowWeekday() {
+    return (new Date().getDay() + 6) % 7;
+  }
+
+  function nowMinutes() {
+    var now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  }
+
+  function nextPromise() {
+    return E.nextSlot(promiseSlots(), nowWeekday(), nowMinutes());
+  }
+
+  /* ── 다음 운동 예고 ──────────────────────────────
+
+     요약은 닫힌 문장이다. 다 했고, 숫자가 이만큼이고, 끝.
+     끝난 이야기에는 돌아올 이유가 없다.
+
+     그래서 마지막 줄을 열어둔다 — 다음에 **언제, 무엇을, 몇 킬로로**.
+     "운동해야지"로는 안 오고 "목요일에 벤치 105 올려야지"로는 온다.
+
+     숫자는 지어내지 않는다. 여기 뜨는 무게는 그날 실제로 처방될
+     무게를 같은 엔진으로 그 자리에서 계산한 것이다. 예고가 105인데
+     막상 100이 나오면 다음부터 예고를 안 믿는다.
+  ── */
+
+  /** 다음 약속. 오늘 것은 방금 했으니 지난 것으로 친다. */
+  function promiseAfterToday() {
+    return E.nextSlot(promiseSlots(), nowWeekday(), 24 * 60);
+  }
+
+  /** 그 종목을 마지막으로 했을 때의 톱세트 무게. 없으면 null. */
+  function lastTopWeight(history, exerciseId) {
+    for (var i = history.length - 1; i >= 0; i -= 1) {
+      var top = E.topWorkingSet(history[i].sets, exerciseId);
+      if (top && top.weightKg != null) return top.weightKg;
+    }
+    return null;
+  }
+
+  /**
+   * 다음에 할 날을 지금 계산한다.
+   *
+   * 순서는 오늘 한 날의 **다음 날**이다. 오늘 날을 직접 바꿔서 했다면
+   * 거기서 이어간다 — 프로그램 순서가 아니라 그 사람이 실제로 한
+   * 순서를 따라가야 예고가 맞는다.
+   */
+  function nextPreview() {
+    if (!state.program || !state.program.templates || state.program.templates.length === 0) {
+      return null;
+    }
+    var templates = state.program.templates;
+    var template = templates[(currentTemplateIndex() + 1) % templates.length];
+    if (!template) return null;
+
+    var next = promiseAfterToday();
+    var date = state.todayDate;
+    if (next) {
+      var day = new Date(state.todayDate + 'T00:00:00');
+      day.setDate(day.getDate() + next.daysAhead);
+      date = day.toISOString().slice(0, 10);
+    }
+
+    // 오늘 한 것까지 넣어야 "지난번"이 오늘이 된다.
+    var history = state.history.concat(todaySessionLog());
+
+    var built;
+    try {
+      built = E.buildSession({
+        template: withExclusions(template),
+        date: date,
+        plan: state.plan,
+        history: history,
+        index: index,
+        pain: activePain(),
+        gym: state.gym,
+        gymId: state.gymBook ? state.gymBook.activeId : undefined,
+        lifter: state.lifter,
+      });
+    } catch (err) {
+      // 예고는 덤이다. 계산이 안 되면 조용히 빠진다.
+      return null;
+    }
+
+    var comeback = activeComeback();
+    var factor = comeback ? E.loadFactorAt(comeback.plan, comeback.week) : 1;
+
+    var exercises = built.exercises.map(function (item) {
+      var top = item.sets[0] || null;
+      var weight = top && top.weightKg != null ? top.weightKg : null;
+      if (weight != null && factor < 1) {
+        weight = item.loading
+          ? E.nearestLoadable(weight * factor, item.loading, 'down')
+          : E.roundToIncrement(weight * factor, item.exercise.increment);
+      }
+      return {
+        name: item.exercise.name,
+        equipment: item.exercise.equipment,
+        pattern: item.exercise.pattern,
+        weightKg: weight,
+        sets: item.sets.length,
+        repMin: top ? top.targetReps.min : 8,
+        repMax: top ? top.targetReps.max : 12,
+        previousKg: lastTopWeight(history, item.exercise.id),
+      };
+    });
+
+    return E.buildPreview({
+      sessionName: template.name,
+      whenLabel: E.nextSlotShort(next) || null,
+      exercises: exercises,
+      drop: state.plan.phase === 'deload' ? 'deload' : (comeback ? 'comeback' : null),
+    });
+  }
+
+  /**
+   * 예고 카드.
+   *
+   * 끝낸 화면에만 둔다. 운동 중에 다음 날이 보이면 지금 할 것에서
+   * 눈이 떠난다. 다 끝난 사람에게만 다음 문을 열어 보인다.
+   */
+  function previewCard() {
+    var preview = nextPreview();
+    if (!preview) return null;
+    return el('div', { class: 'preview-card' }, [
+      el('span', { class: 'preview-tag', text: '다음 운동' }),
+      el('span', { class: 'preview-head', text: preview.headline }),
+      el('span', { class: 'preview-detail', text: preview.detail }),
+    ]);
+  }
+
+  /**
+   * 약속 카드.
+   *
+   * "주 4회"는 지켜지지 않고 "화요일 저녁 7시"는 지켜진다. 현장에서도
+   * 그렇다 — "일주일에 네 번 나오세요"보다 "화·목·토 7시에 뵐게요"다.
+   *
+   * 연속 카드 바로 위에 둔다. "이번 주 3/4"를 읽은 사람이 바로 다음에
+   * 봐야 하는 것은 **언제 한 번 더 가는가**다.
+   */
+  function promiseCard() {
+    var next = nextPromise();
+    if (!next) return null;
+
+    return el('button', {
+      type: 'button', class: 'promise-row' + (next.daysAhead === 0 ? ' today' : ''),
+      title: '약속한 요일과 시각을 바꿉니다',
+      onclick: openPromise,
+    }, [
+      el('span', { class: 'plan-main' }, [
+        el('span', { class: 'name', text: E.nextSlotLine(next) }),
+        el('span', { class: 'plan-sets', text: E.promiseSummary(promiseSlots()) }),
+      ]),
+      el('span', { class: 'detail', text: '›' }),
+    ]);
+  }
+
+  /** 요일마다 시각을 고른다. 요일 자체는 프로그램이 정한다. */
+  function openPromise() {
+    var slots = promiseSlots().map(function (slot) {
+      return { weekday: slot.weekday, minutes: slot.minutes };
+    });
+
+    var draw = function () {
+      var body = [];
+      body.push(el('p', { class: 'asset-note', text:
+        '"주 ' + slots.length + '회"보다 "화요일 7시"가 훨씬 잘 지켜집니다. ' +
+        '가실 수 있는 시각으로 바꿔 두시면 그 한 시간 전에 알려 드립니다.' }));
+
+      slots.forEach(function (slot, i) {
+        var row = el('div', { class: 'promise-edit' }, [
+          el('span', { class: 'promise-day', text: E.WEEKDAY_LABELS_KO[slot.weekday] }),
+        ]);
+        var chips = el('div', { class: 'chip-row promise-times' }, []);
+        E.timeChoices().forEach(function (minutes) {
+          var on = minutes === slot.minutes;
+          chips.appendChild(el('button', {
+            type: 'button', class: 'chip', 'aria-pressed': String(on),
+            text: E.minutesLabel(minutes),
+            onclick: function () { slots[i].minutes = minutes; draw(); },
+          }));
+        });
+        row.appendChild(chips);
+        body.push(row);
+      });
+
+      body.push(el('p', { class: 'hint-line', text:
+        '요일은 프로그램이 정합니다 — 주 횟수를 바꾸시려면 설정에서 프로그램을 바꾸세요.' }));
+
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: '이렇게 약속하기',
+        onclick: function () {
+          state.promise = slots.map(function (slot) {
+            return { weekday: slot.weekday, minutes: E.clampMinutes(slot.minutes) };
+          });
+          persist();
+          modal.close();
+          pushLog('약속', '<b>' + E.promiseSummary(state.promise) + '</b>에 가기로 했습니다. ' +
+            '한 시간 전에 알려 드립니다.');
+          scheduleNudge();
+          render();
+        },
+      }));
+
+      openModal('언제 가세요?', E.promiseSummary(slots), body);
+      /*
+       * 줄마다 고른 칩이 보이게 민다. 시각이 서른다섯 개라, 저녁 7시를
+       * 골라 둔 사람이 열면 05:00만 보인다.
+       *
+       * scrollIntoView를 쓰면 모달 자체가 같이 위아래로 튄다. 가로
+       * 스크롤만 손대려고 scrollLeft를 직접 계산한다.
+       */
+      Array.prototype.forEach.call(modal.querySelectorAll('.promise-times'), function (rowEl) {
+        var chosen = rowEl.querySelector('.chip[aria-pressed="true"]');
+        if (!chosen) return;
+        rowEl.scrollLeft = chosen.offsetLeft - (rowEl.clientWidth - chosen.offsetWidth) / 2;
+      });
+    };
+    draw();
+  }
+
   /* ── 돌아왔을 때 ───────────────────────────────── */
 
   /**
@@ -3182,6 +3433,8 @@
      * 지킨 주를 목록 바로 위에 둔다. "오늘 나왔다"가 곧 "이번 주를 지켰다"로
      * 이어지는 게 보여야 나올 이유가 생긴다.
      */
+    var promise = promiseCard();
+    if (promise) screen.appendChild(promise);
     screen.appendChild(streakCard(currentStreak()));
     var friends = friendsCard();
     if (friends) screen.appendChild(friends);
@@ -5222,6 +5475,14 @@
     var head = sessionHead();
     screen.appendChild(head.node);
 
+    /*
+     * 예고가 맨 위다. 방금 끝낸 사람이 가장 먼저 봐야 하는 것은 오늘
+     * 한 세트 수가 아니라 **다음에 언제 오는가**다. 요약은 그 아래에서
+     * 기다려도 된다 — 어차피 다시 볼 버튼이 있다.
+     */
+    var preview = previewCard();
+    if (preview) screen.appendChild(preview);
+
     // 막 마친 자리가 이번 주를 돌아볼 마음이 제일 드는 자리다.
     screen.appendChild(streakCard(currentStreak()));
     var closedFriends = friendsCard();
@@ -5280,8 +5541,14 @@
    */
   function closeToday() {
     if (state.todaySets.length === 0) return;
+    /*
+     * 휴식 타이머도 같이 멈춘다. "오늘 운동을 마쳤습니다" 밑에서
+     * 휴식 0:44가 계속 돌면 끝난 게 아닌 것처럼 보이고, 화면을 끈 뒤에도
+     * 다 쉬었다고 알림이 한 번 더 울린다.
+     */
     state.sessionClosed = true;
     state.started = false;
+    stopRest();
     modal.close();
     render();
   }
@@ -6213,7 +6480,7 @@
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
     'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'voiceRate', 'autoCount',
-    'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback',
+    'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise',
   ];
 
   function sharedSettings() {
@@ -7173,15 +7440,27 @@
   var NUDGE_MIN_LEAD_MS = 2 * 60 * 60 * 1000;
 
   function nudgeSlots() {
-    var starts = state.history
-      .map(function (session) { return session.startedAt; })
-      .filter(Boolean)
-      .slice(-12)
-      .map(function (stamp) { return new Date(stamp).getHours(); });
-
-    var hour = E.nudgeHour(starts);
+    /*
+     * 약속이 있으면 짐작하지 않는다.
+     *
+     * 전에는 지금까지 운동을 시작한 시각의 중앙값으로 때를 맞췄다. 그건
+     * 짐작이고, 짐작으로 울리는 알림은 "늘 이쯤 가시던데요"밖에 못 된다.
+     * 약속이 있으면 **그 사람이 직접 정한 자리**를 가리킬 수 있다.
+     */
+    var promised = nextPromise();
     var first = new Date();
-    first.setHours(hour, 0, 0, 0);
+    if (promised) {
+      first.setDate(first.getDate() + promised.daysAhead);
+      var at = E.leadMinutesFor(promised.slot);
+      first.setHours(Math.floor(at / 60), at % 60, 0, 0);
+    } else {
+      var starts = state.history
+        .map(function (session) { return session.startedAt; })
+        .filter(Boolean)
+        .slice(-12)
+        .map(function (stamp) { return new Date(stamp).getHours(); });
+      first.setHours(E.nudgeHour(starts), 0, 0, 0);
+    }
     if (first.getTime() - Date.now() < NUDGE_MIN_LEAD_MS) first.setDate(first.getDate() + 1);
 
     /*

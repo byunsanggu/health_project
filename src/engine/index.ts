@@ -43,6 +43,8 @@ export * from './streak.ts';
 export * from './nudge.ts';
 export * from './friends.ts';
 export * from './comeback.ts';
+export * from './preview.ts';
+export * from './promise.ts';
 export * from './sync.ts';
 export * from './superset.ts';
 export * from './tempo.ts';
