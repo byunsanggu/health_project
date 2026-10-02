@@ -159,3 +159,32 @@ select '[민감정보] week_summaries 열 → ' || string_agg(column_name, ', ' 
 from information_schema.columns where table_schema = 'public' and table_name = 'week_summaries';
 select '[민감정보] cheers 열 → ' || string_agg(column_name, ', ' order by ordinal_position)
 from information_schema.columns where table_schema = 'public' and table_name = 'cheers';
+
+-- ── 닉네임 규칙
+--
+--   앱(nickname.ts)이 입력칸 아래에서 한국어로 먼저 막는다. 그런데
+--   anon 키는 앱에 박혀 있어서 입력칸을 건너뛰고 PostgREST로 직접
+--   쏠 수 있다. 그래서 DB가 마지막으로 한 번 더 본다.
+set session "test.uid" = '33333333-3333-3333-3333-333333333333';
+
+select '[닉네임] ' || rpad(name, 14) || ' → ' ||
+  case when public.set_my_profile(name) is null then '막힘 ✓' else '✗ 통과해 버림' end
+from (values
+  ('가'), ('가나다라마바사아자차카타파'), ('ㅋㅋㅋ'), ('철수@짐'),
+  ('_철수'), ('철수_'), ('철수__형'),
+  ('01012345678'), ('김01012345678'), ('123456'),
+  ('관리자'), ('운영자_김'), ('볼륨_코치'), ('Admin'), ('xx_support')
+) as t(name);
+
+select '[닉네임] 막혀도 쓰던 이름은 그대로인가 → ' ||
+  case when display_name = '모르는사람' then '네 ✓' else '✗ ' || display_name end
+from public.profiles where user_id = auth.uid();
+
+select '[닉네임] 멀쩡한 이름 → ' ||
+  case when public.set_my_profile('새벽리프터') is not null then '통과 ✓' else '✗ 막힘' end as _;
+
+-- 공백은 거절하지 않고 밑줄로 바꾼다. 앱과 같은 처리여야 한다.
+select public.set_my_profile('철수 형') as _ \gset
+select '[닉네임] 공백 → 밑줄: ' || display_name ||
+  case when display_name = '철수_형' then ' ✓' else ' ✗' end
+from public.profiles where user_id = auth.uid();

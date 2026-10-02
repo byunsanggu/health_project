@@ -1704,6 +1704,13 @@ input[type="search"] {
 .promise-row.today .name { color: var(--accent); }
 .promise-row .detail { color: var(--muted); font-size: 15px; }
 
+/* 닉네임 후보. 빈칸을 주지 않으려고 누를 수 있는 것을 깔아 둔다. */
+.nick-suggest {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 10px 0 4px;
+}
+.nick-suggest .asset-note { margin: 0; }
+
 /* 끝낸 화면의 다음 운동 예고. 요약보다 위에 있고, 요약보다 조용하다. */
 .preview-card {
   display: grid; gap: 3px; width: 100%;

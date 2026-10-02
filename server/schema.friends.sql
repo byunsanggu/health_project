@@ -22,8 +22,35 @@
 
 create table if not exists public.profiles (
   user_id      uuid primary key references auth.users on delete cascade,
-  -- 친구에게 보일 이름. 본명을 요구하지 않는다.
-  display_name text not null check (length(display_name) between 1 and 10),
+  /*
+   * 친구에게 보일 이름(닉네임). 본명을 요구하지 않는다.
+   *
+   * 규칙을 앱에만 두면 안 된다. anon 키는 앱에 박혀 있어서 누구든
+   * PostgREST로 직접 쏠 수 있다 — 앱의 입력칸을 거치지 않고 "관리자"를
+   * 넣는 데 아무 장벽이 없다. 그래서 마지막 방어선은 여기다.
+   * src/engine/nickname.ts와 같은 규칙이다.
+   *
+   * 전역 고유로 만들지 않는다. 이름으로 검색되는 길이 없으니 겹쳐도
+   * 위험하지 않고, 고유로 하면 늦게 온 사람은 평생 "철수8821"이다.
+   */
+  display_name text not null
+    -- 2~12자
+    constraint display_name_len check (char_length(display_name) between 2 and 12)
+    -- 완성형 한글·영문·숫자·밑줄. 밑줄은 가운데에 하나씩만.
+    constraint display_name_shape
+      check (display_name ~ '^[가-힣A-Za-z0-9](_?[가-힣A-Za-z0-9])*$')
+    -- 숫자만으로는 안 된다. 식별번호처럼 보인다.
+    constraint display_name_not_digits check (display_name !~ '^[0-9]+$')
+    -- 전화번호가 닉네임 자리로 새지 않게.
+    constraint display_name_not_phone
+      check (replace(display_name, '_', '') !~ '01[016789][0-9]{6,8}')
+    /*
+     * 운영자 사칭. 밑줄과 대소문자를 지운 뒤에 본다 — 그래야
+     * "볼륨_코치"로 "볼륨코치"를 흉내 내지 못한다.
+     */
+    constraint display_name_not_reserved
+      check (lower(replace(display_name, '_', '')) !~
+        '(운영자|관리자|고객센터|볼륨코치|공식|admin|official|support|root|system|staff)'),
   /*
    * 친구 코드.
    *
@@ -84,20 +111,38 @@ security invoker
 set search_path = public
 as $$
 declare
-  clean text := btrim(regexp_replace(coalesce(name, ''), '\s+', ' ', 'g'));
+  -- 공백은 거절하지 않고 밑줄로 바꾼다. 앱(nickname.ts)과 같은 처리다.
+  clean text := btrim(regexp_replace(coalesce(name, ''), '\s+', '_', 'g'));
   code  text;
 begin
   if auth.uid() is null then return null; end if;
-  if clean = '' then return null; end if;
-  clean := left(clean, 10);
-
+  /*
+   * 길면 **자르지 않고 거절한다.**
+   *
+   * 잘라서 넣으면 "가나다라마바사아자차카타파"가 아무 말 없이
+   * "가나다라마바사아자차카타"가 된다. 남의 이름을 조용히 바꾸는 것은
+   * 저장에 성공한 게 아니다.
+   */
+  if char_length(clean) < 2 or char_length(clean) > 12 then return null; end if;
   select friend_code into code from public.profiles where user_id = auth.uid();
   if code is null then code := public.new_friend_code(); end if;
 
-  insert into public.profiles (user_id, display_name, friend_code, updated_at)
-  values (auth.uid(), clean, code, now())
-  on conflict (user_id) do update
-    set display_name = excluded.display_name, updated_at = now();
+  /*
+   * 닉네임 규칙에 걸리면 null을 돌려준다.
+   *
+   * 그냥 두면 제약조건 위반이 PostgREST를 타고 영문 오류 그대로
+   * 올라간다 — 사용자가 읽을 말이 아니다. 무엇이 틀렸는지는 앱이
+   * (nickname.ts가) 입력칸 아래에서 한국어로 먼저 말해 준다.
+   * 여기까지 왔다는 건 앱을 거치지 않고 쏜 경우다.
+   */
+  begin
+    insert into public.profiles (user_id, display_name, friend_code, updated_at)
+    values (auth.uid(), clean, code, now())
+    on conflict (user_id) do update
+      set display_name = excluded.display_name, updated_at = now();
+  exception when check_violation then
+    return null;
+  end;
 
   return code;
 end

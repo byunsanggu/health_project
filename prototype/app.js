@@ -7246,30 +7246,57 @@
     ]);
   }
 
-  /** 처음 켤 때 — 별명을 정하고 코드를 받는다. */
+  /**
+   * 처음 켤 때 — 닉네임을 정하고 코드를 받는다.
+   *
+   * 이 이름은 **낯선 사람에게 보인다.** 그래서 규칙이 있고(nickname.ts),
+   * 막을 때는 무엇을 고치면 되는지까지 말한다. "사용할 수 없는
+   * 이름입니다"만 띄우면 사용자는 뭘 고쳐야 할지 모른 채 글자를 지웠다
+   * 썼다 한다.
+   */
   function openFriendName() {
-    var draft = { name: state.friendName || '', notice: null };
+    var draft = {
+      name: state.friendName || '',
+      notice: null,
+      // 빈칸으로 두면 아무도 안 고친다. 누를 수 있는 후보를 깔아 둔다.
+      seed: Math.floor(Math.random() * 100000),
+    };
     var draw = function () {
       var body = [];
       body.push(el('p', { class: 'asset-note', text:
-        '친구에게 보일 이름입니다. 본명이 아니어도 됩니다 — 헬스장에서 부르는 이름이면 충분합니다.' }));
+        '친구에게 보일 닉네임입니다. 본명은 쓰지 마세요 — 모르는 사람에게도 이대로 보입니다.' }));
       if (draft.notice) {
         body.push(el('div', { class: 'notice' }, [el('div', { text: draft.notice })]));
       }
       var input = el('input', {
-        type: 'text', class: 'text-input', maxlength: String(E.NAME_MAX),
-        value: draft.name, placeholder: '예: 짐맨',
+        type: 'text', class: 'text-input', maxlength: String(E.NICKNAME_MAX),
+        value: draft.name, placeholder: '예: 새벽리프터',
         oninput: function (event) { draft.name = event.target.value; },
       });
       body.push(input);
+
+      body.push(el('div', { class: 'nick-suggest' }, [el('span', {
+        class: 'asset-note', text: '생각나는 게 없으면',
+      })].concat(E.suggestNicknames(draft.seed).map(function (name) {
+        return el('button', {
+          type: 'button', class: 'chip', text: name,
+          onclick: function () {
+            draft.name = name;
+            draft.notice = null;
+            draw();
+          },
+        });
+      }))));
+
       body.push(el('button', {
         type: 'button', class: 'finish', text: '정하기',
         onclick: function () {
-          if (!E.nameIsUsable(draft.name)) {
-            draft.notice = '이름을 한 글자 이상 적어 주세요.';
+          var checked = E.checkNickname(draft.name);
+          if (!checked.ok) {
+            draft.notice = checked.message;
             return draw();
           }
-          var clean = E.cleanDisplayName(draft.name);
+          var clean = checked.value;
           Remote.setProfile(clean).then(function (code) {
             if (!code) {
               draft.notice = '이름을 저장하지 못했습니다. 잠시 뒤 다시 해 보세요.';
@@ -7294,7 +7321,7 @@
           });
         },
       }));
-      openModal('친구에게 보일 이름', null, body);
+      openModal('닉네임 정하기', null, body);
       input.focus();
     };
     draw();

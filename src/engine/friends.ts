@@ -56,23 +56,12 @@ export function formatFriendCode(code: string): string {
   return normalized.slice(0, 3) + '-' + normalized.slice(3);
 }
 
-/* ── 별명 ──────────────────────────────────────── */
-
-export const NAME_MAX = 10;
-
-/**
- * 친구에게 보일 이름.
+/*
+ * 별명(닉네임) 규칙은 nickname.ts에 있다.
  *
- * 본명을 요구하지 않는다. 헬스장에서 쓰는 별명이면 충분하고, 본명을
- * 받아 두면 언젠가 그게 새는 사고가 난다.
+ * 여기에도 두면 두 벌이 되고, 두 벌은 반드시 갈라진다 — 한쪽만 고친
+ * 날 앱은 통과시키고 DB는 거절한다.
  */
-export function cleanDisplayName(raw: string): string {
-  return (raw ?? '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
-}
-
-export function nameIsUsable(raw: string): boolean {
-  return cleanDisplayName(raw).length > 0;
-}
 
 /* ── 응원 ──────────────────────────────────────── */
 

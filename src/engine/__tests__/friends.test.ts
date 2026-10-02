@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
-  CHEERS, CODE_ALPHABET, CODE_LENGTH, NAME_MAX,
-  buildQuest, canCheer, cheerText, cleanDisplayName, formatFriendCode,
-  friendRow, groupQuest as buildGroup, nameIsUsable, normalizeFriendCode,
+  CHEERS, CODE_ALPHABET, CODE_LENGTH,
+  buildQuest, canCheer, cheerText, formatFriendCode,
+  friendRow, groupQuest as buildGroup, normalizeFriendCode,
 } from '../friends.ts';
 
 describe('친구 코드', () => {
@@ -39,19 +39,6 @@ describe('친구 코드', () => {
   it('길이가 여섯이다', () => {
     assert.equal(CODE_LENGTH, 6);
     assert.equal(normalizeFriendCode('A'.repeat(CODE_LENGTH))?.length, CODE_LENGTH);
-  });
-});
-
-describe('별명', () => {
-  it('본명을 요구하지 않고 길이만 자른다', () => {
-    assert.equal(cleanDisplayName('  관장님  '), '관장님');
-    assert.equal(cleanDisplayName('가'.repeat(30)).length, NAME_MAX);
-    assert.equal(cleanDisplayName('김  영수'), '김 영수');
-  });
-
-  it('빈 이름은 못 쓴다', () => {
-    assert.equal(nameIsUsable('   '), false);
-    assert.equal(nameIsUsable('짐맨'), true);
   });
 });
 
