@@ -1704,6 +1704,13 @@ input[type="search"] {
 .promise-row.today .name { color: var(--accent); }
 .promise-row .detail { color: var(--muted); font-size: 15px; }
 
+/* 같은 헬스장에 같은 종목 기계가 둘 이상일 때 고르는 줄. */
+.machine-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 8px 0 2px;
+}
+.machine-label { font-size: 12px; color: var(--muted); }
+
 /* 닉네임 후보. 빈칸을 주지 않으려고 누를 수 있는 것을 깔아 둔다. */
 .nick-suggest {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;

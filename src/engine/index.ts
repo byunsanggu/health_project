@@ -54,6 +54,7 @@ export * from './wodLog.ts';
 export * from './gymIdentity.ts';
 export * from './gymPresets.ts';
 export * from './gymWeight.ts';
+export * from './machine.ts';
 export * from './gyms.ts';
 export * from './strength.ts';
 export * from './session.ts';

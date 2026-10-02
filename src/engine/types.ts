@@ -91,6 +91,13 @@ export interface SetLog {
   rir: number;
   /** 워밍업 세트는 볼륨에서 제외한다. */
   warmup?: boolean;
+  /**
+   * 같은 헬스장에 같은 종목 기계가 둘 이상일 때 어느 쪽인가.
+   *
+   * 없으면 첫 번째 기계다. 그래서 이 칸이 생기기 전에 쌓인 기록을
+   * 손댈 필요가 없다 — 쓰는 쪽에서 machineOf()로 읽는다.
+   */
+  machine?: string;
 }
 
 /**

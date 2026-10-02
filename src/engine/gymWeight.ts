@@ -24,6 +24,25 @@ import type { Equipment, Exercise, SessionLog } from './types.ts';
  * bodyweight는 체중이 기준이라 어디서나 같지만, 어시스트 풀업 머신처럼
  * 보조 중량이 붙는 종목은 machine으로 분류돼 있어 따로 처리할 필요가 없다.
  */
+/**
+ * 기계 식별자. 라벨이 아니라 열쇠다 — 화면에 그대로 보여주지 않는다.
+ * 쓰는 쪽 규칙은 machine.ts에 있다.
+ */
+export type MachineId = string;
+
+/**
+ * 처음부터 쓰던 기계.
+ *
+ * 옛 기록에는 이 칸이 없다. 없으면 'a'로 본다 — 그래서 이미 쌓인 기록을
+ * 손댈 필요가 없다.
+ */
+export const FIRST_MACHINE: MachineId = 'a';
+
+/** 이 세트는 어느 기계에서 나왔는가. */
+export function machineOf(set: { machine?: string }): MachineId {
+  return set.machine || FIRST_MACHINE;
+}
+
 export const GYM_SPECIFIC_EQUIPMENT: readonly Equipment[] = ['machine', 'cable', 'smith', 'band'];
 
 const GYM_SPECIFIC = new Set<Equipment>(GYM_SPECIFIC_EQUIPMENT);
@@ -36,6 +55,13 @@ export function isGymSpecific(exercise: Exercise): boolean {
 export interface HistoryScope {
   /** 지금 있는 헬스장 */
   gymId?: string;
+  /**
+   * 그 헬스장에 같은 종목 기계가 둘 이상일 때 어느 쪽인가.
+   *
+   * 안 주면 첫 번째 기계로 본다. 기계를 나눈 적이 없는 사람에게는
+   * 모든 기록이 첫 번째 기계이므로 아무것도 달라지지 않는다.
+   */
+  machine?: string;
   /**
    * 헬스장을 가리지 않고 전부 본다.
    * 볼륨 집계처럼 "몇 세트 했는가"만 보는 계산에서는 헬스장이 상관없다.
@@ -56,7 +82,23 @@ export function weightHistoryFor(
   scope: HistoryScope = {},
 ): SessionLog[] {
   if (scope.anyGym || !isGymSpecific(exercise) || !scope.gymId) return [...sessions];
-  return sessions.filter((session) => session.gymId === scope.gymId);
+
+  const atGym = sessions.filter((session) => session.gymId === scope.gymId);
+  const machine = scope.machine || FIRST_MACHINE;
+
+  /*
+   * 다른 기계로 한 세트는 **이 종목에 한해** 걷어낸다.
+   *
+   * 세션을 통째로 버리면 안 된다. 같은 날 다른 종목도 했고, 그 기록은
+   * 멀쩡하다. 그리고 이 종목 세트가 하나도 안 남은 세션은 findLastSession이
+   * 알아서 건너뛴다 — "지난번"이 다른 기계가 되는 일이 없다.
+   */
+  return atGym.map((session) => ({
+    ...session,
+    sets: session.sets.filter(
+      (set) => set.exerciseId !== exercise.id || machineOf(set) === machine,
+    ),
+  }));
 }
 
 export interface GymWeightNote {

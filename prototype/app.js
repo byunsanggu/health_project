@@ -177,6 +177,16 @@
         timeBudget: state.timeBudget,
         shortDay: state.shortDay,
         promise: state.promise,
+        /*
+         * "같은 기계예요"라고 답한 종목. 날짜를 같이 적는다 — 하루짜리
+         * 답이라 내일까지 들고 가면 영영 안 묻게 된다.
+         *
+         * 고른 기계(machinePick)는 여기 없다. 그건 세트마다 machine 칸에
+         * 이미 붙어 있어서, 복원할 때 세트에서 거꾸로 읽는 쪽이 어긋날
+         * 여지가 없다.
+         */
+        machineSame: { date: state.todayDate, ids: state.machineSame },
+        machineKnown: state.machineKnown,
         comeback: state.comeback,
         comebackDeclined: state.comebackDeclined,
         /*
@@ -285,9 +295,20 @@
       loadScenario(state.scenario, true);
 
       // 오늘 기록한 세트를 되살리고, 해당 세트를 완료 상태로 표시한다.
+      state.machineKnown = settings.machineKnown || {};
+      var sameAnswer = settings.machineSame;
+      state.machineSame = sameAnswer && sameAnswer.date === state.todayDate
+        ? (sameAnswer.ids || {}) : {};
+
       var todaySets = Array.isArray(settings.todaySets) ? settings.todaySets : [];
       if (todaySets.length > 0) {
         state.todaySets = todaySets;
+
+        // 오늘 어느 기계로 했는지는 세트에 적혀 있다. 거기서 거꾸로 읽는다.
+        state.machinePick = {};
+        todaySets.forEach(function (logged) {
+          if (logged.machine) state.machinePick[logged.exerciseId] = logged.machine;
+        });
 
         // 값이 똑같은 세트가 여러 개일 수 있으므로 종목별 큐에서 순서대로 꺼낸다.
         var queues = {};
@@ -575,6 +596,25 @@
      * 현장에서는 순서대로 안 온다 — "오늘 상체 하고 싶다"가 매주 있다.
      */
     dayOverride: null,
+    /*
+     * 오늘 어느 기계로 하는가. { 종목id: 기계열쇠 }
+     *
+     * 하루짜리다. 같은 사람이 어제는 안쪽 기계, 오늘은 창가 기계를 쓸 수
+     * 있으므로 어제 고른 것을 오늘로 끌고 오면 안 된다.
+     */
+    machinePick: {},
+    /*
+     * 나눠 둔 기계 목록. { "헬스장id|종목id": ['a','b'] }
+     *
+     * 하루짜리가 아니다 — 그 헬스장에 기계가 두 대 있다는 사실은
+     * 내일도 그대로다.
+     */
+    machineKnown: {},
+    /*
+     * "같은 기계예요"라고 답한 종목. 이 날은 다시 묻지 않는다.
+     * 하루 안에 같은 질문을 두 번 받으면 읽지 않고 아무거나 누르게 된다.
+     */
+    machineSame: {},
     onboarding: { active: true, step: 0 },
   };
 
@@ -751,6 +791,9 @@
     state.history = seeded.history;
     state.checkIns = seeded.checkIns;
     state.todaySets = [];
+    // 오늘 고른 기계도 하루짜리다. 세트가 비면 같이 비운다.
+    state.machinePick = {};
+    state.machineSame = {};
     state.summary = null;
     state.sessionStartedAt = null;
     state.busyEquipment = [];
@@ -933,6 +976,8 @@
       gym: state.gym,
       // 머신·케이블 중량은 이 헬스장 기록만 본다 — 기계마다 표기가 다르다.
       gymId: state.gymBook ? state.gymBook.activeId : undefined,
+      // 같은 헬스장에 같은 기계가 둘 있으면 오늘 선 쪽의 기록만 본다.
+      machines: state.machinePick,
       lifter: state.lifter,
     });
 
@@ -1124,6 +1169,13 @@
       reps: set.reps,
       rir: rir,
     };
+    /*
+     * 어느 기계로 했는가. 고른 적이 없으면 칸을 비워 둔다 — 비면 첫 번째
+     * 기계로 읽히므로, 기계를 나눈 적 없는 사람의 기록에는 이 칸이
+     * 아예 생기지 않는다.
+     */
+    var pickedMachine = state.machinePick[lift.exercise.id];
+    if (pickedMachine) logged.machine = pickedMachine;
     state.todaySets.push(logged);
     // 되돌릴 때 이 항목만 정확히 빼려고 붙여 둔다. 같은 중량·반복이 여러 번
     // 나오므로 값으로 찾으면 엉뚱한 세트가 지워진다.
@@ -1156,6 +1208,14 @@
      * 수를 비교해서 짝이 덜 했으면 짝으로 넘어가고, 같으면 한 바퀴가
      * 끝난 것이므로 제대로 쉰다.
      */
+    /*
+     * 다른 기계인지 묻는 일은 세트를 **마친 뒤**에 한다.
+     *
+     * 기록을 막아 세우고 물으면 세트 사이에 설문을 받는 꼴이 된다.
+     * 기록은 이미 들어갔고, 답에 따라 나중에 옮긴다.
+     */
+    maybeAskMachine(lift, set, logged);
+
     var pairState = supersetTurn(lift, liftIndex);
     startRest(lift, setIndex, pairState ? pairState.rest : null);
     if (pairState && pairState.nextIndex >= 0) state.liftCursor = pairState.nextIndex;
@@ -1559,6 +1619,161 @@
         onclick: askNotificationPermission,
       }));
     }
+  }
+
+  /* ── 같은 헬스장, 다른 기계 ──────────────────────
+
+     체스트프레스가 두 대 있는 헬스장은 흔하다. 지금까지는 헬스장으로만
+     이력을 나눴기 때문에 두 기계 기록이 한 줄로 섞였고, 80kg과 140kg이
+     번갈아 들어오면 중량 처방이 망가졌다.
+
+     **등록 화면을 만들지 않는다.** "이 헬스장 기계 목록을 적으세요"를
+     만나면 사람들은 거기서 앱을 닫는다. 실제로 어긋났을 때 한 번만
+     묻고, 문제가 없는 사람은 이 기능의 존재도 모른다.
+  ── */
+
+  /** 오늘 이 종목에서 쓰는 기계 열쇠. 고른 적 없으면 첫 번째. */
+  function machineFor(exerciseId) {
+    return state.machinePick[exerciseId] || E.FIRST_MACHINE;
+  }
+
+  /** 나눠 둔 기계를 기억하는 열쇠. 헬스장이 다르면 다른 기계다. */
+  function machineKey(exerciseId) {
+    return (activeGymId() || '-') + '|' + exerciseId;
+  }
+
+  /**
+   * 이 헬스장에서 이 종목에 써 온 기계들. 오늘 것까지 센다.
+   *
+   * 한 번 나눈 기계는 세트가 하나도 없어도 남는다 — 나눈 것은 오늘
+   * 세트가 아니라 그 헬스장에 대한 사실이다.
+   */
+  function machinesSeen(exerciseId) {
+    /*
+     * 이름은 **지난 기록만** 보고 짓는다. 오늘 적은 세트까지 넣으면
+     * 이름이 작업 중에 움직인다 — 46kg을 적은 순간 "102.5kg 쓰던 것"이
+     * "46kg 쓰던 것"으로 바뀌고, 그러면 기계를 알아보는 단서가 아니라
+     * 방금 내가 한 일의 메아리가 된다.
+     *
+     * 오늘 막 나눈 기계는 지난 기록이 없으므로 아래에서 붙는다.
+     */
+    var seen = E.machinesFor(state.history, exerciseId, activeGymId());
+    return E.mergeKnownMachines(seen, state.machineKnown[machineKey(exerciseId)] || []);
+  }
+
+  function maybeAskMachine(lift, set, logged) {
+    var id = lift.exercise.id;
+    if (!E.shouldAskSplit({
+      exercise: lift.exercise,
+      gymId: activeGymId(),
+      plannedKg: set.plannedKg,
+      loggedKg: logged.weightKg,
+      warmup: false,
+      estimated: set.estimated,
+      dismissed: !!state.machineSame[id],
+      picked: !!state.machinePick[id],
+    })) return;
+
+    var body = [];
+    body.push(el('p', { class: 'asset-note', text:
+      E.splitQuestion(lift.exercise.name, set.plannedKg, logged.weightKg) }));
+    body.push(el('p', { class: 'hint-line', text:
+      '같은 종목이라도 기계가 다르면 표기 중량이 다릅니다. 나눠 두면 기계별로 ' +
+      '무게를 이어서 올릴 수 있습니다.' }));
+
+    body.push(el('div', { class: 'sheet-body' }, [
+      el('button', {
+        type: 'button', class: 'finish', text: '다른 기계예요 — 따로 세기',
+        onclick: function () { splitMachine(lift, logged); },
+      }),
+      el('button', {
+        type: 'button', class: 'finish quiet', text: '같은 기계예요',
+        onclick: function () {
+          /*
+           * 오늘은 다시 안 묻는다. 하루에 같은 질문을 두 번 받으면
+           * 읽지 않고 아무거나 누르게 되고, 그때부터 이 기능은 기록을
+           * 망치는 쪽으로 돈다.
+           */
+          state.machineSame[id] = true;
+          persist();
+          modal.close();
+        },
+      }),
+    ]));
+
+    openModal('다른 기계인가요', lift.exercise.name, body);
+  }
+
+  /**
+   * 기계를 나눈다.
+   *
+   * 오늘 이 종목으로 적은 세트를 전부 새 기계로 옮긴다. 방금 한 세트만
+   * 옮기면 앞 세트들이 엉뚱한 기계에 남는다 — 한 세션 안에서 기계를
+   * 바꿔 가며 하지는 않는다.
+   */
+  function splitMachine(lift, logged) {
+    var id = lift.exercise.id;
+    var used = machinesSeen(id).map(function (m) { return m.id; });
+    var fresh = E.nextMachineId(used);
+
+    state.machinePick[id] = fresh;
+    // 나눴다는 사실을 적어 둔다. 오늘 세트를 되돌려도 기계는 남는다.
+    var key = machineKey(id);
+    var known = state.machineKnown[key] || [E.FIRST_MACHINE];
+    if (known.indexOf(fresh) < 0) known = known.concat([fresh]);
+    state.machineKnown[key] = known;
+
+    state.todaySets.forEach(function (item) {
+      if (item.exerciseId === id) item.machine = fresh;
+    });
+    // logged는 state.todaySets 안의 같은 객체라 위에서 이미 바뀌었다.
+    void logged;
+
+    recordTodaySession();
+    rebuildSession();
+    persist();
+    modal.close();
+    render();
+    pushLog('기계 나누기', '<b>' + lift.exercise.name + '</b>' +
+      ' 기계를 따로 세기 시작했습니다. 이 기계 기록으로만 다음 무게를 정합니다.');
+  }
+
+  /**
+   * 기계 고르는 줄.
+   *
+   * 기계가 둘 이상일 때만 나온다. 한 대뿐인 사람에게는 아무것도 안 보인다.
+   */
+  function machineRow(lift, liftIndex) {
+    var seen = machinesSeen(lift.exercise.id);
+    if (seen.length < 2) return null;
+    var current = machineFor(lift.exercise.id);
+
+    return el('div', { class: 'machine-row' }, [
+      el('span', { class: 'machine-label', text: '어느 기계' }),
+    ].concat(seen.map(function (item) {
+      return el('button', {
+        type: 'button', class: 'chip',
+        'aria-pressed': String(item.id === current),
+        text: E.machineLabel(item),
+        onclick: function () { pickMachine(liftIndex, item.id); },
+      });
+    })));
+  }
+
+  function pickMachine(liftIndex, machineId) {
+    var lift = state.lifts[liftIndex];
+    var id = lift.exercise.id;
+    if (machineFor(id) === machineId) return;
+
+    state.machinePick[id] = machineId;
+    // 오늘 이미 적은 세트도 같이 옮긴다. 기계를 잘못 골랐다가 고치는 길이다.
+    state.todaySets.forEach(function (item) {
+      if (item.exerciseId === id) item.machine = machineId;
+    });
+    recordTodaySession();
+    rebuildSession();
+    persist();
+    render();
   }
 
   function setReps(liftIndex, setIndex, delta) {
@@ -2686,6 +2901,7 @@
     if (!after) return;
 
     state.todaySets = [];
+    state.machinePick = {};
     // 다른 날은 종목이 아예 다르다. 앞 날의 순서와 묶음을 끌고 가면 안 된다.
     state.liftOrder = null;
     state.supersets = [];
@@ -2703,10 +2919,16 @@
     render();
   }
 
-  /** 오늘 기록한 세트를 세션 하나로 본다 — 회복 판정에 오늘 것도 넣어야 한다. */
+  /**
+   * 오늘 기록한 세트를 세션 하나로 본다 — 회복 판정에 오늘 것도 넣어야 한다.
+   *
+   * 헬스장도 같이 적는다. 안 적으면 헬스장으로 거르는 계산(기계 나누기,
+   * 머신 중량 이력)에서 **오늘 것만 조용히 빠진다** — 방금 나눈 기계가
+   * 화면에 안 나타나는 식으로 드러난다.
+   */
   function todaySessionLog() {
     if (state.todaySets.length === 0) return [];
-    return [{ date: state.todayDate, sets: state.todaySets }];
+    return [{ date: state.todayDate, sets: state.todaySets, gymId: activeGymId() }];
   }
 
   /**
@@ -2964,6 +3186,8 @@
         pain: activePain(),
         gym: state.gym,
         gymId: state.gymBook ? state.gymBook.activeId : undefined,
+        // 오늘 선 기계를 그대로 본다. 다음에도 같은 기계일 확률이 높다.
+        machines: state.machinePick,
         lifter: state.lifter,
       });
     } catch (err) {
@@ -5184,6 +5408,17 @@
      * 바로 위다. 세트마다 처방이 다를 수 있으니 세트마다 그 세트의
      * 것을 쓴다.
      */
+    /*
+     * 이 헬스장에 이 종목 기계가 둘 이상이면 어느 쪽인지 고른다.
+     *
+     * 카드 맨 위에 뒀다가 옮겼다. 화면은 지금 할 세트로 스크롤되므로
+     * 카드 위쪽은 기구 앞에서 보이지 않는다. "102.5kg이라는데 나는
+     * 다른 기계 앞인데"를 깨닫는 자리는 숫자칸이고, 고치는 버튼도
+     * 거기 있어야 한다.
+     */
+    var machines = machineRow(lift, liftIndex);
+    if (machines) body.push(machines);
+
     body.push(el('div', { class: 'now-head' }, [
       el('div', { class: 'now-line' }, [
         el('b', { text: (setIndex + 1) + '세트 진행중' }),
@@ -5426,6 +5661,7 @@
         el('span', { text: lift.gymWeightNote }),
       ]));
     }
+
 
     /*
      * 워밍업 줄은 첫 세트에만 둔다. 한 세트라도 했으면 이미 데운 뒤이고,
@@ -8805,6 +9041,8 @@
     state.history = [];
     state.checkIns = [];
     state.todaySets = [];
+    state.machinePick = {};
+    state.machineSame = {};
     state.log = [];
     startOnboarding();
   }
@@ -10331,6 +10569,8 @@
   function startOnboarding() {
     storage.reset();
     state.todaySets = [];
+    state.machinePick = {};
+    state.machineSame = {};
     state.answers = JSON.parse(JSON.stringify(DEFAULT_ANSWERS));
     state.answers.gym.measurements = {};
     state.onboarding = { active: true, step: 0, account: null };

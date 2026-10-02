@@ -110,6 +110,13 @@ export interface BuildSessionInput {
    * 머신·케이블 중량 이력을 이 헬스장 것으로만 거르는 데 쓴다.
    */
   gymId?: string;
+  /**
+   * 오늘 어느 기계로 하는가. { 종목id: 기계열쇠 }
+   *
+   * 같은 헬스장에 같은 종목 기계가 둘 이상일 때만 쓴다. 안 주면 전부
+   * 첫 번째 기계로 보므로, 나눈 적 없는 사람에게는 아무것도 달라지지 않는다.
+   */
+  machines?: Readonly<Record<string, string>>;
   /** 첫 수행 종목의 중량을 추정하기 위한 신체 정보 */
   lifter?: LifterProfile;
   /** 미리 계산한 RIR 보정. 없으면 이력에서 직접 구한다 */
@@ -219,7 +226,10 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
      * 머신·케이블·스미스는 같은 헬스장 기록만 본다. A짐 레그프레스 100kg을
      * 들고 B짐에 가면 엉뚱한 무게가 된다 — 기계마다 표기가 다르다.
      */
-    const weightHistory = weightHistoryFor(input.history, exercise, { gymId: input.gymId });
+    const weightHistory = weightHistoryFor(input.history, exercise, {
+      gymId: input.gymId,
+      machine: input.machines?.[exercise.id],
+    });
     const lastSession = findLastSession(weightHistory, exercise.id);
     const rule: LoadRule = { repRange: slot.repRange, targetRir: input.plan.targetRir, rirOffset };
     const prescription = prescribeLoad(exercise, lastSession?.sets, rule);
