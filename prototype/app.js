@@ -9302,6 +9302,27 @@
     return null;
   }
 
+  var shareTimer = null;
+
+  /**
+   * 조금 있다가 올린다.
+   *
+   * 기구를 고칠 때는 한 번에 여러 개를 켜고 끈다. 누를 때마다 올리면
+   * 서른 번 올라가고, 그 서른 번이 다 같은 목록의 중간 상태다. 손이
+   * 멈춘 뒤에 한 번만 보낸다.
+   */
+  function shareGymSoon(entry) {
+    if (!entry) return;
+    if (shareTimer) clearTimeout(shareTimer);
+    var id = entry.id;
+    shareTimer = setTimeout(function () {
+      shareTimer = null;
+      // 그 사이에 헬스장을 옮겼을 수 있다. 그때는 지금 것을 올린다.
+      var now = currentGymEntry();
+      shareGymNow(now && now.id === id ? now : entry);
+    }, 3000);
+  }
+
   function shareGymNow(entry) {
     if (typeof Remote === 'undefined' || !Remote.signedIn()) return;
     if (!entry) return;
@@ -9526,6 +9547,31 @@
       el('div', { class: 'sheet-body' }, body),
     ]));
     renderSearchResults();
+
+    /*
+     * 기구 목록 (선택된 곳).
+     *
+     * 등록은 유형으로 대충 채워 준다. 거기 실제로 뭐가 있는지는 다니는
+     * 사람이 제일 잘 아는데, 전에는 등록을 마치면 고칠 길이 없었다.
+     */
+    if (active) {
+      var ids = active.equipmentIds || [];
+      screen.appendChild(el('div', { class: 'sheet' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: active.name + ' 기구' }),
+          el('span', { class: 'meta', text: ids.length + '개' }),
+        ]),
+        el('div', { class: 'sheet-body' }, [
+          el('p', { class: 'hint-line', text:
+            '할 수 있는 종목 ' + E.availableExercises(ids).length + ' / ' +
+            E.EXERCISES.length + '개. 없는 기구를 꺼 두면 그 종목은 처방에서 빠집니다.' }),
+          el('button', {
+            type: 'button', class: 'finish', text: '기구 고치기',
+            onclick: openGymEquipment,
+          }),
+        ]),
+      ]));
+    }
 
     // 기구 · 실측 (선택된 곳)
     var benchSpec = E.loadingFor(index.get('barbell-bench-press'), gym);
@@ -9870,6 +9916,53 @@
    * 검색 결과 아래에만 둔다. 먼저 찾아보게 만드는 것이 중복을 막는 가장 싼
    * 방법이다 — 대부분의 중복은 악의가 아니라 검색을 안 해봐서 생긴다.
    */
+  /**
+   * 선택된 헬스장의 기구를 직접 고친다.
+   *
+   * 등록할 때 유형(프리셋)으로 대충 채워 주지만, 거기 실제로 뭐가 있는지는
+   * **다니는 사람이 제일 잘 안다.** 유형으로 시작하고 여기서 맞추는 게
+   * 처음부터 31개를 고르게 하는 것보다 낫다 — 그건 거기서 앱을 닫는다.
+   */
+  function openGymEquipment() {
+    var entry = currentGymEntry();
+    if (!entry) return;
+    state.equipScope = 'gym';
+
+    var body = [];
+    body.push(el('p', { class: 'asset-note', text:
+      entry.name + '에 실제로 있는 기구만 켜 두세요. ' +
+      '켠 기구에서 할 수 있는 종목만 처방에 나옵니다.' }));
+
+    body.push(el('p', { id: 'equip-count', class: 'hint-line', text: '' }));
+
+    // 한 대씩 고르기 전에, 유형으로 한 번에 채우는 길을 먼저 둔다.
+    body.push(el('div', { class: 'list-label', text: '유형으로 한 번에' }));
+    body.push(el('div', { class: 'chip-row' }, E.GYM_PRESETS.map(function (preset) {
+      return el('button', {
+        type: 'button', class: 'pick', text: preset.label,
+        onclick: function () {
+          setEquipmentIds(E.presetEquipment(preset.id));
+          render();
+          renderEquipmentList();
+        },
+      });
+    })));
+
+    body.push(el('div', { class: 'list-label', text: '하나씩 고르기' }));
+    body.push(el('input', {
+      type: 'search', value: state.equipmentQuery || '',
+      placeholder: '생김새로 찾기 (예: 굽은 봉, 나비, 철장)',
+      oninput: function (event) {
+        state.equipmentQuery = event.target.value;
+        renderEquipmentList();
+      },
+    }));
+    body.push(el('div', { id: 'equipment-list' }, []));
+
+    openModal('기구 고치기', entry.name, body);
+    renderEquipmentList();
+  }
+
   function registerButton() {
     return el('button', {
       type: 'button',
@@ -10111,6 +10204,16 @@
       onclick: function () { submitGymRegister(); },
     }));
 
+    /*
+     * 여기에 "기구 고르기" 버튼을 두지 않는다.
+     *
+     * 등록을 마치면 헬스장 탭에 그 헬스장의 기구 칸이 바로 뜬다. 등록
+     * 화면은 이미 이 탭 위에 떠 있으므로, 닫으면 그 칸이 눈앞에 있다.
+     * 같은 일로 가는 문을 둘 두면 어느 쪽을 눌러야 하는지만 헷갈린다.
+     *
+     * 등록이 끝난 뒤에 "기구 볼래요?"를 모달로 묻는 것도 해 봤는데 그건
+     * 더 나빴다 — 등록을 거쳐 가기만 하는 사람 모두를 한 번씩 세운다.
+     */
     openModal('헬스장 등록', '2 / 2', body);
   }
 
@@ -10905,12 +11008,69 @@
    * 이름 옆에 생김새를 같이 적는다. "펙덱 (플라이 머신)"만 보면 모르지만
    * "앉아서 양팔을 안으로 모으는 기계. 나비처럼 생겼습니다"를 보면 안다.
    */
+  /* ── 기구 목록 고치기 ────────────────────────────
+
+     같은 목록을 두 곳에서 쓴다. 설문에서 한 번(처음 다니는 곳),
+     헬스장 탭에서 또 한 번(두 번째 헬스장을 등록했을 때).
+
+     처음에는 설문에만 뒀는데, 그러면 **등록을 마친 뒤에는 기구를 고칠
+     길이 없다.** 프리셋이 찍어 준 목록으로 고정되고, 운동 중에 "이 기구
+     없어요"를 종목마다 누르는 수밖에 없었다. 직접 등록하는 사람은 거기
+     뭐가 있는지 본인이 제일 잘 아는데도 말이다.
+  ── */
+
+  /** 지금 고치는 목록이 어느 것인가. 'gym'이면 선택된 헬스장, 아니면 설문 답. */
+  function equipmentScope() {
+    return state.equipScope === 'gym' ? 'gym' : 'answers';
+  }
+
+  function equipmentIds() {
+    if (equipmentScope() === 'gym') {
+      var entry = currentGymEntry();
+      return entry ? entry.equipmentIds : [];
+    }
+    return state.answers.gym.equipmentIds;
+  }
+
+  /**
+   * 고른 것을 되돌려 놓는다.
+   *
+   * 헬스장 쪽은 손댈 데가 여럿이다. 운동을 짜는 건 gymBook의 항목이고,
+   * 검색·합치기가 보는 건 myDirectory의 항목이라, 한쪽만 고치면 다음에
+   * 헬스장을 다시 고를 때 옛 목록이 되살아난다.
+   */
+  function setEquipmentIds(next) {
+    if (equipmentScope() !== 'gym') {
+      state.answers.gym.equipmentIds = next;
+      return;
+    }
+
+    var entry = currentGymEntry();
+    if (!entry) return;
+    var updated = Object.assign({}, entry, { equipmentIds: next });
+
+    state.gymBook = E.addGym(state.gymBook, updated);
+    state.gym = E.activeProfile(state.gymBook);
+    state.answers.gym.equipmentIds = next.slice();
+    state.myDirectory = state.myDirectory.map(function (item) {
+      return item.id === entry.id
+        ? Object.assign({}, item, { equipmentIds: next.slice() })
+        : item;
+    });
+
+    // 기구가 바뀌면 오늘 할 수 있는 종목이 바뀐다.
+    rebuildSession();
+    // 내가 아는 기구를 올린다 — 같은 곳 다니는 사람이 덕을 본다.
+    shareGymSoon(updated);
+    persist();
+  }
+
   function renderEquipmentList() {
     var host = document.getElementById('equipment-list');
     if (!host) return;
     host.textContent = '';
 
-    var selected = state.answers.gym.equipmentIds;
+    var selected = equipmentIds();
     var matches = E.findEquipment(state.equipmentQuery || '');
 
     if (matches.length === 0) {
@@ -10930,10 +11090,12 @@
         class: 'equip-row',
         'aria-pressed': String(has),
         onclick: function () {
-          state.answers.gym.equipmentIds = has
+          setEquipmentIds(has
             ? selected.filter(function (id) { return id !== item.id; })
-            : selected.concat([item.id]);
+            : selected.concat([item.id]));
           render();
+          // 모달 안에서 고칠 때는 render()가 이 목록을 다시 그리지 않는다.
+          renderEquipmentList();
         },
       }, [
         el('span', { class: 'mark', text: has ? '✓' : '' }),
@@ -10949,9 +11111,21 @@
       ]));
     });
     host.appendChild(list);
+
+    /*
+     * 개수 줄을 여기서 같이 갱신한다. 토글 핸들러에서 따로 부르게 두면
+     * 길이 여럿이라(하나씩 고르기·유형으로 한 번에) 반드시 한쪽을 빠뜨린다.
+     */
+    var count = document.getElementById('equip-count');
+    if (count) {
+      var ids = equipmentIds();
+      count.textContent = '기구 ' + ids.length + '개 · 할 수 있는 종목 ' +
+        E.availableExercises(ids).length + ' / ' + E.EXERCISES.length + '개';
+    }
   }
 
   function stepGym() {
+    state.equipScope = 'answers';
     var selected = state.answers.gym.equipmentIds;
     var available = E.availableExercises(selected).length;
 
@@ -10968,9 +11142,10 @@
       return el('button', {
         type: 'button', class: 'pick', text: preset.label,
         onclick: function () {
-          state.answers.gym.equipmentIds = E.presetEquipment(preset.id);
+          var next = E.presetEquipment(preset.id);
+          setEquipmentIds(next);
           pushLog('기구 설정', '<b>' + preset.label + '</b> 기준으로 기구 ' +
-            state.answers.gym.equipmentIds.length + '개를 켰습니다.');
+            next.length + '개를 켰습니다.');
           render();
         },
       });
