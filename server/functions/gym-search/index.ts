@@ -117,7 +117,22 @@ Deno.serve(async (req: Request) => {
   if (x && y) {
     params.set('x', x);
     params.set('y', y);
-    params.set('sort', 'distance');
+
+    /*
+     * 거리순은 **동네를 찾을 때만**이다.
+     *
+     * 카카오는 한 번에 15개까지만 준다. 상호를 친 사람에게 거리순을 쓰면
+     * 가까운 가게들이 그 15칸을 먼저 채우고, 정작 찾던 가게가 멀리 있으면
+     * 잘려서 "그런 곳 없습니다"가 된다. 실제로 20km 밖의 헬스장이 그렇게
+     * 사라졌다.
+     *
+     * 좌표는 거리순이 아닐 때도 보낸다 — 카카오가 거리를 재서 주기 때문에
+     * 목록에 "1.2km"를 띄울 수 있다.
+     *
+     * area를 안 보내는 옛 앱은 정확도순으로 받는다. 틀렸을 때 덜 나쁜
+     * 쪽이다 — 친 말이 목록에서 사라지지는 않는다.
+     */
+    if (body.area === true) params.set('sort', 'distance');
   }
 
   let response: Response;

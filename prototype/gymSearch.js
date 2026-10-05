@@ -109,7 +109,12 @@ var GymSearch = (function () {
   /** 서버를 지나간다 — 사용자는 열쇠를 모른다. */
   function viaServer(parsed, near) {
     var E = window.FitEngine;
-    var body = { query: parsed.query };
+    /*
+     * 동네를 찾는지 상호를 찾는지 같이 보낸다. 서버가 그걸로 정렬을
+     * 고른다 — 상호에 거리순을 쓰면 20km 밖의 그 가게가 가까운 가게들에
+     * 밀려 목록에서 잘린다.
+     */
+    var body = { query: parsed.query, area: parsed.intent === 'area' };
     if (near) { body.x = near.lng; body.y = near.lat; }
 
     return Remote.callFunction('gym-search', body).then(function (result) {

@@ -69,6 +69,16 @@ const PLACE_TAILS: readonly string[] = ['도', '시', '군', '구', '동', '읍'
 
 const GYM_WORD = '헬스장';
 
+/**
+ * 무엇을 찾고 있는가.
+ *
+ * 이게 정렬을 가른다. **동네를 친 사람에게는 가까운 순이 맞고, 상호를 친
+ * 사람에게는 틀리다.** "바우짐"이라고 친 사람은 가까운 헬스장을 찾는 게
+ * 아니라 그 가게를 찾는 것이다. 거리순으로 주면 20km 밖의 그 가게가
+ * 가까운 다른 가게들에 밀려 목록에서 잘려 나간다 — 실제로 그랬다.
+ */
+export type QueryIntent = 'brand' | 'area';
+
 export interface ParsedQuery {
   /** 사용자가 친 그대로 */
   raw: string;
@@ -76,8 +86,55 @@ export interface ParsedQuery {
   query: string;
   /** 우리가 '헬스장'을 붙였는가 — 화면에서 그렇게 찾았다고 말해 줘야 한다 */
   appendedGymWord: boolean;
+  /** 상호를 찾는가, 동네를 찾는가 */
+  intent: QueryIntent;
   /** 보낼 만한가. 한 글자로는 전국이 쏟아진다. */
   searchable: boolean;
+}
+
+/**
+ * 혼자 쳐도 뜻이 통하는 종류 이름.
+ *
+ * FACILITY_WORDS와 따로 둔다. 저쪽은 "검색어 안에 종류를 가리키는 말이
+ * 섞여 있나"를 품어서 보는 눈이고(그래서 '헬스'만 있어도 된다), 이쪽은
+ * **낱말 하나가 통째로 종류인가**를 보는 눈이라 완성된 말이 필요하다.
+ * '헬스'로는 "헬스장"을 못 걸러낸다.
+ */
+const GENERIC_TOKENS: readonly string[] = [
+  '헬스', '헬스장', '헬스클럽', '피트니스', '피트니스센터', '휘트니스',
+  '짐', '체육관', '스포츠센터', '스포츠클럽',
+  '크로스핏', '필라테스', '요가', '요가원', '트레이닝',
+  'gym', 'fitness', 'crossfit', 'pilates', 'yoga',
+];
+
+/**
+ * 이 낱말이 시설 종류인가.
+ *
+ * 낱말 전체로 본다. 품어서 보면 "바우짐"이 '짐' 때문에 시설어가 되고,
+ * 그러면 상호가 동네 취급을 받는다 — 바로 그래서 검색이 안 됐다.
+ */
+function isFacilityToken(word: string): boolean {
+  const lower = word.toLowerCase();
+  return GENERIC_TOKENS.some((item) => lower === item.toLowerCase());
+}
+
+/** 이 낱말이 지역인가. "경기도", "수원시", "영통구", "강남역". */
+function isAreaToken(word: string): boolean {
+  if (REGIONS.includes(word)) return true;
+  return word.length >= 2 && PLACE_TAILS.includes(word.slice(-1));
+}
+
+/**
+ * 시설어를 걷어내고 남은 것이 전부 지역이면 동네를 찾는 것이다.
+ *
+ * 남은 것이 하나도 없어도("헬스장") 동네다 — 근처에서 찾아 달라는 뜻이다.
+ * 애매하면 상호로 본다. 상호로 보면 정확도순이고, 정확도순은 **친 말이
+ * 목록에서 사라지지 않는다.** 틀렸을 때 덜 나쁜 쪽이다.
+ */
+function readIntent(words: readonly string[]): QueryIntent {
+  const rest = words.filter((word) => !isFacilityToken(word));
+  if (rest.length === 0) return 'area';
+  return rest.every(isAreaToken) ? 'area' : 'brand';
 }
 
 /**
@@ -93,24 +150,28 @@ export interface ParsedQuery {
 export function parsePlaceQuery(raw: string): ParsedQuery {
   const text = (raw ?? '').trim().replace(/\s+/g, ' ');
   if (text.length < 2) {
-    return { raw: text, query: text, appendedGymWord: false, searchable: false };
-  }
-
-  const lower = text.toLowerCase();
-  const hasFacility = FACILITY_WORDS.some((word) => lower.includes(word.toLowerCase()));
-  if (hasFacility) {
-    return { raw: text, query: text, appendedGymWord: false, searchable: true };
+    return { raw: text, query: text, appendedGymWord: false, intent: 'brand', searchable: false };
   }
 
   const words = text.split(' ');
-  const last = words[words.length - 1] ?? '';
-  const looksRegional =
-    words.every((word) => REGIONS.includes(word)) ||
-    (last.length >= 2 && PLACE_TAILS.includes(last.slice(-1)));
+  const intent = readIntent(words);
 
-  return looksRegional
-    ? { raw: text, query: `${text} ${GYM_WORD}`, appendedGymWord: true, searchable: true }
-    : { raw: text, query: text, appendedGymWord: false, searchable: true };
+  /*
+   * 시설을 가리키는 말이 이미 있으면 덧붙이지 않는다.
+   *
+   * 여기서는 품어서 본다 — "바우짐"에 '헬스장'을 붙여 "바우짐 헬스장"으로
+   * 보내면 오히려 그 가게가 안 잡힌다. 덧붙일지 말지의 기준과 동네냐
+   * 상호냐의 기준은 서로 다른 물음이라 서로 다른 눈으로 본다.
+   */
+  const lower = text.toLowerCase();
+  const hasFacility = FACILITY_WORDS.some((word) => lower.includes(word.toLowerCase()));
+  if (hasFacility) {
+    return { raw: text, query: text, appendedGymWord: false, intent, searchable: true };
+  }
+
+  return intent === 'area'
+    ? { raw: text, query: `${text} ${GYM_WORD}`, appendedGymWord: true, intent, searchable: true }
+    : { raw: text, query: text, appendedGymWord: false, intent, searchable: true };
 }
 
 /* ── 무엇이 돌아왔는가 ───────────────────────────────── */

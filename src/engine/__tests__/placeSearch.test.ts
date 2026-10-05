@@ -65,6 +65,32 @@ describe('무엇을 보낼 것인가', () => {
     assert.equal(parsePlaceQuery('gangnam gym').query, 'gangnam gym');
   });
 
+  it('상호를 친 것과 동네를 친 것을 가른다', () => {
+    /*
+     * 이게 정렬을 가른다. 동네를 친 사람에게는 가까운 순이 맞고, 상호를
+     * 친 사람에게는 틀리다 — 카카오는 15개만 주므로 가까운 가게들이 그
+     * 칸을 다 먹으면 정작 찾던 먼 가게가 잘려 나간다.
+     */
+    for (const word of ['바우짐', '스포애니', '바우짐 북수원점', '조원동 바우짐']) {
+      assert.equal(parsePlaceQuery(word).intent, 'brand', word);
+    }
+    for (const word of ['헬스장', '피트니스', '경기도', '강남역', '수원시 헬스장', '수원시 영통구']) {
+      assert.equal(parsePlaceQuery(word).intent, 'area', word);
+    }
+  });
+
+  it('상호에 종류 이름이 묻어 있어도 동네로 보지 않는다', () => {
+    /*
+     * 실제로 났던 버그다. "바우짐"에 '짐'이 들어 있다는 이유로 시설어
+     * 취급을 받아 동네 검색이 됐고, 20km 밖의 그 헬스장이 가까운 가게들에
+     * 밀려 목록에서 사라졌다. 낱말을 품어서 보지 말고 통째로 봐야 한다.
+     */
+    assert.equal(parsePlaceQuery('바우짐').intent, 'brand');
+    assert.equal(parsePlaceQuery('바우짐').query, '바우짐');
+    // 상호에는 '헬스장'을 붙이지 않는 규칙도 그대로여야 한다.
+    assert.equal(parsePlaceQuery('바우짐').appendedGymWord, false);
+  });
+
   it('한 글자로는 보내지 않는다', () => {
     // 한 글자를 보내면 전국이 쏟아지고, 한도만 깎인다.
     assert.equal(parsePlaceQuery('ㄱ').searchable, false);
