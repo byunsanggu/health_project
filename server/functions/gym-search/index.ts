@@ -27,6 +27,27 @@
 
 const KAKAO_ENDPOINT = 'https://dapi.kakao.com/v2/local/search/keyword.json';
 
+/*
+ * 네이버는 **대신**이 아니라 **뒤**다.
+ *
+ * 카카오맵 웹에는 있는 헬스장이 카카오 로컬 API에는 없는 경우가 있다.
+ * 두 쪽이 같은 색인을 안 쓴다. 실제로 "바우짐"이 그랬다 — 지도에서는
+ * 나오는데 API는 0개를 줬다.
+ *
+ * 그렇다고 네이버로 갈아타지는 않는다. 네이버 지역검색은 한 번에 다섯
+ * 개까지고, 거리순 정렬도 거리 값도 없다. 카카오로 먼저 찾고 **모자랄
+ * 때만** 네이버에 한 번 더 물어서 보탠다. 0개보다 다섯 개가 낫다.
+ *
+ * 열쇠가 없으면 그냥 카카오만 쓴다. 네이버가 막혀도 검색이 멈추지 않는다.
+ */
+const NAVER_ENDPOINT = 'https://openapi.naver.com/v1/search/local.json';
+
+/** 카카오 결과가 이보다 적으면 네이버에도 물어본다. */
+const ENOUGH = 3;
+
+/** 네이버가 한 번에 주는 최대치. 늘릴 수 없다. */
+const NAVER_SIZE = 5;
+
 /** 한 번에 돌려줄 개수. 사람은 위에서 다섯 개만 본다. */
 const SIZE = 15;
 
@@ -69,6 +90,88 @@ function slim(doc: Record<string, unknown>): Slim {
     y: text(doc.y),
     distance: text(doc.distance),
   };
+}
+
+/* ── 네이버에서 보태기 ───────────────────────────── */
+
+/** 네이버는 제목에 <b> 태그를 섞어 준다. 그대로 두면 화면에 태그가 뜬다. */
+function stripTags(value: string): string {
+  return value.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+}
+
+/**
+ * 네이버 좌표를 WGS84로.
+ *
+ * 지금 API는 경위도에 10^7을 곱한 정수를 준다(127.0642060 → 1270642060).
+ * 옛 응답은 KATECH이라 그대로 쓰면 엉뚱한 곳이 된다. 그래서 **변환한
+ * 결과가 한반도 안에 떨어질 때만** 쓰고, 아니면 좌표를 버린다.
+ * 좌표가 없으면 거리만 안 보일 뿐 고르는 데는 지장이 없다.
+ */
+function naverCoord(mapx: unknown, mapy: unknown): { x: string; y: string } | null {
+  const lng = Number(mapx) / 1e7;
+  const lat = Number(mapy) / 1e7;
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  if (lng < 124 || lng > 132 || lat < 33 || lat > 39) return null;
+  return { x: String(lng), y: String(lat) };
+}
+
+/** 같은 곳인지 보는 열쇠. 두 회사가 주소를 다르게 적어서 이름으로 본다. */
+function nameKey(name: string): string {
+  return name.replace(/\s/g, '').toLowerCase();
+}
+
+async function fromNaver(query: string): Promise<Slim[]> {
+  const id = Deno.env.get('NAVER_CLIENT_ID');
+  const secret = Deno.env.get('NAVER_CLIENT_SECRET');
+  if (!id || !secret) return [];
+
+  const params = new URLSearchParams({ query, display: String(NAVER_SIZE) });
+
+  let response: Response;
+  try {
+    response = await fetch(`${NAVER_ENDPOINT}?${params}`, {
+      headers: { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': secret },
+    });
+  } catch {
+    // 보태기가 실패해도 카카오 결과는 그대로 간다. 검색을 멈추지 않는다.
+    return [];
+  }
+  if (!response.ok) return [];
+
+  let payload: { items?: unknown };
+  try {
+    payload = await response.json();
+  } catch {
+    return [];
+  }
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+
+  return items.map((raw): Slim | null => {
+    const item = raw as Record<string, unknown>;
+    const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+    const name = stripTags(text(item.title));
+    if (!name) return null;
+
+    const road = text(item.roadAddress);
+    const jibun = text(item.address);
+    const point = naverCoord(item.mapx, item.mapy);
+
+    return {
+      /*
+       * 네이버는 장소에 고정 id를 안 준다. 이름과 주소로 만든다 —
+       * 앱이 이걸로 같은 곳을 두 번 안 담게만 하면 된다.
+       */
+      id: `naver:${nameKey(name)}@${(road || jibun).replace(/\s/g, '')}`,
+      place_name: name,
+      category_name: stripTags(text(item.category)),
+      address_name: jibun,
+      road_address_name: road,
+      x: point ? point.x : '',
+      y: point ? point.y : '',
+      // 네이버는 거리를 안 준다. 좌표가 있으면 앱이 직접 잰다.
+      distance: '',
+    };
+  }).filter((item): item is Slim => item !== null);
 }
 
 const json = (body: unknown, status = 200): Response =>
@@ -160,5 +263,24 @@ Deno.serve(async (req: Request) => {
     ? payload.documents
     : [];
 
-  return json({ places: documents.map(slim) });
+  const places = documents.map(slim);
+
+  /*
+   * 카카오가 적게 줬으면 네이버에도 한 번 물어서 보탠다.
+   *
+   * 이름이 같은 것은 보태지 않는다. 두 회사가 주소를 다르게 적어서
+   * 주소로는 같은 곳인지 가릴 수가 없고, 카카오 쪽에는 좌표와 거리가
+   * 붙어 있으니 그쪽을 남긴다.
+   */
+  if (places.length < ENOUGH) {
+    const seen = new Set(places.map((place) => nameKey(place.place_name)));
+    for (const extra of await fromNaver(query)) {
+      const key = nameKey(extra.place_name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      places.push(extra);
+    }
+  }
+
+  return json({ places });
 });
