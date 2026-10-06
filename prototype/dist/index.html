@@ -220,7 +220,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 10px 12px;
   align-items: center;
 }
-.gym-row + .gym-row { margin-top: 7px; }
+/* 지우기 버튼은 줄 옆에 선다 — 줄 자체가 버튼이라 안에 못 넣는다. */
+.gym-line { display: flex; align-items: stretch; gap: 6px; }
+.gym-line + .gym-line { margin-top: 7px; }
+.gym-line .gym-row { flex: 1; min-width: 0; }
+.gym-drop {
+  flex: 0 0 auto; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--muted); font-size: 12px;
+}
 .gym-row[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .gym-name { font-size: 13.5px; font-weight: 600; }
 .gym-meta { grid-column: 1; font-size: 11.5px; color: var(--muted); }
@@ -13698,7 +13706,24 @@ var GymSearch = (function () {
         el('span', { class: 'gym-meta', text: (entry.note ? entry.note + ' · ' : '') + '종목 ' + count + '개' }),
       ]);
       if (isActive) row.appendChild(el('span', { class: 'gym-badge', text: '사용 중' }));
-      list.appendChild(row);
+
+      /*
+       * 지우기는 줄 **옆에** 둔다. 줄 자체가 버튼이라 안에 넣을 수 없고,
+       * 넣는다 해도 헬스장을 고르려다 지우는 사고가 난다.
+       *
+       * 마지막 한 곳은 못 지운다 — 다니는 곳이 하나도 없으면 운동을 짤
+       * 수가 없다. 그때는 버튼을 아예 안 보여준다. 눌러도 안 되는 버튼은
+       * 고장 난 것처럼 보인다.
+       */
+      var line = el('div', { class: 'gym-line' }, [row]);
+      if (book.gyms.length > 1) {
+        line.appendChild(el('button', {
+          type: 'button', class: 'gym-drop', text: '지우기',
+          'aria-label': entry.name + ' 목록에서 지우기',
+          onclick: function () { confirmDropGym(entry); },
+        }));
+      }
+      list.appendChild(line);
     });
 
     screen.appendChild(el('div', { class: 'sheet' }, [
@@ -14289,6 +14314,72 @@ var GymSearch = (function () {
         }),
       ]),
     ]));
+  }
+
+  /**
+   * 헬스장을 지울까.
+   *
+   * 되돌릴 수 없으므로 먼저 묻는다. 그리고 **운동 기록은 안 지워진다**는
+   * 것을 분명히 말한다 — 그걸 모르면 중복으로 만든 곳 하나를 지우는 데도
+   * 손이 안 간다.
+   */
+  function confirmDropGym(entry) {
+    var count = (state.history || []).filter(function (session) {
+      return session.gymId === entry.id;
+    }).length;
+
+    openModal('헬스장 지우기', entry.name, [
+      el('p', { class: 'asset-note', text:
+        '목록에서 지웁니다. 여기서 한 운동 기록은 지워지지 않습니다 — ' +
+        '볼륨과 진행에 그대로 남습니다.' +
+        (count > 0 ? ' (이 헬스장 기록 ' + count + '일)' : '') }),
+      count > 0 ? el('p', { class: 'hint-line', text:
+        '다만 머신·케이블 중량은 헬스장별로 세므로, 나중에 같은 곳을 다시 ' +
+        '등록하면 그 기계들은 처음 쓰는 것으로 봅니다.' }) : null,
+      el('div', { class: 'sheet-body' }, [
+        el('button', {
+          type: 'button', class: 'finish danger', text: '지우기',
+          onclick: function () { dropGym(entry); },
+        }),
+        el('button', {
+          type: 'button', class: 'finish quiet', text: '그대로 두기',
+          onclick: function () { modal.close(); },
+        }),
+      ]),
+    ]);
+  }
+
+  function dropGym(entry) {
+    var name = entry.name;
+    state.gymBook = E.removeGym(state.gymBook, entry.id);
+    state.myDirectory = state.myDirectory.filter(function (item) {
+      return item.id !== entry.id;
+    });
+    state.gym = E.activeProfile(state.gymBook);
+
+    // 지운 곳의 기계 구분도 같이 치운다. 안 치우면 쓸 데 없는 열쇠만 쌓인다.
+    Object.keys(state.machineKnown || {}).forEach(function (key) {
+      if (key.indexOf(entry.id + '|') === 0) delete state.machineKnown[key];
+    });
+
+    /*
+     * 쓰던 곳을 지웠으면 남은 곳으로 옮겨 간다. 설문 답도 그 곳의
+     * 기구로 맞춰 둔다 — 안 그러면 지운 헬스장의 기구 목록이 남는다.
+     */
+    var active = currentGymEntry();
+    if (active) {
+      state.answers.gym = {
+        equipmentIds: (active.equipmentIds || []).slice(),
+        measurements: active.measurements || {},
+      };
+    }
+
+    modal.close();
+    rebuildSession();
+    persist();
+    render();
+    pushLog('헬스장', '<b>' + name + '</b>' + particleOf(name, '을/를') +
+      ' 목록에서 지웠습니다. 운동 기록은 그대로 남아 있습니다.');
   }
 
   function settlePending(entryId, mergedInto) {

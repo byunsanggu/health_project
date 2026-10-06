@@ -220,7 +220,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 10px 12px;
   align-items: center;
 }
-.gym-row + .gym-row { margin-top: 7px; }
+/* 지우기 버튼은 줄 옆에 선다 — 줄 자체가 버튼이라 안에 못 넣는다. */
+.gym-line { display: flex; align-items: stretch; gap: 6px; }
+.gym-line + .gym-line { margin-top: 7px; }
+.gym-line .gym-row { flex: 1; min-width: 0; }
+.gym-drop {
+  flex: 0 0 auto; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--muted); font-size: 12px;
+}
 .gym-row[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .gym-name { font-size: 13.5px; font-weight: 600; }
 .gym-meta { grid-column: 1; font-size: 11.5px; color: var(--muted); }
