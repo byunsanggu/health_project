@@ -607,10 +607,15 @@ var Remote = (function () {
    * 서버가 내 기록을 뒤져 만들지 않고 **내가 직접 올린다** — 그 통로를
    * 안 여는 것이 이 설계의 요점이다.
    */
-  function putWeek(weekStart, days, target, streak) {
+  function putWeek(weekStart, days, target, streak, tierScore) {
     if (!signedIn()) return Promise.resolve(null);
     return rpc('put_week_summary', {
       week: weekStart, days_done: days, week_target: target, streak_weeks: streak,
+      /*
+       * 티어 점수. 지킨 주를 전부 합친 수일 뿐이라 무게도 종목도 담기지
+       * 않는다 — 등급을 무게로 나누지 않기 때문에 새로 올릴 것이 없다.
+       */
+      tier_points: tierScore || 0,
     });
   }
 

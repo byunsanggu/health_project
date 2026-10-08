@@ -295,6 +295,23 @@
 
       loadScenario(state.scenario, true);
 
+      /*
+       * 실제로 적은 체크인을 되살린다.
+       *
+       * loadScenario는 시나리오 체크인으로 state.checkIns를 통째로 갈아
+       * 끼운다. 그대로 두면 **사용자가 적은 것이 앱을 껐다 켤 때마다
+       * 사라진다** — 오늘 잰 체중도, 어제 적은 통증도. 저장소에 있는
+       * 것이 진짜이므로 같은 날짜는 저장소 쪽이 이긴다.
+       */
+      var kept = {};
+      (saved.checkIns || []).forEach(function (item) {
+        if (item && item.date) kept[item.date] = item;
+      });
+      state.checkIns = state.checkIns
+        .filter(function (item) { return !kept[item.date]; })
+        .concat(Object.keys(kept).map(function (date) { return kept[date]; }))
+        .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+
       // 오늘 기록한 세트를 되살리고, 해당 세트를 완료 상태로 표시한다.
       state.machineKnown = settings.machineKnown || {};
       state.machinePound = settings.machinePound || {};
@@ -7479,6 +7496,93 @@
    * 약속에 이미 들어 있으므로 쉬어도 불이 꺼지지 않는다 — 죄책감 없이
    * 쉴 수 있어야 다음 주에 앱을 다시 연다.
    */
+  /* ── 몸 ────────────────────────────────────────── */
+
+  /**
+   * 체중을 어느 쪽으로 가져가는가.
+   *
+   * 목표에서 읽는다. 따로 묻지 않는다 — 온보딩에서 이미 "체지방 감량"을
+   * 골랐는데 다시 "빼실 건가요"를 물으면 그건 안 들은 것이다.
+   */
+  function bodyGoal() {
+    return E.bodyGoalOf((state.answers && state.answers.goals) || []);
+  }
+
+  /** 체크인에 적힌 체중만 모은다. */
+  function weighIns() {
+    return (state.checkIns || [])
+      .filter(function (item) { return item && typeof item.bodyweightKg === 'number'; })
+      .map(function (item) { return { date: item.date, kg: item.bodyweightKg }; });
+  }
+
+  function bodyTrend() {
+    return E.buildBodyTrend({
+      weighIns: weighIns(),
+      today: isoOf(new Date()),
+      goal: bodyGoal(),
+    });
+  }
+
+  /** 오늘 적은 단백질 답. */
+  function proteinToday() {
+    return E.proteinWeek(state.checkIns || [], isoOf(new Date()));
+  }
+
+  /**
+   * 오늘 체크인에 한 칸을 적는다.
+   *
+   * 통증과 같은 줄에 담는다. 체중도 민감정보라 다루는 규칙이 같고,
+   * 표를 따로 만들면 동기화·삭제·동의 철회를 두 벌 관리하게 된다.
+   *
+   * 날짜는 **진짜 오늘**이다. state.todayDate는 "오늘 할 운동 날"이라
+   * 이번 주 뒤쪽 날짜일 수 있는데, 체중을 내일 날짜로 적으면 추세선이
+   * 앞으로 넘어간다.
+   */
+  function saveBody(patch) {
+    var today = isoOf(new Date());
+    var existing = (state.checkIns || []).filter(function (item) {
+      return item.date === today;
+    })[0];
+    var entry = Object.assign({}, existing, patch, {
+      id: (existing && existing.id) || 'checkin-' + today,
+      date: today,
+    });
+    var saved = storage.putCheckIn(entry);
+    state.checkIns = (state.checkIns || [])
+      .filter(function (item) { return item.date !== today; })
+      .concat([saved]);
+    syncSoon();
+  }
+
+  /* ── 티어 ──────────────────────────────────────── */
+
+  /**
+   * 등급.
+   *
+   * 아팠던 주는 빼고 센다. 통증을 적은 주에 등급을 깎으면 앱이 아픈 날
+   * 나오라고 미는 셈이 되고, 그건 부상을 만드는 앱이다.
+   */
+  function currentTier() {
+    var streak = currentStreak();
+    var hurt = {};
+    (state.checkIns || []).forEach(function (item) {
+      if (!item || !item.pain) return;
+      var bad = item.pain.filter(function (report) { return report.score >= 5; });
+      if (bad.length === 0) return;
+      hurt[mondayOf(item.date)] = true;
+    });
+    return E.buildTier({ weeks: streak.weeks, excused: Object.keys(hurt) });
+  }
+
+  /** 어느 주의 월요일인가. */
+  function mondayOf(date) {
+    var time = Date.parse(date + 'T00:00:00Z');
+    if (isNaN(time)) return date;
+    var at = new Date(time);
+    var back = (at.getUTCDay() + 6) % 7;
+    return new Date(time - back * 86400000).toISOString().slice(0, 10);
+  }
+
   function currentStreak() {
     var sessions = state.history.slice();
     if (state.todaySets.length > 0) {
@@ -7548,11 +7652,14 @@
   function pushMyWeek() {
     if (!Remote.configured() || !Remote.signedIn() || !state.friendName) return Promise.resolve(null);
     var streak = currentStreak();
-    var key = [state.monday, streak.thisWeek.days, streak.thisWeek.target, streak.current].join('|');
+    var tier = currentTier();
+    var key = [state.monday, streak.thisWeek.days, streak.thisWeek.target,
+      streak.current, tier.score].join('|');
     if (key === lastWeekKey) return Promise.resolve(null);
     lastWeekKey = key;
-    return Remote.putWeek(state.monday, streak.thisWeek.days, streak.thisWeek.target, streak.current)
-      .catch(function () { return null; });
+    return Remote.putWeek(
+      state.monday, streak.thisWeek.days, streak.thisWeek.target, streak.current, tier.score,
+    ).catch(function () { return null; });
   }
 
   /** 친구 목록과 받은 응원을 새로 읽는다. */
@@ -7597,7 +7704,7 @@
 
     var streak = currentStreak();
     var rows = (state.friends || []).map(function (row) {
-      return E.friendRow({
+      var made = E.friendRow({
         userId: row.user_id,
         name: row.name,
         days: row.days,
@@ -7607,6 +7714,8 @@
       // 하루 한 번은 **진짜 달력** 기준이다. 서버도 current_date로 막는다.
       // state.todayDate는 "오늘 할 날"이라 이번 주 뒤쪽 날짜일 수 있다.
       }, isoOf(new Date()));
+      made.tier = E.tierBadge(row.tier_score || 0);
+      return made;
     });
 
     /*
@@ -7649,7 +7758,15 @@
        */
       body.appendChild(el('div', { class: 'friend-row' + (row.kept ? ' kept' : '') }, [
         el('span', { class: 'plan-main' }, [
-          el('span', { class: 'name', text: row.name }),
+          el('span', { class: 'name' }, [
+            document.createTextNode(row.name),
+            /*
+             * 등급은 이름 옆 작은 꼬리표다. 숫자를 같이 쓰지 않는다 —
+             * 점수가 보이면 친구끼리 점수를 비교하게 되고, 그 순간
+             * 등수를 안 매기려고 한 설계가 무너진다.
+             */
+            row.tier ? el('span', { class: 'tier-chip', text: row.tier }) : null,
+          ]),
           el('span', { class: 'plan-sets', text: row.text +
             (row.streakWeeks > 0 ? ' · ' + row.streakWeeks + '주 연속' : '') }),
         ]),
@@ -8053,6 +8170,58 @@
   function isoOf(date) {
     var pad = function (n) { return n < 10 ? '0' + n : String(n); };
     return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+  }
+
+  /**
+   * 티어 카드.
+   *
+   * 연속 카드 바로 아래 둔다. 둘은 같은 숫자를 다르게 보는 것이다 —
+   * 연속은 "지금 몇 주째", 티어는 "지금까지 전부 몇 주". 연속이 끊긴
+   * 주에 티어가 그대로인 것을 눈으로 봐야 "다 날아간 게 아니구나"가
+   * 전해진다. 그 한 장면이 돌아오게 만든다.
+   */
+  function tierCard(tier) {
+    var ladder = el('div', { class: 'tier-ladder', 'aria-hidden': 'true' }, []);
+    E.TIERS.forEach(function (step) {
+      var reached = tier.tier && step.weeks <= tier.tier.weeks;
+      ladder.appendChild(el('i', { class: reached ? 'on' : '' }));
+    });
+
+    // 다음 등급까지 얼마나 왔나. 등수가 아니라 거리다.
+    var bar = null;
+    if (tier.next) {
+      var floor = tier.tier ? tier.tier.weeks : 0;
+      var pct = Math.max(0, Math.min(100,
+        Math.round(((tier.score - floor) / (tier.next.weeks - floor)) * 100)));
+      bar = el('div', { class: 'tier-track' }, [
+        el('div', { class: 'tier-fill', style: 'width:' + pct + '%' }),
+      ]);
+    }
+
+    return el('div', { class: 'tier-card' + (tier.tier ? ' lit' : '') + (tier.atRisk ? ' risk' : '') }, [
+      el('div', { class: 'tier-top' }, [
+        el('span', { class: 'tier-name', text: tier.tier ? tier.tier.name : '아직 등급 없음' }),
+        ladder,
+        el('span', { class: 'tier-score', text: '지킨 주 ' + tier.score }),
+      ]),
+      bar,
+      /*
+       * 등급 이름이 제목에 이미 있다. 엔진이 주는 줄은 알림이나 친구
+       * 화면에서 혼자 서야 해서 이름을 달고 오는데, 이 카드에서는 같은
+       * 말이 두 번 된다. 앞머리만 떼고 쓴다.
+       */
+      el('p', { class: 'tier-msg', text:
+        tier.tier ? tier.message.replace(tier.tier.name + ' · ', '') : tier.message }),
+      /*
+       * 무엇을 기준으로 나누는지는 **처음 몇 주만** 말한다. 실버까지 온
+       * 사람은 이미 안다 — 매주 같은 설명이 붙으면 그 자리부터 안 읽는다.
+       */
+      !tier.tier || tier.tier.id === 'bronze'
+        ? el('p', { class: 'hint-line', text:
+          '드는 무게가 아니라 약속을 지킨 주로 나눕니다. 주 3회를 여덟 주 지킨 사람이 ' +
+          '주 1회 나오는 사람보다 위입니다.' })
+        : null,
+    ]);
   }
 
   function streakCard(streak) {
@@ -8529,6 +8698,7 @@
      * 이것이고, 그래서 주간 탭 맨 위에 둔다.
      */
     screen.appendChild(streakCard(currentStreak()));
+    screen.appendChild(tierCard(currentTier()));
     var nudge = reportNudge();
     if (nudge) screen.appendChild(nudge);
 
@@ -9033,11 +9203,160 @@
     });
   }
 
+  /**
+   * 몸 — 체중 추세와 단백질.
+   *
+   * 식단표를 만들지 않는다. 끼니를 적게 하는 앱은 3주를 못 간다.
+   * 여기서 묻는 것은 하루에 두 가지뿐이다 — **아침 체중 한 번**과
+   * **단백질 채웠나 한 번.** 둘 다 10초다.
+   *
+   * 통증 카드 위에 둔다. 체중은 아침에 재고 통증은 운동 직전에 적는데,
+   * 체크인 탭을 여는 사람의 절반은 아침에 연다.
+   */
+  function bodyCard() {
+    /*
+     * 체중은 민감정보다(제23조). healthData 동의가 그 근거이고, 그 동의가
+     * 없으면 칸 자체를 띄우지 않는다 — 적을 수 있게 해 놓고 저장만 안 하면
+     * 동의를 안 받은 채로 받은 것이 된다.
+     */
+    if ((state.consent || []).indexOf('healthData') < 0) return null;
+
+    var today = isoOf(new Date());
+    var mine = (state.checkIns || []).filter(function (item) { return item.date === today; })[0];
+    var trend = bodyTrend();
+    var goal = bodyGoal();
+    var shown = (mine && mine.bodyweightKg)
+      || (trend.latest && trend.latest.kg)
+      || (state.lifter && state.lifter.bodyweightKg)
+      || 70;
+
+    var body = el('div', { class: 'sheet-body' }, []);
+
+    body.appendChild(numberRow({
+      name: '오늘 아침 체중',
+      value: shown,
+      min: 30,
+      max: 250,
+      step: 0.1,
+      unit: 'kg',
+      id: 'today-weight',
+      hint: mine && typeof mine.bodyweightKg === 'number' ? '오늘 적었습니다.' : null,
+      onInput: function (value) {
+        saveBody({ bodyweightKg: value });
+        /*
+         * 첫 중량 추정이 체중을 본다. 추세는 평균으로 보지만 처방은
+         * 지금 몸무게를 봐야 하므로 여기서 같이 갱신한다.
+         */
+        state.lifter = Object.assign({}, state.lifter, { bodyweightKg: value });
+        persist();
+        render();
+      },
+    }));
+
+    body.appendChild(el('p', { class: 'trend-line', text: trend.message }));
+    if (trend.warning) {
+      body.appendChild(el('p', { class: 'hint-line warn', text: trend.warning }));
+    }
+    var hold = E.holdLoadWhileCutting(trend, goal);
+    if (hold) body.appendChild(el('p', { class: 'hint-line', text: hold }));
+
+    var spark = trendSpark(trend);
+    if (spark) body.appendChild(spark);
+
+    /* ── 단백질 ── */
+    var target = E.proteinTargetG(shown, goal);
+    var week = proteinToday();
+    var done = week.answeredToday && week.hitToday;
+
+    body.appendChild(el('div', { class: 'protein-head' }, [
+      el('span', { class: 'protein-target', text: '하루 ' + target + 'g' }),
+      el('span', { class: 'protein-week', text: '이번 주 ' + week.hits + '일 채움' }),
+    ]));
+    body.appendChild(el('p', { class: 'hint-line', text: E.proteinHint(target) }));
+
+    body.appendChild(el('button', {
+      type: 'button',
+      class: 'protein-toggle',
+      'aria-pressed': String(done),
+      onclick: function () {
+        saveBody({ proteinHit: !done });
+        render();
+      },
+    }, [
+      el('span', { text: done ? '오늘 단백질 채웠습니다' : '오늘 단백질 채웠나요?' }),
+      el('span', { class: 'count-tempo', text: done ? '✓' : '누르기' }),
+    ]));
+
+    body.appendChild(el('p', { class: 'hint-line', text: week.message }));
+    var risk = E.proteinRisk(week, goal, trend.pace === 'down' || trend.pace === 'fastDown');
+    if (risk) body.appendChild(el('p', { class: 'hint-line warn', text: risk }));
+
+    return el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '몸' }),
+        el('span', { class: 'meta', text: '하루 10초' }),
+      ]),
+      body,
+    ]);
+  }
+
+  /**
+   * 추세선.
+   *
+   * 하루값은 흐리게, 7일 평균은 진하게 긋는다. 두 선을 겹쳐 놔야
+   * "내 저울이 튀는 거지 내가 못한 게 아니다"가 눈으로 보인다.
+   * 그 한 장면이 숫자 설명 열 줄보다 낫다.
+   */
+  function trendSpark(trend) {
+    var points = trend.points.slice(-42);
+    if (points.length < 3) return null;
+
+    var values = points.map(function (point) { return point.kg; })
+      .concat(points.map(function (point) { return point.avgKg; }));
+    var low = Math.min.apply(null, values);
+    var high = Math.max.apply(null, values);
+    var span = Math.max(0.6, high - low);
+    var W = 300;
+    var H = 56;
+
+    var at = function (index, kg) {
+      var x = points.length < 2 ? 0 : (index / (points.length - 1)) * W;
+      var y = H - ((kg - low) / span) * H;
+      return Math.round(x * 10) / 10 + ',' + Math.round(y * 10) / 10;
+    };
+    var path = function (key) {
+      return points.map(function (point, i) { return at(i, point[key]); }).join(' ');
+    };
+
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('class', 'trend-spark');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label',
+      points.length + '일 체중 추세. ' + trend.message);
+
+    ['raw', 'avg'].forEach(function (kind) {
+      var line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      line.setAttribute('points', path(kind === 'raw' ? 'kg' : 'avgKg'));
+      line.setAttribute('class', 'spark-' + kind);
+      svg.appendChild(line);
+    });
+
+    var wrap = el('div', { class: 'trend-wrap' }, []);
+    wrap.appendChild(svg);
+    wrap.appendChild(el('p', { class: 'hint-line', text:
+      '흐린 선이 매일 잰 값, 진한 선이 7일 평균입니다. 판단은 진한 선으로 합니다.' }));
+    return wrap;
+  }
+
   function renderCheckin() {
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('h2', { text: '오늘 체크인' }),
       el('p', { class: 'meta', text: '30초면 끝납니다. 통증은 세션 구성에 바로 반영됩니다.' }),
     ]));
+
+    var mind = bodyCard();
+    if (mind) screen.appendChild(mind);
 
     var body = el('div', { class: 'sheet-body' }, []);
 

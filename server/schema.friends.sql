@@ -252,9 +252,30 @@ create table if not exists public.week_summaries (
   target     smallint not null check (target between 1 and 7),
   -- 연속으로 지킨 주
   streak     smallint not null default 0 check (streak >= 0),
+  /*
+   * 티어 점수 — 지금까지 약속을 지킨 주를 전부 합친 수.
+   *
+   * 등급을 **드는 무게로 나누지 않기 때문에** 이 칸 하나면 된다. 무게로
+   * 나누려면 records가 서버로 올라와야 하는데, 그 통로를 안 여는 것이
+   * 이 스키마의 요점이다. 지킨 주는 이미 days/target으로 올라오는 것과
+   * 같은 종류라 새로 받는 민감정보가 없다.
+   *
+   * streak(연속)과 다르다. 연속은 끊기면 0이지만 점수는 쌓인 것이라,
+   * 한 주 빠졌다고 반 년치가 사라지지 않는다.
+   */
+  tier_score smallint not null default 0 check (tier_score >= 0),
   updated_at timestamptz not null default now(),
   primary key (user_id, week_start)
 );
+
+-- 이미 만들어 둔 표에 칸만 더한다. 지우고 다시 만들면 쌓인 주가 날아간다.
+alter table public.week_summaries
+  add column if not exists tier_score smallint not null default 0;
+do $$ begin
+  alter table public.week_summaries
+    add constraint week_summaries_tier_score_check check (tier_score >= 0);
+exception when duplicate_object then null;
+end $$;
 
 alter table public.week_summaries enable row level security;
 
@@ -275,20 +296,34 @@ create policy week_friend_read on public.week_summaries
     where user_id = auth.uid() and friend_id = week_summaries.user_id
   ));
 
+/*
+ * tier_points는 기본값을 둔다. 앞 판 앱이 네 개만 보내도 거절당하지
+ * 않아야 한다 — 업데이트는 사람마다 제각각 들어온다.
+ */
+/*
+ * 앞 판의 네 칸짜리를 먼저 지운다. create or replace는 인자 목록이
+ * 다르면 **덮지 않고 하나 더 만든다** — 그대로 두면 네 칸으로 부르는
+ * 호출이 옛 함수로 가고 점수는 영영 안 올라간다.
+ */
+drop function if exists public.put_week_summary(date, smallint, smallint, smallint);
+
 create or replace function public.put_week_summary(
-  week date, days_done smallint, week_target smallint, streak_weeks smallint
+  week date, days_done smallint, week_target smallint, streak_weeks smallint,
+  tier_points smallint default 0
 ) returns void
 language sql
 security invoker
 set search_path = public
 as $$
-  insert into public.week_summaries (user_id, week_start, days, target, streak, updated_at)
+  insert into public.week_summaries
+    (user_id, week_start, days, target, streak, tier_score, updated_at)
   select auth.uid(), week, greatest(0, least(7, days_done)),
-         greatest(1, least(7, week_target)), greatest(0, streak_weeks), now()
+         greatest(1, least(7, week_target)), greatest(0, streak_weeks),
+         greatest(0, coalesce(tier_points, 0)), now()
   where auth.uid() is not null
   on conflict (user_id, week_start) do update
     set days = excluded.days, target = excluded.target,
-        streak = excluded.streak, updated_at = now();
+        streak = excluded.streak, tier_score = excluded.tier_score, updated_at = now();
 $$;
 
 -- ──────────────────────────────────────────────────────────────
@@ -360,10 +395,11 @@ $$;
  * 그래서 표는 통째로 닫아 두고, 이 함수만 대신 읽는다. 안에서 반드시
  * auth.uid()로 걸러야 한다 — 그 조건이 이 함수의 울타리 전부다.
  */
+drop function if exists public.my_friends(date);
 create or replace function public.my_friends(week date)
 returns table (
   user_id uuid, name text, days smallint, target smallint, streak smallint,
-  last_cheer_at timestamptz
+  tier_score smallint, last_cheer_at timestamptz
 )
 language sql
 security definer
@@ -375,6 +411,7 @@ as $$
          coalesce(w.days, 0::smallint),
          coalesce(w.target, 3::smallint),
          coalesce(w.streak, 0::smallint),
+         coalesce(w.tier_score, 0::smallint),
          c.created_at
   from public.friendships f
   join public.profiles p on p.user_id = f.friend_id
@@ -429,7 +466,7 @@ $$;
 
 grant execute on function
   public.set_my_profile(text),
-  public.put_week_summary(date, smallint, smallint, smallint),
+  public.put_week_summary(date, smallint, smallint, smallint, smallint),
   public.add_friend(text),
   public.remove_friend(uuid),
   public.send_cheer(uuid, text),

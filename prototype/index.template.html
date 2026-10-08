@@ -1589,6 +1589,85 @@ input[type="search"] {
 }
 .streak-msg { margin: 0; font-size: 12.5px; line-height: 1.55; }
 
+/*
+ * 티어.
+ *
+ * 연속 카드와 나란히 서되 더 조용해야 한다. 연속은 이번 주 이야기라
+ * 눈에 들어와야 하지만 티어는 반년짜리 이야기다 — 매일 쳐다보라고
+ * 만든 것이 아니다. 그래서 숫자를 크게 쓰지 않는다.
+ */
+.tier-card {
+  display: grid; gap: 7px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); padding: 12px 13px;
+}
+.tier-card.lit { border-color: var(--line-soft); }
+.tier-card.risk { border-color: var(--zone-hard); }
+.tier-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tier-name { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+.tier-card.lit .tier-name { color: var(--accent); }
+/* 사다리 — 다섯 칸 중 어디까지 왔나. 등수가 아니라 거리다. */
+.tier-ladder { display: flex; gap: 4px; align-items: flex-end; }
+.tier-ladder i {
+  width: 6px; border-radius: 2px;
+  border: 1px solid var(--line); background: var(--surface-2);
+}
+.tier-ladder i:nth-child(1) { height: 7px; }
+.tier-ladder i:nth-child(2) { height: 10px; }
+.tier-ladder i:nth-child(3) { height: 13px; }
+.tier-ladder i:nth-child(4) { height: 16px; }
+.tier-ladder i:nth-child(5) { height: 19px; }
+.tier-ladder i.on { background: var(--accent); border-color: var(--accent); }
+.tier-score {
+  margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.tier-track { height: 5px; border-radius: 3px; background: var(--line-soft); overflow: hidden; }
+.tier-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.tier-msg { margin: 0; font-size: 12.5px; line-height: 1.55; }
+/* 친구 이름 옆 꼬리표. 점수는 안 쓴다 — 쓰면 친구끼리 점수를 비교한다. */
+.tier-chip {
+  margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface-2);
+  font-size: 10.5px; font-weight: 600; color: var(--muted); vertical-align: 1px;
+}
+
+/*
+ * 몸 — 체중 추세와 단백질.
+ *
+ * 하루값과 7일 평균을 겹쳐 긋는다. "내 저울이 튀는 거지 내가 못한 게
+ * 아니다"는 설명 열 줄보다 두 선이 겹친 그림 하나로 전해진다.
+ */
+.trend-line { margin: 0; font-size: 12.5px; line-height: 1.55; }
+.trend-wrap { display: grid; gap: 5px; }
+.trend-spark { width: 100%; height: 56px; overflow: visible; }
+.trend-spark polyline { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.trend-spark .spark-raw { stroke: var(--line); stroke-width: 1.2; }
+.trend-spark .spark-avg { stroke: var(--accent); stroke-width: 2; }
+.protein-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding-top: 9px; border-top: 1px solid var(--line-soft);
+}
+.protein-target {
+  font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.protein-week {
+  margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* 하루에 누르는 버튼 하나. 끼니를 적게 하는 앱은 3주를 못 간다. */
+.protein-toggle {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2); color: var(--ink); padding: 11px 12px;
+  font-size: 13px;
+}
+.protein-toggle[aria-pressed="true"] {
+  border-color: var(--accent); background: var(--accent-soft); color: var(--accent);
+}
+.protein-toggle .count-tempo { margin-left: auto; }
+
 /* ── 주간 리포트 한 장 ──────────────────────────── */
 .report-cta {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
