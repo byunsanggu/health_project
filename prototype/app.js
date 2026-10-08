@@ -6798,15 +6798,126 @@
     }, 8000);
   }
 
+  /**
+   * 이 기기에 다른 사람의 기록이 있을 때.
+   *
+   * 조용히 지우지 않는다. 지우면 돌이킬 수 없고, 아직 안 올라간 세트가
+   * 있으면 그건 어디에도 없는 기록이다. 몇 개가 걸려 있는지 세어서
+   * 보여주고 고르게 한다.
+   *
+   * 자동으로 고르지도 않는다. "알아서 해 주는" 선택이 남의 건강 기록을
+   * 지우는 일이면 그건 알아서 할 일이 아니다.
+   */
+  function askAccountSwitch() {
+    if (state.askingSwitch) return;
+    state.askingSwitch = true;
+
+    var pending = storage.outbox().length;
+    var mine = Remote.email() || '새 계정';
+
+    var body = [];
+    body.push(el('p', { class: 'asset-note', text:
+      '이 기기에는 다른 계정의 운동 기록이 남아 있습니다. ' +
+      withParticleJs(mine, '으로/로') + ' 쓰시려면 그 기록을 먼저 치워야 합니다 — ' +
+      '남의 기록이 이 계정으로 올라가면 안 되니까요.' }));
+
+    if (pending > 0) {
+      body.push(el('div', { class: 'notice stop' }, [
+        el('div', { class: 'label', text: '아직 안 올라간 기록이 있습니다' }),
+        el('div', { text: pending + '개가 이 기기에만 있습니다. 지우면 되돌릴 수 없습니다. ' +
+          '그 기록이 필요하면 먼저 원래 계정으로 로그인해서 올리세요.' }),
+      ]));
+    } else {
+      body.push(el('p', { class: 'hint-line', text:
+        '이 기기의 기록은 원래 계정에 전부 올라가 있습니다. 지워도 그쪽에는 그대로 남습니다.' }));
+    }
+
+    body.push(el('div', { class: 'sheet-body' }, [
+      el('button', {
+        type: 'button', class: 'finish danger',
+        text: '이 기기 기록을 지우고 ' + mine + '으로 쓰기',
+        onclick: function () {
+          state.askingSwitch = false;
+          var me = Remote.userId();
+          modal.close();
+          wipeEverything();
+          Remote.claimData(me);
+          render();
+          pushLog('계정', '이 기기의 기록을 치우고 <b>' + mine + '</b> 기록을 받아옵니다.');
+          syncNow();
+        },
+      }),
+      el('button', {
+        type: 'button', class: 'finish quiet',
+        text: '원래 계정으로 돌아가기',
+        onclick: function () {
+          state.askingSwitch = false;
+          modal.close();
+          Remote.signOut().then(function () {
+            render();
+            pushLog('계정', '로그아웃했습니다. 이 기기의 기록은 그대로 있습니다.');
+          });
+        },
+      }),
+    ]));
+
+    openModal('다른 계정의 기록이 있습니다', mine, body);
+  }
+
   function syncStatusLine() {
     var pending = storage.outbox().length;
     return E.syncAgeLine(state.lastSyncedAt || null, Date.now(), pending);
   }
 
   /** 지금 한 번 맞춘다. 실패해도 기록은 이 기기에 그대로 있다. */
+  /* ── 이 기기의 기록은 누구 것인가 ────────────────────
+
+     로그아웃해도 기록은 이 기기에 남는다. 그게 맞다 — 신호 없는 지하에서
+     적은 것이 로그아웃 한 번에 날아가면 안 된다.
+
+     그런데 그 상태에서 다른 사람이 로그인하면 앞 사람의 밀린 기록이
+     **뒷사람 계정으로** 올라간다. 운동 기록은 민감정보(개인정보보호법
+     제23조)라 그냥 둘 일이 아니다.
+
+     그래서 올리기 전에 주인을 본다. 올리는 길은 syncNow 하나뿐이므로
+     여기만 막으면 샐 데가 없다.
+  ── */
+
+  /**
+   * 올려도 되는가.
+   *
+   *   주인이 없다  → 이 사람 것으로 적는다. 로그인 전에 쓰던 기록이
+   *                 그 사람 것이 되는 길이라 막으면 안 된다.
+   *   주인이 같다  → 평소대로.
+   *   주인이 다르다 → 멈추고 묻는다.
+   */
+  function dataOwnerCheck() {
+    var me = Remote.userId();
+    // 누구인지 모르면 판단할 근거가 없다. 부르는 쪽에서 먼저 물어 온다.
+    if (!me) return 'unknown';
+    var owner = Remote.dataOwner();
+    if (!owner) { Remote.claimData(me); return 'mine'; }
+    return owner === me ? 'mine' : 'other';
+  }
+
   function syncNow(after) {
     if (!Remote.configured() || !Remote.signedIn()) return Promise.resolve(null);
     if (state.syncing) return Promise.resolve(null);
+
+    /*
+     * 누구인지 모르면 먼저 물어보고 다시 들어온다. 모른 채로 올리면
+     * 주인을 확인하는 뜻이 없어진다.
+     */
+    if (dataOwnerCheck() === 'unknown') {
+      return Remote.loadIdentity().then(function () {
+        return Remote.userId() ? syncNow(after) : null;
+      });
+    }
+    if (dataOwnerCheck() === 'other') {
+      askAccountSwitch();
+      return Promise.resolve(null);
+    }
+
     state.syncing = true;
     if (after) after();
 
@@ -9035,6 +9146,8 @@
 
   function wipeEverything() {
     storage.reset();
+    // 기록이 없어졌으니 주인도 없다.
+    if (typeof Remote !== 'undefined') Remote.releaseData();
     state.consent = [];
     state.consentRecord = null;
     state.myDirectory = [];

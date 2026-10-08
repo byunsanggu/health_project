@@ -222,8 +222,39 @@ var Remote = (function () {
       accessToken: payload.access_token,
       refreshToken: payload.refresh_token || read().refreshToken,
       email: (payload.user && payload.user.email) || read().email,
+      // 신원은 계정 id다. 이메일은 바뀔 수 있고 카카오는 주지도 않는다.
+      userId: (payload.user && payload.user.id) || read().userId || null,
     });
     return payload;
+  }
+
+  /** 지금 로그인한 사람. 모르면 null — 그때는 loadIdentity()로 물어본다. */
+  function userId() {
+    return read().userId || null;
+  }
+
+  /* ── 이 기기의 기록은 누구 것인가 ────────────────────
+
+     로그아웃해도 기록은 이 기기에 남는다(그게 맞다 — 신호 없는 지하에서
+     적은 것이 로그아웃 한 번에 날아가면 안 된다). 그런데 그 상태에서
+     다른 사람이 로그인하면, 앞 사람의 밀린 기록이 **뒷사람 계정으로**
+     올라간다. 운동 기록은 민감정보라 그냥 둘 일이 아니다.
+
+     그래서 기록에 주인을 적어 둔다. 이 값은 로그아웃해도 안 지운다 —
+     지우면 바로 다음 로그인에서 또 섞인다.
+  ── */
+
+  function dataOwner() {
+    return read().ownerId || null;
+  }
+
+  function claimData(id) {
+    if (id) patch({ ownerId: id });
+  }
+
+  /** 기록을 통째로 지울 때만 주인도 지운다. */
+  function releaseData() {
+    patch({ ownerId: null });
   }
 
   function refresh() {
@@ -286,7 +317,8 @@ var Remote = (function () {
 
   function signOut() {
     var done = function () {
-      patch({ accessToken: null, refreshToken: null });
+      // ownerId는 남긴다. 지우면 다음 사람이 로그인할 때 또 섞인다.
+      patch({ accessToken: null, refreshToken: null, userId: null });
       forgetDeviceLink();
     };
     if (!signedIn()) { done(); return Promise.resolve(); }
@@ -485,6 +517,7 @@ var Remote = (function () {
     }).then(function (user) {
       var email = (user && user.email) || '';
       if (email) patch({ email: email });
+      if (user && user.id) patch({ userId: user.id });
       return user;
     }, function () { return null; });
   }
@@ -699,6 +732,10 @@ var Remote = (function () {
     configured: configured,
     signedIn: signedIn,
     email: email,
+    userId: userId,
+    dataOwner: dataOwner,
+    claimData: claimData,
+    releaseData: releaseData,
     looksValid: looksValid,
     signUp: signUp,
     signIn: signIn,
