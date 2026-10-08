@@ -188,6 +188,8 @@
         machineSame: { date: state.todayDate, ids: state.machineSame },
         machineKnown: state.machineKnown,
         machinePound: state.machinePound,
+        coach: state.coach,
+        machineSettings: state.machineSettings,
         comeback: state.comeback,
         comebackDeclined: state.comebackDeclined,
         /*
@@ -315,6 +317,10 @@
       // 오늘 기록한 세트를 되살리고, 해당 세트를 완료 상태로 표시한다.
       state.machineKnown = settings.machineKnown || {};
       state.machinePound = settings.machinePound || {};
+      state.coach = settings.coach && settings.coach.mode
+        ? { mode: settings.coach.mode === 'pt' ? 'pt' : 'solo', style: settings.coach.style || 'calm' }
+        : { mode: 'solo', style: 'calm' };
+      state.machineSettings = settings.machineSettings || {};
       var sameAnswer = settings.machineSame;
       state.machineSame = sameAnswer && sameAnswer.date === state.todayDate
         ? (sameAnswer.ids || {}) : {};
@@ -637,6 +643,17 @@
      */
     machinePound: {},
     /*
+     * PT 모드. 기본은 혼자다 — 켜지 않았는데 휴대폰이 말을 시작하면
+     * 헬스장에서 다들 쳐다본다. 오늘 화면에서 고른다.
+     */
+    coach: { mode: 'solo', style: 'calm' },
+    /** 기계 세팅 ("시트 4 · 등받이 2"). 헬스장|종목|기계 → 글 */
+    machineSettings: {},
+    /** 지금 코치가 한 말. 소리가 안 나는 기기에서도 읽을 수 있게 화면에 띄운다 */
+    coachLine: null,
+    /** 이미 말한 자리. 다시 그릴 때마다 같은 말을 반복하지 않게 */
+    coachSaid: {},
+    /*
      * "같은 기계예요"라고 답한 종목. 이 날은 다시 묻지 않는다.
      * 하루 안에 같은 질문을 두 번 받으면 읽지 않고 아무거나 누르게 된다.
      */
@@ -820,6 +837,9 @@
     // 오늘 고른 기계도 하루짜리다. 세트가 비면 같이 비운다.
     state.machinePick = {};
     state.machineSame = {};
+    // 코치가 한 말도 하루짜리다. 날이 바뀌었는데 "이미 말했다"로 남으면 아무 말도 안 한다.
+    state.coachSaid = {};
+    state.coachLine = null;
     state.summary = null;
     state.sessionStartedAt = null;
     state.busyEquipment = [];
@@ -1180,7 +1200,8 @@
 
   function completeSet(liftIndex, setIndex, rir) {
     // 세는 중에 RIR을 누를 수 있다. 소리가 혼자 남으면 다음 세트와 겹친다.
-    if (state.counting) stopCounting(true);
+    // 이미 답을 눌렀다. 여기서 "무게 어땠어요?"를 또 물으면 답한 사람에게 다시 묻는 꼴이다.
+    if (state.counting) stopCounting(true, true);
     var lift = state.lifts[liftIndex];
     var set = lift.sets[setIndex];
     var rule = { repRange: lift.repRange, targetRir: lift.targetRir };
@@ -1516,6 +1537,7 @@
 
     if (node) node.textContent = E.formatDuration(remaining);
     if (bar) bar.style.width = (100 - (remaining / state.rest.total) * 100) + '%';
+    coachDuringRest(remaining);
 
     if (remaining <= 0) {
       pushLog('휴식 완료', '<b>' + state.rest.exerciseName + '</b> ' + state.rest.setNumber +
@@ -1530,7 +1552,8 @@
     if (state.restTicker) clearInterval(state.restTicker);
     state.restTicker = null;
     state.rest = null;
-    releaseWakeLock();
+    // PT 모드는 운동 내내 화면을 켜 둔다. 쉬는 시간만 켜 두면 세트 중에 말이 끊긴다.
+    if (!(ptOn() && state.started)) releaseWakeLock();
     notifyWorker({ type: 'rest:stop' });
     renderRest();
     /*
@@ -1540,7 +1563,7 @@
      * 세트마다 자동으로 셀 때는 그러면 안 된다. 쉬는 동안 미뤄 둔 시작이
      * 이 순간에 열리는데, 세트 화면을 안 그리면 그 순간이 영영 안 온다.
      */
-    if (state.autoCount) render();
+    if (state.autoCount || ptOn()) render();
   }
 
   /*
@@ -1553,6 +1576,7 @@
       releaseWakeLock();
       return;
     }
+    if (ptOn() && state.started) acquireWakeLock();
     if (!state.rest) return;
     if (restRemaining() <= 0) tickRest();
     else {
@@ -3792,11 +3816,21 @@
     renderConditioning();
 
     var doneSets = state.todaySets.length;
+    screen.appendChild(coachPicker());
     screen.appendChild(el('button', {
       type: 'button', class: 'finish start-cta',
       text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : '시작하기',
       onclick: function () {
         state.started = true;
+        if (ptOn()) {
+          /*
+           * 손으로 누른 이 순간에 한 번 말해야 iOS가 뒤에 오는 말을 막지
+           * 않는다. 그리고 화면을 켜 둔다 — 운동 중에 화면이 꺼지면 말도
+           * 끊긴다.
+           */
+          speak(state.coach.style === 'fired' ? '시작합니다!' : '시작할게요.');
+          acquireWakeLock();
+        }
         // 시계는 여기서 돈다. 세트를 기록해야 시작하면 워밍업 시간이 빠진다.
         if (!state.sessionStartedAt) state.sessionStartedAt = Date.now();
         // 이어서 할 때는 아직 안 끝낸 첫 종목으로 간다.
@@ -4705,7 +4739,8 @@
   }
 
   function speak(text) {
-    if (!state.voiceOn || !('speechSynthesis' in window)) return;
+    // PT 모드는 말하는 모드다. 소리 스위치를 따로 켜게 하면 켠 사람이 또 켜야 한다.
+    if ((!state.voiceOn && !ptOn()) || !('speechSynthesis' in window)) return;
     try {
       var utter = new SpeechSynthesisUtterance(text);
       var voice = koreanVoice();
@@ -4719,12 +4754,270 @@
     }
   }
 
+  /* ── PT 모드 ───────────────────────────────────── */
+
+  function ptOn() {
+    return Boolean(state.coach && state.coach.mode === 'pt');
+  }
+
+  /**
+   * 코치가 말한다 — 소리와 화면 둘 다.
+   *
+   * 소리만 내면 소리가 안 나는 기기(무음 모드, 이어폰 빠짐)에서는 아무
+   * 일도 없는 것처럼 보인다. 화면에도 같은 말을 띄운다.
+   */
+  function coachSay(lines) {
+    var text = (lines || []).filter(Boolean).join(' ');
+    if (!text) return '';
+    state.coachLine = text;
+    var bubble = document.getElementById('coach-say');
+    if (bubble) bubble.textContent = text;
+    speak(E.forSpeech(text));
+    return text;
+  }
+
+  function coachScope(lift) {
+    return { gymId: activeGymId(), machine: state.machinePick[lift.exercise.id] };
+  }
+
+  function settingKeyFor(lift) {
+    return E.settingKey(activeGymId(), lift.exercise.id, state.machinePick[lift.exercise.id]);
+  }
+
+  /** 이 종목을 해 본 적이 있는가 — 어느 헬스장이든. 처음이면 사용법부터 말한다. */
+  function triedBefore(exercise) {
+    return state.history.some(function (session) {
+      return session.date < state.todayDate && session.sets.some(function (set) {
+        return set.exerciseId === exercise.id && !set.warmup && set.reps > 0;
+      });
+    });
+  }
+
+  /** 세트 전에 하는 말. 이미 한 자리면 다시 하지 않는다. */
+  function coachBefore(liftIndex, setIndex) {
+    var key = liftIndex + ':' + setIndex + ':before';
+    if (state.coachSaid[key]) return '';
+    state.coachSaid[key] = true;
+
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set) return '';
+    var demo = E.demoFor(lift.exercise);
+    var first = !triedBefore(lift.exercise);
+    return coachSay(E.beforeSetLines({
+      style: state.coach.style,
+      exerciseName: lift.exercise.name,
+      setIndex: setIndex,
+      totalSets: lift.sets.length,
+      weightKg: set.weightKg,
+      pounds: inPounds(lift.exercise.id),
+      repsMin: set.targetReps.min,
+      repsMax: set.targetReps.max,
+      targetRir: typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir,
+      last: E.lastTimeFor(state.history, lift.exercise, state.todayDate, coachScope(lift)),
+      cues: demo ? demo.cues : [],
+      firstTime: first,
+      setup: first ? E.setupFor(lift.exercise) : [],
+      machineSetting: state.machineSettings[settingKeyFor(lift)] || null,
+      liftIndex: liftIndex,
+    }));
+  }
+
+  /**
+   * 무게 체감으로 세트를 마친다.
+   *
+   * 체감을 남은 횟수로 바꿔 기존 completeSet에 넘긴다 — 기록 형식도
+   * 다음 무게 계산도 혼자 모드와 똑같다. 말만 다르다.
+   */
+  function finishByFeel(liftIndex, setIndex, feel) {
+    var lift = state.lifts[liftIndex];
+    var set = lift.sets[setIndex];
+    var target = typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir;
+    var reps = set.reps;
+    var weight = set.weightKg;
+
+    if (feel === 'hurt') return stopForPain(liftIndex, setIndex, target);
+
+    completeSet(liftIndex, setIndex, E.feelToRir(feel, target));
+    coachAfter(liftIndex, setIndex, feel, weight, reps);
+  }
+
+  function coachAfter(liftIndex, setIndex, feel, weight, reps) {
+    if (!ptOn()) return;
+    var lift = state.lifts[liftIndex];
+    var next = lift.sets[setIndex + 1];
+    var remaining = lift.sets.filter(function (item) { return !item.done; }).length;
+    var decision = lift.decision;
+    var stopEarly = decision && decision.verdict === 'stop' && remaining > 0;
+    var more = decision && decision.verdict === 'continue';
+
+    var lines = E.afterSetLines({
+      style: state.coach.style,
+      feel: feel || 'right',
+      lastOfLift: remaining === 0 && !more,
+      nextWeightKg: next ? next.weightKg : undefined,
+      deltaKg: next && next.adjustment ? next.adjustment.deltaKg : 0,
+      pounds: inPounds(lift.exercise.id),
+      stopReason: stopEarly ? decision.reason : null,
+      growth: E.growthAt(state.history, lift.exercise, state.todayDate, weight, reps, coachScope(lift)),
+      setsDone: lift.sets.filter(function (item) { return item.done; }).length,
+    });
+    if (allSetsDone()) lines = lines.concat(coachWrapUp());
+    coachSay(lines);
+  }
+
+  /**
+   * 아프다고 했다.
+   *
+   * 그 세트는 목표 강도로 적는다 — 아파서 멈춘 세트로 다음 무게를 움직이면
+   * 안 된다. 남은 세트는 지우고 다음 종목으로 넘어간다. 빡센 트레이너도
+   * 여기서는 밀지 않는다.
+   */
+  function stopForPain(liftIndex, setIndex, target) {
+    var lift = state.lifts[liftIndex];
+    completeSet(liftIndex, setIndex, target);
+    lift.sets = lift.sets.filter(function (item) { return item.done; });
+    lift.decision = null;
+    if (state.rest) stopRest();
+    pushLog('통증', '<b>' + lift.exercise.name + '</b> — 아프다고 하셔서 남은 세트를 뺐습니다.');
+    var next = state.lifts.findIndex(function (item, at) {
+      return at > liftIndex && item.sets.some(function (one) { return !one.done; });
+    });
+    if (next >= 0) {
+      state.liftCursor = next;
+      /*
+       * 다음 종목을 저절로 시작하지 않는다.
+       *
+       * "아프다"는 말 바로 뒤에 "오늘 인생을 갈아 넣는다는 느낌으로!"가
+       * 나오면 그건 트레이너가 아니다. 트레이너는 거기서 멈추고 괜찮은지
+       * 본다. 준비되면 ▶를 누르게 한다 — 그때 세트 전 말을 한다.
+       */
+      var firstOpen = state.lifts[next].sets.findIndex(function (one) { return !one.done; });
+      state.autoCountedFor = next + ':' + Math.max(0, firstOpen);
+    }
+    coachSay(E.afterSetLines({ style: state.coach.style, feel: 'hurt', lastOfLift: true }).concat(
+      next >= 0 ? ['괜찮아지시면 다음 종목에서 시작을 눌러 주세요.'] : []));
+    render();
+  }
+
+  /** 오늘 끝. 늘어난 종목과 총량을 센다. */
+  function coachWrapUp() {
+    var key = 'wrap:' + state.todayDate;
+    if (state.coachSaid[key]) return [];
+    state.coachSaid[key] = true;
+    var grew = 0;
+    var liftsDone = 0;
+    state.lifts.forEach(function (lift) {
+      var done = lift.sets.filter(function (set) { return set.done; });
+      if (done.length === 0) return;
+      liftsDone += 1;
+      var top = done.reduce(function (best, set) {
+        return set.weightKg > best.weightKg || (set.weightKg === best.weightKg && set.reps > best.reps) ? set : best;
+      });
+      var last = E.lastTimeFor(state.history, lift.exercise, state.todayDate, coachScope(lift));
+      if (last && (top.weightKg > last.weightKg || (top.weightKg === last.weightKg && top.reps > last.reps))) grew += 1;
+    });
+    var volume = state.todaySets.reduce(function (sum, set) {
+      return sum + (set.warmup ? 0 : set.weightKg * set.reps);
+    }, 0);
+    return E.wrapUpLines({
+      style: state.coach.style,
+      setsDone: state.todaySets.length,
+      liftsDone: liftsDone,
+      grew: grew,
+      volumeKg: volume,
+    });
+  }
+
+  /** 쉬는 동안 — 중간에 한마디, 10초 전에 한마디. 각각 한 번만. */
+  function coachDuringRest(remaining) {
+    if (!ptOn() || !state.rest) return;
+    var rest = state.rest;
+    if (!rest.tipSaid && rest.total >= E.TIP_MIN_REST_SECONDS && remaining <= rest.total / 2) {
+      rest.tipSaid = true;
+      coachSay([E.restTipLine(state.coach.style, rest.setNumber)]);
+    }
+    if (!rest.readySaid && remaining <= 10 && remaining > 0 && rest.total > 15) {
+      rest.readySaid = true;
+      coachSay([E.readySoonLine(state.coach.style)]);
+    }
+  }
+
+  /**
+   * 오늘 어떻게 할까요 — 혼자 / PT.
+   *
+   * 시작 버튼 바로 위에 둔다. 설정 화면에 넣으면 아무도 모른다(소리
+   * 스위치가 그랬다). 말투를 누르면 그 말투로 한마디 들려준다 — 고르는
+   * 데 그게 제일 빠르고, iOS는 손으로 누른 순간에 한 번 소리를 내야
+   * 그 뒤에도 말할 수 있다.
+   */
+  function coachPicker() {
+    var pt = ptOn();
+    var box = el('div', { class: 'sheet coach-pick' }, []);
+    box.appendChild(el('div', { class: 'sheet-head' }, [
+      el('h3', { text: '오늘 어떻게 할까요?' }),
+    ]));
+    var body = el('div', { class: 'sheet-body' }, []);
+    var modes = el('div', { class: 'coach-modes', role: 'group', 'aria-label': '운동 방식' }, [
+      el('button', {
+        type: 'button', class: 'coach-mode', 'aria-pressed': String(!pt),
+        onclick: function () {
+          state.coach = { mode: 'solo', style: state.coach.style };
+          releaseWakeLock();
+          persist();
+          render();
+        },
+      }, [
+        el('b', { text: '혼자' }),
+        el('span', { text: '처방과 기록만, 조용히' }),
+      ]),
+      el('button', {
+        type: 'button', class: 'coach-mode', 'aria-pressed': String(pt),
+        onclick: function () {
+          state.coach = { mode: 'pt', style: state.coach.style || 'calm' };
+          persist();
+          speak(E.forSpeech(E.coachStyleInfo(state.coach.style).sample));
+          render();
+        },
+      }, [
+        el('b', { text: 'PT' }),
+        el('span', { text: '옆에서 세어 주고 말해 줍니다' }),
+      ]),
+    ]);
+    body.appendChild(modes);
+
+    if (pt) {
+      var styles = el('div', { class: 'coach-styles' }, []);
+      E.COACH_STYLES.forEach(function (item) {
+        var on = state.coach.style === item.id;
+        styles.appendChild(el('button', {
+          type: 'button', class: 'coach-style', 'aria-pressed': String(on),
+          onclick: function () {
+            state.coach = { mode: 'pt', style: item.id };
+            persist();
+            speak(E.forSpeech(item.sample));
+            render();
+          },
+        }, [
+          el('b', { text: item.label }),
+          el('span', { text: item.hint }),
+        ]));
+      });
+      body.appendChild(styles);
+      body.appendChild(el('p', { class: 'hint-line', text:
+        '세트 전에 지난 기록과 오늘 목표를 말하고, 박자를 세고, 끝나면 무게가 어땠는지 묻습니다. ' +
+        '운동하는 동안 화면은 켜 둡니다.' }));
+    }
+    box.appendChild(body);
+    return box;
+  }
+
   function tempoOf() {
     return state.tempo || E.DEFAULT_TEMPO;
   }
 
   /** 세는 중이면 멈춘다. 화면을 떠날 때도 반드시 불러야 한다. */
-  function stopCounting(keepReps) {
+  function stopCounting(keepReps, silent) {
     var run = state.counting;
     if (!run) return;
     run.timers.forEach(function (id) { clearTimeout(id); });
@@ -4737,12 +5030,24 @@
      * 멈춘 자리까지를 기록으로 제안한다. 앱은 실제 반복을 못 봤으므로
      * 이건 "제안"이고, 숫자칸은 그대로 고칠 수 있게 둔다.
      */
+    var asked = false;
     if (keepReps !== false && run.rep > 0) {
       var lift = state.lifts[run.liftIndex];
       var set = lift && lift.sets[run.setIndex];
       if (set && !set.done) set.reps = run.rep;
+      // 트레이너는 세트가 끝나면 묻는다. 버튼을 찾게 두지 않는다.
+      asked = Boolean(ptOn() && !silent && set && !set.done);
+      if (asked) coachSay([E.askFeelLine(state.coach.style)]);
     }
     render();
+    /*
+     * 물었으면 답할 버튼을 눈앞에 둔다. 묻기만 하고 버튼이 화면 아래에
+     * 있으면, 땀난 손으로 스크롤부터 해야 한다.
+     */
+    if (asked) {
+      var row = document.querySelector('.feel-row');
+      if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
   }
 
   /**
@@ -4818,6 +5123,10 @@
         if (state.counting !== run) return;
         run.rep = cue.rep;
         speak(cue.say);
+        // 끝나기 두 개 전. 숫자 사이에 들어가야 해서 짧은 말만 한다.
+        if (ptOn() && set.targetReps.max >= 5 && cue.rep === set.targetReps.max - 2) {
+          speak(E.forSpeech(E.pushLine(state.coach.style)));
+        }
         // 화면의 숫자도 같이 올라간다 — 소리가 안 나는 기기에서도 세어진다.
         showCount(String(cue.rep), cue.say);
         if (cue.rep >= set.targetReps.max) {
@@ -4845,7 +5154,12 @@
     box.appendChild(el('button', {
       type: 'button', class: 'count-start',
       title: '한 회에 ' + E.repSeconds(tempo) + '초로 세어 줍니다 (' + E.tempoLabel(tempo) + ')',
-      onclick: function () { startCounting(liftIndex, setIndex); },
+      onclick: function () {
+        // 손으로 시작해도 PT면 세트 전 말을 먼저 하고, 그 길이만큼 기다린다.
+        var said = ptOn() ? coachBefore(liftIndex, setIndex) : '';
+        startCounting(liftIndex, setIndex,
+          said ? Math.max(3, Math.ceil(E.speechSeconds(said)) + 2) : undefined);
+      },
     }, [
       el('span', { class: 'count-play', text: '▶', 'aria-hidden': 'true' }),
       el('span', { text: '박자 맞춰 세어주기' }),
@@ -5453,17 +5767,28 @@
    *     세지 말라고 말한 것이다.
    */
   function maybeAutoCount(liftIndex, setIndex) {
-    if (!state.autoCount || state.rest || state.counting) return;
+    var auto = state.autoCount || ptOn();
+    if (!auto || state.rest || state.counting || !state.started) return;
     var key = liftIndex + ':' + setIndex;
     if (state.autoCountedFor === key) return;
     state.autoCountedFor = key;
     // 그리는 중에 다시 그릴 수 없다. 이번 그리기가 끝난 뒤로 미룬다.
     setTimeout(function () {
-      if (!state.autoCount || state.rest || state.counting) return;
+      if (!(state.autoCount || ptOn()) || state.rest || state.counting) return;
       var lift = state.lifts[liftIndex];
       var set = lift && lift.sets[setIndex];
       if (!set || set.done) return;
-      startCounting(liftIndex, setIndex, AUTO_LEAD_SECONDS);
+      /*
+       * PT 모드는 세트 전에 말을 먼저 한다. 그 말이 끝나기 전에 "하나"가
+       * 나가면 박자가 처음부터 어긋나므로, 준비 시간을 말 길이에 맞춰
+       * 늘린다. 첫 세트는 사용법·지난 기록까지 말해서 15초를 넘기도 한다.
+       */
+      var lead = AUTO_LEAD_SECONDS;
+      if (ptOn()) {
+        var said = coachBefore(liftIndex, setIndex);
+        if (said) lead = Math.max(AUTO_LEAD_SECONDS, Math.ceil(E.speechSeconds(said)) + 3);
+      }
+      startCounting(liftIndex, setIndex, lead);
     }, 0);
   }
 
@@ -5496,6 +5821,11 @@
      */
     var machines = machineRow(lift, liftIndex);
     if (machines) body.push(machines);
+
+    if (ptOn()) {
+      var ptBits = ptSetBits(lift, liftIndex, setIndex);
+      ptBits.forEach(function (bit) { body.push(bit); });
+    }
 
     body.push(el('div', { class: 'now-head' }, [
       el('div', { class: 'now-line' }, [
@@ -5629,8 +5959,28 @@
     var nextLabel = setIndex + 1 < lift.sets.length
       ? (setIndex + 2) + '세트로 넘어갑니다'
       : '이 종목을 마칩니다';
-    body.push(el('div', { class: 'rir-ask' }, [
-      el('b', { text: (setIndex + 1) + '세트 끝내기' }),
+    /*
+     * PT 모드는 "몇 회 더?"가 아니라 "무게 어땠어요?"로 묻는다. 트레이너가
+     * 실제로 하는 말이고, 초보는 남은 횟수를 몰라도 가벼웠는지는 안다.
+     * 남은 횟수 버튼은 아래에 그대로 둔다 — 정확히 아는 사람은 그걸 누른다.
+     */
+    if (ptOn()) {
+      body.push(el('div', { class: 'rir-ask' }, [
+        el('b', { text: (setIndex + 1) + '세트 끝내기' }),
+        el('span', { text: E.askFeelLine(state.coach.style) }),
+      ]));
+      body.push(el('div', { class: 'feel-row' }, E.FEELS.map(function (feel) {
+        return el('button', {
+          type: 'button',
+          class: 'feel' + (feel.id === 'hurt' ? ' hurt' : ''),
+          'aria-label': feel.label + ' — 기록하고 ' + nextLabel,
+          text: feel.label,
+          onclick: function () { finishByFeel(liftIndex, setIndex, feel.id); },
+        });
+      })));
+    }
+    body.push(el('div', { class: 'rir-ask' + (ptOn() ? ' quiet' : '') }, [
+      el('b', { text: ptOn() ? '정확히 아시면' : (setIndex + 1) + '세트 끝내기' }),
       el('span', { text: '방금 세트, 몇 회 더 할 수 있었나요?' }),
     ]));
 
@@ -5654,7 +6004,12 @@
         'aria-label': (rir === 0 ? '더 못 들었음, 실패 지점까지 수행' : rir + '회 더 할 수 있었음') +
           '으로 기록하고 ' + nextLabel,
         text: label,
-        onclick: function () { completeSet(liftIndex, setIndex, rir); },
+        onclick: function () {
+          var weight = set.weightKg;
+          var reps = set.reps;
+          completeSet(liftIndex, setIndex, rir);
+          coachAfter(liftIndex, setIndex, 'right', weight, reps);
+        },
       }));
     });
     body.push(chips);
@@ -5668,6 +6023,56 @@
     return el('div', { class: 'set-now' }, [
       el('div', { class: 'now-body' }, body),
     ]);
+  }
+
+  /**
+   * PT 모드에서 세트 칸 위에 붙는 것들 — 코치가 한 말, 처음이면 사용법,
+   * 기계 세팅 적는 칸.
+   */
+  function ptSetBits(lift, liftIndex, setIndex) {
+    var bits = [];
+
+    // 소리가 안 나도 읽을 수 있게. 무음 모드인 헬스장이 많다.
+    bits.push(el('p', { class: 'coach-say', id: 'coach-say', 'aria-live': 'polite',
+      text: state.coachLine || E.coachStyleInfo(state.coach.style).label + ' 코치가 함께합니다.' }));
+
+    if (setIndex !== 0) return bits;
+
+    if (!triedBefore(lift.exercise)) {
+      var steps = E.setupFor(lift.exercise);
+      if (steps.length > 0) {
+        bits.push(el('div', { class: 'setup-box' }, [
+          el('b', { text: '처음 하시는 종목 — 자리 잡기' }),
+          el('ol', {}, steps.map(function (step) { return el('li', { text: step }); })),
+        ]));
+      }
+    }
+
+    /*
+     * 기계 세팅을 적어 둔다. 헬스장마다 기계가 달라서 앱에 적힌 사용법보다
+     * "지난번 시트 4번"이 훨씬 쓸모 있다. 다음에 이 종목을 하면 세트 전에
+     * 이걸 읽어 준다.
+     */
+    if (E.hasSetting(lift.exercise)) {
+      var key = settingKeyFor(lift);
+      bits.push(el('label', { class: 'setting-row' }, [
+        el('span', { text: '기계 세팅' }),
+        el('input', {
+          type: 'text', class: 'text-input setting-input',
+          maxlength: String(E.SETTING_MAX),
+          placeholder: E.settingPlaceholder(lift.exercise),
+          value: state.machineSettings[key] || '',
+          onchange: function (event) {
+            var clean = E.cleanSetting(event.target.value);
+            if (clean) state.machineSettings[key] = clean;
+            else delete state.machineSettings[key];
+            event.target.value = clean;
+            persist();
+          },
+        }),
+      ]));
+    }
+    return bits;
   }
 
   /** 잘못 누른 세트를 되돌린다. 기록도 같이 빼야 볼륨이 부풀지 않는다. */
