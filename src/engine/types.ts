@@ -167,6 +167,21 @@ export interface PainReport {
 /** 운동 시작 전 30초 체크인. 디로드 판정의 보조 신호. */
 export interface CheckIn extends Syncable {
   date: string;
+  /**
+   * 그날 아침 체중(kg).
+   *
+   * 체크인에 같이 둔다. 따로 표를 만들면 동기화·삭제·동의 철회를
+   * 두 벌 관리해야 하고, 두 벌은 반드시 갈라진다. 체중도 체크인의
+   * 다른 칸들과 똑같은 민감정보라 다루는 규칙이 같다.
+   */
+  bodyweightKg?: number;
+  /**
+   * 그날 단백질 목표를 채웠는가.
+   *
+   * 몇 g인지 적게 하지 않는다. 끼니마다 재는 앱은 3주를 못 간다 —
+   * 하루 끝에 한 번 누르는 것이 유일하게 지속되는 기록이다.
+   */
+  proteinHit?: boolean;
   sleepHours?: number;
   /** 전신 근육통 0~10 */
   soreness?: number;
