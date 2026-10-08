@@ -187,6 +187,7 @@
          */
         machineSame: { date: state.todayDate, ids: state.machineSame },
         machineKnown: state.machineKnown,
+        machinePound: state.machinePound,
         comeback: state.comeback,
         comebackDeclined: state.comebackDeclined,
         /*
@@ -296,6 +297,7 @@
 
       // 오늘 기록한 세트를 되살리고, 해당 세트를 완료 상태로 표시한다.
       state.machineKnown = settings.machineKnown || {};
+      state.machinePound = settings.machinePound || {};
       var sameAnswer = settings.machineSame;
       state.machineSame = sameAnswer && sameAnswer.date === state.todayDate
         ? (sameAnswer.ids || {}) : {};
@@ -610,6 +612,13 @@
      * 내일도 그대로다.
      */
     machineKnown: {},
+    /*
+     * 파운드 표기 기계. { "헬스장id|종목id|기계": true }
+     *
+     * 수입 기계는 스택에 파운드가 찍혀 있다. 거기 보이는 90을 그대로
+     * 적으면 90kg이 들어가는데 실제는 40.8kg이다 — 2.2배다.
+     */
+    machinePound: {},
     /*
      * "같은 기계예요"라고 답한 종목. 이 날은 다시 묻지 않는다.
      * 하루 안에 같은 질문을 두 번 받으면 읽지 않고 아무거나 누르게 된다.
@@ -1642,6 +1651,40 @@
     return (activeGymId() || '-') + '|' + exerciseId;
   }
 
+  /*
+   * 파운드 표기는 **기계마다** 다르다. 같은 헬스장에 kg 기계와 lb 기계가
+   * 섞여 있는 것이 수입 기계를 들인 헬스장의 보통 모습이다. 그래서
+   * 나눠 둔 기계까지 열쇠에 넣는다.
+   */
+  function poundKey(exerciseId) {
+    return machineKey(exerciseId) + '|' + machineFor(exerciseId);
+  }
+
+  function inPounds(exerciseId) {
+    return Boolean(state.machinePound[poundKey(exerciseId)]);
+  }
+
+  function togglePounds(exerciseId) {
+    var key = poundKey(exerciseId);
+    if (state.machinePound[key]) delete state.machinePound[key];
+    else state.machinePound[key] = true;
+
+    /*
+     * 단위를 바꾸면 적히는 kg이 2.2배 달라진다. 그대로 두면 바로 다음
+     * 세트에서 "다른 기계인가요?"가 뜬다 — 같은 기계인데 단위만 바꾼
+     * 것이라 틀린 질문이고, 거기서 "다른 기계예요"를 누르면 있지도 않은
+     * 기계가 생긴다.
+     *
+     * 어긋난 이유를 이미 아는 경우이므로, 오늘은 묻지 않는다고 적어
+     * 둔다. 며칠 지나 이력이 같은 단위로 쌓이면 처방이 다시 맞아떨어져서
+     * 이 질문도 제 뜻을 되찾는다.
+     */
+    state.machineSame[exerciseId] = true;
+
+    persist();
+    render();
+  }
+
   /**
    * 이 헬스장에서 이 종목에 써 온 기계들. 오늘 것까지 센다.
    *
@@ -1801,6 +1844,15 @@
   function typeWeight(liftIndex, setIndex, raw) {
     var value = parseFloat(raw);
     if (!Number.isFinite(value) || value < 0) return render();
+    /*
+     * 파운드 기계면 사용자가 친 것은 파운드다. **기록은 늘 kg으로
+     * 남긴다** — 안 그러면 주간 볼륨도 추정 1RM도 다른 종목과의 비교도
+     * 전부 2.2배로 틀어진다.
+     */
+    var lift = state.lifts[liftIndex];
+    if (lift && inPounds(lift.exercise.id)) {
+      return setWeight(liftIndex, setIndex, E.lbToKg(Math.min(2200, value)));
+    }
     setWeight(liftIndex, setIndex, Math.min(999, value));
   }
 
@@ -1814,6 +1866,13 @@
   function stepWeight(liftIndex, setIndex, direction) {
     var lift = state.lifts[liftIndex];
     var set = lift.sets[setIndex];
+    /*
+     * 파운드 기계는 파운드로 센다. kg 격자로 움직인 뒤 파운드로 보여주면
+     * 45 → 54.9처럼 기계에 없는 숫자가 뜬다.
+     */
+    if (inPounds(lift.exercise.id)) {
+      return setWeight(liftIndex, setIndex, E.stepLbFromKg(set.weightKg, direction));
+    }
     if (!lift.loading) {
       return setWeight(liftIndex, setIndex, Math.max(0, set.weightKg + direction * (lift.exercise.increment || 2.5)));
     }
@@ -5357,12 +5416,13 @@
    * "40kg × 15회" — 이 세트에 뭘 하기로 했는지다. 친 무게(weightKg)가
    * 아니라 처방(plannedKg)을 쓴다. 둘이 다른 날이 기록이 중요한 날이다.
    */
-  function setPlanLine(set) {
+  function setPlanLine(set, pounds) {
     var planned = set.plannedKg == null ? set.weightKg : set.plannedKg;
     var reps = set.targetReps.min === set.targetReps.max
       ? set.targetReps.max + '회'
       : set.targetReps.min + '–' + set.targetReps.max + '회';
-    return (planned > 0 ? planned + 'kg' : '맨몸') + ' × ' + reps;
+    // 숫자칸과 다른 단위를 쓰면 바로 위아래에서 두 숫자가 안 맞아 보인다.
+    return (planned > 0 ? E.weightLabelIn(planned, pounds) : '맨몸') + ' × ' + reps;
   }
 
   /**
@@ -5393,6 +5453,7 @@
   /** 지금 할 세트. 화면에서 제일 커야 한다 — 지금 할 일은 이것 하나다. */
   function renderCurrentSet(lift, liftIndex, set, setIndex) {
     maybeAutoCount(liftIndex, setIndex);
+    var pounds = inPounds(lift.exercise.id);
     var plates = set.weightKg > 0 && lift.loading ? E.platePlan(set.weightKg, lift.loading) : null;
     var target = set.targetReps.min === set.targetReps.max
       ? set.targetReps.max + '회'
@@ -5431,7 +5492,7 @@
           });
         })),
       ]),
-      el('div', { class: 'plan', text: setPlanLine(set) }),
+      el('div', { class: 'plan', text: setPlanLine(set, pounds) }),
     ]));
 
     /*
@@ -5447,13 +5508,31 @@
           el('button', { type: 'button', class: 'nudge', 'aria-label': '중량 줄이기', text: '−',
             onclick: function () { stepWeight(liftIndex, setIndex, -1); } }),
           el('input', {
-            type: 'number', min: '0', max: '999', step: 'any', inputmode: 'decimal',
-            class: 'big-input', value: String(set.weightKg),
-            'aria-label': (setIndex + 1) + '세트 중량 (kg)',
+            type: 'number', min: '0', max: pounds ? '2200' : '999', step: 'any',
+            inputmode: 'decimal',
+            class: 'big-input',
+            value: String(pounds ? E.kgToLb(set.weightKg) : set.weightKg),
+            'aria-label': (setIndex + 1) + '세트 중량 (' + (pounds ? '파운드' : 'kg') + ')',
             onfocus: function (event) { event.target.select(); },
             onchange: function (event) { typeWeight(liftIndex, setIndex, event.target.value); },
           }),
-          el('span', { class: 'big-unit', text: 'kg' }),
+          /*
+           * 단위를 눌러서 바꾼다.
+           *
+           * 따로 설정 화면을 만들지 않는다. 파운드 기계인 걸 깨닫는
+           * 자리는 기계 앞에서 숫자를 보는 순간이고, 고치는 자리도
+           * 거기여야 한다. 칸 옆에 이미 'kg'이 적혀 있으니 그걸 누르게
+           * 하면 새로 배울 것이 없다.
+           */
+          el('button', {
+            type: 'button', class: 'big-unit unit-pick',
+            text: pounds ? 'lb' : 'kg',
+            'aria-pressed': String(pounds),
+            'aria-label': pounds
+              ? '파운드로 보는 중 — 눌러서 kg으로'
+              : 'kg으로 보는 중 — 파운드 표기 기계면 눌러서 lb로',
+            onclick: function () { togglePounds(lift.exercise.id); },
+          }),
           el('button', { type: 'button', class: 'nudge', 'aria-label': '중량 늘리기', text: '+',
             onclick: function () { stepWeight(liftIndex, setIndex, 1); } }),
         ]),
@@ -5469,7 +5548,12 @@
      * 않고 알려만 준다 — 다른 바를 쓰거나 눈금이 다른 기계일 수도 있고,
      * 그건 사용자가 더 잘 안다.
      */
-    if (set.weightKg > 0 && lift.loading) {
+    /*
+     * 파운드 기계에는 이 안내를 띄우지 않는다. 비교하는 격자가 kg 스택
+     * 명세라 파운드 기계와는 상관이 없고, "만들 수 없는 무게"라고 해 봐야
+     * 틀린 말이다.
+     */
+    if (set.weightKg > 0 && lift.loading && !pounds) {
       var loadable = E.nearestLoadable(set.weightKg, lift.loading, 'nearest');
       if (Math.abs(loadable - set.weightKg) > 0.01) {
         body.push(el('button', {
@@ -9156,6 +9240,7 @@
     state.todaySets = [];
     state.machinePick = {};
     state.machineSame = {};
+    state.machinePound = {};
     state.log = [];
     startOnboarding();
   }
@@ -10232,8 +10317,10 @@
     state.gym = E.activeProfile(state.gymBook);
 
     // 지운 곳의 기계 구분도 같이 치운다. 안 치우면 쓸 데 없는 열쇠만 쌓인다.
-    Object.keys(state.machineKnown || {}).forEach(function (key) {
-      if (key.indexOf(entry.id + '|') === 0) delete state.machineKnown[key];
+    [state.machineKnown, state.machinePound].forEach(function (book) {
+      Object.keys(book || {}).forEach(function (key) {
+        if (key.indexOf(entry.id + '|') === 0) delete book[key];
+      });
     });
 
     /*

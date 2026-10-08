@@ -1712,6 +1712,14 @@ input[type="search"] {
 .promise-row.today .name { color: var(--accent); }
 .promise-row .detail { color: var(--muted); font-size: 15px; }
 
+/* 숫자칸 옆 단위. 눌러서 kg ↔ lb. 파운드 기계일 때 눈에 띄어야 한다. */
+.unit-pick {
+  border: 1px solid transparent; border-radius: 7px;
+  padding: 2px 5px; background: none; color: inherit; font: inherit;
+  cursor: pointer;
+}
+.unit-pick[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
 /* 같은 헬스장에 같은 종목 기계가 둘 이상일 때 고르는 줄. */
 .machine-row {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;

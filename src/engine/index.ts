@@ -56,6 +56,7 @@ export * from './gymPresets.ts';
 export * from './gymWeight.ts';
 export * from './machine.ts';
 export * from './stackLearn.ts';
+export * from './units.ts';
 export * from './gyms.ts';
 export * from './strength.ts';
 export * from './session.ts';
