@@ -14,6 +14,7 @@ import {
   type SnapDirection,
 } from './gym.ts';
 import { describeGymWeight, weightHistoryFor } from './gymWeight.ts';
+import { guessStep, learnStack, learnable, observedWeights } from './stackLearn.ts';
 import { suggestStartingLoad, type LifterProfile, type StartingLoad } from './strength.ts';
 import { withParticle } from './korean.ts';
 import { NO_CALIBRATION, calibrateRir, type RirCalibration } from './rirCalibration.ts';
@@ -233,7 +234,21 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     const lastSession = findLastSession(weightHistory, exercise.id);
     const rule: LoadRule = { repRange: slot.repRange, targetRir: input.plan.targetRir, rirOffset };
     const prescription = prescribeLoad(exercise, lastSession?.sets, rule);
-    const loading = gym ? loadingFor(exercise, gym) : null;
+    /*
+     * 이 기계가 실제로 만드는 무게로 맞춘다.
+     *
+     * 헬스장 전체에 스택 명세 하나(최소 5 · 간격 5 · 최대 100)를 쓰면
+     * 기계가 스무 대인 곳에서 스무 번 틀린다. 제일 크게 틀리는 것은
+     * 천장이다 — 랫풀다운 120kg을 하는 사람에게 102.5를 처방한다.
+     *
+     * 적어 둔 무게가 곧 그 기계가 만들 수 있다는 증거이므로, 거기서 읽어
+     * 명세를 고쳐 쓴다. 읽을 것이 없으면 기본값 그대로다.
+     */
+    const base = gym ? loadingFor(exercise, gym) : null;
+    const loading = base && base.kind === 'stack' && learnable(exercise)
+      ? learnStack(base, guessStep(
+        observedWeights(input.history, exercise.id, input.gymId, input.machines?.[exercise.id])))
+      : base;
     const gymWeight = describeGymWeight(input.history, exercise, input.gymId);
 
     const multiplier = input.plan.intensityMultiplier * ruling.loadMultiplier;
