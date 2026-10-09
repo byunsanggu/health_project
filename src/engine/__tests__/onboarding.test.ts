@@ -202,3 +202,111 @@ describe('주 1~2회', () => {
     assert.equal(program.caution, undefined);
   });
 });
+
+describe('buildProgram — 트레이너 기준 점검', () => {
+
+  const cases: { label: string; days: number; level: 'beginner' | 'intermediate' | 'advanced' }[] = [
+    { label: '초보 주2', days: 2, level: 'beginner' },
+    { label: '초보 주3', days: 3, level: 'beginner' },
+    { label: '중급 주4', days: 4, level: 'intermediate' },
+    { label: '고급 주5', days: 5, level: 'advanced' },
+    { label: '고급 주6', days: 6, level: 'advanced' },
+  ];
+
+  it('고립 종목이 같은 날 복합 종목보다 세트를 많이 받지 않는다', () => {
+    for (const { label, days, level } of cases) {
+      const program = buildProgram(answers({ daysPerWeek: days }), level);
+      for (const template of program.templates) {
+        const compound = template.slots
+          .filter((slot) => exerciseById(slot.exerciseId)!.pattern !== 'isolation')
+          .map((slot) => slot.sets);
+        if (compound.length === 0) continue;
+        const most = Math.max(...compound);
+        for (const slot of template.slots) {
+          if (exerciseById(slot.exerciseId)!.pattern !== 'isolation') continue;
+          assert.ok(slot.sets <= most, `${label} ${template.name}: ${slot.exerciseId} ${slot.sets} > ${most}`);
+        }
+      }
+    }
+  });
+
+  it('측면 삼각근 고립 세트가 이두 고립 세트보다 적지 않다', () => {
+    for (const { label, days, level } of cases) {
+      if (days < 3) continue;
+      const program = buildProgram(answers({ daysPerWeek: days }), level);
+      const setsFor = (muscle: 'sideDelt' | 'biceps') => program.templates
+        .flatMap((template) => template.slots)
+        .filter((slot) => {
+          const exercise = exerciseById(slot.exerciseId)!;
+          return exercise.pattern === 'isolation' && (exercise.contribution[muscle] ?? 0) >= 0.85;
+        })
+        .reduce((sum, slot) => sum + slot.sets, 0);
+      assert.ok(setsFor('sideDelt') >= setsFor('biceps'), `${label}: 어깨 ${setsFor('sideDelt')} / 이두 ${setsFor('biceps')}`);
+    }
+  });
+
+  it('초보에게는 첫 블록에 기술이 필요한 바벨 종목을 주지 않는다', () => {
+    const technical = ['back-squat', 'front-squat', 'conventional-deadlift', 'sumo-deadlift',
+      'stiff-leg-deadlift', 'good-morning', 'barbell-row', 'pendlay-row', 'barbell-overhead-press'];
+    for (const days of [2, 3, 4]) {
+      const program = buildProgram(answers({ daysPerWeek: days }), 'beginner');
+      for (const exercise of exercisesOf(program)) {
+        assert.ok(!technical.includes(exercise.id), `주 ${days}회: ${exercise.name}`);
+      }
+    }
+  });
+
+  it('기술 종목밖에 없는 헬스장이면 초보에게도 준다', () => {
+    const minimal = ['floor', 'barbell-set', 'power-rack', 'bench-flat'];
+    const program = buildProgram(answers({ daysPerWeek: 3, gym: { equipmentIds: minimal } }), 'beginner');
+    assert.ok(exercisesOf(program).some((exercise) => exercise.id === 'back-squat'));
+  });
+
+  it('케이블이 있으면 킥백 · 컨센트레이션 컬을 고르지 않는다', () => {
+    for (const { days, level } of cases) {
+      const program = buildProgram(answers({ daysPerWeek: days }), level);
+      for (const exercise of exercisesOf(program)) {
+        assert.ok(!['triceps-kickback', 'concentration-curl'].includes(exercise.id), exercise.name);
+      }
+    }
+  });
+
+  it('세션이 한 시간 남짓을 넘기지 않는다', () => {
+    for (const { label, days, level } of cases) {
+      const program = buildProgram(answers({ daysPerWeek: days }), level);
+      const limit = days <= 3 ? 16 : level === 'advanced' ? 20 : 18;
+      for (const template of program.templates) {
+        const total = template.slots.reduce((sum, slot) => sum + slot.sets, 0);
+        assert.ok(total <= limit, `${label} ${template.name}: ${total}세트`);
+      }
+    }
+  });
+
+  it('주 2회 전신도 대퇴사두를 두 번 자극한다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 2 }), 'beginner');
+    for (const template of program.templates) {
+      assert.ok(
+        template.slots.some((slot) => (exerciseById(slot.exerciseId)!.contribution.quads ?? 0) >= 0.85),
+        `${template.name}에 대퇴사두 종목이 없다`,
+      );
+    }
+  });
+
+  it('하루에 고중량 하체 복합은 하나만 둔다', () => {
+    for (const { label, days, level } of cases) {
+      const program = buildProgram(answers({ daysPerWeek: days, goals: ['strength'] }), level);
+      for (const template of program.templates) {
+        const heavyLower = template.slots.filter((slot) => {
+          const exercise = exerciseById(slot.exerciseId)!;
+          return ['squat', 'hinge', 'lunge'].includes(exercise.pattern) && slot.repRange.max <= 6;
+        });
+        assert.ok(heavyLower.length <= 1, `${label} ${template.name}: ${heavyLower.map((s) => s.exerciseId).join(', ')}`);
+      }
+    }
+  });
+
+  it('초보에게 바벨 기본 종목이 나중에 들어온다고 알려준다', () => {
+    const result = runOnboarding(answers({ selfReportedLevel: 'beginner', monthsTraining: 2, daysPerWeek: 3 }));
+    assert.ok(result.notes.some((note) => note.includes('중급으로 다시 짤 때')));
+  });
+});

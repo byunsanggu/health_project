@@ -82,6 +82,15 @@ interface DayBlueprint {
   slots: SlotSpec[];
 }
 
+/*
+ * 하루에 무거운 하체 복합(스쿼트 · 힌지)은 하나만 primary로 둔다.
+ * 고중량 데드 뒤에 고중량 스쿼트를 붙이면 두 번째 종목 자세가 무너진다 —
+ * 다른 하나는 accessory(8~12회)로 내려서 같은 날 넣는다.
+ *
+ * 측면 · 후면 삼각근은 따로 자리를 준다. 프레스로는 거의 안 채워지는 부위라
+ * 자리를 안 주면 "팔만 크고 어깨는 좁은" 몸이 된다. 팔은 반대로 로우 · 프레스에서
+ * 간접 볼륨이 많이 들어오므로 하루 한 자리면 충분하다.
+ */
 const PUSH: DayBlueprint = {
   name: '푸시',
   slots: [
@@ -89,7 +98,7 @@ const PUSH: DayBlueprint = {
     { muscle: 'frontDelt', role: 'primary', patterns: ['verticalPush'] },
     { muscle: 'chest', role: 'accessory', patterns: ['horizontalPush', 'isolation'] },
     { muscle: 'sideDelt', role: 'isolation' },
-    { muscle: 'triceps', role: 'isolation' },
+    { muscle: 'sideDelt', role: 'isolation' },
     { muscle: 'triceps', role: 'isolation' },
   ],
 };
@@ -100,7 +109,7 @@ const PULL: DayBlueprint = {
     { muscle: 'back', role: 'primary', patterns: ['verticalPull'] },
     { muscle: 'back', role: 'primary', patterns: ['horizontalPull'] },
     { muscle: 'rearDelt', role: 'isolation' },
-    { muscle: 'biceps', role: 'isolation' },
+    { muscle: 'sideDelt', role: 'isolation' },
     { muscle: 'biceps', role: 'isolation' },
     { muscle: 'abs', role: 'isolation' },
   ],
@@ -110,7 +119,7 @@ const LEGS: DayBlueprint = {
   name: '레그',
   slots: [
     { muscle: 'quads', role: 'primary', patterns: ['squat'] },
-    { muscle: 'hamstrings', role: 'primary', patterns: ['hinge'] },
+    { muscle: 'hamstrings', role: 'accessory', patterns: ['hinge'] },
     { muscle: 'glutes', role: 'accessory', patterns: ['hinge', 'lunge'] },
     { muscle: 'quads', role: 'accessory', patterns: ['squat', 'isolation'] },
     { muscle: 'calves', role: 'isolation' },
@@ -124,6 +133,7 @@ const UPPER_A: DayBlueprint = {
     { muscle: 'back', role: 'primary', patterns: ['verticalPull'] },
     { muscle: 'chest', role: 'accessory', patterns: ['horizontalPush', 'isolation'] },
     { muscle: 'frontDelt', role: 'accessory', patterns: ['verticalPush'] },
+    { muscle: 'sideDelt', role: 'isolation' },
     { muscle: 'biceps', role: 'isolation' },
     { muscle: 'triceps', role: 'isolation' },
   ],
@@ -145,7 +155,7 @@ const LOWER_A: DayBlueprint = {
   name: '하체 A',
   slots: [
     { muscle: 'quads', role: 'primary', patterns: ['squat'] },
-    { muscle: 'hamstrings', role: 'primary', patterns: ['hinge'] },
+    { muscle: 'hamstrings', role: 'accessory', patterns: ['hinge'] },
     { muscle: 'quads', role: 'accessory', patterns: ['squat', 'isolation'] },
     { muscle: 'calves', role: 'isolation' },
     { muscle: 'abs', role: 'isolation' },
@@ -156,12 +166,16 @@ const LOWER_B: DayBlueprint = {
   name: '하체 B',
   slots: [
     { muscle: 'glutes', role: 'primary', patterns: ['hinge'] },
-    { muscle: 'quads', role: 'primary', patterns: ['squat', 'lunge'] },
-    { muscle: 'hamstrings', role: 'accessory', patterns: ['hinge', 'isolation'] },
+    { muscle: 'quads', role: 'accessory', patterns: ['squat', 'lunge'] },
+    { muscle: 'hamstrings', role: 'isolation' },
     { muscle: 'calves', role: 'isolation' },
   ],
 };
 
+/*
+ * 전신 A · B · C는 셋이 합쳐 한 주다. 주 2회면 A · B만 돌기 때문에
+ * B에 대퇴사두 자리를 하나 더 둬서 스쿼트 패턴이 주 1회로 끝나지 않게 한다.
+ */
 const FULL_A: DayBlueprint = {
   name: '전신 A',
   slots: [
@@ -179,7 +193,8 @@ const FULL_B: DayBlueprint = {
     { muscle: 'hamstrings', role: 'primary', patterns: ['hinge'] },
     { muscle: 'frontDelt', role: 'primary', patterns: ['verticalPush'] },
     { muscle: 'back', role: 'primary', patterns: ['horizontalPull'] },
-    { muscle: 'chest', role: 'accessory', patterns: ['horizontalPush', 'isolation'] },
+    { muscle: 'quads', role: 'accessory', patterns: ['squat', 'lunge', 'isolation'] },
+    { muscle: 'rearDelt', role: 'isolation' },
     { muscle: 'biceps', role: 'isolation' },
   ],
 };
@@ -187,10 +202,11 @@ const FULL_B: DayBlueprint = {
 const FULL_C: DayBlueprint = {
   name: '전신 C',
   slots: [
-    { muscle: 'glutes', role: 'primary', patterns: ['hinge'] },
+    { muscle: 'quads', role: 'primary', patterns: ['squat', 'lunge'] },
     { muscle: 'chest', role: 'primary', patterns: ['horizontalPush'] },
     { muscle: 'back', role: 'primary', patterns: ['verticalPull', 'horizontalPull'] },
-    { muscle: 'quads', role: 'accessory', patterns: ['squat', 'lunge', 'isolation'] },
+    { muscle: 'hamstrings', role: 'accessory', patterns: ['hinge', 'isolation'] },
+    { muscle: 'sideDelt', role: 'isolation' },
     { muscle: 'calves', role: 'isolation' },
   ],
 };
@@ -250,6 +266,31 @@ const FREE_WEIGHT: readonly Exercise['equipment'][] = ['barbell', 'dumbbell'];
 /** 한 관절에 이만큼 쌓이면 그 세션에서 더 싣지 않는다. */
 const JOINT_LOAD_LIMIT = 1.2;
 
+/**
+ * 자세를 배우는 데 몇 주가 걸리는 바벨 종목.
+ *
+ * 6개월 미만 회원에게 첫 주부터 컨벤셔널 데드 · 바벨 로우 · 백 스쿼트를 주는
+ * 트레이너는 없다. 허리가 말리는 걸 스스로 못 느끼는 시기라서다. 초보 블록은
+ * 레그프레스 · 고블릿 스쿼트 · 머신 로우 · 루마니안 데드로 패턴을 먼저 만들고,
+ * 중급으로 다시 짜면 이 종목들이 들어온다. 막지는 않는다 — 대안이 없는
+ * 헬스장이면 초보에게도 이걸 준다.
+ */
+const TECHNICAL_LIFTS: ReadonlySet<string> = new Set([
+  'back-squat', 'front-squat', 'conventional-deadlift', 'sumo-deadlift',
+  'stiff-leg-deadlift', 'good-morning', 'barbell-row', 'pendlay-row', 't-bar-row',
+  'barbell-overhead-press', 'kettlebell-swing',
+]);
+
+/**
+ * 자극 대비 효율이 떨어지는 고립 종목.
+ *
+ * 없애진 않는다 — 기구가 이것뿐이면 이걸 해야 한다. 같은 자리에 케이블 푸시다운 ·
+ * 프리처 컬 같은 선택지가 있으면 그쪽을 먼저 고른다.
+ */
+const LOW_VALUE_ISOLATION: ReadonlySet<string> = new Set([
+  'triceps-kickback', 'concentration-curl', 'front-raise',
+]);
+
 function scoreExercise(
   exercise: Exercise,
   slot: SlotSpec,
@@ -274,7 +315,10 @@ function scoreExercise(
   if (level === 'beginner') {
     const stress = Object.values(exercise.jointStress).reduce((sum, value) => sum + value, 0);
     score -= Math.min(2, stress * 0.4);
+    if (TECHNICAL_LIFTS.has(exercise.id)) score -= 6;
   }
+
+  if (LOW_VALUE_ISOLATION.has(exercise.id)) score -= 3;
 
   // 한 세션에서 같은 관절에 최대 부하를 거듭 싣지 않는다.
   // 스쿼트 · RDL 뒤에 데드리프트를 붙이는 구성이 이 규칙 없이 자주 나온다.
@@ -287,17 +331,35 @@ function scoreExercise(
 }
 
 /**
- * 역할별 한 종목 최대 세트 수.
+ * 역할별 한 종목 세트 범위.
  *
  * 주간 목표를 슬롯 수로 나누면 한 종목에 7세트가 배정되기도 한다.
  * 현장에서 한 종목 7세트는 뒤 세트가 버려지는 구성이다 — 3~4세트로 끊고,
  * 모자란 볼륨은 주간 처방이 몇 주에 걸쳐 올린다.
+ *
+ * 고립 종목이 복합 종목보다 세트를 많이 받는 일은 없어야 한다. 스쿼트 3세트에
+ * 킥백 4세트는 우선순위가 거꾸로 된 프로그램이다.
  */
-const ROLE_SET_CAP: Record<SlotRole, number> = {
-  primary: 4,
-  accessory: 4,
-  isolation: 4,
+const ROLE_SETS: Record<SlotRole, { floor: number; cap: number }> = {
+  primary: { floor: 3, cap: 4 },
+  accessory: { floor: 2, cap: 3 },
+  isolation: { floor: 2, cap: 3 },
 };
+
+/** 간접 볼륨으로 셀 최소 기여도 — 로우의 이두, 프레스의 삼두 정도. */
+const INDIRECT_CONTRIBUTION = 0.5;
+
+/**
+ * 한 세션 총 세트 상한.
+ *
+ * 세트당 휴식 포함 3~4분으로 잡으면 16세트가 대략 한 시간이다. 주 2~3회
+ * 전신을 고른 사람 대부분은 퇴근 후 한 시간을 쓰는 직장인이고, 한 시간 반짜리
+ * 프로그램은 3주 안에 안 나오게 된다. 넘치면 고립 종목부터 줄인다.
+ */
+function sessionSetCap(days: number, level: TrainingLevel): number {
+  if (days <= 3) return 16;
+  return level === 'advanced' || level === 'expert' ? 20 : 18;
+}
 
 function pickExercise(
   slot: SlotSpec,
@@ -345,13 +407,15 @@ export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): 
   }
 
   const weeklyTargets: Partial<Record<MuscleGroup, number>> = {};
-  const templates: SessionTemplate[] = [];
   const usedThisWeek = new Set<string>();
 
-  blueprints.forEach((day, dayIndex) => {
+  // 1단계 — 종목부터 전부 고른다. 세트 수는 주 전체를 본 뒤에 정해야
+  // 로우가 이두에, 프레스가 삼두에 이미 준 볼륨을 뺄 수 있다.
+  type Picked = { slot: SlotSpec; exercise: Exercise; sets: number };
+  const week: Picked[][] = blueprints.map((day) => {
     const usedToday = new Set<string>();
     const sessionLoad = new Map<Joint, number>();
-    const slots: SessionSlot[] = [];
+    const picked: Picked[] = [];
 
     for (const slot of day.slots) {
       // 주 안에서 종목이 겹치지 않게 하되, 후보가 마르면 재사용을 허용한다.
@@ -363,23 +427,96 @@ export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): 
       usedToday.add(exercise.id);
       usedThisWeek.add(exercise.id);
       addJointLoad(sessionLoad, exercise);
-
-      const target = landmarks[slot.muscle].mev;
-      const divisor = Math.max(1, slotCount.get(slot.muscle) ?? 1);
-      const cap = Math.min(ROLE_SET_CAP[slot.role], profile.perSessionCap);
-      weeklyTargets[slot.muscle] = target;
-
-      const floor = slot.role === 'primary' ? 3 : 2;
-      slots.push({
-        exerciseId: exercise.id,
-        sets: clamp(Math.ceil(target / divisor), floor, cap),
-        repRange: repRangeForGoals(slot.role, answers.goals),
-      });
+      picked.push({ slot, exercise, sets: 0 });
     }
+    return picked;
+  });
 
+  const all = week.flat();
+  const setRange = (role: SlotRole) => ({
+    floor: ROLE_SETS[role].floor,
+    cap: Math.min(ROLE_SETS[role].cap, profile.perSessionCap),
+  });
+
+  // 2단계 — 복합 종목. 부위의 주간 MEV를 그 부위 자리 수로 나눈다.
+  for (const item of all) {
+    if (item.slot.role === 'isolation') continue;
+    const target = landmarks[item.slot.muscle].mev;
+    const divisor = Math.max(1, slotCount.get(item.slot.muscle) ?? 1);
+    const { floor, cap } = setRange(item.slot.role);
+    item.sets = clamp(Math.ceil(target / divisor), floor, cap);
+  }
+
+  // 복합 종목이 이미 채운 볼륨 — 이두 · 삼두 · 후면 삼각근은 여기서 꽤 찬다.
+  const indirect = new Map<MuscleGroup, number>();
+  for (const item of all) {
+    if (item.slot.role === 'isolation') continue;
+    for (const [muscle, value] of Object.entries(item.exercise.contribution) as [MuscleGroup, number][]) {
+      if (value < INDIRECT_CONTRIBUTION) continue;
+      indirect.set(muscle, (indirect.get(muscle) ?? 0) + item.sets * value);
+    }
+  }
+
+  // 3단계 — 고립 종목은 남은 만큼만, 그리고 복합 종목보다 많지 않게.
+  const isolationCount = new Map<MuscleGroup, number>();
+  for (const item of all) {
+    if (item.slot.role !== 'isolation') continue;
+    isolationCount.set(item.slot.muscle, (isolationCount.get(item.slot.muscle) ?? 0) + 1);
+  }
+  for (const item of all) {
+    if (item.slot.role !== 'isolation') continue;
+    const muscle = item.slot.muscle;
+    const remaining = landmarks[muscle].mev - (indirect.get(muscle) ?? 0);
+    const { floor, cap } = setRange('isolation');
+    item.sets = clamp(Math.ceil(remaining / Math.max(1, isolationCount.get(muscle) ?? 1)), floor, cap);
+  }
+
+  for (const item of all) weeklyTargets[item.slot.muscle] = landmarks[item.slot.muscle].mev;
+
+  // 4단계 — 세션이 길면 이미 넉넉한 부위부터 한 세트씩 덜어낸다.
+  // 순서대로 고립 종목을 깎으면 정작 모자란 측면 삼각근 · 이두가 먼저 잘린다.
+  // 메인 종목은 다른 걸 다 깎아도 넘칠 때만 손댄다.
+  const limit = sessionSetCap(days, level);
+  const surplus = (muscle: MuscleGroup): number => {
+    const mev = landmarks[muscle].mev;
+    let volume = 0;
+    for (const item of all) {
+      const value = item.exercise.contribution[muscle] ?? 0;
+      if (value >= INDIRECT_CONTRIBUTION) volume += item.sets * value;
+    }
+    return mev > 0 ? volume / mev : Number.POSITIVE_INFINITY;
+  };
+  const passes: { roles: SlotRole[]; overOnly: boolean }[] = [
+    // 먼저 MEV를 넘긴 부위만 — 메인 종목이라도 넘치는 쪽을 먼저 깎는다.
+    { roles: ['primary', 'accessory', 'isolation'], overOnly: true },
+    { roles: ['isolation', 'accessory'], overOnly: false },
+    { roles: ['primary'], overOnly: false },
+  ];
+  for (const picked of week) {
+    for (const { roles, overOnly } of passes) {
+      while (picked.reduce((sum, item) => sum + item.sets, 0) > limit) {
+        const candidate = picked
+          .filter((item) => roles.includes(item.slot.role) && item.sets > ROLE_SETS[item.slot.role].floor)
+          .map((item) => ({ item, surplus: surplus(item.slot.muscle) }))
+          .filter((entry) => !overOnly || entry.surplus > 1)
+          .sort((a, b) => b.surplus - a.surplus || b.item.sets - a.item.sets)[0];
+        if (!candidate) break;
+        candidate.item.sets -= 1;
+      }
+    }
+  }
+
+  const templates: SessionTemplate[] = blueprints.map((day, dayIndex) => {
     // 같은 이름의 날이 두 번 나오면 (주 6회) 번호를 붙인다.
     const duplicate = blueprints.findIndex((other) => other.name === day.name) !== dayIndex;
-    templates.push({ name: duplicate ? `${day.name} 2` : day.name, slots });
+    return {
+      name: duplicate ? `${day.name} 2` : day.name,
+      slots: week[dayIndex]!.map((item): SessionSlot => ({
+        exerciseId: item.exercise.id,
+        sets: item.sets,
+        repRange: repRangeForGoals(item.slot.role, answers.goals),
+      })),
+    };
   });
 
   return {
@@ -453,6 +590,12 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
   if (gaps.length > 0) {
     const named = gaps.slice(0, 3).map((gap) => MUSCLE_LABELS_KO[gap.muscle]).join(', ');
     notes.push(`${named} 종목이 부족합니다. 헬스장에 있는 기구를 더 추가하면 프로그램이 채워집니다.`);
+  }
+
+  const noBarbellBasics = program.templates.every((template) =>
+    template.slots.every((slot) => !TECHNICAL_LIFTS.has(slot.exerciseId)));
+  if (level.level === 'beginner' && noBarbellBasics) {
+    notes.push('처음에는 머신 · 덤벨로 자세를 먼저 만듭니다. 바벨 스쿼트 · 데드리프트는 중급으로 다시 짤 때 들어갑니다.');
   }
 
   if ((answers.pain ?? []).some((report) => report.score >= 3)) {
