@@ -126,6 +126,61 @@
       '<circle cx="47" cy="30" r="4"/>' +
       '<path d="M21 33 V42"/><path d="M14 42 h14"/>',
 
+    'incline-chest-press-machine':
+      // 등판이 뒤로 누워 있고 손잡이가 비스듬히 위로 나간다
+      '<rect x="24" y="14" width="5" height="20" rx="2" transform="rotate(20 26 24)"/>' +
+      '<rect x="20" y="33" width="16" height="5" rx="2"/>' +
+      '<path d="M28 38 V43"/><path d="M20 43 h16"/>' +
+      '<path d="M32 22 L48 13"/>' +
+      '<path d="M48 9 V17"/>',
+
+    'high-row-machine':
+      // 앉아서 머리 위 손잡이를 비스듬히 끌어내린다. 원판 꽂는 뿔이 보인다
+      '<rect x="20" y="32" width="14" height="5" rx="2"/>' +
+      '<path d="M27 37 V43"/><path d="M19 43 h16"/>' +
+      '<rect x="32" y="26" width="9" height="4" rx="2"/>' +
+      '<path d="M50 43 V8 H36"/>' +
+      '<path d="M36 8 L28 16"/><path d="M24 15 h8"/>' +
+      '<circle cx="50" cy="22" r="4"/>',
+
+    'rear-delt-machine':
+      // 가슴 패드에 기대어 팔을 양옆 뒤로 벌린다
+      '<rect x="29" y="12" width="6" height="16" rx="2"/>' +
+      '<rect x="24" y="31" width="16" height="5" rx="2"/>' +
+      '<path d="M32 36 V43"/><path d="M24 43 h16"/>' +
+      '<path d="M29 18 L14 14 M35 18 L50 14"/>' +
+      '<path d="M14 10 V18 M50 10 V18"/>',
+
+    'v-squat-machine':
+      // 비스듬한 레일, V자 어깨 패드, 원판 뿔. 핵 스쿼트와 달리 기계를 마주 본다
+      '<path d="M12 40 L42 12"/>' +
+      '<path d="M34 14 L41 22 L48 14"/>' +
+      '<circle cx="43" cy="29" r="4"/>' +
+      '<rect x="8" y="38" width="16" height="5" rx="1.5"/>' +
+      '<path d="M6 45 h32" opacity=".45"/>',
+
+    'dip-machine':
+      // 앉아서 몸 옆의 손잡이를 아래로 밀어 내린다
+      '<rect x="22" y="30" width="16" height="5" rx="2"/>' +
+      '<rect x="22" y="12" width="5" height="18" rx="2"/>' +
+      '<path d="M30 35 V43"/><path d="M22 43 h16"/>' +
+      '<path d="M27 22 L46 30"/>' +
+      '<path d="M44 30 h7"/>',
+
+    'preacher-curl-machine':
+      // 비스듬한 팔 패드와 호를 그리며 올라오는 손잡이
+      '<path d="M18 30 L34 20 l4 6 -16 10 Z"/>' +
+      '<path d="M38 22 a10 10 0 0 1 8 -10"/>' +
+      '<path d="M43 9 h6"/>' +
+      '<rect x="14" y="36" width="16" height="5" rx="2"/>' +
+      '<path d="M22 41 V44"/><path d="M14 44 h16"/>',
+
+    'foam-roller':
+      // 굵은 원통. 옆면 무늬로 스펀지인 걸 보인다
+      '<rect x="12" y="18" width="40" height="14" rx="7"/>' +
+      '<ellipse cx="19" cy="25" rx="3" ry="7"/>' +
+      '<path d="M29 18 V32 M37 18 V32 M45 18 V32" opacity=".45"/>',
+
     'chest-press-machine':
       '<rect x="24" y="28" width="14" height="5" rx="2"/>' +
       '<path d="M31 28 V14"/>' +

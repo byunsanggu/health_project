@@ -581,6 +581,60 @@ export const EXERCISES: readonly Exercise[] = [
     contribution: { forearms: 1, traps: 0.7, abs: 0.5, glutes: 0.3 },
     jointStress: { wrist: 0.35, shoulder: 0.25, lowBack: 0.3 },
   },
+
+  /*
+   * ── 머신 (3차) ────────────────────────────────────────────
+   *
+   * 실제 헬스장 기구 목록을 받아 보니 빠진 머신이 여럿이었다. 기구를
+   * 켜도 할 종목이 없으면 켠 의미가 없다 — 기구 하나에 종목 하나씩
+   * 붙인다.
+   */
+  {
+    id: 'machine-incline-chest-press',
+    name: '인클라인 체스트프레스 머신', nameEn: 'Incline Machine Chest Press',
+    equipment: 'machine', pattern: 'horizontalPush', increment: 5,
+    // 윗가슴 쪽으로 각도가 서서 전면 삼각근이 평평한 머신보다 더 들어간다.
+    contribution: { chest: 1, frontDelt: 0.55, triceps: 0.4 },
+    jointStress: { shoulder: 0.45, elbow: 0.25 },
+  },
+  {
+    id: 'machine-high-row',
+    name: '하이 로우 머신', nameEn: 'Machine High Row',
+    equipment: 'machine', pattern: 'horizontalPull', increment: 5,
+    // 위에서 아래로 당겨서 광배가 주동근이고 등 위쪽이 같이 쓰인다.
+    contribution: { back: 1, biceps: 0.45, rearDelt: 0.4, traps: 0.3 },
+    jointStress: { shoulder: 0.3, elbow: 0.3 },
+  },
+  {
+    id: 'machine-rear-delt-raise',
+    name: '리어델트 머신 (벤트오버 레터럴)', nameEn: 'Machine Rear Delt Raise',
+    equipment: 'machine', pattern: 'isolation', increment: 2.5,
+    contribution: { rearDelt: 1, traps: 0.35 },
+    jointStress: { shoulder: 0.2 },
+  },
+  {
+    id: 'v-squat',
+    name: '브이 스쿼트', nameEn: 'V-Squat',
+    equipment: 'machine', pattern: 'squat', increment: 10,
+    // 핵 스쿼트와 같은 계열이다. 어깨 패드에 실려서 허리 부담이 적다.
+    contribution: { quads: 1, glutes: 0.55, hamstrings: 0.25 },
+    jointStress: { knee: 0.65, lowBack: 0.15, hip: 0.35, ankle: 0.35 },
+  },
+  {
+    id: 'machine-triceps-dip',
+    name: '머신 딥스 (삼두)', nameEn: 'Seated Dip Machine',
+    equipment: 'machine', pattern: 'verticalPush', increment: 5,
+    // 맨몸 딥스와 달리 앉아서 밀어 내려서 어깨가 앞으로 덜 끌려간다.
+    contribution: { triceps: 1, chest: 0.35, frontDelt: 0.25 },
+    jointStress: { shoulder: 0.4, elbow: 0.45 },
+  },
+  {
+    id: 'machine-preacher-curl',
+    name: '머신 프리처 컬', nameEn: 'Machine Preacher Curl',
+    equipment: 'machine', pattern: 'isolation', increment: 2.5,
+    contribution: { biceps: 1, forearms: 0.2 },
+    jointStress: { elbow: 0.4, wrist: 0.15 },
+  },
 ]
 
 const BY_ID = new Map(EXERCISES.map((exercise) => [exercise.id, exercise]));

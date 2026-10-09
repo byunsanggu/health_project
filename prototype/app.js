@@ -10887,6 +10887,73 @@
       });
     })));
 
+    /*
+     * 목록을 그대로 붙여넣기.
+     *
+     * 자기 헬스장 기구를 다 아는 사람(트레이너, 관장)은 체크박스를 서른
+     * 번 누르지 않는다. 카톡에 적어 둔 "덤벨, 바벨, 이지바, …"를 그대로
+     * 붙여넣는다. **켜기만 하고 끄지 않는다** — 목록에 깜빡 빠진 플랫
+     * 벤치 하나 때문에 벤치프레스가 사라지면 안 된다.
+     */
+    body.push(el('div', { class: 'list-label', text: '목록 붙여넣기' }));
+    var paste = el('textarea', {
+      class: 'text-input equip-paste', rows: '3',
+      placeholder: '예: 덤벨, 바벨, 이지바, 스쿼트랙, 레그 프레스, 스미스 머신…',
+    });
+    var pasteNote = el('p', { class: 'hint-line', id: 'equip-paste-note', text:
+      '쉼표나 줄바꿈으로 나눠 적으면 알아보는 것을 켭니다. 이미 켜진 것은 그대로 둡니다.' });
+    body.push(paste);
+    body.push(el('button', {
+      type: 'button', class: 'finish quiet', text: '목록대로 켜기',
+      onclick: function () {
+        var result = E.parseEquipmentList(paste.value);
+        if (result.matched.length === 0 && result.unknown.length === 0) return;
+        var before = equipmentIds().slice();
+        var added = result.ids.filter(function (id) { return before.indexOf(id) < 0; });
+        if (added.length > 0) setEquipmentIds(before.concat(added));
+        var line = result.ids.length + '개를 알아봤고, 새로 켠 것 ' + added.length + '개입니다.';
+        if (result.unknown.length > 0) line += ' 못 알아본 것: ' + result.unknown.join(', ') + ' — 아래에서 직접 찾아 주세요.';
+        pasteNote.textContent = line;
+        pasteNote.classList.toggle('warn', result.unknown.length > 0);
+
+        /*
+         * 목록에 없는 것을 끌지는 **따로 묻는다.** 헬스장 기구를 통째로
+         * 적은 사람에게는 "나머지는 없다"가 맞는 말이지만, 플랫 벤치 하나
+         * 깜빡 빠뜨린 목록으로 벤치프레스가 사라지면 안 된다. 무엇을
+         * 끄는지 이름을 다 보여 주고 누르게 한다.
+         */
+        pasteTrim.textContent = '';
+        var listed = result.ids;
+        var extra = equipmentIds().filter(function (id) { return listed.indexOf(id) < 0; });
+        if (result.ids.length >= 5 && extra.length > 0) {
+          var names = extra.map(function (id) {
+            var item = E.equipmentItem(id);
+            return item ? item.name : id;
+          });
+          pasteTrim.appendChild(el('p', { class: 'hint-line', text:
+            '목록에 없는데 켜져 있는 것 ' + extra.length + '개: ' + names.join(', ') }));
+          pasteTrim.appendChild(el('button', {
+            type: 'button', class: 'pick', text: '이 ' + extra.length + '개 끄기 — 목록에 있는 것만 남기기',
+            onclick: function () {
+              var keep = equipmentIds().filter(function (id) { return extra.indexOf(id) < 0; });
+              setEquipmentIds(keep);
+              pasteTrim.textContent = '';
+              pasteNote.textContent = extra.length + '개를 껐습니다. 목록에 있는 ' + keep.length + '개만 남았습니다.';
+              pushLog('기구', entry.name + ' — 목록에 없는 ' + extra.length + '개를 껐습니다.');
+              render();
+              renderEquipmentList();
+            },
+          }));
+        }
+        pushLog('기구', entry.name + ' — 목록으로 ' + added.length + '개를 켰습니다.');
+        render();
+        renderEquipmentList();
+      },
+    }));
+    body.push(pasteNote);
+    var pasteTrim = el('div', { id: 'equip-paste-trim' }, []);
+    body.push(pasteTrim);
+
     body.push(el('div', { class: 'list-label', text: '하나씩 고르기' }));
     body.push(el('input', {
       type: 'search', value: state.equipmentQuery || '',

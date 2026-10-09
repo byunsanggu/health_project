@@ -109,6 +109,21 @@ export const EQUIPMENT_CATALOG: readonly EquipmentItem[] = [
   { id: 'assisted-pull-up-machine', name: '어시스트 풀업 머신', category: 'machine' },
   { id: 'lateral-raise-machine', name: '레터럴 레이즈 머신', category: 'machine' },
   { id: 'hip-thrust-machine', name: '힙 쓰러스트 머신', category: 'machine' },
+  // 실제 헬스장 목록에서 빠져 있던 것들
+  { id: 'incline-chest-press-machine', name: '인클라인 체스트프레스 머신', category: 'machine' },
+  { id: 'high-row-machine', name: '하이 로우 머신', category: 'machine' },
+  { id: 'rear-delt-machine', name: '리어델트 머신 (벤트오버 레터럴)', category: 'machine' },
+  {
+    id: 'v-squat-machine', name: '브이 스쿼트 머신', category: 'machine',
+    measurement: { field: 'carriageKg', label: '빈 캐리지 무게', default: 30, options: [20, 30, 40] },
+  },
+  { id: 'dip-machine', name: '트라이셉 딥스 머신', category: 'machine' },
+  { id: 'preacher-curl-machine', name: '프리처 컬 머신', category: 'machine' },
+  /*
+   * 폼롤러는 종목을 열지 않는다. 그래도 목록에 둔다 — 헬스장 기구를
+   * 전부 적는 사람에게 "폼롤러는 어디 켜요?"가 남으면 목록이 틀린 것이다.
+   */
+  { id: 'foam-roller', name: '폼롤러', category: 'bodyweight' },
   {
     id: 'smith-machine', name: '스미스머신', category: 'rack', common: true,
     measurement: {
@@ -227,6 +242,14 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'dead-bug': ['floor'],
   'wrist-curl': ['dumbbells'],
   'farmers-walk': ['dumbbells'],
+
+  // 3차
+  'machine-incline-chest-press': ['incline-chest-press-machine'],
+  'machine-high-row': ['high-row-machine'],
+  'machine-rear-delt-raise': ['rear-delt-machine'],
+  'v-squat': ['v-squat-machine'],
+  'machine-triceps-dip': ['dip-machine'],
+  'machine-preacher-curl': ['preacher-curl-machine'],
 };
 
 export function requirementsMet(exerciseId: string, selected: ReadonlySet<string>): boolean {
@@ -374,6 +397,15 @@ export function gymFromCatalog(selection: GymSelection): GymProfile {
       overrides[exerciseId] = { kind: 'barbell', barKg: smithBar, plates };
     }
   }
+  // 브이 스쿼트도 원판을 끼우는 기계다. 빈 캐리지 무게가 기계마다 다르다.
+  if (selected.has('v-squat-machine')) {
+    overrides['v-squat'] = {
+      kind: 'plateLoaded',
+      carriageKg: value('v-squat-machine', 'carriageKg') ?? 30,
+      plates,
+      sides: 2,
+    };
+  }
   if (selected.has('hack-squat-machine')) {
     overrides['hack-squat'] = {
       kind: 'plateLoaded',
@@ -440,7 +472,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '2m쯤 되는 긴 쇠봉과 양쪽에 끼우는 둥근 원판',
   },
   'ez-bar': {
-    aka: ['굽은 바', 'W바', '지그재그 봉', '컬바'],
+    aka: ['굽은 바', 'W바', '지그재그 봉', '컬바', '이지바', 'EZ바'],
     look: '가운데가 W자로 굽은 짧은 봉. 팔 운동에 씁니다',
   },
   dumbbells: {
@@ -448,7 +480,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '한 손으로 드는 아령. 보통 벽 쪽 거치대에 무게순으로 놓여 있습니다',
   },
   'power-rack': {
-    aka: ['랙', '스쿼트랙', '철장', '파워케이지'],
+    aka: ['랙', '스쿼트랙', '철장', '파워케이지', '파워랙', '스쿼트 랙'],
     look: '사람이 들어가는 네모난 철제 구조물. 안에서 바벨을 들어올립니다',
   },
   'bench-flat': {
@@ -472,7 +504,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '허벅지를 받치고 상체를 숙였다 펴는 비스듬한 받침대',
   },
   'cable-station': {
-    aka: ['케이블', '줄 당기는 기계', '도르래'],
+    aka: ['케이블', '줄 당기는 기계', '도르래', '크로스오버', '케이블 크로스오버', '크로스오버 케이블'],
     look: '기둥에 줄(케이블)이 달려 있고 손잡이를 갈아 끼우는 기계. 추가 핀으로 조절됩니다',
   },
   'lat-pulldown-machine': {
@@ -480,7 +512,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉아서 머리 위의 긴 봉을 아래로 당기는 기계',
   },
   'seated-row-machine': {
-    aka: ['로우 머신', '앉아서 당기는 기계', '시티드로우'],
+    aka: ['로우 머신', '앉아서 당기는 기계', '시티드로우', '로우 케이블', '케이블 로우'],
     look: '앉아서 손잡이를 몸 쪽으로 당기는 기계',
   },
   'chest-press-machine': {
@@ -496,7 +528,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉아서 양팔을 안으로 모으는 기계. 나비처럼 생겼습니다',
   },
   'chest-supported-row-machine': {
-    aka: ['가슴 대고 당기는 기계', '티바 로우'],
+    aka: ['가슴 대고 당기는 기계', '티바 로우', '시티드 로우 머신', '레버 로우'],
     look: '가슴을 받침대에 대고 엎드려 당기는 기계',
   },
   'leg-press-machine': {
@@ -504,19 +536,19 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉거나 누워서 발판을 다리로 밀어내는 큰 기계',
   },
   'hack-squat-machine': {
-    aka: ['핵스쿼트', '어깨로 미는 스쿼트 기계'],
+    aka: ['핵스쿼트', '어깨로 미는 스쿼트 기계', '핵 스쿼트 머신'],
     look: '비스듬히 누워 어깨로 받치고 밀어 올리는 기계',
   },
   'leg-extension-machine': {
-    aka: ['레그익스텐션', '앉아서 다리 펴는 기계'],
+    aka: ['레그익스텐션', '앉아서 다리 펴는 기계', '레그 익스텐션 머신'],
     look: '앉아서 발목 앞의 롤러를 걸고 무릎을 펴는 기계',
   },
   'leg-curl-machine': {
-    aka: ['레그컬', '다리 접는 기계', '햄스트링 기계'],
+    aka: ['레그컬', '다리 접는 기계', '햄스트링 기계', '라잉 레그컬', '시티드 레그컬', '레그컬 머신'],
     look: '엎드리거나 앉아서 발목 뒤의 롤러를 걸고 무릎을 접는 기계',
   },
   'calf-raise-machine': {
-    aka: ['종아리 기계', '카프레이즈'],
+    aka: ['종아리 기계', '카프레이즈', '카프레이즈 머신', '스탠딩 카프레이즈'],
     look: '서서 어깨로 받치고 뒤꿈치를 드는 기계',
   },
   'seated-calf-machine': {
@@ -528,7 +560,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '어깨너비 평행봉 두 개. 몸을 띄워 내렸다 올립니다',
   },
   'preacher-bench': {
-    aka: ['프리처', '팔 받침대', '암컬 벤치'],
+    aka: ['프리처', '팔 받침대', '암컬 벤치', '프리처 컬 벤치', '프리처 벤치'],
     look: '팔을 비스듬한 패드에 얹고 컬을 하는 의자',
   },
   'ab-wheel': {
@@ -536,11 +568,11 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '양쪽에 손잡이가 달린 작은 바퀴',
   },
   't-bar-row-machine': {
-    aka: ['티바로우', 'T바'],
+    aka: ['티바로우', 'T바', 'T바 머신', 'T바 로우 머신'],
     look: '한쪽이 바닥에 고정된 바에 원판을 끼우고 당기는 기구',
   },
   'assisted-pull-up-machine': {
-    aka: ['어시스트 풀업', '보조 턱걸이 기계', '그래비트론'],
+    aka: ['어시스트 풀업', '보조 턱걸이 기계', '그래비트론', '어시스트 머신', '어시스트 딥스'],
     look: '무릎이나 발을 얹는 발판이 올라와 턱걸이를 도와주는 기계',
   },
   'lateral-raise-machine': {
@@ -551,8 +583,36 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     aka: ['힙쓰러스트 기계', '엉덩이 기계'],
     look: '앉아서 골반 위에 패드를 얹고 밀어 올리는 기계',
   },
+  'incline-chest-press-machine': {
+    aka: ['인클라인 체스트프레스', '인클라인 체스트 프레스 머신', '윗가슴 미는 기계'],
+    look: '앉아서 비스듬히 위쪽 앞으로 미는 기계. 윗가슴 운동입니다',
+  },
+  'high-row-machine': {
+    aka: ['하이로우', '하이 로우', '하이 로우 머신'],
+    look: '앉아서 머리 위쪽 손잡이를 비스듬히 아래로 당기는 기계. 원판을 끼우는 것이 많습니다',
+  },
+  'rear-delt-machine': {
+    aka: ['벤트오버 레터럴 레이즈 머신', '벤트오버 레터럴', '리어델트 머신', '후면 어깨 기계'],
+    look: '가슴을 패드에 대고 엎드려 팔을 옆 뒤로 벌리는 기계',
+  },
+  'v-squat-machine': {
+    aka: ['브이스쿼트', 'V스쿼트', 'V 스쿼트'],
+    look: '어깨 패드를 메고 비스듬한 레일을 따라 앉았다 일어나는 기계. 원판을 끼웁니다',
+  },
+  'dip-machine': {
+    aka: ['트라이셉 딥스 머신', '딥스 머신', '시티드 딥스'],
+    look: '앉아서 양옆 손잡이를 아래로 밀어 내리는 기계. 삼두 운동입니다',
+  },
+  'preacher-curl-machine': {
+    aka: ['프리처 컬 머신', '머신 프리처'],
+    look: '팔을 패드에 얹고 손잡이를 당겨 올리는 기계',
+  },
+  'foam-roller': {
+    aka: ['폼 롤러', '마사지 롤러'],
+    look: '원통 모양 스펀지. 몸을 굴려 근육을 풉니다',
+  },
   'smith-machine': {
-    aka: ['스미스', '레일 달린 바벨', '가이드 바벨'],
+    aka: ['스미스', '레일 달린 바벨', '가이드 바벨', '스미스 머신'],
     look: '바벨이 두 개의 레일을 따라서만 위아래로 움직이는 기계',
   },
 };
@@ -581,4 +641,128 @@ export function findEquipment(query: string, pool: readonly EquipmentItem[] = EQ
       .replace(/[\s·()]/g, '');
     return tokens.every((token) => haystack.includes(token.replace(/[\s·()]/g, '')));
   });
+}
+
+/* ── 목록을 그대로 붙여넣기 ─────────────────────────── */
+
+/**
+ * 헬스장 기구를 아는 사람은 체크박스를 서른 번 누르지 않는다. 카톡에
+ * 적어 둔 목록을 그대로 붙여넣는다 — "덤벨, 바벨, 이지바, 스쿼트랙…".
+ * 그걸 카탈로그로 읽는다.
+ *
+ * 사람이 적는 말이라 받침 하나, 띄어쓰기 하나가 다르다. 자주 틀리는
+ * 철자는 여기서 고치고, 그래도 모르는 것은 **모른다고 돌려준다** —
+ * 엉뚱한 기구를 조용히 켜는 것보다 낫다.
+ */
+const SPELLING: readonly (readonly [RegExp, string])[] = [
+  [/인크라인/g, '인클라인'],
+  [/레크컬/g, '레그컬'],
+  [/프리쳐/g, '프리처'],
+  [/케이븍/g, '케이블'],
+  [/시트드/g, '시티드'],
+  [/트라이셉스/g, '트라이셉'],
+  [/스쿼드/g, '스쿼트'],
+  [/익스텐숀/g, '익스텐션'],
+];
+
+/**
+ * "플레이트 로드"는 기구가 아니라 무게 거는 방식이다. 떼고 읽는다 —
+ * 남겨 두면 "플레이트 로드 핵 스쿼트"가 바벨(원판)로 읽힌다.
+ */
+const LOADING_WORDS = /플레이트\s*로(드|디드)|원판식|핀식/g;
+
+export function normalizeEquipmentName(raw: string): string {
+  let text = (raw ?? '').toLowerCase().replace(LOADING_WORDS, '');
+  for (const [from, to] of SPELLING) text = text.replace(from, to);
+  return text.replace(/[\s·()\[\]_\-.]/g, '');
+}
+
+export interface PastedEquipment {
+  /** 켤 기구 (겹치지 않게) */
+  ids: string[];
+  /** 적은 말 → 알아본 기구 */
+  matched: { input: string; id: string; name: string }[];
+  /** 못 알아본 말 */
+  unknown: string[];
+}
+
+function candidatesOf(item: EquipmentItem): string[] {
+  const guide = EQUIPMENT_GUIDE[item.id];
+  return [item.name, ...(guide?.aka ?? [])].map(normalizeEquipmentName).filter((word) => word.length >= 2);
+}
+
+/**
+ * 한 덩어리에서 기구를 찾는다. 여러 개일 수 있다.
+ *
+ * 쉼표를 빼먹은 줄이 실제로 온다 — "인클라인 벤치 프리처 컬 벤치". 그래서
+ * 덩어리 안에 들어 있는 이름을 **긴 것부터, 겹치지 않게** 골라 낸다.
+ * 긴 것부터인 이유는 "인클라인 체스트프레스 머신"이 "체스트프레스 머신"도
+ * 품고 있어서다 — 긴 쪽이 더 구체적이고, 짧은 쪽은 겹쳐서 빠진다.
+ *
+ * 아무 이름도 품고 있지 않으면, 적은 말을 품은 이름(세 글자 이상)을
+ * 하나 찾는다. "파워랙"은 "파워랙 · 스쿼트랙"에 들어 있다.
+ */
+export function matchEquipmentNames(raw: string): EquipmentItem[] {
+  const word = normalizeEquipmentName(raw);
+  if (word.length < 2) return [];
+
+  const spans: { item: EquipmentItem; at: number; length: number }[] = [];
+  for (const item of EQUIPMENT_CATALOG) {
+    for (const name of candidatesOf(item)) {
+      let at = word.indexOf(name);
+      while (at >= 0) {
+        spans.push({ item, at, length: name.length });
+        at = word.indexOf(name, at + 1);
+      }
+    }
+  }
+
+  spans.sort((a, b) => b.length - a.length || a.at - b.at);
+  const taken: { at: number; end: number; item: EquipmentItem }[] = [];
+  for (const span of spans) {
+    const end = span.at + span.length;
+    if (taken.some((other) => span.at < other.end && other.at < end)) continue;
+    taken.push({ at: span.at, end, item: span.item });
+  }
+  if (taken.length > 0) {
+    const found: EquipmentItem[] = [];
+    for (const piece of taken.sort((a, b) => a.at - b.at)) {
+      if (!found.includes(piece.item)) found.push(piece.item);
+    }
+    return found;
+  }
+
+  if (word.length >= 3) {
+    for (const item of EQUIPMENT_CATALOG) {
+      if (candidatesOf(item).some((name) => name.includes(word))) return [item];
+    }
+  }
+  return [];
+}
+
+export function matchEquipmentName(raw: string): EquipmentItem | null {
+  return matchEquipmentNames(raw)[0] ?? null;
+}
+
+export function parseEquipmentList(text: string): PastedEquipment {
+  const pieces = (text ?? '')
+    .split(/[,\n、;/]+/)
+    .map((piece) => piece.trim())
+    .filter((piece) => piece.length > 0);
+
+  const ids: string[] = [];
+  const matched: PastedEquipment['matched'] = [];
+  const unknown: string[] = [];
+  for (const piece of pieces) {
+    const items = matchEquipmentNames(piece);
+    if (items.length === 0) {
+      unknown.push(piece);
+      continue;
+    }
+    for (const item of items) {
+      matched.push({ input: piece, id: item.id, name: item.name });
+      if (!ids.includes(item.id)) ids.push(item.id);
+    }
+  }
+  return { ids, matched, unknown };
 }

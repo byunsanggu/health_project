@@ -10,6 +10,8 @@ import {
   gymFromCatalog,
   suggestNextEquipment,
   wouldEnable,
+  matchEquipmentName,
+  parseEquipmentList,
 } from '../equipment.ts';
 import { EXERCISES, exerciseById } from '../exercises.ts';
 import { loadableWeights, loadingFor, nearestLoadable } from '../gym.ts';
@@ -140,5 +142,78 @@ describe('gymFromCatalog', () => {
     const weights = loadableWeights(gym.defaults.dumbbell);
     assert.equal(weights[weights.length - 1], 30);
     assert.ok(!weights.includes(35));
+  });
+});
+
+describe('목록 붙여넣기', () => {
+  /** 실제 헬스장(바우짐) 트레이너가 카톡처럼 적어 보낸 목록 그대로. 오타·띄어쓰기·빠진 쉼표 포함. */
+  const REAL_LIST =
+    '덤벨  ,바벨, 이지바, 스쿼트랙, 인클라인 벤치 프리처 컬 벤치 , 파워랙, 크로스오버 케이븍, 로우 케이블 ,' +
+    '스미스 머신, 플레이트 로드 T바 머신, 플레이트 로드 벤트 오버 레터럴 레이즈 머신, 플레이트 로드 하이 로우 머신 ,' +
+    '레그 프레스, 플레이트 로드 핵 스쿼트 머신, 브이 스쿼트 머신, 어시스트 머신 ,시티드 로우 머신, 플라이 머신, ' +
+    '체스트프레스 머신, 인크라인 체스트 프레스 머신, 숄더프레스 머신, 라잉 레크컬 머신, 레그 익스텐션 머신, ' +
+    '카프레이즈 머신, 트라이셉 딥스 머신 ,프리쳐 컬 머신, 시트드 레그 컬 머신, 폼롤러';
+
+  it('실제 목록을 하나도 놓치지 않는다', () => {
+    const result = parseEquipmentList(REAL_LIST);
+    assert.deepEqual(result.unknown, []);
+    const expected = [
+      'dumbbells', 'barbell-set', 'ez-bar', 'power-rack', 'bench-incline', 'preacher-bench',
+      'cable-station', 'seated-row-machine', 'smith-machine', 't-bar-row-machine', 'rear-delt-machine',
+      'high-row-machine', 'leg-press-machine', 'hack-squat-machine', 'v-squat-machine',
+      'assisted-pull-up-machine', 'chest-supported-row-machine', 'pec-deck-machine',
+      'chest-press-machine', 'incline-chest-press-machine', 'shoulder-press-machine', 'leg-curl-machine',
+      'leg-extension-machine', 'calf-raise-machine', 'dip-machine', 'preacher-curl-machine', 'foam-roller',
+    ];
+    assert.deepEqual([...result.ids].sort(), [...expected].sort());
+  });
+
+  it('쉼표를 빼먹은 줄에서 둘을 다 찾는다', () => {
+    assert.deepEqual(parseEquipmentList('인클라인 벤치 프리처 컬 벤치').ids, ['bench-incline', 'preacher-bench']);
+  });
+
+  it('긴 이름이 이긴다 — 인클라인 체스트프레스는 체스트프레스가 아니다', () => {
+    assert.equal(matchEquipmentName('인클라인 체스트프레스 머신')?.id, 'incline-chest-press-machine');
+    assert.equal(matchEquipmentName('체스트프레스 머신')?.id, 'chest-press-machine');
+    assert.equal(matchEquipmentName('벤트오버 레터럴 레이즈 머신')?.id, 'rear-delt-machine');
+    assert.equal(matchEquipmentName('레터럴 레이즈 머신')?.id, 'lateral-raise-machine');
+  });
+
+  it('케이블 로우와 시티드 로우 머신을 가린다', () => {
+    assert.equal(matchEquipmentName('로우 케이블')?.id, 'seated-row-machine');
+    assert.equal(matchEquipmentName('시티드 로우 머신')?.id, 'chest-supported-row-machine');
+  });
+
+  it('"플레이트 로드"는 거는 방식이라 떼고 읽는다', () => {
+    assert.equal(matchEquipmentName('플레이트 로드 핵 스쿼트 머신')?.id, 'hack-squat-machine');
+    assert.notEqual(matchEquipmentName('플레이트 로드 핵 스쿼트 머신')?.id, 'barbell-set');
+  });
+
+  it('자주 틀리는 철자를 받아 준다', () => {
+    assert.equal(matchEquipmentName('인크라인 벤치')?.id, 'bench-incline');
+    assert.equal(matchEquipmentName('라잉 레크컬')?.id, 'leg-curl-machine');
+    assert.equal(matchEquipmentName('프리쳐 컬 머신')?.id, 'preacher-curl-machine');
+  });
+
+  it('모르는 것은 모른다고 돌려준다 — 엉뚱한 기구를 조용히 켜지 않는다', () => {
+    const result = parseEquipmentList('덤벨, 사우나, 수건');
+    assert.deepEqual(result.ids, ['dumbbells']);
+    assert.deepEqual(result.unknown, ['사우나', '수건']);
+  });
+
+  it('줄바꿈으로 적어도 된다', () => {
+    assert.deepEqual(parseEquipmentList('덤벨\n바벨\n폼롤러').ids, ['dumbbells', 'barbell-set', 'foam-roller']);
+  });
+
+  it('새로 넣은 기구마다 열리는 종목이 있다 — 폼롤러만 빼고', () => {
+    for (const id of ['incline-chest-press-machine', 'high-row-machine', 'rear-delt-machine',
+      'v-squat-machine', 'dip-machine', 'preacher-curl-machine']) {
+      assert.ok(wouldEnable(id, ['floor']).length > 0, id);
+    }
+  });
+
+  it('브이 스쿼트는 원판을 끼우는 기계로 계산한다', () => {
+    const gym = gymFromCatalog({ equipmentIds: ['v-squat-machine'] });
+    assert.equal((gym.overrides?.['v-squat'] as { kind: string }).kind, 'plateLoaded');
   });
 });
