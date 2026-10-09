@@ -2224,7 +2224,7 @@ input[type="search"] {
  * 옛날 iOS는 이 질의를 모르므로 스크립트가 data-standalone을 대신 붙인다.
  */
 @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
-  .masthead, .panel { display: none; }
+  .masthead, .panel, .disclaimer { display: none; }
 
   .wrap {
     max-width: none;
@@ -2251,7 +2251,8 @@ input[type="search"] {
 
 /* 옛날 iOS용 — 위 블록과 같은 내용을 선택자만 바꿔 적는다 */
 html[data-standalone] .masthead,
-html[data-standalone] .panel { display: none; }
+html[data-standalone] .panel,
+html[data-standalone] .disclaimer { display: none; }
 html[data-standalone] .wrap {
   max-width: none; padding: 0; gap: 0; grid-template-columns: minmax(0, 1fr);
 }
@@ -2261,6 +2262,23 @@ html[data-standalone] .device {
 }
 html[data-standalone] .statusbar { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); }
 html[data-standalone] .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/*
+ * 사용자 화면 — 개발용 판(소개·시나리오·로그)을 감추고 앱만 꽉 채운다.
+ * 내 컴퓨터(localhost)나 ?dev로 열었을 때만 판이 보인다.
+ */
+html:not([data-dev]) .masthead,
+html:not([data-dev]) .panel,
+html:not([data-dev]) .disclaimer { display: none; }
+html:not([data-dev]) .wrap {
+  max-width: 560px; margin: 0 auto; padding: 0; gap: 0; grid-template-columns: minmax(0, 1fr);
+}
+html:not([data-dev]) .device {
+  border: 0; border-radius: 0; box-shadow: none; position: static;
+  height: 100dvh; min-height: 0;
+}
+html:not([data-dev]) .statusbar { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); }
+html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
 /* 카카오·구글 줄 — 이메일 칸보다 먼저 눈에 들어와야 한다 */
 .oauth-row { border: 1px solid var(--accent); background: var(--accent-soft); }
@@ -4699,6 +4717,14 @@ var GymSearch = (function () {
    */
   function markStandalone() {
     if (isStandalone()) document.documentElement.setAttribute('data-standalone', '');
+    /*
+     * 소개 글·시나리오·엔진 로그는 만드는 사람이 보는 판이다. 실제 사용자
+     * 화면에 "프로토타입 · 실제 엔진 구동"이 뜨면 안 된다. 내 컴퓨터에서
+     * 열었거나 주소에 ?dev를 붙였을 때만 보인다.
+     */
+    if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) || /[?&]dev\b/.test(location.search)) {
+      document.documentElement.setAttribute('data-dev', '');
+    }
   }
 
   function isIOS() {
@@ -14724,6 +14750,13 @@ var GymSearch = (function () {
     ]));
     renderAppStatus();
     renderPrivacy();
+    /*
+     * 페이지 맨 아래에 있던 안내 중에 사용자에게 필요한 것은 이것 하나다.
+     * 나머지(프로토타입·예시 데이터 이야기)는 만드는 사람용이라 감췄다.
+     */
+    screen.appendChild(el('p', { class: 'asset-note', text:
+      '볼륨 코치는 의료기기가 아니며, 의학적 진단·처방·치료를 대신하지 않습니다. ' +
+      '통증이 계속되면 전문의 진료를 받으세요.' }));
   }
 
   /** 동의 하나를 추가로 받는다. 기록도 같이 갱신한다. */
@@ -15148,8 +15181,11 @@ var GymSearch = (function () {
     if (!shareableGym(entry)) return;
 
     var known = {};
-    (entry.equipmentIds || []).forEach(function (id) { known[id] = true; });
-    (entry.absentEquipmentIds || []).forEach(function (id) { known[id] = false; });
+    // 남이 적은 목록을 받아 쓰는 중이면 헬스장만 올리고 기구는 내 확인으로 세지 않는다.
+    if (!entry.crowdAdopted) {
+      (entry.equipmentIds || []).forEach(function (id) { known[id] = true; });
+      (entry.absentEquipmentIds || []).forEach(function (id) { known[id] = false; });
+    }
 
     var equipment = Object.keys(known).map(function (id) {
       return { id: id, present: known[id] };
@@ -15514,16 +15550,55 @@ var GymSearch = (function () {
    * 바로 등록해 버리지 않는다. 기구 목록이 이 앱의 전부인데 검색은 그걸
    * 모르므로, 유형이라도 고르게 해야 쓸 수 있는 프로그램이 나온다.
    */
+  /**
+   * 검색 결과에서 추가.
+   *
+   * 유형("동네 헬스장" 같은 것)을 묻지 않는다. 검색에 나온 곳은 상가
+   * 헬스장이라 누가 볼 수 있는지는 이미 정해져 있고, 기구는 유형으로
+   * 짐작할 게 아니라 **이미 다니는 사람이 적어 둔 것**을 쓰면 된다.
+   *
+   * 그래서 먼저 서버에 묻는다. 누가 등록해 뒀으면 그 목록을 그대로 쓰고,
+   * 아무도 없으면 등록하자마자 기구 체크 화면을 연다 — 처음 한 사람이
+   * 채우면 다음 사람부터는 고를 게 없다.
+   */
   function registerFromPlace(place) {
     var draft = E.placeToDraft(place);
-    openGymRegister({
-      presetId: null,
+    var gymDraft = {
+      presetId: 'unknown',
       name: draft.name,
       address: draft.address,
       location: draft.location,
       sourceId: draft.sourceId,
       floor: '',
-      step: 'type',
+      step: 'detail',
+      fromSearch: true,
+      crowd: { loading: true, equipment: [], people: 0 },
+    };
+    openGymRegister(gymDraft);
+    lookupGymEquipment(gymDraft);
+  }
+
+  /** 이 곳을 누가 이미 등록했는가. 등록할 id를 미리 계산해서 서버에 묻는다. */
+  function lookupGymEquipment(draft) {
+    var done = function (crowd) {
+      draft.crowd = crowd;
+      // 그새 다른 화면으로 갔으면 다시 그리지 않는다.
+      if (state.gymDraft === draft && modal.open) renderGymRegister();
+    };
+    if (typeof Remote === 'undefined' || !Remote.configured()) {
+      return done({ loading: false, equipment: [], people: 0, offline: true });
+    }
+    var id = E.gymKey({ name: draft.name, location: draft.location, address: draft.address });
+    Promise.all([
+      Remote.sharedEquipment(id).catch(function () { return []; }),
+      Remote.gymPeople(id).catch(function () { return 0; }),
+    ]).then(function (out) {
+      var known = {};
+      E.EQUIPMENT_CATALOG.forEach(function (item) { known[item.id] = true; });
+      var equipment = (out[0] || [])
+        .map(function (row) { return row && (row.equipment_id || row.id || row); })
+        .filter(function (itemId) { return typeof itemId === 'string' && known[itemId]; });
+      done({ loading: false, equipment: equipment, people: typeof out[1] === 'number' ? out[1] : 0 });
     });
   }
 
@@ -15677,8 +15752,7 @@ var GymSearch = (function () {
     result.places.forEach(function (place) { host.appendChild(placeRow(place)); });
     host.appendChild(registerButton());
     host.appendChild(el('p', { class: 'hint-line', text:
-      '기구 목록은 검색으로 알 수 없습니다. 고르면 유형만 정하고, 나머지는 ' +
-      '운동하면서 "이 기구 없어요"로 맞춥니다.' }));
+      '누가 이미 등록한 곳이면 그 기구 목록을 그대로 씁니다. 처음이면 등록할 때 있는 기구를 체크합니다.' }));
   }
 
   function renderSearchResults() {
@@ -15758,12 +15832,20 @@ var GymSearch = (function () {
    * **다니는 사람이 제일 잘 안다.** 유형으로 시작하고 여기서 맞추는 게
    * 처음부터 31개를 고르게 하는 것보다 낫다 — 그건 거기서 앱을 닫는다.
    */
-  function openGymEquipment() {
+  function openGymEquipment(options) {
+    options = options || {};
     var entry = currentGymEntry();
     if (!entry) return;
     state.equipScope = 'gym';
 
     var body = [];
+    if (options.first) {
+      body.push(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: '처음 등록하셨습니다' }),
+        el('div', { text: '있는 기구를 체크해 주세요. 카톡에 적어 둔 목록이 있으면 "목록 붙여넣기"가 ' +
+          '제일 빠릅니다. 여기 다니는 다음 분부터는 이 목록을 그대로 씁니다.' }),
+      ]));
+    }
     body.push(el('p', { class: 'asset-note', text:
       entry.name + '에 실제로 있는 기구만 켜 두세요. ' +
       '켠 기구에서 할 수 있는 종목만 처방에 나옵니다.' }));
@@ -16123,13 +16205,15 @@ var GymSearch = (function () {
       oninput: function (event) { draft.floor = event.target.value; },
     });
 
-    body.push(el('div', { class: 'verdict-head' }, [
-      el('span', { class: 'verdict-tag', text: preset.label }),
-      el('button', {
-        type: 'button', class: 'pick', text: '유형 바꾸기',
-        onclick: function () { draft.step = 'type'; renderGymRegister(); },
-      }),
-    ]));
+    if (!draft.fromSearch) {
+      body.push(el('div', { class: 'verdict-head' }, [
+        el('span', { class: 'verdict-tag', text: preset.label }),
+        el('button', {
+          type: 'button', class: 'pick', text: '유형 바꾸기',
+          onclick: function () { draft.step = 'type'; renderGymRegister(); },
+        }),
+      ]));
+    }
     body.push(el('div', { class: 'list-label', text: '이름' }));
     body.push(nameInput);
     /*
@@ -16140,11 +16224,20 @@ var GymSearch = (function () {
       body.push(el('div', { class: 'list-label', text: '주소' }));
       body.push(el('p', { class: 'hint-line', text: draft.address }));
     }
-    body.push(el('div', { class: 'list-label', text: '층' }));
-    body.push(floorInput);
-    body.push(el('p', { class: 'asset-note', text:
-      '같은 건물 3층과 5층에 다른 헬스장이 있는 경우가 흔합니다. 층을 적어두면 ' +
-      '다른 사람이 등록한 곳과 헷갈리지 않습니다.' }));
+    /*
+     * 검색으로 왔으면 층을 묻지 않는다. 검색이 준 주소에 이미 호수가
+     * 들어 있고, 층을 사람마다 다르게 적으면(3층 / 3F / 안 적음) 같은
+     * 곳이 서로 다른 헬스장으로 갈라져서 남이 적어 둔 기구를 못 찾는다.
+     */
+    if (!draft.fromSearch) {
+      body.push(el('div', { class: 'list-label', text: '층' }));
+      body.push(floorInput);
+      body.push(el('p', { class: 'asset-note', text:
+        '같은 건물 3층과 5층에 다른 헬스장이 있는 경우가 흔합니다. 층을 적어두면 ' +
+        '다른 사람이 등록한 곳과 헷갈리지 않습니다.' }));
+    } else {
+      body.push(crowdStatus(draft.crowd));
+    }
 
     /*
      * 무엇이 남에게 보이는지 등록하기 전에 말한다.
@@ -16168,10 +16261,12 @@ var GymSearch = (function () {
       ]));
     }
 
+    var waiting = draft.fromSearch && draft.crowd && draft.crowd.loading;
     body.push(el('button', {
       type: 'button', class: 'finish',
-      text: '등록하기',
-      onclick: function () { submitGymRegister(); },
+      text: waiting ? '기구 목록 찾는 중…' : '등록하기',
+      disabled: waiting ? '' : null,
+      onclick: function () { if (!waiting) submitGymRegister(); },
     }));
 
     /*
@@ -16184,7 +16279,8 @@ var GymSearch = (function () {
      * 등록이 끝난 뒤에 "기구 볼래요?"를 모달로 묻는 것도 해 봤는데 그건
      * 더 나빴다 — 등록을 거쳐 가기만 하는 사람 모두를 한 번씩 세운다.
      */
-    openModal('헬스장 등록', '2 / 2', body);
+    // 검색으로 왔으면 한 단계뿐이다. "2 / 2"라고 하면 1단계를 건너뛴 줄 안다.
+    openModal('헬스장 등록', draft.fromSearch ? '검색에서 추가' : '2 / 2', body);
   }
 
   /** 등록 시도. 겹치는 곳이 있으면 만들지 않고 먼저 보여준다. */
@@ -16211,6 +16307,8 @@ var GymSearch = (function () {
       floor: E.parseFloor(floorText),
       location: draft.location || myLocation(),
       presetId: draft.presetId,
+      // 누가 이미 적어 둔 기구가 있으면 그걸로 시작한다.
+      equipmentIds: crowdList(draft) || undefined,
       directory: fullDirectory(),
       force: options.force,
       defer: options.defer,
@@ -16235,9 +16333,72 @@ var GymSearch = (function () {
           : ''));
     }
 
+    var adopted = crowdList(draft);
+    if (adopted && result.outcome === 'created') {
+      /*
+       * 남이 적은 목록을 내 확인으로 다시 올리지 않는다. 그대로 올리면 한
+       * 사람이 적은 것이 "두 명이 확인"이 된다 — 내가 직접 고친 뒤부터
+       * 내 확인으로 센다.
+       */
+      state.myDirectory = state.myDirectory.map(function (item) {
+        return item.id === result.entry.id ? Object.assign({}, item, { crowdAdopted: true }) : item;
+      });
+    }
+    var firstHere = draft.fromSearch && !adopted && result.outcome === 'created';
+
     state.gymDraft = null;
-    modal.close();
+    if (!firstHere) modal.close();
     useGym(E.toGymEntry(result.entry));
+
+    /*
+     * 처음 등록한 사람이면 바로 기구를 체크하게 한다. 모달을 닫지 않고
+     * 내용만 바꾼다 — 닫았다 바로 열면 닫힘 이벤트가 늦게 와서 새 내용을
+     * 지워 버린다.
+     */
+    if (firstHere) openGymEquipment({ first: true });
+  }
+
+  /** 남이 등록해 둔 기구 목록. 없으면 null. */
+  function crowdList(draft) {
+    var crowd = draft && draft.crowd;
+    return crowd && !crowd.loading && crowd.equipment && crowd.equipment.length > 0
+      ? crowd.equipment.slice()
+      : null;
+  }
+
+  /**
+   * 등록 전에 보여 주는 이 곳의 기구 상황.
+   *
+   * 누가 등록해 뒀으면 무엇이 있는지 이름으로 보여 준다 — "기구 21개"만
+   * 있으면 내가 쓰는 기구가 들어 있는지 알 수 없다.
+   */
+  function crowdStatus(crowd) {
+    crowd = crowd || { loading: true };
+    if (crowd.loading) {
+      return el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: '기구 목록' }),
+        el('div', { text: '이 헬스장을 누가 이미 등록했는지 찾는 중입니다…' }),
+      ]);
+    }
+    if (crowd.equipment && crowd.equipment.length > 0) {
+      var names = crowd.equipment.map(function (itemId) {
+        var item = E.equipmentItem(itemId);
+        return item ? item.name : itemId;
+      });
+      var shown = names.slice(0, 12).join(', ') + (names.length > 12 ? ' 외 ' + (names.length - 12) + '개' : '');
+      return el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: (crowd.people > 0 ? crowd.people + '명이' : '누군가') + ' 등록한 기구 ' + names.length + '개' }),
+        el('div', { text: shown }),
+        el('div', { class: 'hint-line', text: '이 목록을 그대로 씁니다. 다른 게 있으면 등록한 뒤 고치면 됩니다.' }),
+      ]);
+    }
+    return el('div', { class: 'notice' }, [
+      el('div', { class: 'label', text: crowd.offline ? '기구 목록' : '처음 등록하시는 곳입니다' }),
+      el('div', { text: crowd.offline
+        ? '서버에 연결돼 있지 않아 다른 분이 등록한 목록을 볼 수 없습니다. 등록한 뒤 기구를 체크해 주세요.'
+        : '아직 아무도 기구를 등록하지 않았습니다. 등록하면 바로 기구 체크 화면이 열립니다 — ' +
+          '처음 한 분이 채우면 다음 분부터는 그대로 씁니다.' }),
+    ]);
   }
 
   /**
@@ -17030,10 +17191,23 @@ var GymSearch = (function () {
     state.gymBook = E.addGym(state.gymBook, updated);
     state.gym = E.activeProfile(state.gymBook);
     state.answers.gym.equipmentIds = next.slice();
+    /*
+     * 끈 기구는 "없음"으로 기억한다.
+     *
+     * 전에는 켠 것만 올렸다. 그래서 한 번 "있음"으로 올라간 기구는 꺼도
+     * 서버에 "있음"으로 남았고, 다음 사람은 없는 기구를 받았다. 남이 적은
+     * 목록을 그대로 쓰게 하려면 그 목록이 고쳐질 수 있어야 한다.
+     *
+     * 고친 순간부터는 남의 목록이 아니라 내 확인이다(crowdAdopted 해제).
+     */
+    var removed = entry.equipmentIds.filter(function (id) { return next.indexOf(id) < 0; });
     state.myDirectory = state.myDirectory.map(function (item) {
-      return item.id === entry.id
-        ? Object.assign({}, item, { equipmentIds: next.slice() })
-        : item;
+      if (item.id !== entry.id) return item;
+      var absent = (item.absentEquipmentIds || []).filter(function (id) { return next.indexOf(id) < 0; });
+      removed.forEach(function (id) { if (absent.indexOf(id) < 0) absent.push(id); });
+      return Object.assign({}, item, {
+        equipmentIds: next.slice(), absentEquipmentIds: absent, crowdAdopted: false,
+      });
     });
 
     // 기구가 바뀌면 오늘 할 수 있는 종목이 바뀐다.
