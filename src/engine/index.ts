@@ -64,6 +64,7 @@ export * from './machine.ts';
 export * from './stackLearn.ts';
 export * from './units.ts';
 export * from './gyms.ts';
+export * from './knownGyms.ts';
 export * from './strength.ts';
 export * from './session.ts';
 export * from './shortSession.ts';

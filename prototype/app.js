@@ -10924,8 +10924,19 @@
       // 그새 다른 화면으로 갔으면 다시 그리지 않는다.
       if (state.gymDraft === draft && modal.open) renderGymRegister();
     };
+    /*
+     * 그 헬스장 사람이 직접 알려준 목록이 앱에 있으면 그것부터 쓴다. 서버에
+     * 누가 고친 목록이 있으면 그쪽이 더 새것이라 그걸 쓴다.
+     */
+    var known = E.knownGymFor({ name: draft.name, address: draft.address });
+    var fallback = function (crowd) {
+      if (crowd.equipment.length === 0 && known) {
+        return done({ loading: false, equipment: known.equipmentIds.slice(), people: 0, known: true });
+      }
+      return done(crowd);
+    };
     if (typeof Remote === 'undefined' || !Remote.configured()) {
-      return done({ loading: false, equipment: [], people: 0, offline: true });
+      return fallback({ loading: false, equipment: [], people: 0, offline: true });
     }
     var id = E.gymKey({ name: draft.name, location: draft.location, address: draft.address });
     Promise.all([
@@ -10937,7 +10948,7 @@
       var equipment = (out[0] || [])
         .map(function (row) { return row && (row.equipment_id || row.id || row); })
         .filter(function (itemId) { return typeof itemId === 'string' && known[itemId]; });
-      done({ loading: false, equipment: equipment, people: typeof out[1] === 'number' ? out[1] : 0 });
+      fallback({ loading: false, equipment: equipment, people: typeof out[1] === 'number' ? out[1] : 0 });
     });
   }
 
@@ -11090,8 +11101,6 @@
 
     result.places.forEach(function (place) { host.appendChild(placeRow(place)); });
     host.appendChild(registerButton());
-    host.appendChild(el('p', { class: 'hint-line', text:
-      '누가 이미 등록한 곳이면 그 기구 목록을 그대로 씁니다. 처음이면 등록할 때 있는 기구를 체크합니다.' }));
   }
 
   function renderSearchResults() {
@@ -11180,9 +11189,8 @@
     var body = [];
     if (options.first) {
       body.push(el('div', { class: 'notice' }, [
-        el('div', { class: 'label', text: '처음 등록하셨습니다' }),
-        el('div', { text: '있는 기구를 체크해 주세요. 카톡에 적어 둔 목록이 있으면 "목록 붙여넣기"가 ' +
-          '제일 빠릅니다. 여기 다니는 다음 분부터는 이 목록을 그대로 씁니다.' }),
+        el('div', { class: 'label', text: '기구 체크' }),
+        el('div', { text: '있는 기구를 켜 주세요. 적어 둔 목록이 있으면 "목록 붙여넣기"가 빠릅니다.' }),
       ]));
     }
     body.push(el('p', { class: 'asset-note', text:
@@ -11726,17 +11734,13 @@
       });
       var shown = names.slice(0, 12).join(', ') + (names.length > 12 ? ' 외 ' + (names.length - 12) + '개' : '');
       return el('div', { class: 'notice' }, [
-        el('div', { class: 'label', text: (crowd.people > 0 ? crowd.people + '명이' : '누군가') + ' 등록한 기구 ' + names.length + '개' }),
+        el('div', { class: 'label', text: '등록된 기구 ' + names.length + '개' }),
         el('div', { text: shown }),
-        el('div', { class: 'hint-line', text: '이 목록을 그대로 씁니다. 다른 게 있으면 등록한 뒤 고치면 됩니다.' }),
       ]);
     }
     return el('div', { class: 'notice' }, [
-      el('div', { class: 'label', text: crowd.offline ? '기구 목록' : '처음 등록하시는 곳입니다' }),
-      el('div', { text: crowd.offline
-        ? '서버에 연결돼 있지 않아 다른 분이 등록한 목록을 볼 수 없습니다. 등록한 뒤 기구를 체크해 주세요.'
-        : '아직 아무도 기구를 등록하지 않았습니다. 등록하면 바로 기구 체크 화면이 열립니다 — ' +
-          '처음 한 분이 채우면 다음 분부터는 그대로 씁니다.' }),
+      el('div', { class: 'label', text: '기구 목록 없음' }),
+      el('div', { text: '등록하면 기구 체크 화면이 열립니다.' }),
     ]);
   }
 
