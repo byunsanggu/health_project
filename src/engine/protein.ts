@@ -200,3 +200,99 @@ export function proteinRisk(week: ProteinWeek, goal: BodyGoal, losing: boolean):
     '먹는 양을 줄이기 전에 단백질부터 채우세요.'
   );
 }
+
+/* ── 끼니 예시 ─────────────────────────────────── */
+
+/**
+ * 식단표가 아니라 **"한 끼에 이 정도"의 그림.**
+ *
+ * 칼로리를 정해 주지 않는다. 그건 영양사의 일이고, 숫자를 찍어 주면
+ * 사람은 그 숫자에 맞추려고 굶는다. 여기서는 이미 계산한 단백질만 세
+ * 끼로 나눠서, 한국 사람이 실제로 먹는 조합으로 보여 준다.
+ *
+ * 주재료(고기·생선·계란) 양만 목표에 맞춰 늘리고 줄인다. 반찬까지
+ * 맞추려 들면 "두부 0.7모" 같은 말이 나온다.
+ */
+export interface MealItem {
+  food: string;
+  /** "1.5덩이", "150g", "3개" */
+  amount: string;
+  gram: number;
+}
+
+export interface MealIdea {
+  meal: '아침' | '점심' | '저녁' | '간식';
+  items: MealItem[];
+  /** 이 끼니의 단백질(g) */
+  gram: number;
+}
+
+interface MealTemplate {
+  meal: MealIdea['meal'];
+  /** 양을 조절하는 주재료 */
+  main: string;
+  /** 고정 곁들임 — [음식, 몇 번 분량] */
+  sides: readonly (readonly [string, number])[];
+  /** 주재료 상한 — 한 끼에 닭가슴살 네 덩이는 먹는 게 아니라 버티는 것이다 */
+  maxMain: number;
+}
+
+const MEAL_TEMPLATES: readonly MealTemplate[] = [
+  { meal: '아침', main: '계란', sides: [['그릭요거트', 1], ['우유', 1]], maxMain: 4 },
+  { meal: '점심', main: '돼지 목살', sides: [['밥', 1], ['두부', 1]], maxMain: 2 },
+  { meal: '저녁', main: '닭가슴살', sides: [['밥', 1], ['계란', 1]], maxMain: 2.5 },
+];
+
+function food(name: string): ProteinFood {
+  return PROTEIN_FOODS.find((item) => item.name === name) as ProteinFood;
+}
+
+/** 몇 번 분량을 사람이 읽는 말로. 음식마다 세는 단위가 다르다. */
+function amountOf(name: string, servings: number): string {
+  const n = Math.round(servings * 2) / 2;
+  const half = n === 0.5;
+  switch (name) {
+    case '계란': return `${n}개`;
+    case '닭가슴살': return `${n}덩이`;
+    case '돼지 목살':
+    case '소고기': return `${Math.round(n * 100)}g`;
+    case '두부': return n === 1 ? '반 모' : `${n / 2}모`;
+    case '밥': return n === 1 ? '한 공기' : `${n}공기`;
+    case '우유': return `${Math.round(n * 200)}ml`;
+    case '그릭요거트': return half ? '반 개' : `${n}개`;
+    case '단백질 보충제': return `${n}스쿱`;
+    case '고등어': return `${n}토막`;
+    default: return `${n}`;
+  }
+}
+
+/**
+ * 한 끼 목표에 맞춘 세 끼 예시와 간식 하나.
+ *
+ * 주재료는 0.5 단위로만 바꾼다. "계란 2.7개"는 지킬 수 없는 말이다.
+ */
+export function mealIdeas(perMeal: number): MealIdea[] {
+  if (!(perMeal > 0)) return [];
+  const ideas: MealIdea[] = MEAL_TEMPLATES.map((template) => {
+    const main = food(template.main);
+    const sides = template.sides.map(([name, servings]) => ({
+      food: name,
+      amount: amountOf(name, servings),
+      gram: Math.round(food(name).gram * servings),
+    }));
+    const sideGram = sides.reduce((sum, item) => sum + item.gram, 0);
+    const raw = (perMeal - sideGram) / main.gram;
+    const servings = Math.min(template.maxMain, Math.max(1, Math.round(raw * 2) / 2));
+    const mainItem = { food: main.name, amount: amountOf(main.name, servings), gram: Math.round(main.gram * servings) };
+    const items = [mainItem, ...sides];
+    return { meal: template.meal, items, gram: items.reduce((sum, item) => sum + item.gram, 0) };
+  });
+
+  // 간식은 고정이다. 세 끼로 모자란 날 채우는 자리라 늘리고 줄일 이유가 없다.
+  const snack = [
+    { food: '단백질 보충제', amount: amountOf('단백질 보충제', 1), gram: food('단백질 보충제').gram },
+    { food: '우유', amount: amountOf('우유', 1), gram: food('우유').gram },
+  ];
+  ideas.push({ meal: '간식', items: snack, gram: snack.reduce((sum, item) => sum + item.gram, 0) });
+  return ideas;
+}

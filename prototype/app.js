@@ -459,7 +459,8 @@
     { id: 'today', label: '오늘', icon: 'M4 7h2v10H4zM18 7h2v10h-2zM7 10h10v4H7z' },
     { id: 'volume', label: '볼륨', icon: 'M4 19h16M6 16V9M11 16V5M16 16v-6' },
     { id: 'week', label: '주간', icon: 'M4 6h16M4 12h16M4 18h9' },
-    { id: 'checkin', label: '체크인', icon: 'M5 12l4 4 10-10' },
+    // id는 그대로 둔다 — 저장된 설정에 'checkin'이 남아 있어도 같은 탭이 열려야 한다.
+    { id: 'checkin', label: '식단', icon: 'M4 11h16a8 8 0 0 1-16 0zM9 7c0-1.5 1.5-1.5 1.5-3M13.5 7c0-1.5 1.5-1.5 1.5-3' },
     { id: 'progress', label: '진행', icon: 'M4 18l5-6 4 3 7-8' },
     { id: 'gym', label: '헬스장', icon: 'M4 9v6M8 7v10M16 7v10M20 9v6M8 12h8' },
   ];
@@ -2075,9 +2076,28 @@
      * 아무 일이 안 일어났다 — 누른 사람은 앱이 고장났다고 본다.
      * 닫으면 설문의 그 자리로 되돌아가므로 잃는 것은 없다.
      */
+    /*
+     * 계정이 없으면 앱을 쓸 수 없다.
+     *
+     * 서버가 붙어 있는데 로그인이 안 돼 있으면, 설문 중이 아닌 한 로그인
+     * 화면으로 보낸다. 기록이 계정에 있어야 폰을 바꿔도 남고, 헬스장
+     * 기구 정보도 계정 단위로 모인다.
+     *
+     * 서버가 없는 빌드(로컬)에서는 막지 않는다 — 로그인할 곳이 없는데
+     * 막으면 앱을 아예 못 연다.
+     */
+    if (!onboarding && loginRequired() && !state.authOpen) {
+      state.authForm = {
+        email: Remote.email() || '', password: '',
+        mode: Remote.email() ? 'signin' : 'signup', notice: null, busy: false,
+      };
+      state.authOpen = true;
+    }
+
     var auth = state.authOpen;
     if (auth) onboarding = false;
     tabbar.hidden = onboarding || auth;
+    if (meButton) meButton.hidden = onboarding || auth;
 
     var key = viewKey();
     var moved = key !== lastViewKey;
@@ -2150,7 +2170,8 @@
     else if (state.tab === 'week') renderWeek();
     else if (state.tab === 'progress') renderProgress();
     else if (state.tab === 'gym') renderGym();
-    else renderCheckin();
+    else if (state.tab === 'me') renderMe();
+    else renderDiet();
   }
 
   /* ── 세션 요약 ─────────────────────────────────── */
@@ -3699,6 +3720,9 @@
 
     renderWarnings();
 
+    var pain = painRow();
+    if (pain) screen.appendChild(pain);
+
     /*
      * 복귀가 제일 위다. 오늘 세션의 무게를 통째로 바꾸는 이야기라,
      * 종목 목록을 보기 전에 정해져 있어야 한다.
@@ -4755,6 +4779,20 @@
   }
 
   /* ── PT 모드 ───────────────────────────────────── */
+
+  /** 서버가 있는데 로그인이 안 됐는가. 그러면 앱을 쓰기 전에 로그인부터 한다. */
+  function loginRequired() {
+    return typeof Remote !== 'undefined' && Remote.configured() && !Remote.signedIn();
+  }
+
+  var meButton = document.getElementById('me-btn');
+  if (meButton) {
+    meButton.addEventListener('click', function () {
+      state.tab = state.tab === 'me' ? 'today' : 'me';
+      if (modal.open) modal.close();
+      render();
+    });
+  }
 
   function ptOn() {
     return Boolean(state.coach && state.coach.mode === 'pt');
@@ -7663,10 +7701,17 @@
       },
     }));
 
-    screen.appendChild(el('button', {
-      type: 'button', class: 'auth-skip', text: '나중에 할게요',
-      onclick: closeAuth,
-    }));
+    /*
+     * 건너뛰기는 없다. 계정이 있어야 쓰는 앱이다 — 기록이 계정에
+     * 남아야 폰을 바꿔도 그대로이고, 헬스장 기구 정보도 계정 단위로
+     * 모인다. 이미 로그인한 사람이 계정을 바꾸러 온 경우에만 닫는 길을 둔다.
+     */
+    if (!loginRequired()) {
+      screen.appendChild(el('button', {
+        type: 'button', class: 'auth-skip', text: '닫기',
+        onclick: closeAuth,
+      }));
+    }
 
     /*
      * 서버가 앱에 박혀 있으면 이 화면으로 바로 오게 되는데, 그러면 서버를
@@ -7674,7 +7719,11 @@
      * 전에** 바꿔야 하므로 여기에도 문을 하나 둔다. 조용한 줄로 둔다 —
      * 대부분의 사람은 누를 일이 없다.
      */
-    if (Remote.baked()) {
+    /*
+     * 로그인 없이는 못 나가므로, 서버 주소를 잘못 넣은 사람이 갇히지 않게
+     * 여기서 고칠 길은 늘 둔다.
+     */
+    if (Remote.baked() || loginRequired()) {
       screen.appendChild(el('button', {
         type: 'button', class: 'auth-skip', text: '서버 설정',
         onclick: function () { state.authOpen = false; render(); openServerSettings(); },
@@ -7682,9 +7731,9 @@
     }
 
     screen.appendChild(el('p', { class: 'asset-note', text:
-      '계정 없이도 앱은 그대로 돌아갑니다. 기록은 늘 이 기기에 먼저 저장되고, ' +
-      '로그인은 그 기록을 다른 기기와 잇는 역할만 합니다. ' +
-      '건강 기록은 민감정보라 올리기 전에 동의를 받았고, 언제든 서버에서 지울 수 있습니다.' }));
+      '볼륨 코치는 계정이 있어야 쓸 수 있습니다. 기록은 이 기기에 먼저 저장되고 ' +
+      '계정으로 올라가서, 폰을 바꿔도 그대로 남습니다. ' +
+      '건강 기록은 민감정보라 올리기 전에 동의를 받고, 언제든 서버에서 지울 수 있습니다.' }));
   }
 
   function openAuth(mode) {
@@ -9754,32 +9803,122 @@
     return wrap;
   }
 
-  function renderCheckin() {
+  /**
+   * 식단 탭.
+   *
+   * 식단표를 짜 주지 않는다. 칼로리를 정해 주는 건 영양사의 일이고,
+   * 끼니마다 적게 하는 앱은 3주를 못 간다. 여기서 하는 건 셋이다 —
+   * 체중 추세, 단백질 채웠나 한 번, 그리고 그 단백질을 **세 끼에 어떻게
+   * 담는지의 예시.**
+   *
+   * 통증은 여기 없다. 통증은 오늘 처방을 바꾸는 것이라 오늘 탭에 있다.
+   */
+  function renderDiet() {
     screen.appendChild(el('div', { class: 'session-head' }, [
-      el('h2', { text: '오늘 체크인' }),
-      el('p', { class: 'meta', text: '30초면 끝납니다. 통증은 세션 구성에 바로 반영됩니다.' }),
+      el('h2', { text: '식단' }),
+      el('p', { class: 'meta', text: '체중 추세와 단백질만 봅니다. 칼로리는 정하지 않습니다.' }),
     ]));
 
     var mind = bodyCard();
     if (mind) screen.appendChild(mind);
+    var meals = mealCard();
+    if (meals) screen.appendChild(meals);
+
+    if (!mind) {
+      screen.appendChild(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: '동의가 필요합니다' }),
+        el('div', { text: '체중은 건강정보라 동의가 있어야 적을 수 있습니다. 위쪽 "내 정보"에서 확인하세요.' }),
+      ]));
+    }
+  }
+
+  /**
+   * 끼니 예시.
+   *
+   * "하루 150g"은 숫자일 뿐이고 사람은 "그래서 점심에 뭘 먹지"에서 멈춘다.
+   * 한국에서 실제로 먹는 조합으로 한 끼씩 보여 준다. 주재료 양만 목표에
+   * 맞춰 바뀐다.
+   */
+  function mealCard() {
+    if ((state.consent || []).indexOf('healthData') < 0) return null;
+    var trend = bodyTrend();
+    var weight = (trend.latest && trend.latest.kg) || (state.lifter && state.lifter.bodyweightKg) || 70;
+    var target = E.proteinTargetG(weight, bodyGoal());
+    var perMeal = E.perMealG(target);
+    var ideas = E.mealIdeas(perMeal);
+    if (ideas.length === 0) return null;
 
     var body = el('div', { class: 'sheet-body' }, []);
+    ideas.forEach(function (idea) {
+      body.appendChild(el('div', { class: 'meal-row' + (idea.meal === '간식' ? ' snack' : '') }, [
+        el('span', { class: 'meal-name', text: idea.meal }),
+        el('span', { class: 'meal-items', text: idea.items.map(function (item) {
+          return item.food + ' ' + item.amount;
+        }).join(' + ') }),
+        el('span', { class: 'meal-gram', text: '≈' + idea.gram + 'g' }),
+      ]));
+    });
+    body.appendChild(el('p', { class: 'hint-line', text:
+      '한 끼 ' + perMeal + 'g 기준입니다. 아침이 모자라면 간식으로 채웁니다. ' +
+      '숫자는 어림이고, 같은 양이면 다른 음식으로 바꿔도 됩니다.' }));
 
+    return el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '끼니 예시' }),
+        el('span', { class: 'meta', text: '하루 ' + target + 'g' }),
+      ]),
+      body,
+    ]);
+  }
+
+  /**
+   * 오늘 탭의 "아픈 데 있나요?" 한 줄.
+   *
+   * 통증은 오늘 세션의 종목을 바꾼다. 그래서 운동을 시작하기 전에 보는
+   * 자리에 둔다 — 다른 탭에 있으면 시작 버튼을 누른 뒤에야 생각난다.
+   */
+  function painRow() {
+    /*
+     * 동의가 없어도 줄은 둔다. 숨기면 통증 기록이 있다는 것도, 동의하면
+     * 쓸 수 있다는 것도 알 길이 없다.
+     */
+    var allowed = E.allows(state.consent, 'painGate');
+    var sore = allowed ? activePain() : [];
+    var label = !allowed
+      ? '동의 필요'
+      : sore.length === 0
+        ? '없음'
+        : sore.map(function (report) { return E.JOINT_LABELS_KO[report.joint] + ' ' + report.score; }).join(' · ');
+    return el('button', {
+      type: 'button', class: 'pain-check' + (sore.length > 0 ? ' sore' : ''),
+      onclick: openPainCheck,
+    }, [
+      el('span', { class: 'pain-q', text: '아픈 데 있나요?' }),
+      el('span', { class: 'pain-now', text: label }),
+      el('span', { class: 'pain-go', text: '›', 'aria-hidden': 'true' }),
+    ]);
+  }
+
+  function openPainCheck() {
+    var body = [];
     if (!E.allows(state.consent, 'painGate')) {
-      body.appendChild(el('div', { class: 'notice' }, [
+      body.push(el('div', { class: 'notice' }, [
         el('div', { class: 'label', text: '동의하지 않은 항목' }),
         el('div', { text: '통증 기록은 민감정보라 별도 동의가 필요합니다. ' +
           '동의하면 아픈 관절에 부담이 큰 종목을 자동으로 대체합니다.' }),
-        el('button', {
-          type: 'button', class: 'pick', text: '통증 기록에 동의하기',
-          onclick: function () { grantConsent('painData'); },
-        }),
       ]));
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: '통증 기록에 동의하기',
+        onclick: function () { grantConsent('painData'); openPainCheck(); },
+      }));
+      openModal('아픈 데 있나요?', '동의가 필요합니다', body);
+      return;
     }
+    body.push(el('p', { class: 'asset-note', text:
+      '3점 이상이면 그 관절 부담이 큰 종목을 바꾸고, 7점 이상이면 그 관절을 쓰는 동작을 오늘 뺍니다.' }));
 
     state.pain.forEach(function (report, i) {
-      if (!E.allows(state.consent, 'painGate')) return;
-      body.appendChild(numberRow({
+      body.push(numberRow({
         name: E.JOINT_LABELS_KO[report.joint] + ' 통증',
         value: report.score,
         min: 0,
@@ -9792,42 +9931,45 @@
           rebuildPlan();
           logPainChange(report.joint, value);
           render();
+          drawVerdicts();
         },
       }));
     });
 
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '관절 통증' }),
-        el('span', { class: 'meta', text: '0 없음 · 10 극심' }),
-      ]),
-      body,
-    ]));
-
-    var verdicts = el('div', { class: 'verdict' }, []);
-    var changed = state.session.exercises.filter(function (item) { return item.painRuling.action !== 'allow'; });
-    if (changed.length === 0) {
-      verdicts.appendChild(el('p', { text: '현재 통증 보고로 제한되는 종목이 없습니다.' }));
+    var verdicts = el('div', { class: 'verdict', id: 'pain-verdicts' }, []);
+    body.push(verdicts);
+    function drawVerdicts() {
+      verdicts.textContent = '';
+      var changed = state.session.exercises.filter(function (item) { return item.painRuling.action !== 'allow'; });
+      if (changed.length === 0) {
+        verdicts.appendChild(el('p', { text: '지금은 바뀌는 종목이 없습니다.' }));
+      }
+      changed.forEach(function (item) {
+        verdicts.appendChild(el('p', {}, [
+          el('b', { text: (item.substitutedFrom || item.exercise).name }),
+          document.createTextNode(' — ' + item.painRuling.message),
+        ]));
+      });
     }
-    changed.forEach(function (item) {
-      verdicts.appendChild(el('p', {}, [
-        el('b', { text: (item.substitutedFrom || item.exercise).name }),
-        document.createTextNode(' — ' + item.painRuling.message),
-      ]));
-    });
+    drawVerdicts();
 
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [el('h3', { text: '오늘 세션에 미친 영향' })]),
-      el('div', { class: 'sheet-body' }, [verdicts]),
+    openModal('아픈 데 있나요?', '0 없음 · 10 극심', body);
+  }
+
+  /**
+   * 내 정보 — 계정, 동의, 설치.
+   *
+   * 탭 막대에 두지 않는다. 매일 여는 곳이 아니라 가끔 찾는 곳이고, 탭
+   * 하나를 차지하면 매일 여는 탭이 하나 밀려난다. 화면 위쪽 모서리에서
+   * 연다 — 앱들이 계정을 두는 자리다.
+   */
+  function renderMe() {
+    screen.appendChild(el('div', { class: 'session-head' }, [
+      el('h2', { text: '내 정보' }),
+      el('p', { class: 'meta', text: '계정 · 동의 · 설치' }),
     ]));
-
-    screen.appendChild(el('div', { class: 'notice' }, [
-      el('div', { class: 'label', text: '판정 기준' }),
-      el('div', { text: '3점 이상이면 해당 관절 부담이 큰 종목을 대체하고, 7점 이상이면 그 관절을 쓰는 동작을 오늘 세션에서 제외합니다.' }),
-    ]));
-
-    renderPrivacy();
     renderAppStatus();
+    renderPrivacy();
   }
 
   /** 동의 하나를 추가로 받는다. 기록도 같이 갱신한다. */
@@ -11566,11 +11708,11 @@
   }
 
   /**
-   * 가입 — 건너뛸 수 있고, 건너뛰어도 아무것도 잃지 않는다.
+   * 가입 — 건너뛸 수 없다.
    *
-   * 여기서 가입하지 않아도 앱은 전부 돌아간다. 기록은 이 기기에 남고,
-   * 나중에 체크인 탭에서 언제든 계정을 만들 수 있다. 그 사실을 감추지
-   * 않고 그대로 적는다 — 감추면 가입률은 오르겠지만 그건 속인 것이다.
+   * 볼륨 코치는 계정이 있어야 쓰는 앱이다. 기록이 계정에 있어야 폰을
+   * 바꿔도 남고, 헬스장 기구 정보도 계정 단위로 모인다. 그 사실을 화면
+   * 맨 아래에 그대로 적는다 — 벽을 세우면서 이유를 감추면 그건 속인 것이다.
    */
   function stepAccount() {
     var form = state.onboarding.account || (state.onboarding.account = {
@@ -11647,8 +11789,16 @@
          * 로그인하면 그때 올라간다.
          */
         if (result && result.needsConfirm) {
-          pushLog('계정', '가입했습니다. 받은 메일의 확인 링크를 누른 뒤 ' +
-            '체크인 탭에서 로그인하시면 기록이 올라갑니다.');
+          /*
+           * 계정이 있어야 쓰는 앱이라 여기서 기다려야 한다. 그 사실을 화면에
+           * 말한다 — 아무 말 없이 같은 화면이 다시 뜨면 고장 난 줄 안다.
+           * 카카오·구글은 확인 메일이 없으니 그쪽을 같이 권한다.
+           */
+          form.mode = 'signin';
+          form.notice = { bad: false, text:
+            '확인 메일을 보냈습니다. 메일의 링크를 누른 뒤 여기서 로그인하세요. ' +
+            '기다리기 싫으시면 위의 카카오·구글로 바로 시작할 수 있습니다.' };
+          pushLog('계정', '가입했습니다. 확인 메일의 링크를 누른 뒤 로그인하세요.');
         } else {
           pushLog('계정', '<b>' + form.email.trim() + '</b>' +
             (signUp ? '으로 가입했습니다.' : '으로 로그인했습니다.'));
