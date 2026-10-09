@@ -152,6 +152,18 @@
     } catch (err) { /* 데스크톱에는 진동이 없다 */ }
   }
 
+  /**
+   * 실제 사용자 판인가.
+   *
+   * 개발 판(내 컴퓨터 · ?dev)은 10주치 예시 기록을 깔고 시나리오를 바꿔 가며
+   * 엔진을 보여 준다. 실제 사용자에게 그 예시 기록이 보이면 안 된다 — 가입한
+   * 첫날 "9주 연속"이 뜨고, 가짜 기록으로 첫 중량(데드 100kg)을 뽑게 된다.
+   * 실제 판은 저장소의 진짜 기록과 진짜 오늘 날짜만 쓴다.
+   * 개발 판에서도 ?live를 붙이면 실제 판으로 돈다 — 그 길을 시험하려고.
+   */
+  var LIVE = /[?&]live\b/.test(location.search) ||
+    !(/^(localhost|127\.0\.0\.1)$/.test(location.hostname) || /[?&]dev\b/.test(location.search));
+
   /** 헬스장 지하에는 신호가 없다. 로컬이 원본이고 서버는 나중에 붙는다. */
   var storage = E.createStore(browserAdapter(), { namespace: 'volume-coach.proto' });
 
@@ -210,6 +222,10 @@
         sessionClosed: state.sessionClosed,
         liftCursor: state.liftCursor,
         dayOverride: state.dayOverride,
+        // 위의 오늘치들이 어느 날 것인지. 실제 판은 날이 바뀌면 버린다.
+        todayDate: state.todayDate,
+        block: state.block,
+        blockNews: state.blockNews,
         liftOrder: state.liftOrder,
         supersets: state.supersets,
         restBand: state.restBand,
@@ -300,6 +316,26 @@
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
       state.blockHistory = settings.blockHistory || ['hypertrophy'];
+      state.block = settings.block || null;
+      state.blockNews = settings.blockNews || null;
+
+      /*
+       * 실제 판에서 날이 바뀌었으면 오늘치는 버린다. 어제 하다 만 세트,
+       * 어제 고른 날, 어제 붙인 종목이 오늘 화면에 남아 있으면 안 된다.
+       * 기록은 이미 저장소의 세션으로 남아 있다.
+       */
+      var sameDay = !LIVE || settings.todayDate === todayISO();
+      if (!sameDay) {
+        state.started = false;
+        state.sessionClosed = false;
+        state.liftCursor = 0;
+        state.dayOverride = null;
+        state.liftOrder = null;
+        state.supersets = [];
+        state.extraLifts = [];
+        state.cardioToday = [];
+        state.sessionStartedAt = null;
+      }
       state.gymBook = settings.gymBook || E.createGymBook({
         id: 'my-gym', name: '내 헬스장', equipmentIds: saved.answers.gym.equipmentIds.slice(),
       });
@@ -335,7 +371,21 @@
       state.machineSame = sameAnswer && sameAnswer.date === state.todayDate
         ? (sameAnswer.ids || {}) : {};
 
-      var todaySets = Array.isArray(settings.todaySets) ? settings.todaySets : [];
+      var todaySets = sameDay && Array.isArray(settings.todaySets) ? settings.todaySets : [];
+      /*
+       * 실제 판은 저장소의 오늘 세션이 원본이다. 날짜가 없던 예전 저장이거나
+       * 다른 기기에서 오늘 먼저 했으면 거기서 되살린다 — 안 그러면 다음 세트를
+       * 칠 때 오늘 세션이 그 한 세트로 덮인다.
+       */
+      if (LIVE && todaySets.length === 0) {
+        var storedToday = (saved.sessions || []).filter(function (item) {
+          return !item.deleted && item.date === todayISO();
+        })[0];
+        if (storedToday) {
+          todaySets = (storedToday.sets || []).slice();
+          if (state.cardioToday.length === 0 && storedToday.cardio) state.cardioToday = storedToday.cardio.slice();
+        }
+      }
       if (todaySets.length > 0) {
         state.todaySets = todaySets;
 
@@ -408,6 +458,19 @@
     'hanging-leg-raise': 0, 'cable-lateral-raise': 7, 'conventional-deadlift': 130,
   };
 
+  /**
+   * 추정할 근거가 하나도 없을 때의 첫 중량.
+   *
+   * 맨몸 종목은 0이다 — 풀업의 0을 "없음"으로 읽어 40kg을 붙이던 적이 있다.
+   * 실제 판은 예시 표(중급 남성 78kg 기준)를 쓰지 않는다. 그 표로는 처음 온
+   * 사람에게 레그프레스 160kg이 나온다. 가볍게 시작해 첫 세트에서 맞춘다.
+   */
+  function fallbackWeight(exercise) {
+    if (exercise.equipment === 'bodyweight') return 0;
+    if (LIVE) return 20;
+    return Object.prototype.hasOwnProperty.call(START_WEIGHT, exercise.id) ? START_WEIGHT[exercise.id] : 40;
+  }
+
   function trainingDays() {
     return WEEK_OFFSETS[state.program.daysPerWeek] || WEEK_OFFSETS[4];
   }
@@ -417,8 +480,20 @@
     return trainingDays().length - 1;
   }
 
-  /** 프로그램상 오늘 할 차례. */
+  /**
+   * 프로그램상 오늘 할 차례.
+   *
+   * 실제 판은 요일이 아니라 이번 주에 몇 번 했는지로 정한다. 월 · 수 · 금이
+   * 아니라 화 · 목 · 토에 오는 사람도 A → B → C로 간다.
+   */
   function scheduledTemplateIndex() {
+    if (LIVE) {
+      var done = {};
+      state.history.forEach(function (item) {
+        if (item.date >= state.monday && item.date < state.todayDate && (item.sets || []).length > 0) done[item.date] = true;
+      });
+      return Object.keys(done).length % state.program.templates.length;
+    }
     return todayIndex() % state.program.templates.length;
   }
 
@@ -633,6 +708,13 @@
      */
     dayOverride: null,
     /*
+     * 지금 블록. { startedOn: 시작 주 월요일, number, deloadOn }
+     * 실제 판에서만 쓴다 — 몇 주차인지, 언제 디로드인지를 날짜로 센다.
+     */
+    block: null,
+    /* 방금 바뀐 블록 — 무엇이 왜 바뀌었는지. 확인하면 비운다. */
+    blockNews: null,
+    /*
      * 오늘 어느 기계로 하는가. { 종목id: 기계열쇠 }
      *
      * 하루짜리다. 같은 사람이 어제는 안쪽 기계, 오늘은 창가 기계를 쓸 수
@@ -833,6 +915,7 @@
 
   /** 시나리오를 적용하고 오늘 세션까지 다시 만든다. */
   function loadScenario(id, silent) {
+    if (LIVE) { loadLive(); return; }
     var scenario = SCENARIOS.filter(function (s) { return s.id === id; })[0];
     state.scenario = id;
     state.pain = JOINTS.map(function (joint) {
@@ -873,6 +956,100 @@
     }
   }
 
+  /**
+   * 실제 판 — 저장소의 진짜 기록과 진짜 오늘로 다시 짠다.
+   *
+   * 하루 안에서 다시 불리면(기구를 바꿨다, 체중을 고쳤다) 오늘 한 세트는
+   * 그대로 둔다. 날이 바뀌었을 때만 오늘치를 비운다.
+   */
+  function loadLive() {
+    var today = todayISO();
+    var newDay = state.todayDate !== today;
+    state.scenario = 'normal';
+    state.todayDate = today;
+    state.monday = E.weekStart(today);
+
+    var saved = storage.load();
+    // 오늘 기록은 todaySets에 있다. 이력에는 어제까지만 둔다 — 두 번 세지 않게.
+    state.history = saved.sessions.filter(function (item) { return !item.deleted && item.date < today; });
+    state.checkIns = (saved.checkIns || []).filter(function (item) { return !item.deleted; });
+
+    var todayCheck = state.checkIns.filter(function (item) { return item.date === today; })[0];
+    var reported = {};
+    ((todayCheck && todayCheck.pain) || []).forEach(function (item) { reported[item.joint] = item.score; });
+    state.pain = JOINTS.map(function (joint) { return { joint: joint, score: reported[joint] || 0 }; });
+    state.sleepHours = (todayCheck && todayCheck.sleepHours) || 7;
+    state.soreness = (todayCheck && todayCheck.soreness) || 3;
+
+    stopRest();
+    if (newDay) {
+      state.todaySets = [];
+      state.machinePick = {};
+      state.machineSame = {};
+      state.coachSaid = {};
+      state.coachLine = null;
+      state.summary = null;
+      state.sessionStartedAt = null;
+    }
+    state.busyEquipment = [];
+    state.occupied = {};
+
+    if (!state.block) {
+      state.block = E.startTraining({
+        today: today,
+        level: state.lifter.level,
+        monthsTraining: state.answers && state.answers.monthsTraining,
+      });
+    }
+    advanceBlockIfDone();
+    state.lifter.level = state.block.level;
+
+    refreshLandmarks();
+    rebuildPlan();
+    rebuildSession();
+  }
+
+  /**
+   * 블록이 끝났으면 다음 블록으로.
+   *
+   * 출석과 기록을 보고 단계를 올릴지 정하고(올려도 절반씩), 메인은 두고
+   * 보조 종목을 바꿔서 프로그램을 다시 짠다. 무엇이 왜 바뀌었는지는
+   * 오늘 화면 맨 위에 한 번 보여 준다.
+   */
+  function advanceBlockIfDone() {
+    var status = E.blockStatus(state.block, state.todayDate);
+    if (status.stage !== 'done') return;
+
+    var before = state.block;
+    var review = E.reviewBlock({
+      block: before,
+      history: state.history,
+      today: state.todayDate,
+      daysPerWeek: state.program.daysPerWeek,
+      bodyweightKg: state.lifter.bodyweightKg,
+    });
+    var available = E.availableExercises(state.answers.gym.equipmentIds).map(function (item) { return item.id; });
+    var next = E.nextBlock(before, review, state.todayDate, available);
+    var built = E.programOptionsFor(next, state.program);
+    var program = E.buildProgram(state.answers, built.level, built.options);
+
+    state.blockNews = {
+      number: next.number,
+      decision: review.decision,
+      reasons: review.reasons,
+      changes: E.programChanges(state.program, program),
+      introduced: E.newlyIntroduced(before, next),
+      level: next.level,
+      to: next.transition ? next.transition.to : null,
+    };
+    state.program = program;
+    state.block = next;
+    // 다른 날 · 다른 순서는 지난 프로그램 기준이었다.
+    state.dayOverride = null;
+    state.liftOrder = null;
+    state.supersets = [];
+  }
+
   /** 8주 이상 쌓이면 개인 관측으로 랜드마크를 옮긴다. */
   function refreshLandmarks() {
     var result = E.personalizeLandmarks({
@@ -887,6 +1064,7 @@
   }
 
   function rebuildPlan() {
+    if (LIVE) { rebuildLivePlan(); return; }
     state.plan = E.planNextWeek({
       sessions: state.history,
       checkIns: state.checkIns,
@@ -897,6 +1075,42 @@
       lastWeekPhase: 'accumulation',
       painfulMuscles: painfulMuscles(),
     });
+  }
+
+  /**
+   * 실제 판의 이번 주 처방.
+   *
+   * 블록의 몇 주차인지는 날짜로 센다. 첫 블록 첫 주는 비교할 기록이 없으니
+   * 템플릿 그대로, 단계의 시작 RIR로. 축적 주를 다 채운 주는 디로드다.
+   * 피로가 먼저 쌓여 엔진이 디로드를 내리면 그 주를 디로드로 적어 둔다.
+   */
+  function rebuildLivePlan() {
+    var status = E.blockStatus(state.block, state.todayDate);
+    var profile = E.levelProfile(state.block.level);
+    var started = state.history.some(function (item) { return item.date >= state.block.startedOn; });
+
+    if (status.stage === 'accumulation' && status.weekInBlock === 1 && !started && state.block.number === 1) {
+      state.plan = Object.assign(coldStartPlan(state.monday), { targetRir: profile.startingRir });
+      return;
+    }
+
+    var plan = E.planNextWeek({
+      sessions: state.history,
+      checkIns: state.checkIns,
+      index: index,
+      landmarks: state.landmarks,
+      asOf: E.addDays(state.monday, -1),
+      weekInBlock: Math.max(0, status.weekInBlock - 1),
+      accumulationWeeks: status.accumulationWeeks,
+      lastWeekPhase: status.weekInBlock === 1 && state.block.number > 1 ? 'deload' : 'accumulation',
+      painfulMuscles: painfulMuscles(),
+      forceDeload: status.stage === 'deload',
+    });
+    if (plan.phase === 'deload' && status.stage === 'accumulation') {
+      state.block = E.markDeload(state.block, state.todayDate);
+    }
+    if (plan.phase !== 'deload') plan.weekInBlock = status.weekInBlock;
+    state.plan = plan;
   }
 
   /**
@@ -969,6 +1183,16 @@
     return { name: template.name, slots: slots };
   }
 
+  /**
+   * 실제 판에서는 단계의 시작 RIR부터 한 주에 하나씩 조인다.
+   * 초보에게 1주차부터 RIR 2를 주면 자세가 먼저 무너진다.
+   */
+  function liveRir(styleRir) {
+    if (!LIVE || !state.block) return styleRir;
+    var start = E.levelProfile(state.block.level).startingRir;
+    return Math.max(styleRir, start - (state.plan.weekInBlock - 1));
+  }
+
   function rebuildSession() {
     // 통증이 바뀌어 세션을 다시 짜도, 이미 끝낸 세트까지 되돌리면 안 된다.
     var previous = {};
@@ -978,7 +1202,7 @@
     var styled = Object.assign({}, state.plan, {
       targetRir: state.plan.phase === 'deload'
         ? state.plan.targetRir
-        : E.targetRirFor(state.style, state.plan.weekInBlock),
+        : liveRir(E.targetRirFor(state.style, state.plan.weekInBlock)),
     });
     state.plan = styled;
 
@@ -1153,7 +1377,7 @@
         sets: item.sets.map(function (set, order) {
           var kept = (previous[item.exercise.id] || [])[order];
           if (kept && kept.done) return kept;
-          var planned = set.weightKg === null ? (START_WEIGHT[item.exercise.id] || 40) : set.weightKg;
+          var planned = set.weightKg === null ? fallbackWeight(item.exercise) : set.weightKg;
           if (learning[item.exercise.id]) {
             planned = item.loading
               ? E.nearestLoadable(planned * E.COACH_LOAD_RATIO, item.loading, 'down')
@@ -3731,6 +3955,9 @@
     ]));
 
     renderWarnings();
+
+    var news = blockNewsCard();
+    if (news) screen.appendChild(news);
 
     var pain = painRow();
     if (pain) screen.appendChild(pain);
@@ -7278,7 +7505,7 @@
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
     'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'voiceRate', 'autoCount',
-    'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise',
+    'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
   ];
 
   function sharedSettings() {
@@ -7510,7 +7737,10 @@
         if (result.pulled > 0) {
           // 받은 기록을 화면에 반영한다.
           var saved = storage.load().sessions.filter(function (item) { return !item.deleted; });
-          state.history = saved;
+          // 실제 판의 이력은 어제까지다 — 오늘 것은 todaySets가 들고 있다.
+          state.history = LIVE
+            ? saved.filter(function (item) { return item.date < state.todayDate; })
+            : saved;
           /*
            * 오늘 기록을 다른 기기에서 먼저 했을 수 있다. 그 날의 유산소를
            * 화면에도 되살려야 "올라갔는데 안 보인다"가 안 생긴다.
@@ -10348,13 +10578,174 @@
    * 하나를 차지하면 매일 여는 탭이 하나 밀려난다. 화면 위쪽 모서리에서
    * 연다 — 앱들이 계정을 두는 자리다.
    */
+  /**
+   * 새 블록이 시작됐다는 카드.
+   *
+   * 프로그램이 말없이 바뀌면 "앱이 맘대로 바꿨다"가 된다. 트레이너가 블록을
+   * 바꿀 때 하는 말을 그대로 한다 — 이번 블록 어땠고, 그래서 무엇을 바꿨는지.
+   */
+  function blockNewsCard() {
+    var news = state.blockNews;
+    if (!news) return null;
+    var title = {
+      promote: '한 단계 올라갑니다 — 조금씩',
+      complete: E.LEVEL_LABELS_KO[news.level] + ' 볼륨으로 다 올라왔습니다',
+      hold: '지금 볼륨으로 한 블록 더 다집니다',
+      stay: '같은 단계로 한 블록 더 합니다',
+      top: '같은 단계로 새 블록을 시작합니다',
+    }[news.decision] || '새 블록을 시작합니다';
+
+    var body = [el('div', { class: 'label', text: news.number + '번째 블록 시작' }),
+      el('div', { class: 'block-news-title', text: title })];
+    news.reasons.forEach(function (line) { body.push(el('p', { class: 'hint-line', text: line })); });
+    if (news.introduced) {
+      body.push(el('p', { class: 'hint-line', text:
+        '새로 배우는 종목: ' + news.introduced + '. 첫 2주는 무게보다 자세입니다 — 가볍게, 끝까지 같은 모양으로.' }));
+    }
+    if (news.changes.length > 0) {
+      body.push(el('div', { class: 'list-label', text: '바뀐 종목 · 메인은 그대로' }));
+      news.changes.slice(0, 8).forEach(function (change) {
+        body.push(el('div', { class: 'delta' }, [
+          el('span', { text: change.from }),
+          el('span', { class: 'num flat', text: '→' }),
+          el('span', { text: change.to }),
+        ]));
+      });
+    }
+    body.push(el('button', {
+      type: 'button', class: 'pick block-news-ok', text: '확인',
+      onclick: function () { state.blockNews = null; persist(); render(); },
+    }));
+    return el('div', { class: 'notice block-news' }, body);
+  }
+
+  /** 지금 프로그램이 어디쯤인지 — 단계 · 블록 · 주차. */
+  function programSummaryLine() {
+    var parts = [state.program.name, E.LEVEL_LABELS_KO[state.lifter.level]];
+    if (state.block) {
+      var status = E.blockStatus(state.block, state.todayDate || todayISO());
+      parts.push(state.block.number + '번째 블록');
+      parts.push(status.stage === 'deload' ? '디로드 주' : status.weekInBlock + ' / ' + status.accumulationWeeks + '주차');
+      if (state.block.transition) parts.push(E.LEVEL_LABELS_KO[state.block.transition.to] + '로 옮기는 중');
+    }
+    return parts.join(' · ');
+  }
+
+  function programCard() {
+    var answers = state.answers || {};
+    var picks = (answers.priorities || []).map(function (muscle) { return E.MUSCLE_LABELS_KO[muscle]; });
+    var mains = Object.keys(answers.mainLifts || {}).map(function (pattern) {
+      var exercise = index.get(answers.mainLifts[pattern]);
+      return exercise ? exercise.name : null;
+    }).filter(Boolean);
+    return el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [el('h3', { text: '프로그램' })]),
+      el('div', { class: 'sheet-body' }, [
+        el('p', { class: 'hint-line', text: programSummaryLine() }),
+        el('p', { class: 'hint-line', text: '약점 부위: ' + (picks.length ? picks.join(', ') : '없음') }),
+        el('p', { class: 'hint-line', text: '고른 메인 종목: ' + (mains.length ? mains.join(', ') : '자동') }),
+        el('button', {
+          type: 'button', class: 'pick program-tune', text: '약점 · 메인 종목 고르기',
+          onclick: openProgramTune,
+        }),
+      ]),
+    ]);
+  }
+
+  /**
+   * 약점 부위와 메인 종목을 고르는 칸.
+   * 설문 마지막 화면과 내 정보에서 같이 쓴다.
+   */
+  function programTuneBody(draft, redraw) {
+    var body = [];
+    body.push(el('div', { class: 'list-label', text: '약점 부위 (최대 ' + E.MAX_PRIORITIES + '개)' }));
+    body.push(el('p', { class: 'hint-line', text:
+      '고른 부위는 자리를 하나 더 받고 메인 바로 뒤에 합니다. 대신 덜 중요한 고립 종목이 빠질 수 있습니다.' }));
+    body.push(el('div', { class: 'chip-row tune-priorities' }, E.PRIORITY_MUSCLES.map(function (muscle) {
+      var on = draft.priorities.indexOf(muscle) >= 0;
+      return el('button', {
+        type: 'button', class: 'pick', 'aria-pressed': String(on), text: E.MUSCLE_LABELS_KO[muscle],
+        onclick: function () {
+          if (on) draft.priorities = draft.priorities.filter(function (item) { return item !== muscle; });
+          else if (draft.priorities.length < E.MAX_PRIORITIES) draft.priorities = draft.priorities.concat([muscle]);
+          else draft.priorities = draft.priorities.slice(1).concat([muscle]);
+          redraw();
+        },
+      });
+    })));
+
+    body.push(el('div', { class: 'list-label', text: '메인 종목' }));
+    body.push(el('p', { class: 'hint-line', text:
+      '자주 하던 종목이 있으면 고르세요. 그 동작의 첫 메인 자리에 들어갑니다. 고르지 않으면 앱이 고릅니다.' }));
+    var equipmentIds = state.answers.gym.equipmentIds;
+    E.MAIN_LIFT_PATTERNS.forEach(function (pattern) {
+      var options = E.mainLiftOptions(equipmentIds, pattern);
+      if (options.length === 0) return;
+      var current = draft.mainLifts[pattern] || null;
+      var chips = [el('button', {
+        type: 'button', class: 'pick', 'aria-pressed': String(!current), text: '자동',
+        onclick: function () { delete draft.mainLifts[pattern]; redraw(); },
+      })].concat(options.map(function (exercise) {
+        return el('button', {
+          type: 'button', class: 'pick', 'aria-pressed': String(current === exercise.id), text: exercise.name,
+          onclick: function () { draft.mainLifts[pattern] = exercise.id; redraw(); },
+        });
+      }));
+      body.push(el('div', { class: 'tune-pattern' }, [
+        el('div', { class: 'tune-pattern-name', text: E.MAIN_LIFT_LABELS_KO[pattern] }),
+        el('div', { class: 'chip-row' }, chips),
+      ]));
+    });
+    return body;
+  }
+
+  function tuneDraft() {
+    return {
+      priorities: (state.answers.priorities || []).slice(),
+      mainLifts: Object.assign({}, state.answers.mainLifts || {}),
+    };
+  }
+
+  /** 지금 블록 조건 그대로 프로그램을 다시 짠다. 보조 종목은 바꾸지 않는다. */
+  function rebuildProgramInPlace() {
+    var level = state.block ? state.block.level : state.lifter.level;
+    var options = state.block ? E.programOptionsFor(state.block).options : {};
+    state.program = E.buildProgram(state.answers, level, options);
+    state.dayOverride = null;
+    state.liftOrder = null;
+    state.supersets = [];
+  }
+
+  function openProgramTune() {
+    var draft = tuneDraft();
+    var draw = function () {
+      var body = programTuneBody(draft, draw);
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: '이대로 다시 짜기',
+        onclick: function () {
+          state.answers.priorities = draft.priorities;
+          state.answers.mainLifts = draft.mainLifts;
+          rebuildProgramInPlace();
+          modal.close();
+          loadScenario(state.scenario, true);
+          pushLog('프로그램', '약점 부위와 메인 종목으로 다시 짰습니다. 블록과 주차는 그대로입니다.');
+          persist();
+          render();
+        },
+      }));
+      openModal('프로그램 다듬기', null, body);
+    };
+    draw();
+  }
+
   function renderMe() {
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('h2', { text: '내 정보' }),
-      el('p', { class: 'meta', text: '계정 · 동의 · 설치' }),
+      el('p', { class: 'meta', text: '계정 · 프로그램 · 동의 · 설치' }),
     ]));
     var account = accountCard();
     if (account) screen.appendChild(account);
+    screen.appendChild(programCard());
     renderAppStatus();
     renderPrivacy();
     /*
@@ -12506,6 +12897,9 @@
     state.gym = result.gym;
     state.lifter = result.lifter;
     state.program = result.program;
+    // 새 설문이면 새 출발이다. 블록은 오늘부터 센다.
+    state.block = null;
+    state.blockNews = null;
     state.onboarding = { active: false, step: 0, result: result };
     state.tab = 'today';
     loadScenario('normal');
@@ -13114,6 +13508,32 @@
 
   function stepResult() {
     var result = E.runOnboarding(state.answers);
+
+    /*
+     * 중급부터는 약점과 메인 종목을 여기서 고른다. 초보는 아직 고를 것이
+     * 없다 — 약점이 보이려면 기본부터 몇 달은 해 봐야 한다.
+     */
+    if (result.level.level !== 'beginner') {
+      var draft = {
+        priorities: (state.answers.priorities || []).slice(),
+        mainLifts: Object.assign({}, state.answers.mainLifts || {}),
+      };
+      var apply = function () {
+        state.answers.priorities = draft.priorities;
+        state.answers.mainLifts = draft.mainLifts;
+        render();
+      };
+      screen.appendChild(el('details', { class: 'sheet tune-sheet' }, [
+        el('summary', { class: 'sheet-head' }, [
+          el('h3', { text: '약점 · 메인 종목 (선택)' }),
+          el('span', { class: 'meta', text: (draft.priorities.length || Object.keys(draft.mainLifts).length) ? '고름' : '건너뛰어도 됩니다' }),
+        ]),
+        el('div', { class: 'sheet-body' }, programTuneBody(draft, apply)),
+      ]));
+      if (draft.priorities.length || Object.keys(draft.mainLifts).length) {
+        screen.lastChild.setAttribute('open', '');
+      }
+    }
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [

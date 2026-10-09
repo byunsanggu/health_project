@@ -310,3 +310,57 @@ describe('buildProgram — 트레이너 기준 점검', () => {
     assert.ok(result.notes.some((note) => note.includes('중급으로 다시 짤 때')));
   });
 });
+
+describe('buildProgram — 약점 부위 · 메인 종목', () => {
+  const setsFor = (program: ReturnType<typeof buildProgram>, muscle: 'calves' | 'sideDelt') => program.templates
+    .flatMap((template) => template.slots)
+    .filter((slot) => (exerciseById(slot.exerciseId)!.contribution[muscle] ?? 0) >= 0.85)
+    .reduce((sum, slot) => sum + slot.sets, 0);
+
+  it('약점 부위는 자리와 세트를 더 받는다', () => {
+    const plain = buildProgram(answers({ daysPerWeek: 5 }), 'advanced');
+    const focused = buildProgram(answers({ daysPerWeek: 5, priorities: ['calves', 'sideDelt'] }), 'advanced');
+    assert.ok(setsFor(focused, 'calves') > setsFor(plain, 'calves'));
+    assert.ok(setsFor(focused, 'sideDelt') > setsFor(plain, 'sideDelt'));
+    assert.ok(focused.weeklyTargets.calves! > plain.weeklyTargets.calves!);
+  });
+
+  it('약점 부위를 넣어도 세션 상한은 지킨다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 3, priorities: ['biceps', 'calves'] }), 'intermediate');
+    for (const template of program.templates) {
+      assert.ok(template.slots.reduce((sum, slot) => sum + slot.sets, 0) <= 16, template.name);
+    }
+  });
+
+  it('약점은 두 개까지만 받는다', () => {
+    const two = buildProgram(answers({ priorities: ['calves', 'biceps'] }), 'intermediate');
+    const three = buildProgram(answers({ priorities: ['calves', 'biceps', 'traps'] }), 'intermediate');
+    assert.deepEqual(three, two);
+  });
+
+  it('고른 메인 종목이 그 동작의 메인 자리에 들어간다', () => {
+    const program = buildProgram(
+      answers({ daysPerWeek: 4, mainLifts: { horizontalPush: 'incline-barbell-press' }, gym: { equipmentIds: [...COMMON_EQUIPMENT_IDS, 'bench-incline'] } }),
+      'intermediate',
+    );
+    const first = program.templates[0]!.slots[0]!;
+    assert.equal(first.exerciseId, 'incline-barbell-press');
+    assert.equal(first.role, 'primary');
+  });
+
+  it('메인 자리가 없는 분할이면 그날 맨 앞 메인으로 올리고 다른 하체 메인은 내린다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 5, mainLifts: { hinge: 'conventional-deadlift' } }), 'advanced');
+    const day = program.templates.find((template) => template.slots.some((slot) => slot.exerciseId === 'conventional-deadlift'))!;
+    assert.equal(day.slots[0]!.exerciseId, 'conventional-deadlift');
+    assert.equal(day.slots[0]!.role, 'primary');
+    const heavyLower = day.slots.filter((slot) => slot.role === 'primary' &&
+      ['squat', 'hinge', 'lunge'].includes(exerciseById(slot.exerciseId)!.pattern));
+    assert.equal(heavyLower.length, 1);
+  });
+
+  it('헬스장에 없는 종목을 골랐으면 무시한다', () => {
+    const minimal = ['floor', 'barbell-set', 'power-rack', 'bench-flat'];
+    const program = buildProgram(answers({ gym: { equipmentIds: minimal }, mainLifts: { squat: 'hack-squat' } }), 'intermediate');
+    assert.ok(!exercisesOf(program).some((exercise) => exercise.id === 'hack-squat'));
+  });
+});

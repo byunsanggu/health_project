@@ -32,6 +32,8 @@ export interface SessionSlot {
   /** 템플릿 기준 세트 수. 주간 처방에 따라 조정된다. */
   sets: number;
   repRange: RepRange;
+  /** 프로그램에서 맡은 역할. 블록이 바뀔 때 보조 · 고립만 바꿔 끼우는 데 쓴다. */
+  role?: 'primary' | 'accessory' | 'isolation';
 }
 
 export interface SessionTemplate {

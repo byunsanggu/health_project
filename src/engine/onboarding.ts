@@ -9,6 +9,7 @@ import type { Phase, WeeklyPlan } from './mesocycle.ts';
 import type {
   Exercise,
   Joint,
+  LandmarksByMuscle,
   MovementPattern,
   MuscleGroup,
   PainReport,
@@ -39,6 +40,64 @@ export interface OnboardingAnswers {
   gym: GymSelection;
   /** 기존 통증·부상 */
   pain?: readonly PainReport[];
+  /**
+   * 약점 부위 — 최대 2개. 자리를 하나씩 더 주고 주간 목표를 MEV와 MAV 사이로 올린다.
+   * 경력이 쌓일수록 "다 똑같이"가 아니라 "모자란 곳을 먼저"가 된다.
+   */
+  priorities?: readonly MuscleGroup[];
+  /** 직접 고른 메인 종목. 그 동작의 첫 메인 자리에 들어간다. */
+  mainLifts?: Partial<Record<MainLiftPattern, string>>;
+}
+
+/** 메인 종목을 직접 고를 수 있는 동작. */
+export type MainLiftPattern =
+  | 'squat' | 'hinge' | 'horizontalPush' | 'verticalPush' | 'verticalPull' | 'horizontalPull';
+
+export const MAIN_LIFT_PATTERNS: readonly MainLiftPattern[] = [
+  'squat', 'hinge', 'horizontalPush', 'verticalPush', 'verticalPull', 'horizontalPull',
+];
+
+export const MAIN_LIFT_LABELS_KO: Record<MainLiftPattern, string> = {
+  squat: '스쿼트',
+  hinge: '힌지(데드리프트류)',
+  horizontalPush: '가슴 프레스',
+  verticalPush: '어깨 프레스',
+  verticalPull: '풀다운 · 풀업',
+  horizontalPull: '로우',
+};
+
+/** 그 동작의 메인이 주로 겨누는 부위 — 딥스(삼두)가 어깨 프레스 후보로 뜨지 않게. */
+const MAIN_LIFT_MUSCLES: Record<MainLiftPattern, readonly MuscleGroup[]> = {
+  squat: ['quads'],
+  hinge: ['hamstrings', 'glutes'],
+  horizontalPush: ['chest'],
+  verticalPush: ['frontDelt'],
+  verticalPull: ['back'],
+  horizontalPull: ['back'],
+};
+
+export const MAX_PRIORITIES = 2;
+
+/** 약점으로 고를 수 있는 부위 — 따로 자리를 줄 수 있는 것만. */
+export const PRIORITY_MUSCLES: readonly MuscleGroup[] = [
+  'chest', 'back', 'sideDelt', 'rearDelt', 'biceps', 'triceps',
+  'quads', 'hamstrings', 'glutes', 'calves', 'traps',
+];
+
+/**
+ * 블록이 바뀔 때 프로그램을 다시 짜는 조건.
+ * 처음 짤 때는 비워 둔다.
+ */
+export interface ProgramOptions {
+  /** 지난 블록 프로그램 — 보조 · 고립 종목은 다른 것으로 바꿔 끼운다 */
+  previous?: TrainingProgram;
+  /** 다음 단계로 넘어가는 중이면 그 단계 쪽으로 볼륨을 얼마나 옮길지 (0~1) */
+  blendToward?: { level: TrainingLevel; amount: number };
+  /**
+   * 지금까지 배운 기술 종목. 정해져 있으면 여기 없는 기술 종목은 뒤로 미룬다 —
+   * 초보에서 올라온 사람에게 바벨 종목을 한 블록에 하나씩 들이는 장치다.
+   */
+  technicalIntroduced?: readonly string[];
 }
 
 export interface TrainingProgram {
@@ -75,6 +134,8 @@ interface SlotSpec {
   muscle: MuscleGroup;
   role: SlotRole;
   patterns?: MovementPattern[];
+  /** 약점 부위로 더한 자리 */
+  priority?: boolean;
 }
 
 interface DayBlueprint {
@@ -291,11 +352,17 @@ const LOW_VALUE_ISOLATION: ReadonlySet<string> = new Set([
   'triceps-kickback', 'concentration-curl', 'front-raise',
 ]);
 
+/** 기본값으로 고를 이유가 적은 변형. 원하면 메인 종목으로 직접 고르면 된다. */
+const SPECIALTY_LIFTS: ReadonlySet<string> = new Set(['decline-barbell-press', 'floor-press']);
+
+const HEAVY_PULLS: ReadonlySet<string> = new Set(['conventional-deadlift', 'sumo-deadlift', 'trap-bar-deadlift']);
+
 function scoreExercise(
   exercise: Exercise,
   slot: SlotSpec,
   level: TrainingLevel,
   sessionLoad: ReadonlyMap<Joint, number>,
+  introduced?: readonly string[],
 ): number {
   const contribution = exercise.contribution[slot.muscle] ?? 0;
   let score = contribution * 10;
@@ -315,10 +382,16 @@ function scoreExercise(
   if (level === 'beginner') {
     const stress = Object.values(exercise.jointStress).reduce((sum, value) => sum + value, 0);
     score -= Math.min(2, stress * 0.4);
-    if (TECHNICAL_LIFTS.has(exercise.id)) score -= 6;
   }
 
+  // 아직 안 배운 기술 종목은 뒤로 — 초보이거나, 초보에서 올라오는 중이면.
+  const learning = introduced ?? (level === 'beginner' ? [] : undefined);
+  if (learning && TECHNICAL_LIFTS.has(exercise.id) && !learning.includes(exercise.id)) score -= 6;
+
   if (LOW_VALUE_ISOLATION.has(exercise.id)) score -= 3;
+  if (SPECIALTY_LIFTS.has(exercise.id)) score -= 2;
+  // 데드리프트는 메인 자리에서 무겁게 하는 종목이다. 8~12회 보조로 돌리지 않는다.
+  if (slot.role !== 'primary' && HEAVY_PULLS.has(exercise.id)) score -= 5;
 
   // 한 세션에서 같은 관절에 최대 부하를 거듭 싣지 않는다.
   // 스쿼트 · RDL 뒤에 데드리프트를 붙이는 구성이 이 규칙 없이 자주 나온다.
@@ -367,13 +440,14 @@ function pickExercise(
   used: ReadonlySet<string>,
   level: TrainingLevel,
   sessionLoad: ReadonlyMap<Joint, number>,
+  introduced?: readonly string[],
 ): Exercise | undefined {
   const minContribution = slot.role === 'accessory' ? 0.5 : 0.85;
 
   return pool
     .filter((exercise) => !used.has(exercise.id))
     .filter((exercise) => (exercise.contribution[slot.muscle] ?? 0) >= minContribution)
-    .map((exercise) => ({ exercise, score: scoreExercise(exercise, slot, level, sessionLoad) }))
+    .map((exercise) => ({ exercise, score: scoreExercise(exercise, slot, level, sessionLoad, introduced) }))
     .sort((a, b) => b.score - a.score)[0]?.exercise;
 }
 
@@ -386,16 +460,132 @@ function addJointLoad(load: Map<Joint, number>, exercise: Exercise): void {
 
 /* ── 프로그램 생성 ─────────────────────────────────────────── */
 
-export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): TrainingProgram {
+/** 상체 · 하체 갈래 — 약점 자리를 어느 날에 붙일지 고를 때 쓴다. */
+const LOWER_MUSCLES: ReadonlySet<MuscleGroup> = new Set(['quads', 'hamstrings', 'glutes', 'calves']);
+
+/** 큰 부위는 보조 자리(8~12회 복합)로, 작은 부위는 고립 자리로 더한다. */
+const PRIORITY_SLOT: Partial<Record<MuscleGroup, SlotSpec>> = {
+  chest: { muscle: 'chest', role: 'accessory', patterns: ['horizontalPush', 'isolation'] },
+  back: { muscle: 'back', role: 'accessory', patterns: ['verticalPull', 'horizontalPull'] },
+  quads: { muscle: 'quads', role: 'accessory', patterns: ['squat', 'lunge', 'isolation'] },
+  hamstrings: { muscle: 'hamstrings', role: 'isolation' },
+  glutes: { muscle: 'glutes', role: 'accessory', patterns: ['hinge', 'lunge'] },
+};
+
+/**
+ * 약점 부위에 자리를 더한다.
+ *
+ * 그 부위를 이미 하는 날을 먼저 고르고, 같은 갈래(상체 · 하체)의 날 중
+ * 종목이 적은 날 순서로 최대 두 날에 붙인다. 자리는 메인 종목 바로 뒤 —
+ * 현장에서 약점은 힘이 남아 있을 때 먼저 한다.
+ */
+function withPriorities(blueprints: readonly DayBlueprint[], priorities: readonly MuscleGroup[]): DayBlueprint[] {
+  // 항상 사본을 돌려준다 — 아래에서 자리를 고쳐 쓰는데 원본 분할표는 건드리면 안 된다.
+  const days = blueprints.map((day) => ({ name: day.name, slots: [...day.slots] }));
+
+  for (const muscle of priorities.slice(0, MAX_PRIORITIES)) {
+    const lower = LOWER_MUSCLES.has(muscle);
+    const candidates = days
+      .map((day, index) => ({
+        index,
+        direct: day.slots.some((slot) => slot.muscle === muscle),
+        region: day.slots.some((slot) => LOWER_MUSCLES.has(slot.muscle) === lower && slot.muscle !== 'abs'),
+        size: day.slots.length,
+      }))
+      .filter((item) => item.direct || item.region)
+      // 이미 그 부위를 하는 날 중에서도 그 부위 종목이 적은 날로 — 한 날에
+      // 레터럴 레이즈 세 가지가 몰리지 않게.
+      .map((item) => ({ ...item, already: days[item.index]!.slots.filter((slot) => slot.muscle === muscle).length }))
+      .sort((a, b) => Number(b.direct) - Number(a.direct) || a.already - b.already || a.size - b.size);
+
+    for (const { index } of candidates.slice(0, Math.min(2, days.length))) {
+      const day = days[index]!;
+      const spec: SlotSpec = { ...(PRIORITY_SLOT[muscle] ?? { muscle, role: 'isolation' }), priority: true };
+      const afterPrimary = day.slots.reduce((at, slot, i) => (slot.role === 'primary' ? i + 1 : at), 0);
+      day.slots.splice(afterPrimary, 0, spec);
+    }
+  }
+  return days;
+}
+
+/** 두 단계의 랜드마크 사이. 단계를 한 번에 건너뛰지 않으려고 쓴다. */
+function blendLandmarks(
+  from: LandmarksByMuscle,
+  to: LandmarksByMuscle,
+  amount: number,
+): LandmarksByMuscle {
+  const t = Math.min(1, Math.max(0, amount));
+  const out = {} as LandmarksByMuscle;
+  for (const muscle of MUSCLE_GROUPS) {
+    const a = from[muscle];
+    const b = to[muscle];
+    out[muscle] = {
+      mev: Math.round(a.mev + (b.mev - a.mev) * t),
+      mav: Math.round(a.mav + (b.mav - a.mav) * t),
+      mrv: Math.round(a.mrv + (b.mrv - a.mrv) * t),
+    };
+  }
+  return out;
+}
+
+/**
+ * 메인 종목으로 고를 수 있는 것 — 그 헬스장에서 되고, 그 동작인 복합 종목.
+ */
+export function mainLiftOptions(
+  equipmentIds: readonly string[],
+  pattern: MainLiftPattern,
+): Exercise[] {
+  const muscles = MAIN_LIFT_MUSCLES[pattern];
+  return availableExercises(equipmentIds, EXERCISES)
+    .filter((exercise) => exercise.pattern === pattern)
+    .filter((exercise) => muscles.some((muscle) => (exercise.contribution[muscle] ?? 0) >= 0.7))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+}
+
+export function buildProgram(
+  answers: OnboardingAnswers,
+  level: TrainingLevel,
+  options: ProgramOptions = {},
+): TrainingProgram {
   const profile = levelProfile(level);
   const days = Math.min(7, Math.max(1, Math.round(answers.daysPerWeek)));
-  const blueprints = SPLITS[days] ?? SPLITS[4]!;
-  const landmarks = landmarksFor(level);
+  const priorities = (answers.priorities ?? [])
+    .filter((muscle) => PRIORITY_MUSCLES.includes(muscle))
+    .slice(0, MAX_PRIORITIES);
+  const blueprints = withPriorities(SPLITS[days] ?? SPLITS[4]!, priorities);
+  const landmarks = options.blendToward
+    ? blendLandmarks(landmarksFor(level), landmarksFor(options.blendToward.level), options.blendToward.amount)
+    : landmarksFor(level);
+  const introduced = options.technicalIntroduced;
+
+  // 약점 부위는 MEV가 아니라 MEV와 MAV 사이를 겨눈다.
+  const targetFor = (muscle: MuscleGroup): number => {
+    const landmark = landmarks[muscle];
+    return priorities.includes(muscle) ? Math.round((landmark.mev + landmark.mav) / 2) : landmark.mev;
+  };
 
   // 그 헬스장에서 가능하고, 기존 통증으로 막히지 않는 종목만 후보로 둔다.
   const pain = answers.pain ?? [];
   const pool = availableExercises(answers.gym.equipmentIds, EXERCISES).filter(
     (exercise) => screenExercise(exercise, pain).action !== 'stop',
+  );
+
+  // 직접 고른 메인 종목. 그 헬스장에서 되는 것만 받는다.
+  const pinned = new Map<MainLiftPattern, Exercise>();
+  for (const pattern of MAIN_LIFT_PATTERNS) {
+    const id = answers.mainLifts?.[pattern];
+    const exercise = id ? pool.find((item) => item.id === id) : undefined;
+    if (exercise) pinned.set(pattern, exercise);
+  }
+  const reserved = new Set([...pinned.values()].map((exercise) => exercise.id));
+
+  // 지난 블록의 보조 · 고립 종목 — 이번 블록에서는 다른 것으로 바꿔 끼운다.
+  const rotateOut = new Set(
+    (options.previous?.templates ?? [])
+      .flatMap((template) => template.slots)
+      // 역할이 없던 예전 프로그램은 반복 범위로 가린다 — 메인은 8회 아래에서 시작한다.
+      .filter((slot) => (slot.role ?? (slot.repRange.min >= 8 ? 'accessory' : 'primary')) !== 'primary')
+      .map((slot) => slot.exerciseId),
   );
 
   // 부위별로 주에 몇 개의 슬롯이 배정되는지 먼저 센다 — 세트 수 계산의 분모다.
@@ -406,29 +596,86 @@ export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): 
     }
   }
 
+  /*
+   * 고른 메인 종목이 들어갈 자리 — 그 동작의 첫 메인 자리, 없으면 그 동작을
+   * 받는 첫 자리. 주 5회 분할처럼 힌지가 보조 자리에만 있는 날도 있다.
+   */
+  const pinSlot = new Map<string, Exercise>();
+  for (const [pattern, exercise] of pinned) {
+    const find = (primaryOnly: boolean): string | undefined => {
+      for (let d = 0; d < blueprints.length; d += 1) {
+        const slots = blueprints[d]!.slots;
+        for (let i = 0; i < slots.length; i += 1) {
+          const slot = slots[i]!;
+          const fits = primaryOnly
+            ? slot.role === 'primary' && slot.patterns?.[0] === pattern
+            : slot.patterns?.includes(pattern) === true;
+          if (fits && (exercise.contribution[slot.muscle] ?? 0) >= 0.5) return `${d}:${i}`;
+        }
+      }
+      return undefined;
+    };
+    let at = find(true);
+    if (!at) {
+      /*
+       * 메인 자리가 없으면 보조 자리를 메인으로 올린다. 고른 종목은 그 사람의
+       * 메인이다 — 8~12회 보조로 돌리면 고른 의미가 없다. 대신 그날의 다른
+       * 하체 메인은 보조로 내린다. 하루에 무거운 하체 복합은 하나다.
+       */
+      at = find(false);
+      if (at) {
+        const [d, i] = at.split(':').map(Number) as [number, number];
+        const day = blueprints[d]!;
+        const lowerCompound = (slot: SlotSpec) =>
+          (slot.patterns ?? []).some((item) => item === 'squat' || item === 'hinge' || item === 'lunge');
+        const promotedIsLower = lowerCompound(day.slots[i]!);
+        const promoted: SlotSpec = { ...day.slots[i]!, role: 'primary' };
+        const rest = day.slots
+          .filter((_, index) => index !== i)
+          .map((slot): SlotSpec =>
+            promotedIsLower && slot.role === 'primary' && lowerCompound(slot) ? { ...slot, role: 'accessory' } : slot);
+        // 메인은 그날 맨 앞 — 힘이 제일 남아 있을 때 한다.
+        day.slots = [promoted, ...rest];
+        at = `${d}:0`;
+      }
+    }
+    if (at && !pinSlot.has(at)) pinSlot.set(at, exercise);
+  }
+
   const weeklyTargets: Partial<Record<MuscleGroup, number>> = {};
   const usedThisWeek = new Set<string>();
 
   // 1단계 — 종목부터 전부 고른다. 세트 수는 주 전체를 본 뒤에 정해야
   // 로우가 이두에, 프레스가 삼두에 이미 준 볼륨을 뺄 수 있다.
   type Picked = { slot: SlotSpec; exercise: Exercise; sets: number };
-  const week: Picked[][] = blueprints.map((day) => {
+  const week: Picked[][] = blueprints.map((day, dayIndex) => {
     const usedToday = new Set<string>();
     const sessionLoad = new Map<Joint, number>();
     const picked: Picked[] = [];
 
-    for (const slot of day.slots) {
-      // 주 안에서 종목이 겹치지 않게 하되, 후보가 마르면 재사용을 허용한다.
-      const exercise =
-        pickExercise(slot, pool, new Set([...usedToday, ...usedThisWeek]), level, sessionLoad) ??
-        pickExercise(slot, pool, usedToday, level, sessionLoad);
-      if (!exercise) continue;
+    day.slots.forEach((slot, slotIndex) => {
+      const mine = pinSlot.get(`${dayIndex}:${slotIndex}`);
+
+      let exercise: Exercise | undefined;
+      if (mine && !usedToday.has(mine.id)) {
+        exercise = mine;
+      } else {
+        // 주 안에서 종목이 겹치지 않게 하되, 후보가 마르면 재사용을 허용한다.
+        // 보조 · 고립 자리는 지난 블록 종목을 먼저 피한다.
+        const base = new Set([...usedToday, ...usedThisWeek, ...reserved]);
+        const fresh = slot.role === 'primary' ? base : new Set([...base, ...rotateOut]);
+        exercise =
+          pickExercise(slot, pool, fresh, level, sessionLoad, introduced) ??
+          pickExercise(slot, pool, base, level, sessionLoad, introduced) ??
+          pickExercise(slot, pool, usedToday, level, sessionLoad, introduced);
+      }
+      if (!exercise) return;
 
       usedToday.add(exercise.id);
       usedThisWeek.add(exercise.id);
       addJointLoad(sessionLoad, exercise);
       picked.push({ slot, exercise, sets: 0 });
-    }
+    });
     return picked;
   });
 
@@ -441,7 +688,7 @@ export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): 
   // 2단계 — 복합 종목. 부위의 주간 MEV를 그 부위 자리 수로 나눈다.
   for (const item of all) {
     if (item.slot.role === 'isolation') continue;
-    const target = landmarks[item.slot.muscle].mev;
+    const target = targetFor(item.slot.muscle);
     const divisor = Math.max(1, slotCount.get(item.slot.muscle) ?? 1);
     const { floor, cap } = setRange(item.slot.role);
     item.sets = clamp(Math.ceil(target / divisor), floor, cap);
@@ -466,19 +713,19 @@ export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): 
   for (const item of all) {
     if (item.slot.role !== 'isolation') continue;
     const muscle = item.slot.muscle;
-    const remaining = landmarks[muscle].mev - (indirect.get(muscle) ?? 0);
+    const remaining = targetFor(muscle) - (indirect.get(muscle) ?? 0);
     const { floor, cap } = setRange('isolation');
     item.sets = clamp(Math.ceil(remaining / Math.max(1, isolationCount.get(muscle) ?? 1)), floor, cap);
   }
 
-  for (const item of all) weeklyTargets[item.slot.muscle] = landmarks[item.slot.muscle].mev;
+  for (const item of all) weeklyTargets[item.slot.muscle] = targetFor(item.slot.muscle);
 
   // 4단계 — 세션이 길면 이미 넉넉한 부위부터 한 세트씩 덜어낸다.
   // 순서대로 고립 종목을 깎으면 정작 모자란 측면 삼각근 · 이두가 먼저 잘린다.
   // 메인 종목은 다른 걸 다 깎아도 넘칠 때만 손댄다.
   const limit = sessionSetCap(days, level);
   const surplus = (muscle: MuscleGroup): number => {
-    const mev = landmarks[muscle].mev;
+    const mev = targetFor(muscle);
     let volume = 0;
     for (const item of all) {
       const value = item.exercise.contribution[muscle] ?? 0;
@@ -486,17 +733,37 @@ export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): 
     }
     return mev > 0 ? volume / mev : Number.POSITIVE_INFINITY;
   };
-  const passes: { roles: SlotRole[]; overOnly: boolean }[] = [
+  // 약점 자리는 마지막까지 지킨다 — 그걸 깎으면 고른 의미가 없다.
+  const passes: { roles: SlotRole[]; overOnly: boolean; priority: boolean }[] = [
     // 먼저 MEV를 넘긴 부위만 — 메인 종목이라도 넘치는 쪽을 먼저 깎는다.
-    { roles: ['primary', 'accessory', 'isolation'], overOnly: true },
-    { roles: ['isolation', 'accessory'], overOnly: false },
-    { roles: ['primary'], overOnly: false },
+    { roles: ['primary', 'accessory', 'isolation'], overOnly: true, priority: false },
+    { roles: ['isolation', 'accessory'], overOnly: false, priority: false },
+    { roles: ['primary'], overOnly: false, priority: false },
+    { roles: ['primary', 'accessory', 'isolation'], overOnly: false, priority: true },
   ];
+  const total = (picked: readonly Picked[]) => picked.reduce((sum, item) => sum + item.sets, 0);
   for (const picked of week) {
-    for (const { roles, overOnly } of passes) {
-      while (picked.reduce((sum, item) => sum + item.sets, 0) > limit) {
+    for (const { roles, overOnly, priority } of passes) {
+      /*
+       * 약점 자리까지 깎기 전에, 다 깎았는데도 넘치면 약점이 아닌 고립 종목을
+       * 통째로 뺀다. 약점을 넣으면 덜 중요한 것 하나가 빠지는 게 맞다 —
+       * 현장에서도 시간은 그대로고 순서만 바뀐다.
+       */
+      if (priority) {
+        while (total(picked) > limit) {
+          const drop = picked
+            .map((item, index) => ({ item, index, surplus: surplus(item.slot.muscle) }))
+            .filter((entry) => entry.item.slot.role === 'isolation' && !entry.item.slot.priority)
+            .sort((a, b) => b.surplus - a.surplus)[0];
+          if (!drop) break;
+          picked.splice(drop.index, 1);
+          all.splice(all.indexOf(drop.item), 1);
+        }
+      }
+      while (total(picked) > limit) {
         const candidate = picked
           .filter((item) => roles.includes(item.slot.role) && item.sets > ROLE_SETS[item.slot.role].floor)
+          .filter((item) => priority || !item.slot.priority)
           .map((item) => ({ item, surplus: surplus(item.slot.muscle) }))
           .filter((entry) => !overOnly || entry.surplus > 1)
           .sort((a, b) => b.surplus - a.surplus || b.item.sets - a.item.sets)[0];
@@ -515,6 +782,7 @@ export function buildProgram(answers: OnboardingAnswers, level: TrainingLevel): 
         exerciseId: item.exercise.id,
         sets: item.sets,
         repRange: repRangeForGoals(item.slot.role, answers.goals),
+        role: item.slot.role,
       })),
     };
   });

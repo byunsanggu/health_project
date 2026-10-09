@@ -67,6 +67,11 @@ export interface PlanInput {
   lastWeekPhase?: Phase;
   /** RIR 신고 보정값. 볼륨 집계와 빈도 판정에 함께 적용한다 */
   rirOffset?: number;
+  /**
+   * 블록 일정상 디로드 주. 피로 신호와 상관없이 디로드로 짠다 —
+   * 축적 주를 다 채웠으면 몸이 괜찮다고 느껴도 한 주 덜어낸다.
+   */
+  forceDeload?: boolean;
 }
 
 /**
@@ -101,7 +106,7 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
   // 디로드를 연달아 두 번 하지 않는다. 쉬는 목적은 훈련으로 돌아가는 것이고,
   // 한 주 쉰 뒤에도 신호가 남아 있다면 그건 볼륨이 아니라 다른 문제다.
   const justDeloaded = input.lastWeekPhase === 'deload';
-  const phase: Phase = fatigue.deloadRecommended && !justDeloaded ? 'deload' : 'accumulation';
+  const phase: Phase = input.forceDeload || (fatigue.deloadRecommended && !justDeloaded) ? 'deload' : 'accumulation';
   const nextWeekInBlock = phase === 'deload' ? 0 : input.weekInBlock + 1;
 
   const lastWeekSessions = sessionsInWeek(input.sessions, input.asOf);

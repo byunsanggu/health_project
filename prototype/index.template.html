@@ -2288,6 +2288,17 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ── 블록 · 프로그램 다듬기 ─────────────────────── */
+.block-news { border-left-color: var(--accent); gap: 5px; }
+.block-news-title { font-weight: 600; font-size: 14px; }
+.block-news .delta { font-size: 12px; }
+.block-news-ok { justify-self: end; margin-top: 4px; }
+.tune-pattern { display: grid; gap: 5px; margin-bottom: 8px; }
+.tune-pattern-name { font-size: 12px; font-weight: 600; }
+.tune-sheet > summary { cursor: pointer; list-style: none; }
+.tune-sheet > summary::-webkit-details-marker { display: none; }
+.program-tune { justify-self: start; margin-top: 4px; }
 </style>
 
 <div class="wrap">
