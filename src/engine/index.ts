@@ -43,6 +43,7 @@ export * from './streak.ts';
 export * from './tier.ts';
 export * from './bodyTrend.ts';
 export * from './protein.ts';
+export * from './meals.ts';
 export * from './coach.ts';
 export * from './setupGuide.ts';
 export * from './nudge.ts';

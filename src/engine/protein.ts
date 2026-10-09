@@ -56,12 +56,27 @@ export function proteinTargetG(bodyweightKg: number, goal: BodyGoal): number {
 
 /* ── 감 잡기 ───────────────────────────────────── */
 
+/**
+ * 못 먹는 이유로 거르는 꼬리표.
+ *
+ * 채식은 따로 두지 않는다 — 고기·생선 꼬리표를 다 거르면 그게 채식이다.
+ */
+export type FoodTag = 'egg' | 'dairy' | 'seafood' | 'pork' | 'beef' | 'chicken' | 'soy' | 'grain';
+
 export interface ProteinFood {
   name: string;
   /** 한 번에 먹는 양 */
   serving: string;
   /** 그만큼에 들어 있는 단백질(g) */
   gram: number;
+  tags?: readonly FoodTag[];
+  /**
+   * 단백질 g당 값이 싼 편인가 (1 싸다 · 2 보통 · 3 비싸다).
+   *
+   * 원 단위로 적지 않는다. 물가는 매달 바뀌어서 "100g 1,200원"이라고
+   * 적어 두면 반년 뒤엔 틀린 숫자다. 서로 비교한 순서는 잘 안 바뀐다.
+   */
+  cost?: 1 | 2 | 3;
 }
 
 /**
@@ -72,18 +87,25 @@ export interface ProteinFood {
  * 생기면 그날부터 앱 없이도 맞춘다.
  */
 export const PROTEIN_FOODS: readonly ProteinFood[] = [
-  { name: '닭가슴살', serving: '100g 한 덩이', gram: 23 },
-  { name: '계란', serving: '1개', gram: 6 },
-  { name: '소고기', serving: '100g', gram: 21 },
-  { name: '돼지 목살', serving: '100g', gram: 20 },
-  { name: '고등어', serving: '한 토막', gram: 20 },
-  { name: '참치캔', serving: '작은 캔 1개', gram: 25 },
-  { name: '두부', serving: '반 모', gram: 12 },
-  { name: '우유', serving: '200ml', gram: 6 },
-  { name: '그릭요거트', serving: '1개', gram: 10 },
-  { name: '단백질 보충제', serving: '1스쿱', gram: 24 },
-  { name: '검은콩', serving: '한 줌', gram: 12 },
-  { name: '밥', serving: '한 공기', gram: 6 },
+  // 앞의 둘은 proteinHint가 순서로 꺼내 쓴다. 자리를 바꾸지 않는다.
+  { name: '닭가슴살', serving: '100g 한 덩이', gram: 23, tags: ['chicken'], cost: 1 },
+  { name: '계란', serving: '1개', gram: 6, tags: ['egg'], cost: 1 },
+  { name: '소고기', serving: '100g', gram: 21, tags: ['beef'], cost: 3 },
+  { name: '돼지 목살', serving: '100g', gram: 20, tags: ['pork'], cost: 2 },
+  { name: '고등어', serving: '한 토막', gram: 20, tags: ['seafood'], cost: 2 },
+  { name: '참치캔', serving: '작은 캔 1개', gram: 25, tags: ['seafood'], cost: 1 },
+  { name: '두부', serving: '반 모', gram: 12, tags: ['soy'], cost: 1 },
+  { name: '우유', serving: '200ml', gram: 6, tags: ['dairy'], cost: 1 },
+  { name: '그릭요거트', serving: '1개', gram: 10, tags: ['dairy'], cost: 2 },
+  // 유청 단백질 기준이다. 식물성 보충제도 있지만 흔한 쪽으로 거른다.
+  { name: '단백질 보충제', serving: '1스쿱', gram: 24, tags: ['dairy'], cost: 2 },
+  { name: '검은콩', serving: '한 줌', gram: 12, tags: ['soy'], cost: 1 },
+  { name: '밥', serving: '한 공기', gram: 6, tags: ['grain'], cost: 1 },
+  { name: '두유', serving: '200ml', gram: 7, tags: ['soy'], cost: 1 },
+  { name: '돼지 앞다리', serving: '100g', gram: 20, tags: ['pork'], cost: 1 },
+  { name: '닭다리살', serving: '100g', gram: 19, tags: ['chicken'], cost: 1 },
+  { name: '연어', serving: '100g', gram: 22, tags: ['seafood'], cost: 3 },
+  { name: '낫토', serving: '1팩', gram: 8, tags: ['soy'], cost: 1 },
 ];
 
 /**
@@ -199,100 +221,4 @@ export function proteinRisk(week: ProteinWeek, goal: BodyGoal, losing: boolean):
     '체중은 빠지는데 단백질이 모자란 주입니다. 이 조합이 근육을 깎습니다 — ' +
     '먹는 양을 줄이기 전에 단백질부터 채우세요.'
   );
-}
-
-/* ── 끼니 예시 ─────────────────────────────────── */
-
-/**
- * 식단표가 아니라 **"한 끼에 이 정도"의 그림.**
- *
- * 칼로리를 정해 주지 않는다. 그건 영양사의 일이고, 숫자를 찍어 주면
- * 사람은 그 숫자에 맞추려고 굶는다. 여기서는 이미 계산한 단백질만 세
- * 끼로 나눠서, 한국 사람이 실제로 먹는 조합으로 보여 준다.
- *
- * 주재료(고기·생선·계란) 양만 목표에 맞춰 늘리고 줄인다. 반찬까지
- * 맞추려 들면 "두부 0.7모" 같은 말이 나온다.
- */
-export interface MealItem {
-  food: string;
-  /** "1.5덩이", "150g", "3개" */
-  amount: string;
-  gram: number;
-}
-
-export interface MealIdea {
-  meal: '아침' | '점심' | '저녁' | '간식';
-  items: MealItem[];
-  /** 이 끼니의 단백질(g) */
-  gram: number;
-}
-
-interface MealTemplate {
-  meal: MealIdea['meal'];
-  /** 양을 조절하는 주재료 */
-  main: string;
-  /** 고정 곁들임 — [음식, 몇 번 분량] */
-  sides: readonly (readonly [string, number])[];
-  /** 주재료 상한 — 한 끼에 닭가슴살 네 덩이는 먹는 게 아니라 버티는 것이다 */
-  maxMain: number;
-}
-
-const MEAL_TEMPLATES: readonly MealTemplate[] = [
-  { meal: '아침', main: '계란', sides: [['그릭요거트', 1], ['우유', 1]], maxMain: 4 },
-  { meal: '점심', main: '돼지 목살', sides: [['밥', 1], ['두부', 1]], maxMain: 2 },
-  { meal: '저녁', main: '닭가슴살', sides: [['밥', 1], ['계란', 1]], maxMain: 2.5 },
-];
-
-function food(name: string): ProteinFood {
-  return PROTEIN_FOODS.find((item) => item.name === name) as ProteinFood;
-}
-
-/** 몇 번 분량을 사람이 읽는 말로. 음식마다 세는 단위가 다르다. */
-function amountOf(name: string, servings: number): string {
-  const n = Math.round(servings * 2) / 2;
-  const half = n === 0.5;
-  switch (name) {
-    case '계란': return `${n}개`;
-    case '닭가슴살': return `${n}덩이`;
-    case '돼지 목살':
-    case '소고기': return `${Math.round(n * 100)}g`;
-    case '두부': return n === 1 ? '반 모' : `${n / 2}모`;
-    case '밥': return n === 1 ? '한 공기' : `${n}공기`;
-    case '우유': return `${Math.round(n * 200)}ml`;
-    case '그릭요거트': return half ? '반 개' : `${n}개`;
-    case '단백질 보충제': return `${n}스쿱`;
-    case '고등어': return `${n}토막`;
-    default: return `${n}`;
-  }
-}
-
-/**
- * 한 끼 목표에 맞춘 세 끼 예시와 간식 하나.
- *
- * 주재료는 0.5 단위로만 바꾼다. "계란 2.7개"는 지킬 수 없는 말이다.
- */
-export function mealIdeas(perMeal: number): MealIdea[] {
-  if (!(perMeal > 0)) return [];
-  const ideas: MealIdea[] = MEAL_TEMPLATES.map((template) => {
-    const main = food(template.main);
-    const sides = template.sides.map(([name, servings]) => ({
-      food: name,
-      amount: amountOf(name, servings),
-      gram: Math.round(food(name).gram * servings),
-    }));
-    const sideGram = sides.reduce((sum, item) => sum + item.gram, 0);
-    const raw = (perMeal - sideGram) / main.gram;
-    const servings = Math.min(template.maxMain, Math.max(1, Math.round(raw * 2) / 2));
-    const mainItem = { food: main.name, amount: amountOf(main.name, servings), gram: Math.round(main.gram * servings) };
-    const items = [mainItem, ...sides];
-    return { meal: template.meal, items, gram: items.reduce((sum, item) => sum + item.gram, 0) };
-  });
-
-  // 간식은 고정이다. 세 끼로 모자란 날 채우는 자리라 늘리고 줄일 이유가 없다.
-  const snack = [
-    { food: '단백질 보충제', amount: amountOf('단백질 보충제', 1), gram: food('단백질 보충제').gram },
-    { food: '우유', amount: amountOf('우유', 1), gram: food('우유').gram },
-  ];
-  ideas.push({ meal: '간식', items: snack, gram: snack.reduce((sum, item) => sum + item.gram, 0) });
-  return ideas;
 }

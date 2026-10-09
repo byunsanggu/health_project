@@ -190,6 +190,7 @@
         machinePound: state.machinePound,
         coach: state.coach,
         machineSettings: state.machineSettings,
+        diet: state.diet,
         comeback: state.comeback,
         comebackDeclined: state.comebackDeclined,
         /*
@@ -321,6 +322,7 @@
         ? { mode: settings.coach.mode === 'pt' ? 'pt' : 'solo', style: settings.coach.style || 'calm' }
         : { mode: 'solo', style: 'calm' };
       state.machineSettings = settings.machineSettings || {};
+      state.diet = E.normalizeDiet(settings.diet);
       var sameAnswer = settings.machineSame;
       state.machineSame = sameAnswer && sameAnswer.date === state.todayDate
         ? (sameAnswer.ids || {}) : {};
@@ -648,6 +650,8 @@
      * 헬스장에서 다들 쳐다본다. 오늘 화면에서 고른다.
      */
     coach: { mode: 'solo', style: 'calm' },
+    /** 끼니 예시를 사람에 맞추는 것 — 못 먹는 것, 예산, 평일 점심 */
+    diet: { avoid: [], budget: 'normal', lunch: 'cook' },
     /** 기계 세팅 ("시트 4 · 등받이 2"). 헬스장|종목|기계 → 글 */
     machineSettings: {},
     /** 지금 코치가 한 말. 소리가 안 나는 기기에서도 읽을 수 있게 화면에 띄운다 */
@@ -9842,33 +9846,140 @@
   function mealCard() {
     if ((state.consent || []).indexOf('healthData') < 0) return null;
     var trend = bodyTrend();
+    var goal = bodyGoal();
     var weight = (trend.latest && trend.latest.kg) || (state.lifter && state.lifter.bodyweightKg) || 70;
-    var target = E.proteinTargetG(weight, bodyGoal());
+    var target = E.proteinTargetG(weight, goal);
     var perMeal = E.perMealG(target);
-    var ideas = E.mealIdeas(perMeal);
-    if (ideas.length === 0) return null;
+    var today = isoOf(new Date());
+    var day = E.planMeals({ perMeal: perMeal, prefs: state.diet, date: today, goal: goal });
+    if (day.meals.length === 0) return null;
 
     var body = el('div', { class: 'sheet-body' }, []);
-    ideas.forEach(function (idea) {
-      body.appendChild(el('div', { class: 'meal-row' + (idea.meal === '간식' ? ' snack' : '') }, [
+
+    /*
+     * 나에게 맞추는 칸을 맨 위에 둔다. 계란을 못 먹는 사람이 계란 네 개를
+     * 먼저 보면 그 아래는 안 읽는다.
+     */
+    body.appendChild(el('button', {
+      type: 'button', class: 'diet-prefs', onclick: openDietSettings,
+    }, [
+      el('span', { text: dietSummary() }),
+      el('span', { class: 'pain-go', text: '바꾸기 ›' }),
+    ]));
+
+    /*
+     * 저울이 말하는 양 조정. 칼로리 숫자 대신 "밥 반 공기" 단위로만
+     * 말한다 — 공식은 그 사람의 몸을 모르지만 저울은 안다.
+     */
+    var advice = E.portionAdvice(trend, goal);
+    if (advice) {
+      body.appendChild(el('p', { class: 'portion-advice ' + advice.direction, text: advice.text }));
+    }
+
+    day.meals.forEach(function (idea) {
+      var label = idea.items.map(function (item) {
+        return item.amount ? item.food + ' ' + item.amount : item.food;
+      }).join(' + ');
+      var row = el('div', { class: 'meal-row' + (idea.meal === '간식' ? ' snack' : '') }, [
         el('span', { class: 'meal-name', text: idea.meal }),
-        el('span', { class: 'meal-items', text: idea.items.map(function (item) {
-          return item.food + ' ' + item.amount;
-        }).join(' + ') }),
+        el('span', { class: 'meal-items', text: label }),
         el('span', { class: 'meal-gram', text: '≈' + idea.gram + 'g' }),
-      ]));
+      ]);
+      if (idea.note || (idea.options && idea.options.length)) {
+        var more = el('div', { class: 'meal-more' }, []);
+        if (idea.note) more.appendChild(el('span', { text: idea.note }));
+        if (idea.options && idea.options.length) {
+          more.appendChild(el('span', { class: 'meal-alt', text: '아니면 ' + idea.options.join(' · ') }));
+        }
+        row.appendChild(more);
+      }
+      body.appendChild(row);
     });
+
+    if (day.shortfall) body.appendChild(el('p', { class: 'hint-line warn', text: day.shortfall }));
     body.appendChild(el('p', { class: 'hint-line', text:
-      '한 끼 ' + perMeal + 'g 기준입니다. 아침이 모자라면 간식으로 채웁니다. ' +
-      '숫자는 어림이고, 같은 양이면 다른 음식으로 바꿔도 됩니다.' }));
+      '한 끼 ' + perMeal + 'g 기준입니다. 숫자는 어림이고, 같은 양이면 다른 음식으로 바꿔도 됩니다. ' +
+      '날마다 조합이 바뀝니다.' }));
 
     return el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '끼니 예시' }),
-        el('span', { class: 'meta', text: '하루 ' + target + 'g' }),
+        el('span', { class: 'meta', text: '하루 ' + target + 'g · ' + (day.weekday ? '평일' : '주말') }),
       ]),
       body,
     ]);
+  }
+
+  /** "계란 빼고 · 아끼기 · 점심 사 먹음" — 지금 무엇에 맞춰져 있는지 한 줄로. */
+  function dietSummary() {
+    var diet = state.diet || E.DEFAULT_DIET;
+    var parts = [];
+    var avoid = E.FOOD_AVOID_OPTIONS.filter(function (option) { return diet.avoid.indexOf(option.id) >= 0; });
+    parts.push(avoid.length === 0 ? '가리는 것 없음' : avoid.map(function (option) { return option.label; }).join('·') + ' 빼고');
+    var budget = E.BUDGET_OPTIONS.filter(function (option) { return option.id === diet.budget; })[0];
+    if (budget) parts.push('예산 ' + budget.label);
+    var lunch = E.LUNCH_OPTIONS.filter(function (option) { return option.id === diet.lunch; })[0];
+    if (lunch) parts.push('평일 점심 ' + lunch.label);
+    return parts.join(' · ');
+  }
+
+  /**
+   * 나에게 맞추기 — 못 먹는 것, 예산, 평일 점심.
+   *
+   * 키·나이·활동량은 묻지 않는다. 칼로리를 계산하지 않으니 필요가 없다.
+   * 누르면 바로 바뀌고 저장된다 — "저장" 버튼을 따로 두면 누르는 걸 잊는다.
+   */
+  function openDietSettings() {
+    var diet = state.diet || E.normalizeDiet(null);
+    var save = function (next) {
+      state.diet = E.normalizeDiet(next);
+      persist();
+      render();
+      openDietSettings();
+    };
+    var body = [];
+
+    body.push(el('div', { class: 'list-label', text: '못 먹는 것 (여러 개)' }));
+    body.push(el('div', { class: 'chip-row' }, E.FOOD_AVOID_OPTIONS.map(function (option) {
+      var on = diet.avoid.indexOf(option.id) >= 0;
+      return el('button', {
+        type: 'button', class: 'pick', 'aria-pressed': String(on), text: option.label,
+        title: option.hint || '',
+        onclick: function () {
+          var next = on
+            ? diet.avoid.filter(function (id) { return id !== option.id; })
+            : diet.avoid.concat([option.id]);
+          save({ avoid: next, budget: diet.budget, lunch: diet.lunch });
+        },
+      });
+    })));
+
+    body.push(el('div', { class: 'list-label', text: '예산' }));
+    E.BUDGET_OPTIONS.forEach(function (option) {
+      body.push(el('button', {
+        type: 'button', class: 'choice', 'aria-pressed': String(diet.budget === option.id),
+        onclick: function () { save({ avoid: diet.avoid, budget: option.id, lunch: diet.lunch }); },
+      }, [
+        el('span', { class: 'choice-title', text: option.label }),
+        el('span', { class: 'choice-hint', text: option.hint }),
+      ]));
+    });
+
+    body.push(el('div', { class: 'list-label', text: '평일 점심은 어디서 드세요?' }));
+    E.LUNCH_OPTIONS.forEach(function (option) {
+      body.push(el('button', {
+        type: 'button', class: 'choice', 'aria-pressed': String(diet.lunch === option.id),
+        onclick: function () { save({ avoid: diet.avoid, budget: diet.budget, lunch: option.id }); },
+      }, [
+        el('span', { class: 'choice-title', text: option.label }),
+        el('span', { class: 'choice-hint', text: option.hint }),
+      ]));
+    });
+
+    body.push(el('p', { class: 'asset-note', text:
+      '키·나이는 묻지 않습니다. 칼로리를 정하지 않고, 체중 추세를 보고 ' +
+      '"밥 반 공기" 단위로만 조정합니다.' }));
+    openModal('나에게 맞추기', '끼니 예시', body);
   }
 
   /**

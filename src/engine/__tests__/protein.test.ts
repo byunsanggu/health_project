@@ -6,7 +6,6 @@ import {
   PROTEIN_FOODS,
   PROTEIN_PER_KG,
   bodyGoalOf,
-  mealIdeas,
   perMealG,
   proteinHint,
   proteinRisk,
@@ -158,45 +157,3 @@ describe('겹칠 때만 경고한다', () => {
   });
 });
 
-describe('끼니 예시', () => {
-  it('세 끼와 간식을 준다', () => {
-    assert.deepEqual(mealIdeas(50).map((idea) => idea.meal), ['아침', '점심', '저녁', '간식']);
-  });
-
-  it('점심·저녁은 한 끼 목표에 가깝다', () => {
-    for (const target of [35, 40, 45, 50, 55, 60]) {
-      for (const idea of mealIdeas(target).filter((one) => one.meal === '점심' || one.meal === '저녁')) {
-        assert.ok(Math.abs(idea.gram - target) <= 12, `${target}g 목표에 ${idea.meal} ${idea.gram}g`);
-      }
-    }
-  });
-
-  it('아침이 모자라도 간식까지 합치면 하루를 채운다', () => {
-    /* 아침에 계란 다섯 개를 먹는 사람은 없다. 모자란 만큼은 간식이 메운다. */
-    for (const target of [35, 45, 55, 60]) {
-      const day = mealIdeas(target).reduce((sum, idea) => sum + idea.gram, 0);
-      assert.ok(day >= target * 3 - 5, `한 끼 ${target}g인데 하루 ${day}g`);
-    }
-  });
-
-  it('양은 0.5 단위로만 — "계란 2.7개"는 지킬 수 없다', () => {
-    for (const target of [33, 47, 58]) {
-      for (const idea of mealIdeas(target)) {
-        for (const item of idea.items) assert.doesNotMatch(item.amount, /\d\.\d\d|\.[1-46-9]/, item.amount);
-      }
-    }
-  });
-
-  it('주재료를 한 끼에 먹을 수 없을 만큼 늘리지 않는다', () => {
-    const dinner = mealIdeas(120).find((idea) => idea.meal === '저녁')!;
-    assert.match(dinner.items[0]!.amount, /^(1|1\.5|2|2\.5)덩이$/);
-  });
-
-  it('칼로리를 말하지 않는다', () => {
-    assert.doesNotMatch(JSON.stringify(mealIdeas(50)), /kcal|칼로리/);
-  });
-
-  it('목표가 없으면 아무것도 없다', () => {
-    assert.deepEqual(mealIdeas(0), []);
-  });
-});
