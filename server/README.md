@@ -655,6 +655,45 @@ alter view public.gym_equipment_summary set (security_invoker = true);
 
 ---
 
+## 2-D. 비밀번호 찾기 · 회원 탈퇴
+
+### 비밀번호 찾기 — 따로 할 것 거의 없음
+
+앱의 "비밀번호를 잊으셨나요?"가 Supabase에 재설정 메일을 보내게 합니다.
+메일의 링크를 누르면 앱으로 돌아와 새 비밀번호를 정합니다.
+
+- Supabase → **Authentication** → **URL Configuration** → **Redirect URLs**에
+  `https://byunsanggu.github.io/health_project/`가 있어야 합니다(Site URL로 이미
+  넣었다면 됩니다).
+- Supabase 기본 메일은 **시간당 보낼 수 있는 수가 적습니다.** 시험하다 막히면
+  "메일을 너무 자주 보냈습니다"가 뜹니다 — 잠시 뒤에 다시 하면 됩니다. 사용자가
+  늘면 메일 서버(SMTP)를 따로 붙여야 풀립니다.
+- 카카오·구글로 가입한 사람은 비밀번호가 없어서 이 길을 쓰지 않습니다.
+
+### 회원 탈퇴 (`functions/delete-account`) — 함수 하나 올리기
+
+계정을 지우려면 관리자 열쇠(service_role)가 필요합니다. 이 열쇠는 **절대 앱에
+넣으면 안 됩니다** — 넣는 순간 아무나 아무 계정이나 지울 수 있습니다. 그래서
+서버 함수가 합니다. 관리자 열쇠는 Supabase가 함수에 알아서 넣어 주니 **따로
+넣을 것이 없습니다.**
+
+Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor**
+
+- 이름: `delete-account` (정확히 이 이름 — 앱이 이 이름으로 부릅니다)
+- **Verify JWT: 끄기** — 함수가 들어온 토큰이 누구 것인지 직접 서버에 물어보고,
+  그 사람 계정만 지웁니다. 요청에 적힌 id는 믿지 않습니다.
+- 내용: `server/functions/delete-account/index.ts` 전체를 붙여넣기 → **Deploy**
+
+이 함수를 안 올리면 앱에서 탈퇴를 누를 때 "탈퇴 기능이 서버에 아직 설치되지
+않았습니다"가 뜨고, **아무것도 지우지 않습니다**(이 기기 기록도 그대로).
+
+지우는 범위: 계정을 지우면 운동 기록·설정·친구·응원·주간 요약·헬스장 기구 확인·
+알림 예약이 전부 같이 지워집니다(표마다 `on delete cascade`). 헬스장 자체는
+남습니다 — 다른 사람들이 쓰고 있고 내 정보가 없습니다. 앱은 성공한 뒤에만 이
+기기의 기록도 지웁니다.
+
+---
+
 ## 3. 제가 만들어 둔 것
 
 | 파일 | 하는 일 |

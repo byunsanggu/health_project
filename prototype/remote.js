@@ -168,6 +168,17 @@ var Remote = (function () {
       return '이미 가입된 이메일입니다. 로그인해 주세요.';
     }
     if (/Password should be/i.test(message)) return '비밀번호가 너무 짧습니다. 6자 이상으로 해 주세요.';
+    // 같은 비밀번호로 "바꾸면" Supabase가 거절한다. 그대로 말해 준다.
+    if (/different from the old password|same password/i.test(message)) {
+      return '지금 비밀번호와 같습니다. 다른 비밀번호로 정해 주세요.';
+    }
+    /*
+     * 재설정 메일은 너무 자주 못 보낸다. Supabase 기본 메일은 시간당 몇 통으로
+     * 막혀 있다(직접 메일 서버를 붙이면 풀린다).
+     */
+    if (/rate limit|only request this after|too many/i.test(message) || status === 429) {
+      return '메일을 너무 자주 보냈습니다. 잠시 뒤에 다시 해 주세요.';
+    }
     if (status === 404) return '주소가 맞는지 확인해 주세요. 표(schema.sql)를 아직 안 만들었을 수도 있습니다.';
     if (status === 401 || status === 403) return '열쇠가 맞는지 확인해 주세요.';
     return message || ('서버가 ' + status + ' 를 돌려주었습니다.');
@@ -313,6 +324,57 @@ var Remote = (function () {
    */
   function forgetDeviceLink() {
     patch({ cursor: null, settingsSynced: false });
+  }
+
+  /**
+   * 비밀번호 재설정 메일을 보낸다.
+   *
+   * 메일의 링크를 누르면 이 페이지로 돌아오고, 주소 뒤에 type=recovery가
+   * 붙어 온다(captureOAuth가 거둔다). 그때 새 비밀번호를 정하게 한다.
+   *
+   * 있는 메일인지 아닌지 알려주지 않는다 — Supabase도 같은 답을 준다.
+   * 알려주면 아무 메일이나 넣어서 가입 여부를 캐낼 수 있다.
+   */
+  function recoverPassword(userEmail) {
+    return request('/auth/v1/recover?redirect_to=' + encodeURIComponent(returnUrl()), {
+      method: 'POST',
+      auth: false,
+      body: { email: userEmail },
+    });
+  }
+
+  /** 지금 로그인한 계정의 비밀번호를 바꾼다. 재설정 링크로 들어온 직후에 쓴다. */
+  function updatePassword(password) {
+    return withAuth(function () {
+      return request('/auth/v1/user', { method: 'PUT', body: { password: password } });
+    });
+  }
+
+  /**
+   * 회원 탈퇴.
+   *
+   * 계정을 지우는 건 서버 함수(delete-account)만 할 수 있다 — 관리자
+   * 열쇠가 필요하고, 그 열쇠는 앱에 들어오면 안 된다. 함수가 지우고 나면
+   * 이 기기의 로그인도 풀고 기록의 주인 표시도 지운다.
+   */
+  function deleteAccount() {
+    if (!signedIn()) return Promise.reject(new Error('로그인이 필요합니다.'));
+    var run = function () {
+      return callFunction('delete-account', {}).then(function (result) {
+        if (result.ok) return result;
+        var error = new Error(
+          result.status === 404 ? '탈퇴 기능이 서버에 아직 설치되지 않았습니다.'
+            : result.status === 401 ? '로그인이 풀렸습니다. 다시 로그인한 뒤 해 주세요.'
+            : result.status === 0 ? '서버에 닿지 못했습니다. 인터넷 연결을 확인해 주세요.'
+            : '지금은 탈퇴를 처리하지 못했습니다. 잠시 뒤에 다시 해 주세요.');
+        error.status = result.status;
+        throw error;
+      });
+    };
+    return withAuth(run).then(function () {
+      patch({ accessToken: null, refreshToken: null, userId: null, email: null, ownerId: null });
+      forgetDeviceLink();
+    });
   }
 
   function signOut() {
@@ -501,7 +563,12 @@ var Remote = (function () {
       refreshToken: params.get('refresh_token') || null,
     });
 
-    return { ok: true, provider: params.get('provider') || null };
+    return {
+      ok: true,
+      provider: params.get('provider') || null,
+      // 비밀번호 재설정 메일의 링크로 들어온 경우 — 새 비밀번호를 정하게 한다.
+      recovery: params.get('type') === 'recovery',
+    };
   }
 
   /**
@@ -749,6 +816,9 @@ var Remote = (function () {
     transport: transport,
     oauthStart: oauthStart,
     captureOAuth: captureOAuth,
+    recoverPassword: recoverPassword,
+    updatePassword: updatePassword,
+    deleteAccount: deleteAccount,
     loadIdentity: loadIdentity,
     providerLabel: providerLabel,
     shareGym: shareGym,

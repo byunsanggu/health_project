@@ -4478,6 +4478,12 @@
       return;
     }
 
+    if (result.recovery) {
+      Remote.loadIdentity().then(function () { render(); }, function () { render(); });
+      openAuth('newPassword');
+      return;
+    }
+
     Remote.loadIdentity().then(function () {
       pushLog('로그인', '<b>' + (Remote.email() || '계정') + '</b>으로 로그인했습니다.');
       return syncNow();
@@ -7566,6 +7572,8 @@
    */
   function renderAuth() {
     var form = state.authForm;
+    if (form.mode === 'forgot') return renderForgot(form);
+    if (form.mode === 'newPassword') return renderNewPassword(form);
     var signUp = form.mode === 'signup';
 
     screen.appendChild(el('div', { class: 'auth-head' }, [
@@ -7692,6 +7700,23 @@
     }));
 
     /*
+     * 로그인이 필수인 앱에서 비밀번호를 잊으면 그 사람은 영영 못 들어온다.
+     * 로그인 칸 바로 아래에 둔다 — 비밀번호가 틀렸다는 말을 본 그 자리다.
+     */
+    if (!signUp) {
+      screen.appendChild(el('button', {
+        type: 'button', class: 'auth-skip', text: '비밀번호를 잊으셨나요?',
+        onclick: function () {
+          form.email = mailInput.value;
+          form.mode = 'forgot';
+          form.notice = null;
+          form.password = '';
+          render();
+        },
+      }));
+    }
+
+    /*
      * 설문 도중에 들어왔으면 되돌아갈 길이 있어야 한다. 없으면 계정이
      * 없는 사람이 이 화면에 갇힌다.
      */
@@ -7746,6 +7771,247 @@
       '볼륨 코치는 계정이 있어야 쓸 수 있습니다. 기록은 이 기기에 먼저 저장되고 ' +
       '계정으로 올라가서, 폰을 바꿔도 그대로 남습니다. ' +
       '건강 기록은 민감정보라 올리기 전에 동의를 받고, 언제든 서버에서 지울 수 있습니다.' }));
+  }
+
+  /**
+   * 계정 — 누구로 들어와 있는지, 비밀번호 바꾸기, 로그아웃, 탈퇴.
+   *
+   * 탈퇴를 서버 설정 화면 깊숙이 두지 않는다. 지우는 길이 숨어 있으면
+   * 지울 권리가 없는 것과 같다(개인정보보호법 제36조).
+   */
+  function accountCard() {
+    if (typeof Remote === 'undefined' || !Remote.configured() || !Remote.signedIn()) return null;
+    var body = el('div', { class: 'sheet-body' }, []);
+    body.appendChild(el('div', { class: 'status-row' }, [
+      el('span', { class: 'status-key', text: '계정' }),
+      el('span', { class: 'status-val ok', text: Remote.email() || '카카오·구글 계정' }),
+    ]));
+    var actions = el('div', { class: 'chip-row' }, []);
+    // 카카오·구글은 비밀번호가 없다. 메일로 가입한 사람에게만 보인다.
+    if (Remote.email()) {
+      actions.appendChild(el('button', {
+        type: 'button', class: 'pick', text: '비밀번호 바꾸기',
+        onclick: function () { openAuth('newPassword'); state.authForm.fromSettings = true; render(); },
+      }));
+    }
+    actions.appendChild(el('button', {
+      type: 'button', class: 'pick', text: '로그아웃',
+      onclick: function () {
+        Remote.signOut().then(function () {
+          pushLog('계정', '로그아웃했습니다. 이 기기의 기록은 그대로 있습니다.');
+          state.tab = 'today';
+          render();
+        });
+      },
+    }));
+    actions.appendChild(el('button', {
+      type: 'button', class: 'pick danger', text: '회원 탈퇴', onclick: openWithdraw,
+    }));
+    body.appendChild(actions);
+    return el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [el('h3', { text: '계정' })]),
+      body,
+    ]);
+  }
+
+  /**
+   * 회원 탈퇴.
+   *
+   * 되돌릴 수 없으니 무엇이 지워지는지 다 적고, "탈퇴"를 직접 쳐야 버튼이
+   * 열린다. 버튼 하나로 끝나면 잘못 누른 손가락이 1년치 기록을 날린다.
+   *
+   * 이 기기의 기록도 지운다. 계정은 없앴는데 폰에 운동·체중 기록이 남아
+   * 있으면, 폰을 넘겨받은 사람이 그걸 본다.
+   */
+  function openWithdraw() {
+    var notice = null;
+    var busy = false;
+    var draw = function () {
+      var body = [];
+      body.push(el('div', { class: 'notice stop' }, [
+        el('div', { class: 'label', text: '되돌릴 수 없습니다' }),
+        el('div', { text: '계정과 함께 운동 기록, 체중·통증 기록, 설정, 친구, 헬스장 기구 확인 기록이 ' +
+          '서버와 이 기기에서 모두 지워집니다.' }),
+      ]));
+      if (notice) {
+        body.push(el('div', { class: 'notice' + (notice.bad ? ' stop' : '') }, [el('div', { text: notice.text })]));
+      }
+      var input = el('input', {
+        type: 'text', class: 'text-input withdraw-input', placeholder: '탈퇴',
+        'aria-label': '확인을 위해 탈퇴라고 입력',
+        oninput: function (event) {
+          button.disabled = event.target.value.trim() !== '탈퇴' || busy;
+        },
+      });
+      body.push(el('p', { class: 'hint-line', text: '확인을 위해 아래 칸에 "탈퇴"라고 써 주세요.' }));
+      body.push(input);
+      var button = el('button', {
+        type: 'button', class: 'finish danger', text: busy ? '지우는 중…' : '탈퇴하기', disabled: '',
+        onclick: function () {
+          if (input.value.trim() !== '탈퇴' || busy) return;
+          busy = true;
+          notice = null;
+          draw();
+          Remote.deleteAccount().then(function () {
+            // 이 기기의 기록도 지운다. 서버 주소·열쇠만 남긴다 — 다시 가입할 수 있게.
+            storage.reset();
+            try {
+              Object.keys(localStorage).forEach(function (key) {
+                if (/^volume-coach/.test(key) && key !== 'volume-coach.remote') localStorage.removeItem(key);
+              });
+            } catch (err) { void err; }
+            location.reload();
+          }, function (error) {
+            busy = false;
+            notice = { bad: true, text: error.message };
+            pushLog('계정', '탈퇴하지 못했습니다 — ' + error.message);
+            draw();
+          });
+        },
+      });
+      body.push(button);
+      body.push(el('button', {
+        type: 'button', class: 'finish quiet', text: '그만두기', onclick: function () { modal.close(); },
+      }));
+      openModal('회원 탈퇴', Remote.email() || '', body);
+    };
+    draw();
+  }
+
+  /**
+   * 비밀번호 찾기 — 메일 주소만 받는다.
+   *
+   * 가입된 메일인지 아닌지 말하지 않는다. 말하면 아무 메일이나 넣어서
+   * 누가 가입했는지 캐낼 수 있다. 카카오·구글로 가입한 사람은 비밀번호가
+   * 없으니 그쪽으로 들어가라고 같이 적는다.
+   */
+  function renderForgot(form) {
+    screen.appendChild(el('div', { class: 'auth-head' }, [
+      el('div', { class: 'auth-mark', text: '볼륨 코치' }),
+      el('h2', { text: '비밀번호 찾기' }),
+      el('p', { class: 'auth-why', text:
+        '가입한 메일로 비밀번호를 다시 정하는 링크를 보내 드립니다.' }),
+    ]));
+
+    if (form.notice) {
+      screen.appendChild(el('div', { class: 'notice' + (form.notice.bad ? ' stop' : '') }, [
+        el('div', { class: 'label', text: form.notice.bad ? '확인 필요' : '보냈습니다' }),
+        el('div', { text: form.notice.text }),
+      ]));
+    }
+
+    var mailInput = el('input', {
+      type: 'email', class: 'text-input', placeholder: '가입한 이메일',
+      value: form.email || '', 'aria-label': '가입한 이메일',
+      autocomplete: 'username', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
+      oninput: function (event) { form.email = event.target.value; },
+      onkeydown: function (event) { if (event.key === 'Enter') send(); },
+    });
+    screen.appendChild(el('div', { class: 'auth-form' }, [mailInput]));
+
+    function send() {
+      form.email = mailInput.value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+        form.notice = { bad: true, text: '이메일을 확인해 주세요.' };
+        return render();
+      }
+      form.busy = true;
+      render();
+      Remote.recoverPassword(form.email).then(function () {
+        form.busy = false;
+        form.sent = true;
+        form.notice = { bad: false, text:
+          form.email + '로 링크를 보냈습니다. 메일의 링크를 누르면 이 앱에서 새 비밀번호를 정합니다. ' +
+          '몇 분 안에 안 오면 스팸함도 봐 주세요.' };
+        render();
+      }, function (error) {
+        form.busy = false;
+        form.notice = { bad: true, text: error.message };
+        render();
+      });
+    }
+
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish',
+      text: form.busy ? '보내는 중…' : (form.sent ? '다시 보내기' : '링크 보내기'),
+      disabled: form.busy ? '' : null,
+      onclick: send,
+    }));
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish quiet', text: '← 로그인으로',
+      onclick: function () { form.mode = 'signin'; form.notice = null; form.sent = false; render(); },
+    }));
+    screen.appendChild(el('p', { class: 'asset-note', text:
+      '카카오나 구글로 가입하셨다면 비밀번호가 없습니다. 로그인 화면의 카카오·구글로 들어가세요.' }));
+  }
+
+  /**
+   * 새 비밀번호 — 재설정 메일의 링크로 들어온 직후.
+   *
+   * 이 순간 이미 로그인된 상태다(링크가 열쇠 노릇을 한다). 그래서 지금
+   * 비밀번호를 묻지 않는다 — 그걸 잊어서 여기 온 사람이다.
+   */
+  function renderNewPassword(form) {
+    screen.appendChild(el('div', { class: 'auth-head' }, [
+      el('div', { class: 'auth-mark', text: '볼륨 코치' }),
+      el('h2', { text: '새 비밀번호' }),
+      el('p', { class: 'auth-why', text: (Remote.email() ? Remote.email() + ' — ' : '') +
+        '앞으로 쓸 비밀번호를 정해 주세요.' }),
+    ]));
+
+    if (form.notice) {
+      screen.appendChild(el('div', { class: 'notice' + (form.notice.bad ? ' stop' : '') }, [
+        el('div', { class: 'label', text: form.notice.bad ? '확인 필요' : '알림' }),
+        el('div', { text: form.notice.text }),
+      ]));
+    }
+
+    var first = el('input', {
+      type: 'password', class: 'text-input', placeholder: '새 비밀번호 (6자 이상)',
+      'aria-label': '새 비밀번호', autocomplete: 'new-password',
+    });
+    var again = el('input', {
+      type: 'password', class: 'text-input', placeholder: '한 번 더',
+      'aria-label': '새 비밀번호 확인', autocomplete: 'new-password',
+      onkeydown: function (event) { if (event.key === 'Enter') save(); },
+    });
+    screen.appendChild(el('div', { class: 'auth-form' }, [first, again]));
+
+    function save() {
+      if (first.value.length < 6) {
+        form.notice = { bad: true, text: '비밀번호는 6자 이상이어야 합니다.' };
+        return render();
+      }
+      // 두 번 받는다. 한 번만 받으면 오타 난 비밀번호로 다시 잠긴다.
+      if (first.value !== again.value) {
+        form.notice = { bad: true, text: '두 칸이 다릅니다. 같게 넣어 주세요.' };
+        return render();
+      }
+      form.busy = true;
+      render();
+      Remote.updatePassword(first.value).then(function () {
+        form.busy = false;
+        pushLog('계정', '비밀번호를 바꿨습니다.');
+        closeAuth();
+        syncNow();
+      }, function (error) {
+        form.busy = false;
+        form.notice = { bad: true, text: error.message };
+        render();
+      });
+    }
+
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish',
+      text: form.busy ? '바꾸는 중…' : '비밀번호 바꾸기',
+      disabled: form.busy ? '' : null,
+      onclick: save,
+    }));
+    if (form.fromSettings) {
+      screen.appendChild(el('button', {
+        type: 'button', class: 'finish quiet', text: '취소', onclick: closeAuth,
+      }));
+    }
   }
 
   function openAuth(mode) {
@@ -10087,6 +10353,8 @@
       el('h2', { text: '내 정보' }),
       el('p', { class: 'meta', text: '계정 · 동의 · 설치' }),
     ]));
+    var account = accountCard();
+    if (account) screen.appendChild(account);
     renderAppStatus();
     renderPrivacy();
     /*
@@ -10670,6 +10938,15 @@
        * 고장 난 것처럼 보인다.
        */
       var line = el('div', { class: 'gym-line' }, [row]);
+      /*
+       * 이름 고치기는 한 곳뿐이어도 둔다. 처음 등록한 "내 헬스장"을 실제
+       * 이름으로 바꾸는 게 제일 흔한 경우다.
+       */
+      line.appendChild(el('button', {
+        type: 'button', class: 'gym-rename', text: '이름',
+        'aria-label': entry.name + ' 이름 바꾸기',
+        onclick: function () { openRenameGym(entry); },
+      }));
       if (book.gyms.length > 1) {
         line.appendChild(el('button', {
           type: 'button', class: 'gym-drop', text: '지우기',
@@ -11398,6 +11675,49 @@
    * 것을 분명히 말한다 — 그걸 모르면 중복으로 만든 곳 하나를 지우는 데도
    * 손이 안 간다.
    */
+  /**
+   * 헬스장 이름 바꾸기.
+   *
+   * 이름만 바꾸고 id는 그대로다. 운동 기록·기계별 무게·기계 세팅이 전부
+   * id에 묶여 있어서, 오타 하나 고치려고 지우고 다시 등록하면 그게 다
+   * 끊긴다.
+   */
+  function openRenameGym(entry) {
+    var notice = null;
+    var draw = function () {
+      var input = el('input', {
+        type: 'text', class: 'text-input', value: entry.name,
+        maxlength: String(E.GYM_NAME_MAX), 'aria-label': '헬스장 이름',
+        onkeydown: function (event) { if (event.key === 'Enter') save(); },
+      });
+      var save = function () {
+        var name = E.cleanGymName(input.value);
+        if (!name) {
+          notice = '이름을 1~' + E.GYM_NAME_MAX + '자로 넣어 주세요.';
+          return draw();
+        }
+        state.gymBook = E.renameGym(state.gymBook, entry.id, name);
+        state.myDirectory = state.myDirectory.map(function (item) {
+          return item.id === entry.id ? Object.assign({}, item, { name: name }) : item;
+        });
+        state.gym = E.activeProfile(state.gymBook);
+        pushLog('헬스장', '<b>' + entry.name + '</b> → <b>' + name + '</b>' +
+          particleOf(name, '으로/로') + ' 이름을 바꿨습니다. 기록은 그대로입니다.');
+        modal.close();
+        persist();
+        render();
+      };
+      var body = [];
+      if (notice) body.push(el('div', { class: 'notice stop' }, [el('div', { text: notice })]));
+      body.push(input);
+      body.push(el('p', { class: 'hint-line', text: '이름만 바뀝니다. 운동 기록과 기구는 그대로입니다.' }));
+      body.push(el('button', { type: 'button', class: 'finish', text: '바꾸기', onclick: save }));
+      openModal('헬스장 이름', entry.name, body);
+      setTimeout(function () { input.focus(); input.select(); }, 0);
+    };
+    draw();
+  }
+
   function confirmDropGym(entry) {
     var count = (state.history || []).filter(function (session) {
       return session.gymId === entry.id;
@@ -12137,6 +12457,17 @@
         render();
       },
     }));
+    // 폰을 바꾼 사람이 비밀번호를 잊었으면 여기서 막힌다. 로그인 쪽일 때만 둔다.
+    if (!signUp) {
+      screen.appendChild(el('button', {
+        type: 'button', class: 'auth-skip', text: '비밀번호를 잊으셨나요?',
+        onclick: function () {
+          openAuth('forgot');
+          state.authForm.email = form.email || '';
+          render();
+        },
+      }));
+    }
 
     /*
      * 이 줄은 가입이 맨 뒤에 있을 때 "동의를 받았고"라고 과거형으로 적혀

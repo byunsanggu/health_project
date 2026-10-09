@@ -64,6 +64,33 @@ export function removeGym(book: GymBook, id: string): GymBook {
   return { gyms, activeId: book.activeId === id ? gyms[0]!.id : book.activeId };
 }
 
+/** 헬스장 이름 길이 상한. 목록 한 줄에 들어가야 한다. */
+export const GYM_NAME_MAX = 30;
+
+/** 이름을 고칠 때 쓰는 꼴로 다듬는다. 비거나 너무 길면 null. */
+export function cleanGymName(raw: string): string | null {
+  const name = (raw ?? '').replace(/\s+/g, ' ').trim();
+  if (name.length === 0 || name.length > GYM_NAME_MAX) return null;
+  return name;
+}
+
+/**
+ * 이름만 바꾼다. **id는 그대로 둔다.**
+ *
+ * 운동 기록과 기계별 무게, 기계 세팅이 전부 헬스장 id에 묶여 있다. 오타
+ * 하나 고치려고 지우고 다시 등록하면 그게 다 끊긴다. 이름은 보이는 글일
+ * 뿐이니 글만 바꾼다.
+ */
+export function renameGym(book: GymBook, id: string, name: string): GymBook {
+  const clean = cleanGymName(name);
+  if (!clean) return book;
+  if (!book.gyms.some((gym) => gym.id === id)) return book;
+  return {
+    activeId: book.activeId,
+    gyms: book.gyms.map((gym) => (gym.id === id ? { ...gym, name: clean } : gym)),
+  };
+}
+
 export function switchGym(book: GymBook, id: string, today?: string): GymBook {
   if (!book.gyms.some((gym) => gym.id === id)) return book;
   return {
