@@ -2224,7 +2224,7 @@ input[type="search"] {
  * 옛날 iOS는 이 질의를 모르므로 스크립트가 data-standalone을 대신 붙인다.
  */
 @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
-  .masthead, .panel { display: none; }
+  .masthead, .panel, .disclaimer { display: none; }
 
   .wrap {
     max-width: none;
@@ -2251,7 +2251,8 @@ input[type="search"] {
 
 /* 옛날 iOS용 — 위 블록과 같은 내용을 선택자만 바꿔 적는다 */
 html[data-standalone] .masthead,
-html[data-standalone] .panel { display: none; }
+html[data-standalone] .panel,
+html[data-standalone] .disclaimer { display: none; }
 html[data-standalone] .wrap {
   max-width: none; padding: 0; gap: 0; grid-template-columns: minmax(0, 1fr);
 }
@@ -2261,6 +2262,23 @@ html[data-standalone] .device {
 }
 html[data-standalone] .statusbar { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); }
 html[data-standalone] .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/*
+ * 사용자 화면 — 개발용 판(소개·시나리오·로그)을 감추고 앱만 꽉 채운다.
+ * 내 컴퓨터(localhost)나 ?dev로 열었을 때만 판이 보인다.
+ */
+html:not([data-dev]) .masthead,
+html:not([data-dev]) .panel,
+html:not([data-dev]) .disclaimer { display: none; }
+html:not([data-dev]) .wrap {
+  max-width: 560px; margin: 0 auto; padding: 0; gap: 0; grid-template-columns: minmax(0, 1fr);
+}
+html:not([data-dev]) .device {
+  border: 0; border-radius: 0; box-shadow: none; position: static;
+  height: 100dvh; min-height: 0;
+}
+html:not([data-dev]) .statusbar { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); }
+html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
 /* 카카오·구글 줄 — 이메일 칸보다 먼저 눈에 들어와야 한다 */
 .oauth-row { border: 1px solid var(--accent); background: var(--accent-soft); }
