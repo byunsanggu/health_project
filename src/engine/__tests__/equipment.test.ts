@@ -11,7 +11,9 @@ import {
   suggestNextEquipment,
   wouldEnable,
   matchEquipmentName,
+  normalizeEquipmentName,
   parseEquipmentList,
+  EQUIPMENT_GUIDE,
 } from '../equipment.ts';
 import { EXERCISES, exerciseById } from '../exercises.ts';
 import { loadableWeights, loadingFor, nearestLoadable } from '../gym.ts';
@@ -34,8 +36,14 @@ describe('카탈로그', () => {
   });
 
   it('기본 선택만으로도 대부분의 종목이 열린다', () => {
+    /*
+     * 비율로 보지 않는다. 펜듈럼·벨트 스쿼트 같은 특수 머신을 카탈로그에
+     * 더할수록 분모만 커져서, 기본 기구로 할 수 있는 건 그대로인데 비율이
+     * 떨어진다. 기본 종목 수가 줄지 않았는지를 본다.
+     */
     const available = availableExercises(COMMON_EQUIPMENT_IDS);
-    assert.ok(available.length >= EXERCISES.length * 0.8);
+    assert.ok(available.length >= 67, `기본 기구로 ${available.length}종목`);
+    assert.ok(available.length >= EXERCISES.length * 0.65);
   });
 });
 
@@ -199,6 +207,18 @@ describe('목록 붙여넣기', () => {
     const result = parseEquipmentList('덤벨, 사우나, 수건');
     assert.deepEqual(result.ids, ['dumbbells']);
     assert.deepEqual(result.unknown, ['사우나', '수건']);
+  });
+
+  it('한 이름이 두 기구에 걸리지 않는다 — 걸리면 붙여넣기가 엉뚱한 쪽을 켠다', () => {
+    const owner = new Map<string, string>();
+    for (const item of EQUIPMENT_CATALOG) {
+      for (const name of [item.name, ...(EQUIPMENT_GUIDE[item.id]?.aka ?? [])]) {
+        const key = normalizeEquipmentName(name);
+        const before = owner.get(key);
+        assert.ok(!before || before === item.id, `"${name}" → ${before} / ${item.id}`);
+        owner.set(key, item.id);
+      }
+    }
   });
 
   it('줄바꿈으로 적어도 된다', () => {

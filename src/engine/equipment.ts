@@ -119,6 +119,29 @@ export const EQUIPMENT_CATALOG: readonly EquipmentItem[] = [
   },
   { id: 'dip-machine', name: '트라이셉 딥스 머신', category: 'machine' },
   { id: 'preacher-curl-machine', name: '프리처 컬 머신', category: 'machine' },
+  // 국내 헬스장에 흔한데 빠져 있던 것들 (4차)
+  { id: 'kettlebells', name: '케틀벨', category: 'freeweight' },
+  { id: 'trap-bar', name: '트랩바 (헥스바)', category: 'freeweight' },
+  { id: 'bench-decline', name: '디클라인 벤치', category: 'bench' },
+  { id: 'ab-bench', name: '복근 벤치 (싯업 벤치)', category: 'bench' },
+  { id: 'ghd', name: 'GHD (글루트 햄 레이즈대)', category: 'bench' },
+  { id: 'captains-chair', name: '니 레이즈대 (캡틴 체어)', category: 'rack' },
+  { id: 'hip-abduction-machine', name: '힙 어브덕션 머신 (아웃타이)', category: 'machine' },
+  { id: 'hip-adduction-machine', name: '힙 어덕션 머신 (이너타이)', category: 'machine' },
+  { id: 'glute-kickback-machine', name: '글루트 킥백 머신', category: 'machine' },
+  {
+    id: 'pendulum-squat-machine', name: '펜듈럼 스쿼트 머신', category: 'machine',
+    measurement: { field: 'carriageKg', label: '빈 캐리지 무게', default: 20, options: [0, 20, 30, 40] },
+  },
+  { id: 'belt-squat-machine', name: '벨트 스쿼트 머신', category: 'machine' },
+  { id: 'ab-crunch-machine', name: '앱 크런치 머신', category: 'machine' },
+  { id: 'torso-rotation-machine', name: '토르소 로테이션 머신', category: 'machine' },
+  { id: 'triceps-extension-machine', name: '트라이셉 익스텐션 머신', category: 'machine' },
+  // 종목을 열지 않지만 헬스장에 있는 것들. 목록을 다 적는 사람에게 빈칸이 남지 않게.
+  { id: 'plyo-box', name: '스텝 박스 · 플라이오 박스', category: 'bodyweight' },
+  { id: 'resistance-bands', name: '밴드 (고무 밴드)', category: 'bodyweight' },
+  { id: 'medicine-ball', name: '메디신볼 · 슬램볼', category: 'freeweight' },
+  { id: 'battle-rope', name: '배틀 로프', category: 'bodyweight' },
   /*
    * 폼롤러는 종목을 열지 않는다. 그래도 목록에 둔다 — 헬스장 기구를
    * 전부 적는 사람에게 "폼롤러는 어디 켜요?"가 남으면 목록이 틀린 것이다.
@@ -194,7 +217,8 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
 
   // 확장 (2차)
   'incline-barbell-press': ['barbell-set', 'bench-incline'],
-  'decline-barbell-press': ['barbell-set', 'bench-flat'],
+  // 발을 거는 디클라인 벤치가 있어야 한다. 플랫 벤치로는 디클라인이 안 된다.
+  'decline-barbell-press': ['barbell-set', 'bench-decline'],
   'chest-dip': ['dip-station'],
   'smith-bench-press': ['smith-machine', 'bench-flat'],
   'low-to-high-cable-fly': ['cable-station'],
@@ -250,6 +274,21 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'v-squat': ['v-squat-machine'],
   'machine-triceps-dip': ['dip-machine'],
   'machine-preacher-curl': ['preacher-curl-machine'],
+
+  // 4차
+  'kettlebell-swing': ['kettlebells'],
+  'decline-sit-up': ['ab-bench'],
+  'machine-hip-abduction': ['hip-abduction-machine'],
+  'machine-hip-adduction': ['hip-adduction-machine'],
+  'machine-glute-kickback': ['glute-kickback-machine'],
+  'pendulum-squat': ['pendulum-squat-machine'],
+  'belt-squat': ['belt-squat-machine'],
+  'trap-bar-deadlift': ['trap-bar'],
+  'glute-ham-raise': ['ghd'],
+  'machine-crunch': ['ab-crunch-machine'],
+  'torso-rotation': ['torso-rotation-machine'],
+  'machine-triceps-extension': ['triceps-extension-machine'],
+  'captains-chair-knee-raise': ['captains-chair'],
 };
 
 export function requirementsMet(exerciseId: string, selected: ReadonlySet<string>): boolean {
@@ -397,6 +436,21 @@ export function gymFromCatalog(selection: GymSelection): GymProfile {
       overrides[exerciseId] = { kind: 'barbell', barKg: smithBar, plates };
     }
   }
+  if (selected.has('pendulum-squat-machine')) {
+    overrides['pendulum-squat'] = {
+      kind: 'plateLoaded',
+      carriageKg: value('pendulum-squat-machine', 'carriageKg') ?? 20,
+      plates,
+      sides: 2,
+    };
+  }
+  if (selected.has('kettlebells')) {
+    // 케틀벨은 4kg씩 뛴다. 덤벨 사다리로 계산하면 없는 무게가 처방된다.
+    overrides['kettlebell-swing'] = { kind: 'dumbbell', availableKg: [8, 12, 16, 20, 24, 28, 32, 36, 40] };
+  }
+  if (selected.has('trap-bar')) {
+    overrides['trap-bar-deadlift'] = { kind: 'barbell', barKg: 25, plates };
+  }
   // 브이 스쿼트도 원판을 끼우는 기계다. 빈 캐리지 무게가 기계마다 다르다.
   if (selected.has('v-squat-machine')) {
     overrides['v-squat'] = {
@@ -484,11 +538,11 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '사람이 들어가는 네모난 철제 구조물. 안에서 바벨을 들어올립니다',
   },
   'bench-flat': {
-    aka: ['벤치', '평평한 벤치', '눕는 의자'],
+    aka: ['벤치', '평평한 벤치', '눕는 의자', '벤치프레스대', '벤치 프레스 랙', '플랫벤치'],
     look: '평평하게 누울 수 있는 긴 의자',
   },
   'bench-incline': {
-    aka: ['기울어진 벤치', '경사 벤치', '인클라인'],
+    aka: ['기울어진 벤치', '경사 벤치', '인클라인', '인클라인 벤치프레스대', '조절 벤치', '어저스터블 벤치'],
     look: '등받이 각도를 세울 수 있는 벤치',
   },
   'pull-up-bar': {
@@ -500,7 +554,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '바벨 한쪽 끝이 바닥에 고정돼 비스듬히 움직이는 장치',
   },
   'back-extension-bench': {
-    aka: ['허리 운동대', '로만체어', '백익스텐션'],
+    aka: ['허리 운동대', '로만체어', '백익스텐션', '로만체어', '45도 백익스텐션', '백익스텐션'],
     look: '허벅지를 받치고 상체를 숙였다 펴는 비스듬한 받침대',
   },
   'cable-station': {
@@ -508,7 +562,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '기둥에 줄(케이블)이 달려 있고 손잡이를 갈아 끼우는 기계. 추가 핀으로 조절됩니다',
   },
   'lat-pulldown-machine': {
-    aka: ['랫풀', '위에서 당기는 기계', '풀다운'],
+    aka: ['랫풀', '위에서 당기는 기계', '풀다운', '프론트 풀다운', '와이드 풀다운', '풀다운 머신', '랫풀다운 머신'],
     look: '앉아서 머리 위의 긴 봉을 아래로 당기는 기계',
   },
   'seated-row-machine': {
@@ -516,23 +570,23 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉아서 손잡이를 몸 쪽으로 당기는 기계',
   },
   'chest-press-machine': {
-    aka: ['체스트프레스', '가슴 미는 기계'],
+    aka: ['체스트프레스', '가슴 미는 기계', '와이드 체스트 프레스', '디클라인 체스트 프레스', '체스트 프레스'],
     look: '앉아서 앞으로 미는 기계. 가슴 운동입니다',
   },
   'shoulder-press-machine': {
-    aka: ['숄더프레스', '어깨 미는 기계'],
+    aka: ['숄더프레스', '어깨 미는 기계', '숄더 프레스', '어깨 프레스 머신'],
     look: '앉아서 위로 미는 기계. 어깨 운동입니다',
   },
   'pec-deck-machine': {
-    aka: ['펙덱', '플라이 머신', '나비 기계', '버터플라이'],
+    aka: ['펙덱', '플라이 머신', '나비 기계', '버터플라이', '체스트 플라이 머신', '펙플라이'],
     look: '앉아서 양팔을 안으로 모으는 기계. 나비처럼 생겼습니다',
   },
   'chest-supported-row-machine': {
-    aka: ['가슴 대고 당기는 기계', '티바 로우', '시티드 로우 머신', '레버 로우'],
+    aka: ['가슴 대고 당기는 기계', '시티드 로우 머신', '레버 로우', '아이소 로우', '레버 로우 머신'],
     look: '가슴을 받침대에 대고 엎드려 당기는 기계',
   },
   'leg-press-machine': {
-    aka: ['레그프레스', '다리 미는 기계'],
+    aka: ['레그프레스', '다리 미는 기계', '45도 레그프레스', '수평 레그프레스', '레그 프레스 머신'],
     look: '앉거나 누워서 발판을 다리로 밀어내는 큰 기계',
   },
   'hack-squat-machine': {
@@ -544,7 +598,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉아서 발목 앞의 롤러를 걸고 무릎을 펴는 기계',
   },
   'leg-curl-machine': {
-    aka: ['레그컬', '다리 접는 기계', '햄스트링 기계', '라잉 레그컬', '시티드 레그컬', '레그컬 머신'],
+    aka: ['레그컬', '다리 접는 기계', '햄스트링 기계', '라잉 레그컬', '시티드 레그컬', '레그컬 머신', '스탠딩 레그컬', '레그 컬'],
     look: '엎드리거나 앉아서 발목 뒤의 롤러를 걸고 무릎을 접는 기계',
   },
   'calf-raise-machine': {
@@ -604,15 +658,87 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉아서 양옆 손잡이를 아래로 밀어 내리는 기계. 삼두 운동입니다',
   },
   'preacher-curl-machine': {
-    aka: ['프리처 컬 머신', '머신 프리처'],
+    aka: ['프리처 컬 머신', '머신 프리처', '바이셉 컬 머신', '암컬 머신', '이두 머신'],
     look: '팔을 패드에 얹고 손잡이를 당겨 올리는 기계',
+  },
+  kettlebells: {
+    aka: ['케틀벨', '캐틀벨', '손잡이 달린 쇠공'],
+    look: '쇠공 위에 손잡이가 달린 기구',
+  },
+  'trap-bar': {
+    aka: ['트랩바', '헥스바', '육각 바'],
+    look: '육각형 테 안에 들어가 서서 드는 바',
+  },
+  'bench-decline': {
+    aka: ['디클라인 벤치', '발 거는 벤치'],
+    look: '머리 쪽이 낮게 기울고 다리를 거는 패드가 있는 벤치',
+  },
+  'ab-bench': {
+    aka: ['복근 벤치', '싯업 벤치', '싯업보드', '윗몸일으키기 벤치'],
+    look: '발을 거는 롤러가 달린 기울어진 좁은 벤치',
+  },
+  ghd: {
+    aka: ['GHD', '글루트햄', '글루트 햄 레이즈'],
+    look: '허벅지를 받치고 발목을 거는, 길게 누운 받침대',
+  },
+  'captains-chair': {
+    aka: ['캡틴 체어', '니레이즈', '레그레이즈 기구', '레그 레이즈대'],
+    look: '등을 기대고 팔꿈치로 버티며 다리를 드는 높은 의자 모양 기구',
+  },
+  'hip-abduction-machine': {
+    aka: ['힙 어브덕션', '어브덕션', '아웃타이', '아웃 싸이', '아우터 싸이'],
+    look: '앉아서 무릎 바깥쪽 패드를 밖으로 벌리는 기계',
+  },
+  'hip-adduction-machine': {
+    aka: ['힙 어덕션', '어덕션', '이너타이', '이너 싸이'],
+    look: '앉아서 무릎 안쪽 패드를 안으로 모으는 기계',
+  },
+  'glute-kickback-machine': {
+    aka: ['글루트 킥백', '힙 킥백', '킥백 머신', '힙 익스텐션 머신'],
+    look: '엎드리거나 서서 한 다리로 발판을 뒤로 차는 기계',
+  },
+  'pendulum-squat-machine': {
+    aka: ['펜듈럼', '펜듈럼 스쿼트'],
+    look: '어깨 패드가 진자처럼 호를 그리며 내려가는 스쿼트 기계',
+  },
+  'belt-squat-machine': {
+    aka: ['벨트 스쿼트', '벨트스쿼트'],
+    look: '허리 벨트에 무게를 걸고 발판 위에서 앉았다 일어나는 기계',
+  },
+  'ab-crunch-machine': {
+    aka: ['앱 크런치', '복근 머신', '크런치 머신'],
+    look: '앉아서 가슴 앞 패드를 안고 몸을 앞으로 마는 기계',
+  },
+  'torso-rotation-machine': {
+    aka: ['토르소', '로터리 토르소', '허리 돌리는 기계', '트위스트 머신'],
+    look: '앉아서 상체를 좌우로 돌리는 기계',
+  },
+  'triceps-extension-machine': {
+    aka: ['트라이셉 익스텐션 머신', '삼두 머신', '트라이셉스 머신'],
+    look: '팔꿈치를 패드에 대고 손잡이를 아래로 펴는 기계',
+  },
+  'plyo-box': {
+    aka: ['스텝박스', '스텝 박스', '플라이오 박스', '점프 박스'],
+    look: '올라서거나 뛰어오르는 단단한 상자',
+  },
+  'resistance-bands': {
+    aka: ['밴드', '고무밴드', '루프밴드', '파워밴드', '튜빙'],
+    look: '당기면 늘어나는 고무줄. 고리 모양이나 손잡이 달린 것',
+  },
+  'medicine-ball': {
+    aka: ['메디신볼', '슬램볼', '월볼'],
+    look: '손으로 들고 던지거나 바닥에 내려치는, 무게가 든 공',
+  },
+  'battle-rope': {
+    aka: ['배틀로프', '배틀 로프', '굵은 밧줄'],
+    look: '바닥에 고정된 굵은 밧줄. 양손으로 흔듭니다',
   },
   'foam-roller': {
     aka: ['폼 롤러', '마사지 롤러'],
     look: '원통 모양 스펀지. 몸을 굴려 근육을 풉니다',
   },
   'smith-machine': {
-    aka: ['스미스', '레일 달린 바벨', '가이드 바벨', '스미스 머신'],
+    aka: ['스미스', '레일 달린 바벨', '가이드 바벨', '스미스 머신', '스미스 랙'],
     look: '바벨이 두 개의 레일을 따라서만 위아래로 움직이는 기계',
   },
 };

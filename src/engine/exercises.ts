@@ -635,6 +635,102 @@ export const EXERCISES: readonly Exercise[] = [
     contribution: { biceps: 1, forearms: 0.2 },
     jointStress: { elbow: 0.4, wrist: 0.15 },
   },
+
+  /*
+   * ── 국내 헬스장에 흔한 기구 (4차) ─────────────────────────
+   *
+   * 실제 헬스장을 돌면 카탈로그에 없던 기구가 계속 나온다. 특히 하체·
+   * 엉덩이 머신(어브덕션, 킥백, 펜듈럼, 벨트 스쿼트)은 요즘 국내
+   * 헬스장의 기본인데 비어 있었다.
+   */
+  {
+    id: 'kettlebell-swing', name: '케틀벨 스윙', nameEn: 'Kettlebell Swing',
+    equipment: 'dumbbell', pattern: 'hinge', increment: 4,
+    contribution: { glutes: 1, hamstrings: 0.6, back: 0.3, abs: 0.3 },
+    jointStress: { lowBack: 0.4, hip: 0.3, shoulder: 0.2 },
+  },
+  {
+    id: 'decline-sit-up', name: '디클라인 싯업', nameEn: 'Decline Sit-Up',
+    equipment: 'bodyweight', pattern: 'core', increment: 2.5,
+    contribution: { abs: 1 },
+    jointStress: { lowBack: 0.35, neck: 0.2 },
+  },
+  {
+    id: 'machine-hip-abduction', name: '힙 어브덕션 (아웃타이)', nameEn: 'Hip Abduction Machine',
+    equipment: 'machine', pattern: 'isolation', increment: 5,
+    // 중둔근이다. 엉덩이 볼륨으로 센다.
+    contribution: { glutes: 1 },
+    jointStress: { hip: 0.25 },
+  },
+  {
+    id: 'machine-hip-adduction', name: '힙 어덕션 (이너타이)', nameEn: 'Hip Adduction Machine',
+    equipment: 'machine', pattern: 'isolation', increment: 5,
+    /*
+     * 내전근은 따로 세는 근육군이 없다. 대내전근이 엉덩이를 펴는 데
+     * 같이 쓰이니 엉덩이에 조금만 얹는다 — 주동근 자리에 넣으면 엉덩이
+     * 처방이 이 종목으로 채워진다.
+     */
+    contribution: { glutes: 0.3 },
+    jointStress: { hip: 0.3, knee: 0.1 },
+  },
+  {
+    id: 'machine-glute-kickback', name: '글루트 킥백 머신', nameEn: 'Glute Kickback Machine',
+    equipment: 'machine', pattern: 'isolation', increment: 5, unilateral: true,
+    contribution: { glutes: 1, hamstrings: 0.3 },
+    jointStress: { lowBack: 0.2, hip: 0.3 },
+  },
+  {
+    id: 'pendulum-squat', name: '펜듈럼 스쿼트', nameEn: 'Pendulum Squat',
+    equipment: 'machine', pattern: 'squat', increment: 10,
+    // 진자처럼 호를 그려서 무릎이 많이 나가고 대퇴사두에 몰린다.
+    contribution: { quads: 1, glutes: 0.45 },
+    jointStress: { knee: 0.65, hip: 0.3, lowBack: 0.1 },
+  },
+  {
+    id: 'belt-squat', name: '벨트 스쿼트', nameEn: 'Belt Squat',
+    equipment: 'machine', pattern: 'squat', increment: 10,
+    // 허리에 바를 지지 않는다. 허리 아픈 사람의 스쿼트 대안이다.
+    contribution: { quads: 1, glutes: 0.6, hamstrings: 0.2 },
+    jointStress: { knee: 0.55, hip: 0.35, lowBack: 0.05 },
+  },
+  {
+    id: 'trap-bar-deadlift', name: '트랩바 데드리프트', nameEn: 'Trap Bar Deadlift',
+    equipment: 'barbell', pattern: 'hinge', increment: 5,
+    // 몸 안에 서서 드니 허리 부담이 컨벤셔널보다 적고 무릎이 더 쓰인다.
+    contribution: { glutes: 1, quads: 0.6, hamstrings: 0.5, back: 0.4, traps: 0.4 },
+    jointStress: { lowBack: 0.5, hip: 0.4, knee: 0.4 },
+  },
+  {
+    id: 'glute-ham-raise', name: '글루트 햄 레이즈', nameEn: 'Glute Ham Raise',
+    equipment: 'bodyweight', pattern: 'isolation', increment: 2.5,
+    contribution: { hamstrings: 1, glutes: 0.5 },
+    jointStress: { knee: 0.4, lowBack: 0.2 },
+  },
+  {
+    id: 'machine-crunch', name: '앱 크런치 머신', nameEn: 'Ab Crunch Machine',
+    equipment: 'machine', pattern: 'core', increment: 5,
+    contribution: { abs: 1 },
+    jointStress: { lowBack: 0.25, neck: 0.1 },
+  },
+  {
+    id: 'torso-rotation', name: '토르소 로테이션', nameEn: 'Torso Rotation Machine',
+    equipment: 'machine', pattern: 'core', increment: 5,
+    contribution: { abs: 0.8 },
+    jointStress: { lowBack: 0.45 },
+  },
+  {
+    id: 'machine-triceps-extension', name: '머신 트라이셉 익스텐션', nameEn: 'Machine Triceps Extension',
+    equipment: 'machine', pattern: 'isolation', increment: 5,
+    contribution: { triceps: 1 },
+    jointStress: { elbow: 0.4 },
+  },
+  {
+    id: 'captains-chair-knee-raise', name: '니 레이즈 (캡틴 체어)', nameEn: "Captain's Chair Knee Raise",
+    equipment: 'bodyweight', pattern: 'core', increment: 2.5,
+    // 등을 받치고 팔꿈치로 버티니 행잉보다 쉽고 악력이 안 든다.
+    contribution: { abs: 1 },
+    jointStress: { lowBack: 0.25, shoulder: 0.15 },
+  },
 ]
 
 const BY_ID = new Map(EXERCISES.map((exercise) => [exercise.id, exercise]));

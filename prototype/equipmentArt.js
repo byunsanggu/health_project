@@ -181,6 +181,128 @@
       '<ellipse cx="19" cy="25" rx="3" ry="7"/>' +
       '<path d="M29 18 V32 M37 18 V32 M45 18 V32" opacity=".45"/>',
 
+    kettlebells:
+      // 쇠공 위 손잡이
+      '<circle cx="32" cy="31" r="11"/>' +
+      '<path d="M25 22 V16 a7 7 0 0 1 14 0 V22"/>',
+
+    'trap-bar':
+      // 육각 테 안의 손잡이 둘, 양옆 원판 끼우는 곳
+      '<path d="M22 15 H42 L50 24 L42 33 H22 L14 24 Z"/>' +
+      '<path d="M27 20 V28 M37 20 V28"/>' +
+      '<path d="M14 24 H6 M50 24 H58"/>',
+
+    'bench-decline':
+      // 머리 쪽이 낮게 기운 패드와 다리 거는 롤러
+      '<rect x="10" y="20" width="40" height="6" rx="2.5" transform="rotate(-12 30 23)"/>' +
+      '<path d="M18 28 V40 M44 22 V40"/>' +
+      '<circle cx="52" cy="16" r="3"/>' +
+      '<path d="M12 40 h40"/>',
+
+    'ab-bench':
+      // 좁고 기울어진 패드, 위쪽에 발 거는 롤러 두 개
+      '<rect x="12" y="22" width="36" height="5" rx="2" transform="rotate(-20 30 24)"/>' +
+      '<circle cx="50" cy="12" r="3"/><circle cx="50" cy="19" r="3"/>' +
+      '<path d="M16 33 V40 M42 20 V40"/>' +
+      '<path d="M12 40 h36"/>',
+
+    ghd:
+      // 허벅지 패드, 발목 롤러, 발판
+      '<rect x="14" y="22" width="22" height="7" rx="3"/>' +
+      '<path d="M36 25 H47"/>' +
+      '<circle cx="50" cy="20" r="3"/><circle cx="50" cy="29" r="3"/>' +
+      '<rect x="55" y="15" width="3" height="19" rx="1"/>' +
+      '<path d="M22 29 V40 M44 25 V40"/><path d="M16 40 h34"/>',
+
+    'captains-chair':
+      // 등받이와 팔꿈치 받침이 높이 달린 틀
+      '<rect x="28" y="10" width="8" height="18" rx="2"/>' +
+      '<path d="M18 14 H28 M36 14 H46"/>' +
+      '<path d="M22 14 V42 M42 14 V42"/>' +
+      '<path d="M16 42 h12 M36 42 h12"/>',
+
+    'hip-abduction-machine':
+      // 앉아서 무릎 바깥 패드를 밖으로 민다
+      '<rect x="22" y="28" width="20" height="5" rx="2"/>' +
+      '<rect x="22" y="12" width="5" height="16" rx="2"/>' +
+      '<rect x="15" y="18" width="5" height="12" rx="2"/><rect x="44" y="18" width="5" height="12" rx="2"/>' +
+      '<path d="M13 24 h-6 M51 24 h6"/>' +
+      '<path d="M32 33 V42"/><path d="M24 42 h16"/>',
+
+    'hip-adduction-machine':
+      // 앉아서 무릎 안쪽 패드를 안으로 모은다
+      '<rect x="22" y="28" width="20" height="5" rx="2"/>' +
+      '<rect x="22" y="12" width="5" height="16" rx="2"/>' +
+      '<rect x="12" y="18" width="5" height="12" rx="2"/><rect x="47" y="18" width="5" height="12" rx="2"/>' +
+      '<path d="M5 24 h5 M59 24 h-5"/>' +
+      '<path d="M32 33 V42"/><path d="M24 42 h16"/>',
+
+    'glute-kickback-machine':
+      // 가슴 패드에 기대 한 다리로 발판을 뒤로 찬다
+      '<rect x="12" y="18" width="16" height="5" rx="2"/>' +
+      '<path d="M20 23 V42"/><path d="M12 42 h16"/>' +
+      '<rect x="24" y="32" width="10" height="4" rx="2"/>' +
+      '<path d="M32 30 L50 22"/>' +
+      '<rect x="49" y="15" width="4" height="13" rx="1"/>',
+
+    'pendulum-squat-machine':
+      // 위쪽 축에 매달린 어깨 패드가 호를 그린다
+      '<circle cx="46" cy="9" r="2.5"/>' +
+      '<path d="M46 9 L27 29"/>' +
+      '<rect x="20" y="26" width="11" height="6" rx="2" transform="rotate(-45 25 29)"/>' +
+      '<path d="M16 24 a30 30 0 0 0 18 18" opacity=".45"/>' +
+      '<rect x="8" y="38" width="18" height="5" rx="1.5"/>' +
+      '<path d="M6 45 h44" opacity=".45"/>',
+
+    'belt-squat-machine':
+      // 발판 위에 서서 허리 벨트에 건 무게를 든다
+      '<rect x="10" y="38" width="44" height="5" rx="1.5"/>' +
+      '<path d="M32 38 V30"/>' +
+      '<path d="M23 26 h18"/>' +
+      '<path d="M40 31 L54 22"/>' +
+      '<circle cx="54" cy="22" r="3"/>',
+
+    'ab-crunch-machine':
+      // 앉아서 가슴 앞 패드를 안고 몸을 만다
+      '<rect x="22" y="30" width="16" height="5" rx="2"/>' +
+      '<rect x="22" y="12" width="5" height="18" rx="2"/>' +
+      '<path d="M27 14 C38 14 42 18 42 24"/>' +
+      '<path d="M40 24 h6"/>' +
+      '<path d="M30 35 V43"/><path d="M22 43 h16"/>',
+
+    'torso-rotation-machine':
+      // 앉아서 가슴 패드를 좌우로 돌린다
+      '<rect x="22" y="30" width="20" height="5" rx="2"/>' +
+      '<path d="M32 35 V43"/><path d="M24 43 h16"/>' +
+      '<rect x="26" y="14" width="12" height="10" rx="2"/>' +
+      '<path d="M17 18 a15 6 0 0 0 30 0" opacity=".6"/>',
+
+    'triceps-extension-machine':
+      // 팔을 비스듬한 패드에 얹고 손잡이를 아래로 편다
+      '<rect x="20" y="32" width="16" height="5" rx="2"/>' +
+      '<path d="M28 37 V43"/><path d="M20 43 h16"/>' +
+      '<path d="M30 28 L44 20 l3 4 -14 8 Z"/>' +
+      '<path d="M46 21 L50 31"/><path d="M47 32 h6"/>',
+
+    'plyo-box':
+      // 단단한 상자
+      '<path d="M14 40 V22 L22 16 H50 V34 L42 40 Z"/>' +
+      '<path d="M14 22 H42 V40 M42 22 L50 16"/>',
+
+    'resistance-bands':
+      // 고리 모양 고무줄
+      '<ellipse cx="32" cy="24" rx="20" ry="9"/>' +
+      '<ellipse cx="32" cy="24" rx="14" ry="5" opacity=".45"/>',
+
+    'medicine-ball':
+      '<circle cx="32" cy="25" r="13"/>' +
+      '<path d="M19 25 h26 M32 12 a8 13 0 0 1 0 26" opacity=".45"/>',
+
+    'battle-rope':
+      // 한쪽에 고정된 굵은 밧줄이 물결친다
+      '<rect x="50" y="20" width="6" height="10" rx="1"/>' +
+      '<path d="M50 25 C44 15 38 35 32 25 S20 15 14 25 S8 32 6 30"/>',
+
     'chest-press-machine':
       '<rect x="24" y="28" width="14" height="5" rx="2"/>' +
       '<path d="M31 28 V14"/>' +
