@@ -16,7 +16,7 @@
  */
 import { weightHistoryFor, type HistoryScope } from './gymWeight.ts';
 import { weightLabelIn } from './units.ts';
-import type { Exercise, SessionLog } from './types.ts';
+import type { Exercise, MovementPattern, SessionLog } from './types.ts';
 
 /* ── 말투 ──────────────────────────────────────── */
 
@@ -442,6 +442,68 @@ export function pushLine(style: CoachStyle, at = 0): string {
   return pick(PUSH[style], at);
 }
 
+/**
+ * 마지막 하나 전에 외치는 말. 숫자 바로 뒤에 붙는다 — "아홉, 하나 더! 마지막!!"
+ * 현장에서 제일 많이 하는 말이 이거다.
+ */
+export function lastCallLine(style: CoachStyle): string {
+  if (style === 'fired') return '하나 더! 마지막!!';
+  if (style === 'data') return '마지막 1회';
+  return '하나 더, 마지막이에요';
+}
+
+/**
+ * 세트 중간의 자세 한마디 — 동작별로 짧게.
+ *
+ * 트레이너는 세트 중에 설명하지 않는다. 대신 무너지기 시작하는 지점에서
+ * 두세 마디로 바로잡는다. 숫자 사이에 끼므로 숫자 하나 길이를 넘기지 않는다.
+ * 숫자로 말투는 자세 말을 하지 않는다.
+ */
+const FORM_CUES: Partial<Record<MovementPattern, { fired: readonly string[]; calm: readonly string[] }>> = {
+  squat: {
+    fired: ['엉덩이 뒤로 빼세요!', '무릎은 발끝 방향으로!', '가슴 세우세요!'],
+    calm: ['엉덩이를 뒤로요.', '무릎은 발끝 방향으로요.', '가슴 세우고요.'],
+  },
+  lunge: {
+    fired: ['상체 세우세요!', '앞발 뒤꿈치로 미세요!'],
+    calm: ['상체 세우고요.', '앞발 뒤꿈치로 밀어요.'],
+  },
+  hinge: {
+    fired: ['등 펴세요!', '엉덩이로 미세요!', '바는 몸에 붙이세요!'],
+    calm: ['등 펴고요.', '엉덩이로 밀어요.', '바는 몸 가까이요.'],
+  },
+  horizontalPush: {
+    fired: ['가슴 여세요!', '어깨 내리세요!', '천천히 내리세요!'],
+    calm: ['가슴 열고요.', '어깨는 내리고요.', '천천히 내려요.'],
+  },
+  verticalPush: {
+    fired: ['배에 힘 주세요!', '허리 꺾지 마세요!'],
+    calm: ['배에 힘 주고요.', '허리 꺾이지 않게요.'],
+  },
+  verticalPull: {
+    fired: ['팔꿈치로 당기세요!', '가슴 쪽으로!', '어깨 내리세요!'],
+    calm: ['팔꿈치로 당겨요.', '가슴 쪽으로요.', '어깨는 내리고요.'],
+  },
+  horizontalPull: {
+    fired: ['팔꿈치 뒤로!', '날개뼈 모으세요!', '반동 없이!'],
+    calm: ['팔꿈치를 뒤로요.', '날개뼈 모으고요.', '반동 없이요.'],
+  },
+  isolation: {
+    fired: ['반동 없이!', '끝에서 꽉 쥐세요!', '천천히 내리세요!'],
+    calm: ['반동 없이요.', '끝에서 한 번 꽉요.', '천천히 내려요.'],
+  },
+  core: {
+    fired: ['숨 쉬세요!', '허리 띄우지 마세요!'],
+    calm: ['숨은 쉬면서요.', '허리 뜨지 않게요.'],
+  },
+};
+
+export function formCueLine(style: CoachStyle, pattern: MovementPattern, at = 0): string | null {
+  if (style === 'data') return null;
+  const cues = FORM_CUES[pattern];
+  return cues ? pick(cues[style], at) : null;
+}
+
 const ASK_FEEL: Record<CoachStyle, readonly string[]> = {
   fired: ['무게 어땠어요? 솔직하게요.', '어땠어요? 더 갈 수 있었어요?', '무게 괜찮았어요? 정직하게 눌러 주세요.'],
   calm: ['무게는 어땠어요?', '무게가 괜찮은가요?', '방금 세트 어땠어요?'],
@@ -473,6 +535,14 @@ export interface AfterSetInput {
   weightPr?: boolean;
   /** 돌려 쓰기 순번 — 보통 종목 순서 + 세트 순서 */
   at?: number;
+  /** 불러 줄 이름 ("민수") — 축하할 때 부른다 */
+  name?: string | null;
+}
+
+/** "민수님, " — 이름이 없으면 빈 문자열. */
+function call(name?: string | null): string {
+  const clean = (name ?? '').trim();
+  return clean ? `${clean}님, ` : '';
 }
 
 const FEEL_ACK: Record<CoachStyle, Partial<Record<Feel, readonly string[]>>> = {
@@ -540,9 +610,10 @@ export function afterSetLines(input: AfterSetInput): string[] {
 
   // 처음 든 무게가 제일 먼저다. 그날 들을 말 중에 제일 기억에 남는다.
   if (input.weightPr) {
-    if (style === 'fired') lines.push('이 종목 최고 무게입니다! 오늘 기록 세웠습니다.');
+    const who = call(input.name);
+    if (style === 'fired') lines.push(`${who}이 종목 최고 무게입니다! 오늘 기록 세웠습니다.`);
     else if (style === 'data') lines.push('이 종목 최고 중량 갱신.');
-    else lines.push('이 종목에서 처음 든 무게예요. 축하해요!');
+    else lines.push(`${who}이 종목에서 처음 든 무게예요. 축하해요!`);
   } else if (input.growth) {
     lines.push(growthLine(style, input.growth, at));
   } else {
@@ -637,18 +708,36 @@ export interface WrapUpInput {
   weekTarget?: number;
   /** 돌려 쓰기 순번 — 보통 날짜에서 뽑는다 */
   at?: number;
+  name?: string | null;
+  /** 제일 앞에 고른 목표 — 오늘 한 운동이 그 목표에 무슨 뜻인지 한 줄 */
+  goal?: 'hypertrophy' | 'strength' | 'fatLoss' | 'general' | null;
 }
+
+const GOAL_LINE: Record<'fired' | 'calm', Record<'hypertrophy' | 'strength' | 'fatLoss' | 'general', string>> = {
+  fired: {
+    hypertrophy: '근육은 오늘 운동이 아니라 오늘 밤에 자랍니다. 잠 꼭 챙기세요.',
+    strength: '오늘 든 무게가 다음 기록의 발판입니다.',
+    fatLoss: '근육 지키면서 빼는 겁니다. 오늘 운동이 그걸 해 줍니다.',
+    general: '오늘 나온 것 자체가 이긴 겁니다.',
+  },
+  calm: {
+    hypertrophy: '근육은 쉬는 동안 자라요. 오늘 밤 잠이 운동만큼 중요해요.',
+    strength: '오늘 든 무게가 다음에 더 들 수 있는 바탕이 돼요.',
+    fatLoss: '근력 운동이 빠지는 동안 근육을 지켜 줘요. 잘하셨어요.',
+    general: '꾸준히 나오시는 게 제일 중요해요.',
+  },
+};
 
 const WRAP_CLOSE: Record<CoachStyle, readonly string[]> = {
   fired: [
     '이게 쌓이면 몸이 바뀝니다. 수고하셨습니다!',
     '오늘 한 만큼 반드시 돌아옵니다. 수고하셨습니다!',
-    '오늘도 이겼습니다. 단백질 챙기시고 푹 주무세요!',
+    '오늘도 이겼습니다. 단백질 꼭 챙기세요!',
   ],
   calm: [
     '정말 잘하셨어요. 푹 쉬세요.',
     '오늘도 수고 많으셨어요. 물 많이 드세요.',
-    '잘하셨어요. 단백질 챙겨 드시고 잘 주무세요.',
+    '잘하셨어요. 단백질 챙겨 드세요.',
   ],
   data: ['세션 종료.'],
 };
@@ -689,7 +778,9 @@ export function wrapUpLines(input: WrapUpInput): string[] {
     if (input.grew) lines.push(`지난번보다 늘어난 종목이 ${input.grew}개예요.`);
   }
   if (week) lines.push(week);
-  lines.push(pick(WRAP_CLOSE[style], at));
+  if (input.goal && !input.firstEver) lines.push(GOAL_LINE[style][input.goal]);
+  const who = call(input.name);
+  lines.push(who + pick(WRAP_CLOSE[style], at));
   return lines;
 }
 
@@ -710,7 +801,13 @@ export interface SessionStartInput {
   streakWeeks?: number;
   /** 이어서 하는 중이면 */
   resuming?: boolean;
+  name?: string | null;
+  /** 컨디션 0~100. 낮으면 무게보다 자세를 보자고 먼저 말한다 */
+  condition?: number;
 }
+
+/** 이 아래면 시작할 때 컨디션 이야기를 한다. 화면의 컨디션 %와 같은 값이다. */
+export const LOW_CONDITION = 70;
 
 /**
  * 시작을 누르면 하는 말.
@@ -726,9 +823,18 @@ export function sessionStartLines(input: SessionStartInput): string[] {
   }
   const lines: string[] = [];
   const time = input.minutes ? ` 약 ${input.minutes}분` : '';
+  const who = call(input.name);
   if (style === 'data') lines.push(`${input.sessionName}, ${input.lifts}종목,${time}.`);
-  else if (style === 'fired') lines.push(`오늘은 ${input.sessionName}, ${input.lifts}종목입니다.${time ? `${time}, 집중합시다!` : ''}`);
-  else lines.push(`오늘은 ${input.sessionName}, ${input.lifts}종목이에요.${time ? `${time} 걸려요.` : ''}`);
+  else if (style === 'fired') lines.push(`${who}오늘은 ${input.sessionName}, ${input.lifts}종목입니다.${time ? `${time}, 집중합시다!` : ''}`);
+  else lines.push(`${who}오늘은 ${input.sessionName}, ${input.lifts}종목이에요.${time ? `${time} 걸려요.` : ''}`);
+
+  // 컨디션이 낮은 날은 그 말이 제일 먼저다 — 블록 이야기보다 오늘 몸이 우선이다.
+  if (input.condition !== undefined && input.condition < LOW_CONDITION && !input.firstEver) {
+    lines.push(style === 'data' ? `컨디션 ${input.condition}%. 무게 유지 권장.`
+      : style === 'fired' ? '오늘 컨디션이 좀 떨어져 있습니다. 무게 욕심보다 자세로 이기는 날입니다.'
+        : '오늘은 컨디션이 좀 낮아요. 무게보다 자세에 집중해요. 힘들면 세트 줄여도 괜찮아요.');
+    return lines;
+  }
 
   if (input.firstEver) {
     lines.push(style === 'data' ? '첫 세션. 무게 탐색.'

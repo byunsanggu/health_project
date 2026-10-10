@@ -8,6 +8,8 @@ import {
   FIRED_MIDDLE,
   bestWeightBefore,
   sessionStartLines,
+  lastCallLine,
+  formCueLine,
   afterSetLines,
   askFeelLine,
   beforeSetLines,
@@ -24,6 +26,7 @@ import {
   type CoachStyle,
 } from '../coach.ts';
 import { EXERCISES } from '../exercises.ts';
+import { buildCues } from '../tempo.ts';
 import type { SessionLog } from '../types.ts';
 
 const STYLES: CoachStyle[] = ['calm', 'fired', 'data'];
@@ -369,6 +372,65 @@ describe('이어 붙인 말이 겹치지 않는다', () => {
               assert.doesNotMatch(said, /(좋습니다|좋아요|좋네요)[.!]?\s+\1/, `${style} ${feel} ${deltaKg} ${at}: ${said}`);
               assert.doesNotMatch(said, /(\S{2,})[.!]\s+\1[.!]/, `${style} ${feel} ${deltaKg} ${at}: ${said}`);
             }
+          }
+        }
+      }
+    }
+  });
+});
+
+describe('트레이너가 실제로 하는 말', () => {
+  it('마지막 하나 전에는 "하나 더! 마지막!!"', () => {
+    assert.equal(lastCallLine('fired'), '하나 더! 마지막!!');
+    const cues = buildCues({ repRange: { min: 8, max: 10 }, lastCall: lastCallLine('fired') });
+    assert.equal(cues.find((cue) => cue.rep === 9)!.say, '아홉, 하나 더! 마지막!!');
+    // 혼자 모드는 그대로
+    assert.equal(buildCues({ repRange: { min: 8, max: 10 } }).find((cue) => cue.rep === 9)!.say, '아홉, 하나 남았습니다');
+  });
+
+  it('세트 중 자세 한마디는 동작에 맞고 짧다', () => {
+    assert.match(formCueLine('fired', 'squat')!, /엉덩이|무릎|가슴/);
+    assert.match(formCueLine('calm', 'hinge')!, /등|엉덩이|바/);
+    assert.equal(formCueLine('data', 'squat'), null, '숫자로 말투는 자세 말을 안 한다');
+    for (const pattern of ['squat', 'lunge', 'hinge', 'horizontalPush', 'verticalPush', 'verticalPull', 'horizontalPull', 'isolation', 'core'] as const) {
+      for (const style of ['fired', 'calm'] as const) {
+        for (let at = 0; at < 3; at += 1) {
+          const line = formCueLine(style, pattern, at)!;
+          assert.ok(speechSeconds(line) < 2.4, `${pattern} ${line}`);
+          if (style === 'fired') assert.doesNotMatch(line, /(해|가자|버텨|해라|하자|봐|펴|열어)!/, line);
+        }
+      }
+    }
+  });
+
+  it('이름이 있으면 부른다', () => {
+    assert.match(sessionStartLines({ style: 'calm', sessionName: '상체 A', lifts: 5, name: '민수' })[0]!, /^민수님, /);
+    assert.match(wrapUpLines({ style: 'fired', setsDone: 12, liftsDone: 4, name: '민수' }).join(' '), /민수님/);
+    assert.match(afterSetLines({ style: 'fired', feel: 'right', lastOfLift: false, weightPr: true, nextWeightKg: 100, name: '민수' })[0]!, /^민수님/);
+    assert.doesNotMatch(sessionStartLines({ style: 'calm', sessionName: '상체 A', lifts: 5 })[0]!, /님,/);
+  });
+
+  it('컨디션이 낮은 날은 자세를 먼저 말한다', () => {
+    const low = sessionStartLines({ style: 'fired', sessionName: '하체 A', lifts: 5, condition: 50, weekInBlock: 5, accumulationWeeks: 5 }).join(' ');
+    assert.match(low, /컨디션/);
+    assert.doesNotMatch(low, /제일 힘든 주/, '컨디션 낮은 날에 "제일 힘든 주"로 밀지 않는다');
+    assert.doesNotMatch(sessionStartLines({ style: 'fired', sessionName: '하체 A', lifts: 5, condition: 90 }).join(' '), /컨디션/);
+  });
+
+  it('마무리에 목표 한 줄', () => {
+    assert.match(wrapUpLines({ style: 'calm', setsDone: 12, liftsDone: 4, goal: 'fatLoss' }).join(' '), /근육을 지켜/);
+    assert.match(wrapUpLines({ style: 'fired', setsDone: 12, liftsDone: 4, goal: 'hypertrophy' }).join(' '), /잠/);
+  });
+});
+
+describe('마무리 말이 겹치지 않는다', () => {
+  it('목표 한 줄과 인사에 같은 말("푹", "주무세요")이 두 번 나오지 않는다', () => {
+    for (const style of ['calm', 'fired'] as const) {
+      for (const goal of ['hypertrophy', 'strength', 'fatLoss', 'general'] as const) {
+        for (let at = 0; at < 3; at += 1) {
+          const said = wrapUpLines({ style, setsDone: 12, liftsDone: 4, goal, at }).join(' ');
+          for (const word of ['푹', '주무세요', '단백질', '잠']) {
+            assert.ok(said.split(word).length <= 2, `${style} ${goal} ${at}: ${said}`);
           }
         }
       }

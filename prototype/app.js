@@ -5177,6 +5177,7 @@
       setsDone: lift.sets.filter(function (item) { return item.done; }).length,
       weightPr: firstTimeWeight(lift, setIndex, weight),
       at: liftIndex + setIndex,
+      name: state.friendName,
     });
     if (allSetsDone()) lines = lines.concat(coachWrapUp());
     coachSay(lines);
@@ -5258,6 +5259,8 @@
       firstEver: !state.history.some(function (session) { return session.date < state.todayDate; }),
       streakWeeks: streak ? streak.current : 0,
       resuming: resuming,
+      name: state.friendName,
+      condition: conditionPercent(),
     });
   }
 
@@ -5291,6 +5294,8 @@
       weekDone: weekSessionsDone() + 1,
       weekTarget: trainingDays().length,
       at: Number(String(state.todayDate).slice(-2)) || 0,
+      name: state.friendName,
+      goal: (state.answers && state.answers.goals && state.answers.goals[0]) || null,
     });
   }
 
@@ -5451,7 +5456,11 @@
     if (!set) return;
 
     var lead = typeof leadSeconds === 'number' ? leadSeconds : 3;
-    var input = { repRange: set.targetReps, tempo: tempoOf(), leadInSeconds: lead };
+    var input = {
+      repRange: set.targetReps, tempo: tempoOf(), leadInSeconds: lead,
+      // PT 모드는 마지막 하나 전에 "하나 더! 마지막!!"
+      lastCall: ptOn() ? E.lastCallLine(state.coach.style) : undefined,
+    };
     var cues = E.buildCues(input);
     var run = { liftIndex: liftIndex, setIndex: setIndex, rep: 0, timers: [], startedAt: Date.now() };
     state.counting = run;
@@ -5491,6 +5500,12 @@
         // 끝나기 두 개 전. 숫자 사이에 들어가야 해서 짧은 말만 한다.
         if (ptOn() && set.targetReps.max >= 5 && cue.rep === set.targetReps.max - 2) {
           speak(E.forSpeech(E.pushLine(state.coach.style, liftIndex + setIndex)));
+        }
+        // 두 번째 개수 뒤에 자세 한마디 — 리듬이 잡힌 자리, 아직 지치기 전.
+        if (ptOn() && set.targetReps.max >= 6 && cue.rep === 2 && set.targetReps.min !== 2) {
+          var lifted = state.lifts[liftIndex];
+          var form = lifted && E.formCueLine(state.coach.style, lifted.exercise.pattern, liftIndex + setIndex);
+          if (form) speak(E.forSpeech(form));
         }
         // 화면의 숫자도 같이 올라간다 — 소리가 안 나는 기기에서도 세어진다.
         showCount(String(cue.rep), cue.say);

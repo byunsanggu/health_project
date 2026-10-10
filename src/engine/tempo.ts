@@ -167,6 +167,8 @@ export interface CueInput {
   tempo?: Tempo;
   /** "시작"을 말하고 실제로 움직이기까지 주는 시간 */
   leadInSeconds?: number;
+  /** 마지막 하나 전에 붙이는 말. 없으면 "하나 남았습니다" — PT 모드는 "하나 더! 마지막!!" */
+  lastCall?: string;
 }
 
 /**
@@ -193,7 +195,7 @@ export function buildCues(input: CueInput): Cue[] {
      */
     if (rep === min && min < max) say += ', 목표';
     // 마지막 하나 전에 알려 준다. 알고 들어가는 마지막과 모르고 맞는 마지막은 다르다.
-    else if (rep === max - 1 && max > 1) say += ', 하나 남았습니다';
+    else if (rep === max - 1 && max > 1) say += ', ' + (input.lastCall ?? '하나 남았습니다');
     else if (rep === max) say += ', 끝';
 
     cues.push({ atMs: Math.round((lead + per * rep) * 1000), say, rep });
