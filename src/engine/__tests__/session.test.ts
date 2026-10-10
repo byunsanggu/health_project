@@ -362,3 +362,56 @@ describe('한 세션에 같은 종목을 두 번 넣지 않는다', () => {
     assert.equal(session.exercises.length, 1);
   });
 });
+
+describe('buildSession — 주중 · 세션 길이', () => {
+  it('첫 주 중간에도 세트가 깎이지 않는다 — 이번 주 기록과 주간 처방을 견주지 않는다', () => {
+    // 지난주까지 기록이 없고, 이번 주 월요일에 한 번 했다.
+    const monday = session('2026-09-21', sets('barbell-bench-press', 4, { weightKg: 60, reps: 8, rir: 2 }));
+    const plan = planFrom([monday], '2026-09-20', 0);   // 처방 기준: 지난주(기록 없음)
+    const planned = buildSession({ template, date: '2026-09-24', plan, history: [monday], index });
+    for (const item of planned.exercises) {
+      const slot = template.slots.find((s) => s.exerciseId === item.exercise.id)!;
+      assert.equal(item.sets.length, slot.sets, `${item.exercise.name} ${item.sets.length}세트`);
+    }
+  });
+
+  it('주간 처방으로 세트가 늘어도 세션은 한 주에 2세트까지만 길어진다', () => {
+    const wide: SessionTemplate = {
+      name: '상체', setCap: 12,
+      slots: [
+        { exerciseId: 'barbell-bench-press', sets: 3, repRange: { min: 6, max: 10 } },
+        { exerciseId: 'lat-pulldown', sets: 3, repRange: { min: 6, max: 10 } },
+        { exerciseId: 'lateral-raise', sets: 2, repRange: { min: 10, max: 15 } },
+        { exerciseId: 'barbell-curl', sets: 2, repRange: { min: 10, max: 15 } },
+        { exerciseId: 'triceps-pushdown', sets: 2, repRange: { min: 10, max: 15 } },
+      ],
+    };
+    // 모든 부위를 두 배로 올리라는 처방
+    const plan: WeeklyPlan = {
+      ...planFrom([], '2026-09-20', 1),
+      phase: 'accumulation', weekInBlock: 2,
+      volume: (['chest', 'back', 'sideDelt', 'biceps', 'triceps'] as const).map((muscle) => ({
+        muscle, label: muscle, currentSets: 3, prescribedSets: 6, deltaSets: 3,
+        zone: 'underMev', zoneLabel: '', action: 'increase', rationale: '',
+      })),
+    };
+    const lastWeek = [session('2026-09-15',
+      sets('barbell-bench-press', 3, { weightKg: 60, reps: 8, rir: 2 }),
+      sets('lat-pulldown', 3, { weightKg: 50, reps: 8, rir: 2 }),
+      sets('lateral-raise', 2, { weightKg: 6, reps: 12, rir: 2 }),
+      sets('barbell-curl', 2, { weightKg: 25, reps: 12, rir: 2 }),
+      sets('triceps-pushdown', 2, { weightKg: 20, reps: 12, rir: 2 }))];
+    const planned = buildSession({ template: wide, date: '2026-09-21', plan, history: lastWeek, index });
+    const total = planned.exercises.reduce((sum, item) => sum + item.sets.length, 0);
+    assert.equal(total, 14, `12 + 2 = 14세트여야 하는데 ${total}`);
+    // 늘어난 세트는 복합 종목에 남고 고립 종목에서 먼저 걷힌다
+    const bench = planned.exercises.find((item) => item.exercise.id === 'barbell-bench-press')!;
+    assert.ok(bench.sets.length > 3);
+  });
+
+  it('디로드 주에는 상한을 적용하지 않는다(어차피 줄인다)', () => {
+    const plan: WeeklyPlan = { ...planFrom([], '2026-09-20', 1), phase: 'deload', weekInBlock: 0 };
+    const planned = buildSession({ template, date: '2026-09-21', plan, history: [], index });
+    assert.ok(planned.exercises.length > 0);
+  });
+});

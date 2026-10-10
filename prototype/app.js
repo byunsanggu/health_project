@@ -480,6 +480,16 @@
     return trainingDays().length - 1;
   }
 
+  /** 이번 주 오늘 전까지 운동한 날 수. */
+  function weekSessionsDone() {
+    if (!LIVE) return todayIndex();
+    var done = {};
+    state.history.forEach(function (item) {
+      if (item.date >= state.monday && item.date < state.todayDate && (item.sets || []).length > 0) done[item.date] = true;
+    });
+    return Object.keys(done).length;
+  }
+
   /**
    * 프로그램상 오늘 할 차례.
    *
@@ -487,14 +497,7 @@
    * 아니라 화 · 목 · 토에 오는 사람도 A → B → C로 간다.
    */
   function scheduledTemplateIndex() {
-    if (LIVE) {
-      var done = {};
-      state.history.forEach(function (item) {
-        if (item.date >= state.monday && item.date < state.todayDate && (item.sets || []).length > 0) done[item.date] = true;
-      });
-      return Object.keys(done).length % state.program.templates.length;
-    }
-    return todayIndex() % state.program.templates.length;
+    return weekSessionsDone() % state.program.templates.length;
   }
 
   /** 실제로 오늘 할 날. 직접 고른 게 있으면 그것. */
@@ -1180,7 +1183,7 @@
       });
     });
 
-    return { name: template.name, slots: slots };
+    return { name: template.name, slots: slots, setCap: template.setCap };
   }
 
   /**
@@ -1239,6 +1242,11 @@
           }),
       ),
     };
+    // 직접 더한 종목은 상한에 그대로 더한다 — 고른 것 때문에 처방이 깎이면 안 된다.
+    if (template !== baseTemplate && baseTemplate.setCap) {
+      template.setCap = baseTemplate.setCap + template.slots.slice(baseTemplate.slots.length)
+        .reduce(function (sum, slot) { return sum + slot.sets; }, 0);
+    }
 
     /*
      * 뺀 종목을 대체로 바꾼다.
@@ -3359,7 +3367,9 @@
     var reps = first.targetReps.min === first.targetReps.max
       ? first.targetReps.max + '회'
       : first.targetReps.min + '–' + first.targetReps.max + '회';
-    var load = first.weightKg > 0 ? first.weightKg + 'kg' : '맨몸';
+    // 맨몸 종목에 붙은 무게는 더한 무게다. "풀업 2.5kg"이라고 쓰면 2.5kg을 든다는 말이 된다.
+    var bodyweight = lift.exercise && lift.exercise.equipment === 'bodyweight';
+    var load = first.weightKg > 0 ? (bodyweight ? '맨몸 +' : '') + first.weightKg + 'kg' : '맨몸';
     return sets + '세트 · ' + load + ' · ' + reps;
   }
 
@@ -3475,7 +3485,14 @@
     return now.getHours() * 60 + now.getMinutes();
   }
 
+  /**
+   * 다음 약속. 직접 정한 적이 없으면 없다.
+   *
+   * 기본 시각(19:00)으로 "가기로 하셨습니다"라고 하면, 그런 약속을 한 적
+   * 없는 사람에게 약속을 지어내는 것이다.
+   */
   function nextPromise() {
+    if (!state.promise) return null;
     return E.nextSlot(promiseSlots(), nowWeekday(), nowMinutes());
   }
 
@@ -3609,6 +3626,19 @@
    * 봐야 하는 것은 **언제 한 번 더 가는가**다.
    */
   function promiseCard() {
+    if (!state.promise) {
+      return el('button', {
+        type: 'button', class: 'promise-row promise-unset',
+        title: '운동 가는 요일과 시각을 정합니다',
+        onclick: openPromise,
+      }, [
+        el('span', { class: 'plan-main' }, [
+          el('span', { class: 'name', text: '운동 가는 시각을 정해 두세요' }),
+          el('span', { class: 'plan-sets', text: '"주 ' + trainingDays().length + '회"보다 "화요일 7시"가 잘 지켜집니다' }),
+        ]),
+        el('span', { class: 'detail', text: '›' }),
+      ]);
+    }
     var next = nextPromise();
     if (!next) return null;
 
@@ -7330,7 +7360,7 @@
 
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('h2', { text: '주간 볼륨' }),
-      el('p', { class: 'meta', text: state.monday + ' 주 · 유효 세트 기준 · 오늘 포함 4회차' }),
+      el('p', { class: 'meta', text: state.monday + ' 주 · 유효 세트 기준 · 오늘 포함 ' + (weekSessionsDone() + 1) + '회차' }),
     ]));
 
     if (report.length === 0) {
@@ -9798,7 +9828,7 @@
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: 'RIR 신뢰도' }),
-        el('span', { class: 'meta', text: calibration.confidence }),
+        el('span', { class: 'meta', text: { none: '아직 판단 전', low: '낮음', medium: '보통', high: '높음' }[calibration.confidence] || calibration.confidence }),
       ]),
       calBody,
     ]));

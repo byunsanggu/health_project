@@ -778,6 +778,7 @@ export function buildProgram(
     const duplicate = blueprints.findIndex((other) => other.name === day.name) !== dayIndex;
     return {
       name: duplicate ? `${day.name} 2` : day.name,
+      setCap: limit,
       slots: week[dayIndex]!.map((item): SessionSlot => ({
         exerciseId: item.exercise.id,
         sets: item.sets,
