@@ -4121,7 +4121,7 @@
            * 않는다. 그리고 화면을 켜 둔다 — 운동 중에 화면이 꺼지면 말도
            * 끊긴다.
            */
-          speak(state.coach.style === 'fired' ? '시작합니다!' : '시작할게요.');
+          coachSay(coachStartLines(doneSets > 0));
           acquireWakeLock();
         }
         // 시계는 여기서 돈다. 세트를 기록해야 시작하면 워밍업 시간이 빠진다.
@@ -5133,6 +5133,7 @@
       setup: first ? E.setupFor(lift.exercise) : [],
       machineSetting: state.machineSettings[settingKeyFor(lift)] || null,
       liftIndex: liftIndex,
+      totalLifts: state.lifts.length,
     }));
   }
 
@@ -5174,9 +5175,25 @@
       stopReason: stopEarly ? decision.reason : null,
       growth: E.growthAt(state.history, lift.exercise, state.todayDate, weight, reps, coachScope(lift)),
       setsDone: lift.sets.filter(function (item) { return item.done; }).length,
+      weightPr: firstTimeWeight(lift, setIndex, weight),
+      at: liftIndex + setIndex,
     });
     if (allSetsDone()) lines = lines.concat(coachWrapUp());
     coachSay(lines);
+  }
+
+  /**
+   * 이 종목에서 처음 든 무게인가. 오늘 같은 종목에서 이미 그 무게를
+   * 들었으면 아니다 — 축하는 한 번이다. 처음 하는 종목은 기록이 아니라
+   * 기준선이라 말하지 않는다.
+   */
+  function firstTimeWeight(lift, setIndex, weight) {
+    if (!(weight > 0)) return false;
+    var best = E.bestWeightBefore(state.history, lift.exercise, state.todayDate, coachScope(lift));
+    if (best === null || weight <= best) return false;
+    return !lift.sets.some(function (item, at) {
+      return at !== setIndex && item.done && item.weightKg >= weight;
+    });
   }
 
   /**
@@ -5213,6 +5230,37 @@
     render();
   }
 
+  /**
+   * 시작을 누르면 하는 말 — 오늘 무엇을 얼마나, 이번 주가 블록의 어디인지.
+   * 시작 버튼을 누른 그 순간에 말해야 iOS가 뒤에 오는 말을 막지 않는다.
+   */
+  function coachStartLines(resuming) {
+    var estimate = null;
+    try {
+      // 화면 위 "약 45분"과 같은 계산이어야 한다 — 말과 화면 숫자가 다르면 둘 다 안 믿는다.
+      estimate = E.estimateSessionTime(state.session, {
+        restMultiplier: E.styleProfile(state.style).restMultiplier,
+        restBand: state.restBand || undefined,
+        restOverrides: state.restOverrides,
+      });
+    } catch (err) { estimate = null; }
+    var status = state.block ? E.blockStatus(state.block, state.todayDate) : null;
+    var streak = null;
+    try { streak = currentStreak(); } catch (err) { streak = null; }
+    return E.sessionStartLines({
+      style: state.coach.style,
+      sessionName: state.session ? state.session.name : '오늘 운동',
+      lifts: state.lifts.length,
+      minutes: estimate && estimate.totalMinutes ? estimate.totalMinutes : undefined,
+      phase: state.plan.phase,
+      weekInBlock: state.plan.weekInBlock,
+      accumulationWeeks: status ? status.accumulationWeeks : undefined,
+      firstEver: !state.history.some(function (session) { return session.date < state.todayDate; }),
+      streakWeeks: streak ? streak.current : 0,
+      resuming: resuming,
+    });
+  }
+
   /** 오늘 끝. 늘어난 종목과 총량을 센다. */
   function coachWrapUp() {
     var key = 'wrap:' + state.todayDate;
@@ -5239,6 +5287,10 @@
       liftsDone: liftsDone,
       grew: grew,
       volumeKg: volume,
+      firstEver: !state.history.some(function (session) { return session.date < state.todayDate; }),
+      weekDone: weekSessionsDone() + 1,
+      weekTarget: trainingDays().length,
+      at: Number(String(state.todayDate).slice(-2)) || 0,
     });
   }
 
@@ -5248,11 +5300,11 @@
     var rest = state.rest;
     if (!rest.tipSaid && rest.total >= E.TIP_MIN_REST_SECONDS && remaining <= rest.total / 2) {
       rest.tipSaid = true;
-      coachSay([E.restTipLine(state.coach.style, rest.setNumber)]);
+      coachSay([E.restTipLine(state.coach.style, rest.setNumber + state.liftCursor * 2)]);
     }
     if (!rest.readySaid && remaining <= 10 && remaining > 0 && rest.total > 15) {
       rest.readySaid = true;
-      coachSay([E.readySoonLine(state.coach.style)]);
+      coachSay([E.readySoonLine(state.coach.style, rest.setNumber + state.liftCursor)]);
     }
   }
 
@@ -5350,7 +5402,7 @@
       if (set && !set.done) set.reps = run.rep;
       // 트레이너는 세트가 끝나면 묻는다. 버튼을 찾게 두지 않는다.
       asked = Boolean(ptOn() && !silent && set && !set.done);
-      if (asked) coachSay([E.askFeelLine(state.coach.style)]);
+      if (asked) coachSay([E.askFeelLine(state.coach.style, run.liftIndex + run.setIndex)]);
     }
     render();
     /*
@@ -5438,7 +5490,7 @@
         speak(cue.say);
         // 끝나기 두 개 전. 숫자 사이에 들어가야 해서 짧은 말만 한다.
         if (ptOn() && set.targetReps.max >= 5 && cue.rep === set.targetReps.max - 2) {
-          speak(E.forSpeech(E.pushLine(state.coach.style)));
+          speak(E.forSpeech(E.pushLine(state.coach.style, liftIndex + setIndex)));
         }
         // 화면의 숫자도 같이 올라간다 — 소리가 안 나는 기기에서도 세어진다.
         showCount(String(cue.rep), cue.say);

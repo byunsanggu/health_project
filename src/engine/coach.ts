@@ -206,15 +206,23 @@ function whenWords(daysAgo: number): string {
   return `${Math.round(daysAgo / 7)}주 전엔`;
 }
 
-export function growthLine(style: CoachStyle, growth: Growth): string {
+export function growthLine(style: CoachStyle, growth: Growth, at = 0): string {
   const when = whenWords(growth.daysAgo);
+  const then = growth.thenReps;
+  const now = growth.nowReps;
   if (style === 'data') {
-    return `${when} 같은 무게 ${growth.thenReps}개, 오늘 ${growth.nowReps}개. +${growth.nowReps - growth.thenReps}회.`;
+    return `${when} 같은 무게 ${then}개, 오늘 ${now}개. +${now - then}회.`;
   }
   if (style === 'fired') {
-    return `${when} 이 무게로 ${growth.thenReps}개였습니다. 오늘 ${growth.nowReps}개! 이게 쌓인 겁니다.`;
+    return pick([
+      `${when} 이 무게로 ${then}개였습니다. 오늘 ${now}개! 이게 쌓인 겁니다.`,
+      `${when} ${then}개, 오늘 ${now}개! 몸이 답하고 있습니다.`,
+    ], at);
   }
-  return `${when} 이 무게로 ${growth.thenReps}개였는데, 오늘 ${growth.nowReps}개 하셨어요. 늘었어요.`;
+  return pick([
+    `${when} 이 무게로 ${then}개였는데, 오늘 ${now}개 하셨어요. 늘었어요.`,
+    `${when} ${then}개였던 무게를 오늘 ${now}개 하셨어요. 확실히 늘었어요.`,
+  ], at);
 }
 
 /* ── 세트 전 ───────────────────────────────────── */
@@ -240,6 +248,8 @@ export interface BeforeSetInput {
   machineSetting?: string | null;
   /** 오늘 몇 번째 종목인가. 각오 한마디를 돌려 쓰는 데 쓴다 */
   liftIndex?: number;
+  /** 오늘 종목 수 — "절반 왔어요", "마지막 종목입니다"를 말하는 데 쓴다 */
+  totalLifts?: number;
 }
 
 /**
@@ -259,6 +269,11 @@ export function firedResolve(at: number): string {
   return FIRED_RESOLVE[Math.abs(at) % FIRED_RESOLVE.length] as string;
 }
 
+/** 돌려 쓰기. 같은 자리에서 같은 말이 연달아 나오지 않게 순번으로 고른다. */
+function pick(lines: readonly string[], at: number): string {
+  return lines[Math.abs(Math.round(at)) % lines.length] as string;
+}
+
 function load(weightKg: number, pounds?: boolean): string {
   return weightKg > 0 ? weightLabelIn(weightKg, Boolean(pounds)) : '맨몸';
 }
@@ -271,6 +286,44 @@ function endWith(text: string, mark: '.' | '!'): string {
   const trimmed = text.trim();
   if (/[.!?]$/.test(trimmed)) return trimmed;
   return trimmed + mark;
+}
+
+/** 빡센 트레이너의 중간 세트 한마디 — 첫 세트의 각오보다 짧다. */
+export const FIRED_MIDDLE: readonly string[] = [
+  '더 할 수 있어요.',
+  '방금보다 한 개 더 간다는 생각으로요.',
+  '여기서부터가 진짜 운동입니다.',
+  '힘든 게 정상입니다. 그게 자극이에요.',
+  '자세 무너지지 않게, 끝까지 버팁니다.',
+  '쉬운 세트는 없습니다. 집중합시다.',
+];
+
+/** 차분한 트레이너의 중간 세트 한마디. 포인트를 말하지 않는 세트에만 넣는다. */
+export const CALM_MIDDLE: readonly string[] = [
+  '방금처럼만 하면 돼요.',
+  '리듬 좋아요. 그대로 가요.',
+  '숨 참지 말고, 올릴 때 내쉬어요.',
+  '천천히 내려도 괜찮아요.',
+  '잘하고 있어요. 한 개씩만 생각해요.',
+];
+
+/**
+ * 종목을 시작할 때 오늘 어디쯤인지.
+ * 절반을 넘었다는 말과 마지막이라는 말이 그날 남은 힘을 끌어낸다.
+ */
+function liftMarker(style: CoachStyle, liftIndex?: number, totalLifts?: number): string | null {
+  if (liftIndex === undefined || !totalLifts || totalLifts < 3) return null;
+  if (liftIndex === totalLifts - 1) {
+    if (style === 'fired') return '마지막 종목입니다. 남은 거 다 쏟고 갑니다!';
+    if (style === 'data') return `마지막 종목, ${totalLifts}/${totalLifts}.`;
+    return '오늘 마지막 종목이에요. 거의 다 왔어요.';
+  }
+  if (liftIndex === Math.floor(totalLifts / 2)) {
+    if (style === 'fired') return '절반 넘었습니다. 지금부터 차이가 납니다.';
+    if (style === 'data') return `${liftIndex + 1}/${totalLifts} 종목, 절반 지점.`;
+    return '벌써 절반 왔어요. 잘하고 계세요.';
+  }
+  return null;
 }
 
 /**
@@ -295,11 +348,13 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
     const head = `${input.setIndex + 1}세트`;
     if (style === 'fired') {
       lines.push(`${head}! ${today} ${reps}.`);
-      lines.push(isLast ? `마지막 세트입니다. ${firedResolve(turn + 1)}` : '더 할 수 있어요.');
+      lines.push(isLast ? `마지막 세트입니다. ${firedResolve(turn + 1)}` : pick(FIRED_MIDDLE, turn));
     } else if (style === 'data') {
-      lines.push(`${head}, ${today}, ${reps}.${isLast ? ' 마지막.' : ''}`);
+      const left = input.totalSets - input.setIndex - 1;
+      lines.push(`${head}, ${today}, ${reps}.${isLast ? ' 마지막.' : ` 남은 세트 ${left}.`}`);
     } else {
       lines.push(`${head}, ${today} ${reps}요.${isLast ? ' 마지막 세트예요.' : ''}`);
+      if (!isLast && !cue) lines.push(pick(CALM_MIDDLE, turn));
     }
     if (cue && style !== 'data') lines.push(endWith(cue, style === 'fired' ? '!' : '.'));
     return lines;
@@ -307,6 +362,8 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
 
   // 첫 세트
   const name = input.exerciseName;
+  const marker = liftMarker(style, input.liftIndex, input.totalLifts);
+  if (marker) lines.push(marker);
   if (style === 'fired') lines.push(`${name}, 갑니다!`);
   else if (style === 'data') lines.push(`${name}.`);
   // "입니다"는 받침과 상관없이 붙는다 — 조사를 고를 필요가 없다.
@@ -375,17 +432,25 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
  * 이 말이 길면 다음 숫자를 덮는다. 그래서 여기서만은 "오늘이 마지막인
  * 것처럼"을 못 쓴다 — 그건 세트 전에 한다.
  */
-export function pushLine(style: CoachStyle): string {
-  if (style === 'fired') return '더 할 수 있어요!';
-  if (style === 'data') return '두 개 남음.';
-  return '두 개만 더요.';
+const PUSH: Record<CoachStyle, readonly string[]> = {
+  fired: ['더 할 수 있어요!', '밀어요, 끝까지!', '여기서 갑니다!', '포기하지 않습니다!', '두 개, 이겨 냅니다!'],
+  calm: ['두 개만 더요.', '거의 다 왔어요.', '좋아요, 두 개 남았어요.', '천천히, 두 개요.'],
+  data: ['두 개 남음.', '잔여 2회.'],
+};
+
+export function pushLine(style: CoachStyle, at = 0): string {
+  return pick(PUSH[style], at);
 }
 
-/** 세트가 끝나면 묻는 말. */
-export function askFeelLine(style: CoachStyle): string {
-  if (style === 'fired') return '무게 어땠어요? 솔직하게요.';
-  if (style === 'data') return '무게 체감은요?';
-  return '무게는 어땠어요?';
+const ASK_FEEL: Record<CoachStyle, readonly string[]> = {
+  fired: ['무게 어땠어요? 솔직하게요.', '어땠어요? 더 갈 수 있었어요?', '무게 괜찮았어요? 정직하게 눌러 주세요.'],
+  calm: ['무게는 어땠어요?', '무게가 괜찮은가요?', '방금 세트 어땠어요?'],
+  data: ['무게 체감은요?', '체감 입력.'],
+};
+
+/** 세트가 끝나면 묻는 말. at을 안 주면 늘 같은 첫 문장이다(화면 글자용). */
+export function askFeelLine(style: CoachStyle, at = 0): string {
+  return pick(ASK_FEEL[style], at);
 }
 
 /* ── 세트 후 ───────────────────────────────────── */
@@ -404,6 +469,50 @@ export interface AfterSetInput {
   stopReason?: string | null;
   growth?: Growth | null;
   setsDone?: number;
+  /** 이 종목에서 지금까지 든 적 없는 무게를 오늘 처음 들었다 */
+  weightPr?: boolean;
+  /** 돌려 쓰기 순번 — 보통 종목 순서 + 세트 순서 */
+  at?: number;
+}
+
+const FEEL_ACK: Record<CoachStyle, Partial<Record<Feel, readonly string[]>>> = {
+  calm: {
+    light: ['가벼웠다니 다행이에요.', '여유가 있었네요.'],
+    heavy: ['무거웠죠. 그래도 잘 버텼어요.', '힘드셨죠. 자세는 좋았어요.'],
+  },
+  fired: {
+    light: ['가벼웠다고요? 다음엔 더 갑니다.', '여유가 있었다는 건 더 갈 수 있다는 겁니다.'],
+    heavy: ['무거운 게 정상입니다. 그게 자극이에요.', '무거웠는데 해냈습니다. 그게 실력입니다.'],
+  },
+  data: {
+    light: ['체감 가벼움 기록.'],
+    heavy: ['체감 무거움 기록.'],
+  },
+};
+
+const NEXT_UP: Record<CoachStyle, readonly string[]> = {
+  fired: ['다음 세트 {w}! 올립니다.', '{w}로 올립니다. 할 수 있어요.', '다음은 {w}. 한 단계 위로 갑니다!'],
+  calm: ['다음 세트는 {w}로 조금 올려 볼게요.', '살짝 올려서 {w}로 가 볼게요.', '여유가 있으니 {w}로 올려요.'],
+  data: ['다음 세트 +{d}kg, {w}.'],
+};
+const NEXT_DOWN: Record<CoachStyle, readonly string[]> = {
+  fired: ['{w}로 내립니다. 대신 자세는 완벽하게.', '{w}로 조정합니다. 횟수는 끝까지 채웁니다.'],
+  calm: ['무리하지 않을게요. 다음 세트는 {w}예요.', '조금 내려서 {w}로 할게요. 괜찮아요.'],
+  data: ['다음 세트 {d}kg, {w}.'],
+};
+const NEXT_SAME: Record<CoachStyle, readonly string[]> = {
+  fired: ['좋습니다. 같은 무게, 이번엔 더 깔끔하게.', '같은 무게 그대로. 방금보다 한 개 더 생각합니다.', '무게 유지. 자세로 이깁니다.'],
+  calm: ['좋아요. 같은 무게로 한 번 더 가요.', '딱 좋아요. 이대로 한 세트 더요.', '같은 무게로, 방금처럼만 해요.'],
+  data: ['다음 세트 유지, {w}.'],
+};
+const LIFT_DONE: Record<CoachStyle, readonly string[]> = {
+  fired: ['끝까지 해냈습니다. 다음 종목 갑니다!', '한 종목 끝. 쉬지 않고 이어 갑니다!', '이 종목은 이겼습니다. 다음 갑니다.'],
+  calm: ['이 종목 끝났어요. 수고하셨어요.', '잘하셨어요. 이 종목은 마무리예요.', '깔끔하게 끝냈어요. 잠깐 쉬고 다음 거 가요.'],
+  data: ['종목 완료{n}.'],
+};
+
+function fill(template: string, weight: string, delta: number): string {
+  return template.replace('{w}', weight).replace('{d}', String(delta));
 }
 
 /**
@@ -427,12 +536,24 @@ export function afterSetLines(input: AfterSetInput): string[] {
     ];
   }
 
-  if (input.growth) lines.push(growthLine(style, input.growth));
+  const at = input.at ?? input.setsDone ?? 0;
+
+  // 처음 든 무게가 제일 먼저다. 그날 들을 말 중에 제일 기억에 남는다.
+  if (input.weightPr) {
+    if (style === 'fired') lines.push('이 종목 최고 무게입니다! 오늘 기록 세웠습니다.');
+    else if (style === 'data') lines.push('이 종목 최고 중량 갱신.');
+    else lines.push('이 종목에서 처음 든 무게예요. 축하해요!');
+  } else if (input.growth) {
+    lines.push(growthLine(style, input.growth, at));
+  } else {
+    // 체감 대답에 대꾸한다 — 매번은 아니고, 대답이 "딱 좋았어요"가 아닐 때만.
+    const acks = FEEL_ACK[style][input.feel];
+    if (acks) lines.push(pick(acks, at));
+  }
 
   if (input.lastOfLift) {
-    if (style === 'fired') lines.push('끝까지 해냈습니다. 다음 종목 갑니다!');
-    else if (style === 'data') lines.push(`종목 완료${input.setsDone ? `, ${input.setsDone}세트` : ''}.`);
-    else lines.push('이 종목 끝났어요. 수고하셨어요.');
+    const done = pick(LIFT_DONE[style], at);
+    lines.push(done.replace('{n}', input.setsDone ? `, ${input.setsDone}세트` : ''));
     return lines;
   }
 
@@ -447,28 +568,33 @@ export function afterSetLines(input: AfterSetInput): string[] {
   const next = load(input.nextWeightKg ?? 0, input.pounds);
   const delta = Math.round((input.deltaKg ?? 0) * 10) / 10;
 
-  if (delta > 0) {
-    if (style === 'fired') lines.push(`다음 세트 ${next}! 올립니다.`);
-    else if (style === 'data') lines.push(`다음 세트 +${delta}kg, ${next}.`);
-    else lines.push(`다음 세트는 ${next}로 조금 올려 볼게요.`);
-  } else if (delta < 0) {
-    if (style === 'fired') lines.push(`${next}로 내립니다. 대신 자세는 완벽하게.`);
-    else if (style === 'data') lines.push(`다음 세트 ${delta}kg, ${next}.`);
-    else lines.push(`무리하지 않을게요. 다음 세트는 ${next}예요.`);
-  } else {
-    if (style === 'fired') lines.push('좋습니다. 같은 무게, 이번엔 더 깔끔하게.');
-    else if (style === 'data') lines.push(`다음 세트 유지, ${next}.`);
-    else lines.push('좋아요. 같은 무게로 한 번 더 가요.');
-  }
+  const pool = delta > 0 ? NEXT_UP : delta < 0 ? NEXT_DOWN : NEXT_SAME;
+  lines.push(fill(pick(pool[style], at), next, delta));
   return lines;
 }
 
 /* ── 쉬는 동안 ─────────────────────────────────── */
 
 const REST_TIPS: Record<CoachStyle, readonly string[]> = {
-  calm: ['물 한 모금 드세요. 숨은 천천히요.', '어깨 한 번 털어 주세요.', '잘하고 있어요. 숨 고르세요.'],
-  fired: ['숨 고르세요. 다음 세트가 진짜입니다.', '물 한 모금. 다음 세트도 다 쏟아냅니다.', '쉬는 것도 훈련입니다. 제대로 쉬세요.'],
-  data: ['회복 중.', '물 한 모금 권장.', '다음 세트까지 대기.'],
+  calm: [
+    '물 한 모금 드세요. 숨은 천천히요.',
+    '어깨 한 번 털어 주세요.',
+    '잘하고 있어요. 숨 고르세요.',
+    '코로 들이쉬고 입으로 길게 내쉬어 보세요.',
+    '방금 세트 잘하셨어요. 다음도 그대로만요.',
+    '목이랑 어깨 힘 빼고 쉬어요.',
+    '폰은 잠깐 내려 두고, 숨만 고르세요.',
+  ],
+  fired: [
+    '숨 고르세요. 다음 세트가 진짜입니다.',
+    '물 한 모금. 다음 세트도 다 쏟아냅니다.',
+    '쉬는 것도 훈련입니다. 제대로 쉬세요.',
+    '지금 쉬는 만큼 다음 세트에서 나옵니다.',
+    '방금 그 느낌 기억하세요. 다음엔 더 갑니다.',
+    '폰 보지 마시고, 다음 세트만 생각합니다.',
+    '심장 뛰는 거 느껴지죠? 제대로 하고 있는 겁니다.',
+  ],
+  data: ['회복 중.', '물 한 모금 권장.', '다음 세트까지 대기.', '호흡 정리.', '휴식 절반 경과.'],
 };
 
 /**
@@ -481,10 +607,14 @@ export function restTipLine(style: CoachStyle, setIndex: number): string {
 }
 
 /** 휴식이 10초 남았을 때. 다음 세트 숫자는 세트 전에 말하므로 여기서는 부르기만 한다. */
-export function readySoonLine(style: CoachStyle): string {
-  if (style === 'fired') return '10초! 자리로 갑니다.';
-  if (style === 'data') return '10초 전.';
-  return '10초 남았어요. 자리로 가 볼까요.';
+const READY_SOON: Record<CoachStyle, readonly string[]> = {
+  fired: ['10초! 자리로 갑니다.', '10초 남았습니다. 그립 잡으세요.', '10초! 다음 세트 준비합니다.'],
+  calm: ['10초 남았어요. 자리로 가 볼까요.', '이제 10초예요. 천천히 준비해요.', '10초 뒤에 시작할게요.'],
+  data: ['10초 전.'],
+};
+
+export function readySoonLine(style: CoachStyle, at = 0): string {
+  return pick(READY_SOON[style], at);
 }
 
 /** 휴식이 이 정도는 돼야 중간 한마디를 넣는다. 짧은 휴식에 말까지 넣으면 쉬지를 못한다. */
@@ -500,27 +630,149 @@ export interface WrapUpInput {
   grew?: number;
   /** 오늘 든 총량(kg) */
   volumeKg?: number;
+  /** 처음 운동한 날 */
+  firstEver?: boolean;
+  /** 이번 주 몇 번째 운동인지 / 목표 몇 번인지 */
+  weekDone?: number;
+  weekTarget?: number;
+  /** 돌려 쓰기 순번 — 보통 날짜에서 뽑는다 */
+  at?: number;
 }
+
+const WRAP_CLOSE: Record<CoachStyle, readonly string[]> = {
+  fired: [
+    '이게 쌓이면 몸이 바뀝니다. 수고하셨습니다!',
+    '오늘 한 만큼 반드시 돌아옵니다. 수고하셨습니다!',
+    '오늘도 이겼습니다. 단백질 챙기시고 푹 주무세요!',
+  ],
+  calm: [
+    '정말 잘하셨어요. 푹 쉬세요.',
+    '오늘도 수고 많으셨어요. 물 많이 드세요.',
+    '잘하셨어요. 단백질 챙겨 드시고 잘 주무세요.',
+  ],
+  data: ['세션 종료.'],
+};
 
 export function wrapUpLines(input: WrapUpInput): string[] {
   const { style } = input;
+  const at = input.at ?? input.setsDone;
   const lines: string[] = [];
+  const week = input.weekDone && input.weekTarget
+    ? (input.weekDone >= input.weekTarget
+      ? (style === 'data' ? `이번 주 ${input.weekDone}/${input.weekTarget}, 목표 달성.`
+        : style === 'fired' ? `이번 주 ${input.weekTarget}번 다 나왔습니다. 약속 지켰습니다!`
+          : `이번 주 ${input.weekTarget}번 다 채우셨어요. 약속 지키셨어요.`)
+      : (style === 'data' ? `이번 주 ${input.weekDone}/${input.weekTarget}.`
+        : style === 'fired' ? `이번 주 ${input.weekTarget - input.weekDone}번 남았습니다.`
+          : `이번 주 ${input.weekTarget - input.weekDone}번 남았어요.`))
+    : null;
+
   if (style === 'data') {
     const tons = input.volumeKg ? `, 총 ${Math.round(input.volumeKg / 100) / 10}톤` : '';
     lines.push(`오늘 ${input.liftsDone}종목 ${input.setsDone}세트${tons}.`);
     if (input.grew) lines.push(`지난번보다 늘어난 종목 ${input.grew}개.`);
+    if (week) lines.push(week);
     return lines;
   }
-  if (style === 'fired') {
+  if (input.firstEver) {
+    lines.push(style === 'fired'
+      ? '첫 운동 끝냈습니다. 시작한 사람만 바뀝니다!'
+      : '첫 운동 끝내셨어요. 시작이 제일 어려운 거예요.');
+    lines.push(style === 'fired'
+      ? '오늘 무게가 기준입니다. 다음부터 여기서 올라갑니다.'
+      : '오늘 든 무게를 기준으로 다음부터 조금씩 올려 드릴게요.');
+  } else if (style === 'fired') {
     lines.push(`${input.setsDone}세트, 오늘 다 쏟아냈습니다.`);
     if (input.grew) lines.push(`${input.grew}종목이 지난번보다 늘었습니다.`);
-    lines.push('이게 쌓이면 몸이 바뀝니다. 수고하셨습니다!');
-    return lines;
+  } else {
+    lines.push(`오늘 ${input.setsDone}세트 하셨어요.`);
+    if (input.grew) lines.push(`지난번보다 늘어난 종목이 ${input.grew}개예요.`);
   }
-  lines.push(`오늘 ${input.setsDone}세트 하셨어요.`);
-  if (input.grew) lines.push(`지난번보다 늘어난 종목이 ${input.grew}개예요.`);
-  lines.push('정말 잘하셨어요. 푹 쉬세요.');
+  if (week) lines.push(week);
+  lines.push(pick(WRAP_CLOSE[style], at));
   return lines;
+}
+
+/* ── 시작 ──────────────────────────────────────── */
+
+export interface SessionStartInput {
+  style: CoachStyle;
+  sessionName: string;
+  lifts: number;
+  minutes?: number;
+  /** 'accumulation' | 'deload' */
+  phase?: 'accumulation' | 'deload';
+  weekInBlock?: number;
+  accumulationWeeks?: number;
+  /** 처음 하는 운동 */
+  firstEver?: boolean;
+  /** 연속으로 지킨 주 */
+  streakWeeks?: number;
+  /** 이어서 하는 중이면 */
+  resuming?: boolean;
+}
+
+/**
+ * 시작을 누르면 하는 말.
+ *
+ * 오늘 무엇을 얼마나 하는지, 그리고 이번 주가 블록의 어디인지 한 줄.
+ * 트레이너는 회원이 들어오면 "오늘 하체, 40분이요. 이번 주가 제일 힘든
+ * 주예요"라고 먼저 말한다 — 각오가 거기서 생긴다.
+ */
+export function sessionStartLines(input: SessionStartInput): string[] {
+  const { style } = input;
+  if (input.resuming) {
+    return [style === 'fired' ? '이어서 갑니다!' : style === 'data' ? '이어서 시작.' : '이어서 할게요.'];
+  }
+  const lines: string[] = [];
+  const time = input.minutes ? ` 약 ${input.minutes}분` : '';
+  if (style === 'data') lines.push(`${input.sessionName}, ${input.lifts}종목,${time}.`);
+  else if (style === 'fired') lines.push(`오늘은 ${input.sessionName}, ${input.lifts}종목입니다.${time ? `${time}, 집중합시다!` : ''}`);
+  else lines.push(`오늘은 ${input.sessionName}, ${input.lifts}종목이에요.${time ? `${time} 걸려요.` : ''}`);
+
+  if (input.firstEver) {
+    lines.push(style === 'data' ? '첫 세션. 무게 탐색.'
+      : style === 'fired' ? '첫날입니다. 오늘은 무게를 찾는 날이에요. 무리하지 않습니다.'
+        : '첫날이에요. 오늘은 맞는 무게를 찾는 날이라, 가볍게 시작할게요.');
+  } else if (input.phase === 'deload') {
+    lines.push(style === 'data' ? '디로드 주. 볼륨 감소.'
+      : style === 'fired' ? '이번 주는 덜어내는 주입니다. 참는 것도 훈련이에요.'
+        : '이번 주는 덜어내는 주예요. 무게보다 자세를 봐요.');
+  } else if (input.weekInBlock && input.accumulationWeeks) {
+    if (input.weekInBlock === input.accumulationWeeks) {
+      lines.push(style === 'data' ? `블록 마지막 축적 주, ${input.weekInBlock}/${input.accumulationWeeks}.`
+        : style === 'fired' ? '블록 마지막 주입니다. 제일 힘든 주예요. 다음 주에 쉽니다!'
+          : '이번 주가 블록에서 제일 힘든 주예요. 다음 주엔 덜어내요.');
+    } else if (input.weekInBlock === 1) {
+      lines.push(style === 'data' ? `블록 1주차, 1/${input.accumulationWeeks}.`
+        : style === 'fired' ? '블록 첫 주입니다. 기준을 제대로 세웁니다.'
+          : '블록 첫 주라 여유 있게 갈게요.');
+    }
+  }
+  if (input.streakWeeks && input.streakWeeks >= 2 && style !== 'data') {
+    lines.push(style === 'fired' ? `${input.streakWeeks}주 연속입니다. 끊지 않습니다!` : `${input.streakWeeks}주째 꾸준히 오셨어요.`);
+  }
+  return lines;
+}
+
+/* ── 기록 ──────────────────────────────────────── */
+
+/** 오늘 전까지 이 종목에서 든 가장 무거운 본세트. 없으면 null. */
+export function bestWeightBefore(
+  sessions: readonly SessionLog[],
+  exercise: Exercise,
+  today: string,
+  scope: HistoryScope = {},
+): number | null {
+  let best: number | null = null;
+  for (const session of weightHistoryFor(sessions, exercise, scope)) {
+    if (session.date >= today) continue;
+    for (const set of session.sets) {
+      if (set.exerciseId !== exercise.id || set.warmup || set.reps <= 0) continue;
+      if (best === null || set.weightKg > best) best = set.weightKg;
+    }
+  }
+  return best;
 }
 
 /* ── 소리로 읽기 ───────────────────────────────── */
