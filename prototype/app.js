@@ -305,6 +305,7 @@
       state.voiceOn = Boolean(settings.voiceOn);
       state.tempo = settings.tempo || null;
       state.tempoByExercise = settings.tempoByExercise || {};
+      migrateTempos();
       state.autoCount = Boolean(settings.autoCount);
       state.nudgeOn = Boolean(settings.nudgeOn);
       state.friendName = settings.friendName || null;
@@ -1759,10 +1760,13 @@
     var seconds = override ? override.seconds : prescription.seconds;
     var reason = override ? override.reason : prescription.reason;
 
+    var nextLift = state.lifts[state.lifts.indexOf(lift) + 1];
     state.rest = {
       exerciseId: lift.exercise.id,
       exerciseName: lift.exercise.name,
       setNumber: setIndex + 1,
+      // 쉬고 나서 무엇을 하는지. 휴식 막대에 "쉬고 → 3세트"로 보인다.
+      next: !isLast ? (setIndex + 2) + '세트' : (nextLift ? nextLift.exercise.name : '마무리'),
       total: seconds,
       endsAt: Date.now() + seconds * 1000,
       reason: reason,
@@ -1842,6 +1846,11 @@
   // 화면 전체를 다시 그리지 않고 숫자만 바꾼다 — 1초마다 다시 그리면 못 쓴다.
   setInterval(tickElapsed, 1000);
 
+  /** PT에서 휴식이 10초 안쪽으로 남았나 — 저절로 시작하기 직전. */
+  function restSoon() {
+    return Boolean(ptOn() && state.rest && state.rest.total > 15 && restRemaining() <= 10);
+  }
+
   function restRemaining() {
     if (!state.rest) return 0;
     return Math.max(0, Math.ceil((state.rest.endsAt - Date.now()) / 1000));
@@ -1856,6 +1865,11 @@
     if (node) node.textContent = E.formatDuration(remaining);
     if (bar) bar.style.width = (100 - (remaining / state.rest.total) * 100) + '%';
     coachDuringRest(remaining);
+    // "곧 시작" 안내로 바뀌는 순간과 +30초로 다시 늘어난 순간에만 막대를 다시 그린다.
+    if (remaining > 0 && Boolean(state.rest.soonShown) !== restSoon()) {
+      state.rest.soonShown = restSoon();
+      renderRest();
+    }
 
     if (remaining <= 0) {
       pushLog('휴식 완료', '<b>' + state.rest.exerciseName + '</b> ' + state.rest.setNumber +
@@ -1933,7 +1947,15 @@
         el('span', { class: 'rest-label', text: '휴식' }),
         el('span', { class: 'rest-time', id: 'rest-remaining', text: E.formatDuration(remaining) }),
       ]),
-      el('div', { class: 'rest-why', text: state.rest.reason }),
+      /*
+       * PT는 시간이 되면 알아서 다음 세트를 센다. 10초 남으면 그걸 미리
+       * 보여 준다 — 더 쉬고 싶은 사람이 +30초를 누를 틈이 있어야 한다.
+       */
+      el('div', { class: 'rest-why' + (restSoon() ? ' soon' : '') }, [
+        // 둘째 줄은 폭을 다 쓴다 — 첫 줄에 넣으면 버튼에 밀려 "쉬"만 남는다.
+        state.rest.next ? el('b', { class: 'rest-next', text: '쉬고 → ' + state.rest.next }) : null,
+        el('span', { text: restSoon() ? '곧 시작해요 · 더 쉬려면 +30초' : state.rest.reason }),
+      ]),
       // 버튼은 한 묶음으로 — 셋을 그리드 칸에 하나씩 흘리면 줄이 무너진다.
       /*
        * 버튼은 한 묶음으로 — 셋을 그리드 칸에 하나씩 흘리면 줄이 무너진다.
@@ -1946,9 +1968,9 @@
       el('div', { class: 'rest-actions' }, [
         el('button', { type: 'button', class: 'rest-skip', text: '−30초',
           title: '휴식을 30초 줄입니다', onclick: function () { extendRest(-30); } }),
-        el('button', { type: 'button', class: 'rest-skip', text: '+30초',
+        el('button', { type: 'button', class: 'rest-skip rest-more', text: '+30초',
           title: '휴식을 30초 늘립니다', onclick: function () { extendRest(30); } }),
-        el('button', { type: 'button', class: 'rest-skip', text: '건너뛰기',
+        el('button', { type: 'button', class: 'rest-skip', text: ptOn() ? '바로 시작' : '건너뛰기',
           title: '휴식을 끝내고 다음 세트로', onclick: stopRest }),
       ]),
     ]));
@@ -5536,6 +5558,20 @@
     return exercise ? E.defaultTempoFor(exercise) : E.DEFAULT_TEMPO;
   }
 
+  /**
+   * 예전 박자(한 개 3초)로 저장된 값을 지금 눈금으로 옮긴다.
+   * 예전 '보통'은 지금의 보통(4초)으로 — 그 사람은 3초가 아니라 보통을 골랐다.
+   */
+  function migrateTempos() {
+    state.tempo = E.migrateTempo(state.tempo) || null;
+    var moved = {};
+    Object.keys(state.tempoByExercise || {}).forEach(function (id) {
+      var tempo = E.migrateTempo(state.tempoByExercise[id]);
+      if (tempo) moved[id] = tempo;
+    });
+    state.tempoByExercise = moved;
+  }
+
   function setExerciseTempo(exercise, tempo) {
     state.tempoByExercise = Object.assign({}, state.tempoByExercise);
     state.tempoByExercise[exercise.id] = tempo;
@@ -6649,6 +6685,17 @@
         firstTime: !triedBefore(next.exercise) && E.hasSetting(next.exercise),
         seconds: Math.round(seconds / 15) * 15,
       }));
+    } else if (!lastOfLift && state.rest) {
+      // 같은 종목 다음 세트 — 얼마나 쉬는지 먼저 말한다. 처음 한 번은 더 쉬는 법도.
+      var nextOpen = state.lifts[liftIndex].sets.findIndex(function (set) { return !set.done; });
+      if (nextOpen >= 0) {
+        lines.push(E.restAnnounceLine(state.coach.style, {
+          seconds: restRemaining(),
+          nextSet: nextOpen + 1,
+          firstTime: pt.said.indexOf('restHint') < 0,
+        }));
+        pt.said = pt.said.concat(['restHint']);
+      }
     }
 
     var planned = ptPlannedSeconds();
@@ -6832,6 +6879,24 @@
     return box;
   }
 
+  /**
+   * 이 세트가 얼마나 걸리고, 끝나면 얼마나 쉬는가.
+   *
+   * "10회"만 보면 얼마나 버텨야 하는지 모른다. "약 45초 → 1분 30초 쉬고
+   * 3세트"를 보고 들어가면 숨을 어떻게 나눌지, 물을 언제 마실지 안다.
+   */
+  function setTimingLine(lift, liftIndex, set, setIndex) {
+    var work = E.setSeconds({ repRange: set.targetReps, tempo: tempoOf(lift.exercise), leadInSeconds: 0 });
+    var line = '이 세트 약 ' + E.restSpoken(work);
+    var isLast = setIndex === lift.sets.length - 1;
+    var next = state.lifts[liftIndex + 1];
+    if (isLast && !next) return line + ' · 오늘 마지막 세트';
+    var rest = E.restFor(restInput(lift, set.reps, isLast)).seconds;
+    if (isLast && ptOn()) rest = Math.max(rest, E.TRANSITION_REST_SECONDS);
+    return line + ' → ' + E.restSpoken(rest) + ' 쉬고 ' +
+      (isLast ? next.exercise.name : (setIndex + 2) + '세트');
+  }
+
   /** 지금 할 세트. 화면에서 제일 커야 한다 — 지금 할 일은 이것 하나다. */
   function renderCurrentSet(lift, liftIndex, set, setIndex) {
     maybeAutoCount(liftIndex, setIndex);
@@ -6880,6 +6945,7 @@
         })),
       ]),
       el('div', { class: 'plan', text: setPlanLine(set, pounds) }),
+      el('div', { class: 'set-timing', text: setTimingLine(lift, liftIndex, set, setIndex) }),
     ]));
 
     /*
@@ -8340,6 +8406,7 @@
     SHARED_SETTINGS.forEach(function (key) {
       if (body[key] !== undefined) state[key] = body[key];
     });
+    migrateTempos();
     state.settingsUpdatedAt = settings.updatedAt;
     state.lastSettingsBody = JSON.stringify(sharedSettings());
     rebuildSession();

@@ -167,16 +167,23 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .rest-host { flex: none; border-top: 1px solid var(--line); background: var(--surface-2); }
 .rest-bar-track { height: 3px; background: var(--line-soft); }
 .rest-bar-fill { height: 100%; background: var(--accent); transition: width .25s linear; }
+/* 위 줄: 남은 시간 · 쉬고 → 다음 / 버튼. 아래 줄: 왜 이만큼 쉬는지(PT는 '곧 시작'). */
 .rest-body {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "info actions" "why why";
+  gap: 4px 10px;
   align-items: center;
   padding: 9px 13px;
 }
-.rest-info { display: flex; align-items: baseline; gap: 6px; }
-.rest-label { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.rest-time { font-family: var(--mono); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rest-info { grid-area: info; display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; }
+.rest-actions { grid-area: actions; }
+.rest-why { grid-area: why; }
+.rest-why.soon { color: var(--accent); font-weight: 600; }
+.rest-next { font-size: 13px; font-weight: 600; color: var(--accent); margin-right: 6px; }
+.rest-more { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.rest-label { white-space: nowrap; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.rest-time { font-family: var(--mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .rest-why { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rest-skip {
   border: 1px solid var(--line); background: var(--surface);
@@ -1174,6 +1181,8 @@ input[type="search"] {
  * 기구 앞에서 보는 자리는 머리띠가 아니라 숫자칸 바로 위다.
  */
 .now-head { display: grid; gap: 1px; }
+/* 이 세트 약 45초 → 1분 30초 쉬고 3세트 */
+.now-head .set-timing { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .now-line { display: flex; align-items: center; gap: 7px; }
 .now-head b { font-size: 18px; font-weight: 600; color: var(--accent); letter-spacing: -.01em; }
 .now-head .of { font-family: var(--mono); font-size: 12px; color: var(--muted); }

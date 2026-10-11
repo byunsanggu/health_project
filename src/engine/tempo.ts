@@ -32,7 +32,20 @@ export interface Tempo {
   top: number;
 }
 
-export const DEFAULT_TEMPO: Tempo = { eccentric: 2, bottom: 0, concentric: 1, top: 0 };
+/**
+ * 기본 박자 `2-0-1-1` — 한 개에 4초.
+ *
+ * 처음에는 2-0-1-0(3초)이었다. 숫자로는 그럴듯한데 실제로 따라 해 보면
+ * 스미스 벤치 10개가 30초에 끝난다. 사람은 그렇게 못 한다 — 올린 뒤에
+ * 위에서 숨을 한 번 쉬고, 잡은 것을 다시 고쳐 쥐고 내린다. 그 1초를 빼면
+ * 앱이 사람보다 앞서가고, 사람은 박자를 따라가려고 반동을 쓴다.
+ * 근비대 세트 10개가 40초 남짓이면 현장에서 보는 속도다.
+ */
+export const DEFAULT_TEMPO: Tempo = { eccentric: 2, bottom: 0, concentric: 1, top: 1 };
+
+/** 예전 기본(2-0-1-0)과 예전 '빠르게'(1-0-1-0). 저장된 값을 옮길 때만 쓴다. */
+export const LEGACY_NORMAL_TEMPO: Tempo = { eccentric: 2, bottom: 0, concentric: 1, top: 0 };
+export const LEGACY_FAST_TEMPO: Tempo = { eccentric: 1, bottom: 0, concentric: 1, top: 0 };
 
 export const TEMPO_PRESETS: readonly {
   id: string;
@@ -44,24 +57,24 @@ export const TEMPO_PRESETS: readonly {
     id: 'standard',
     label: '기본',
     tempo: DEFAULT_TEMPO,
-    note: '2초에 내리고 1초에 올립니다 · 대부분의 날',
+    note: '2초에 내리고 1초에 올리고 위에서 한 번 숨 · 대부분의 날',
   },
   {
     id: 'control',
     label: '천천히',
-    tempo: { eccentric: 3, bottom: 1, concentric: 1, top: 0 },
+    tempo: { eccentric: 3, bottom: 1, concentric: 1, top: 1 },
     note: '내리는 구간을 길게 · 자세가 무너질 때, 가벼운 날',
   },
   {
     id: 'power',
     label: '폭발적으로',
-    tempo: { eccentric: 2, bottom: 0, concentric: 1, top: 0 },
+    tempo: DEFAULT_TEMPO,
     note: '올릴 때 최대한 빠르게 — 초는 같지만 의도가 다릅니다',
   },
   {
     id: 'pause',
     label: '멈췄다',
-    tempo: { eccentric: 2, bottom: 2, concentric: 1, top: 0 },
+    tempo: { eccentric: 2, bottom: 2, concentric: 1, top: 1 },
     note: '아래에서 2초 멈춤 · 반동을 없애고 약점 구간을 칩니다',
   },
 ];
@@ -70,7 +83,7 @@ export const TEMPO_PRESETS: readonly {
  * 속도.
  *
  * 위의 프리셋은 **의도**를 고르는 것이라 초가 같은 것도 있다(기본과
- * 폭발적으로는 둘 다 3초다 — 다른 건 올릴 때 마음가짐이다). 그건
+ * 폭발적으로는 둘 다 4초다 — 다른 건 올릴 때 마음가짐이다). 그건
  * 트레이너의 언어이지, 처음 쓰는 사람이 "빠르게 해 주세요"라고 할 때
  * 찾는 것이 아니다.
  *
@@ -90,20 +103,20 @@ export const TEMPO_SPEEDS: readonly {
   {
     id: 'slow',
     label: '천천히',
-    tempo: { eccentric: 3, bottom: 1, concentric: 1, top: 0 },
-    note: '내리는 데만 3초. 자세가 무너질 때, 가벼운 날.',
+    tempo: { eccentric: 3, bottom: 1, concentric: 1, top: 1 },
+    note: '한 개에 6초. 내리는 데만 3초. 자세가 무너질 때, 가벼운 날.',
   },
   {
     id: 'normal',
     label: '보통',
     tempo: DEFAULT_TEMPO,
-    note: '2초에 내리고 1초에 올립니다. 대부분의 날.',
+    note: '한 개에 4초. 2초에 내리고 1초에 올리고 위에서 한 번 숨. 대부분의 날.',
   },
   {
     id: 'fast',
     label: '빠르게',
-    tempo: { eccentric: 1, bottom: 0, concentric: 1, top: 0 },
-    note: '가벼운 날·파워 작업용. 무거운 날에는 반동으로 받게 되니 권하지 않습니다.',
+    tempo: { eccentric: 2, bottom: 0, concentric: 1, top: 0 },
+    note: '한 개에 3초. 위에서 쉬지 않고 바로 내립니다. 가벼운 종목·손에 익은 날에만.',
   },
 ];
 
@@ -117,11 +130,7 @@ export const TEMPO_SPEEDS: readonly {
  * 두어야 한다. 가까운 것을 골라 주면 사용자가 정한 템포가 조용히 바뀐다.
  */
 export function speedOf(tempo: Tempo): 'slow' | 'normal' | 'fast' | undefined {
-  const found = TEMPO_SPEEDS.find((speed) =>
-    speed.tempo.eccentric === tempo.eccentric &&
-    speed.tempo.bottom === tempo.bottom &&
-    speed.tempo.concentric === tempo.concentric &&
-    speed.tempo.top === tempo.top);
+  const found = TEMPO_SPEEDS.find((speed) => sameTempo(speed.tempo, tempo));
   return found?.id;
 }
 
@@ -134,8 +143,26 @@ export function speedOf(tempo: Tempo): 'slow' | 'normal' | 'fast' | undefined {
  */
 export function defaultTempoFor(exercise: { id: string; pattern: string }): Tempo {
   if (/calf/.test(exercise.id)) return { eccentric: 2, bottom: 1, concentric: 1, top: 1 };
-  if (exercise.pattern === 'core') return { eccentric: 2, bottom: 0, concentric: 1, top: 1 };
   return DEFAULT_TEMPO;
+}
+
+function sameTempo(a: Tempo, b: Tempo): boolean {
+  return a.eccentric === b.eccentric && a.bottom === b.bottom &&
+    a.concentric === b.concentric && a.top === b.top;
+}
+
+/**
+ * 예전에 저장된 박자를 지금 눈금으로 옮긴다.
+ *
+ * 예전 '보통'(2-0-1-0)을 고른 사람은 "보통"을 고른 것이지 3초를 고른 게
+ * 아니다 — 지금의 보통으로 옮긴다(undefined = 종목 기본을 쓴다). 예전
+ * '빠르게'(1-0-1-0)는 지금의 빠르게로. 직접 바꾼 다른 값은 그대로 둔다.
+ */
+export function migrateTempo(tempo: Tempo | null | undefined): Tempo | undefined {
+  if (!tempo) return undefined;
+  if (sameTempo(tempo, LEGACY_NORMAL_TEMPO)) return undefined;
+  if (sameTempo(tempo, LEGACY_FAST_TEMPO)) return TEMPO_SPEEDS.find((speed) => speed.id === 'fast')!.tempo;
+  return tempo;
 }
 
 /** `2-0-1-0` 처럼 현장 표기로. */

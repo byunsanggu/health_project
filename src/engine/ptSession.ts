@@ -71,6 +71,38 @@ export function warmupDoneLine(style: CoachStyle): string {
   return '워밍업 끝났어요. 이제 본세트 할게요.';
 }
 
+/* ── 세트 사이 휴식 ─────────────────────────────── */
+
+/** "40초" / "1분" / "1분 30초" — 트레이너가 말하는 대로. */
+export function restSpoken(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds / 5) * 5);
+  if (total < 60) return `${total}초`;
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return rest === 0 ? `${minutes}분` : `${minutes}분 ${rest}초`;
+}
+
+/**
+ * 세트가 끝나고 얼마나 쉬는지 먼저 말한다.
+ *
+ * 쉬는 시간을 모르고 쉬면 계속 화면을 보게 된다. "1분 30초 쉬고 3세트"를
+ * 듣고 나면 물 마시러 가도 된다. 처음 한 번은 더 쉬는 법도 같이 알려 준다
+ * — PT는 시간이 되면 알아서 시작하니까, 더 쉬고 싶은 사람이 멈출 줄 알아야 한다.
+ */
+export function restAnnounceLine(
+  style: CoachStyle,
+  input: { seconds: number; nextSet: number; firstTime?: boolean },
+): string {
+  const time = restSpoken(input.seconds);
+  let line: string;
+  if (style === 'data') line = `휴식 ${time}. 다음 ${input.nextSet}세트.`;
+  else if (style === 'fired') line = `${time} 쉬고 ${input.nextSet}세트 올립니다!`;
+  else line = `${time} 쉬고 ${input.nextSet}세트 갈게요.`;
+  if (!input.firstTime) return line;
+  if (style === 'data') return `${line} 연장은 +30초.`;
+  return `${line} 더 쉬고 싶으면 화면에서 +30초 누르세요.`;
+}
+
 /* ── 종목 이동 ─────────────────────────────────── */
 
 /** 다음 기구로 걸어가서 자리 잡는 데 주는 최소 시간. */

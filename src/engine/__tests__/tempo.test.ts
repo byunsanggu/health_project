@@ -9,6 +9,7 @@ import {
   repSeconds,
   defaultTempoFor,
   koreanCount,
+  migrateTempo,
   repsAt,
   setSeconds,
   speedOf,
@@ -17,7 +18,7 @@ import {
 
 describe('템포', () => {
   it('현장 표기 네 자리로 쓴다', () => {
-    assert.equal(tempoLabel(DEFAULT_TEMPO), '2-0-1-0');
+    assert.equal(tempoLabel(DEFAULT_TEMPO), '2-0-1-1');
   });
 
   it('반복 하나에 걸리는 시간은 네 구간의 합이다', () => {
@@ -115,8 +116,8 @@ describe('멈춘 자리', () => {
      * 그 이상을 아는 척하면 거짓말이다 — 그래서 "제안"이고 고쳐 칠 수 있다.
      */
     assert.equal(repsAt(3000, input), 0);
-    assert.equal(repsAt(20000, input), 5);
-    assert.equal(repsAt(33000, input), 10);
+    assert.equal(repsAt(23000, input), 5);
+    assert.equal(repsAt(43000, input), 10);
   });
 
   it('목표를 넘겨 세지 않는다', () => {
@@ -128,7 +129,28 @@ describe('멈춘 자리', () => {
   });
 
   it('한 세트에 걸리는 시간을 준다', () => {
-    assert.equal(setSeconds(input), 33);
+    assert.equal(setSeconds(input), 43);
+  });
+});
+
+describe('현실적인 속도', () => {
+  it('보통 속도로 10개는 40초가 넘는다 — 20~30초에 10개는 사람이 못 따라간다', () => {
+    const ten = { repRange: { min: 8, max: 10 }, leadInSeconds: 0 };
+    assert.ok(setSeconds(ten) >= 40);
+    const cues = buildCues({ ...ten, slowdown: true });
+    assert.ok(cues[cues.length - 1]!.atMs >= 40000);
+  });
+
+  it('빠르게를 골라도 한 개에 3초 밑으로 내려가지 않는다', () => {
+    for (const speed of TEMPO_SPEEDS) assert.ok(repSeconds(speed.tempo) >= 3, speed.label);
+  });
+
+  it('예전에 저장한 박자를 지금 눈금으로 옮긴다', () => {
+    assert.equal(migrateTempo({ eccentric: 2, bottom: 0, concentric: 1, top: 0 }), undefined);
+    assert.equal(speedOf(migrateTempo({ eccentric: 1, bottom: 0, concentric: 1, top: 0 })!), 'fast');
+    const custom = { eccentric: 4, bottom: 0, concentric: 1, top: 0 };
+    assert.deepEqual(migrateTempo(custom), custom);
+    assert.equal(migrateTempo(null), undefined);
   });
 });
 
@@ -140,7 +162,7 @@ describe('속도', () => {
      */
     const seconds = TEMPO_SPEEDS.map((speed) => repSeconds(speed.tempo));
     assert.deepEqual(seconds, [...seconds].sort((a, b) => b - a));
-    assert.deepEqual(seconds, [5, 3, 2]);
+    assert.deepEqual(seconds, [6, 4, 3]);
   });
 
   it('지금 템포가 어느 속도인지 찾는다', () => {

@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   COOLDOWN_SECONDS, PACE_TOLERANCE_SECONDS, cooldownDoneLine, cooldownFor, cooldownLine,
-  paceCheck, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
+  paceCheck, restAnnounceLine, restSpoken, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from '../ptSession.ts';
 import { speechSeconds } from '../coach.ts';
 
@@ -114,5 +114,30 @@ describe('마무리 스트레칭', () => {
       });
       assert.ok(cooldownDoneLine(style).length > 0);
     }
+  });
+});
+
+describe('세트 사이 휴식 안내', () => {
+  it('쉬는 시간을 트레이너 말로 읽는다', () => {
+    assert.equal(restSpoken(40), '40초');
+    assert.equal(restSpoken(60), '1분');
+    assert.equal(restSpoken(90), '1분 30초');
+    assert.equal(restSpoken(152), '2분 30초');
+  });
+
+  it('몇 초 쉬고 몇 세트인지 말한다 — 처음 한 번만 더 쉬는 법을 붙인다', () => {
+    for (const style of ['calm', 'fired', 'data'] as const) {
+      const first = restAnnounceLine(style, { seconds: 90, nextSet: 3, firstTime: true });
+      const later = restAnnounceLine(style, { seconds: 40, nextSet: 2 });
+      assert.match(first, /1분 30초/);
+      assert.match(first, /3세트/);
+      assert.match(first, /\+30초/);
+      assert.match(later, /40초/);
+      assert.doesNotMatch(later, /\+30초/);
+    }
+  });
+
+  it('빡센 말투도 존댓말이다', () => {
+    assert.match(restAnnounceLine('fired', { seconds: 60, nextSet: 2 }), /니다/);
   });
 });
