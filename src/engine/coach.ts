@@ -338,8 +338,7 @@ export const CALM_MIDDLE: readonly string[] = [
 ];
 
 /**
- * 종목을 시작할 때 오늘 어디쯤인지.
- * 절반을 넘었다는 말과 마지막이라는 말이 그날 남은 힘을 끌어낸다.
+ * 종목을 시작할 때 오늘 어디쯤인지 — 마지막 종목이라는 말이 그날 남은 힘을 끌어낸다.
  */
 function liftMarker(style: CoachStyle, liftIndex?: number, totalLifts?: number): string | null {
   if (liftIndex === undefined || !totalLifts || totalLifts < 3) return null;
@@ -348,11 +347,7 @@ function liftMarker(style: CoachStyle, liftIndex?: number, totalLifts?: number):
     if (style === 'data') return `마지막 종목, ${totalLifts}/${totalLifts}.`;
     return '오늘 마지막 종목이에요. 거의 다 왔어요.';
   }
-  if (liftIndex === Math.floor(totalLifts / 2)) {
-    if (style === 'fired') return '절반 넘었습니다. 지금부터 차이가 납니다.';
-    if (style === 'data') return `${liftIndex + 1}/${totalLifts} 종목, 절반 지점.`;
-    return '벌써 절반 왔어요. 잘하고 계세요.';
-  }
+  // "절반 왔어요"는 PT 세션이 시간으로 말한다(ptSession.timeCheck). 종목 수로 또 하면 두 번 듣는다.
   return null;
 }
 

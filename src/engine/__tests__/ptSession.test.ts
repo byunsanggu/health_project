@@ -1,0 +1,118 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+
+import {
+  COOLDOWN_SECONDS, PACE_TOLERANCE_SECONDS, cooldownDoneLine, cooldownFor, cooldownLine,
+  paceCheck, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
+} from '../ptSession.ts';
+import { speechSeconds } from '../coach.ts';
+
+const STYLES = ['calm', 'fired', 'data'] as const;
+const BANMAL = /(해|가자|버텨|해라|하자|봐|밀어)!/;
+
+describe('워밍업 안내', () => {
+  const steps = [{ weightKg: 20, reps: 10, restSeconds: 45 }, { weightKg: 40, reps: 5, restSeconds: 60 }];
+  it('첫 세트에 몇 세트인지와 무게 · 개수를 말한다', () => {
+    const line = warmupSetLine('calm', '백 스쿼트', 0, steps);
+    assert.match(line, /워밍업 2세트/);
+    assert.match(line, /20kg 10개/);
+  });
+  it('마지막 워밍업이라고 말한다', () => {
+    assert.match(warmupSetLine('calm', '백 스쿼트', 1, steps), /마지막 워밍업/);
+  });
+  it('빡세게도 존댓말', () => {
+    const said = [warmupSetLine('fired', '백 스쿼트', 0, steps), warmupSetLine('fired', '백 스쿼트', 1, steps),
+      warmupRestLine('fired', 45), warmupDoneLine('fired')].join(' ');
+    assert.doesNotMatch(said, BANMAL);
+  });
+});
+
+describe('종목 이동', () => {
+  it('다음 종목과 적어 둔 세팅, 이동 시간을 말한다', () => {
+    const lines = transitionLines('calm', { nextName: '레그프레스', machineSetting: '시트 4번', seconds: 60 }).join(' ');
+    assert.match(lines, /다음은 레그프레스예요/);
+    assert.match(lines, /시트 4번이었어요/);
+    assert.match(lines, /1분 드릴게요/);
+  });
+  it('받침에 맞게 말한다', () => {
+    assert.match(transitionLines('calm', { nextName: '랫 풀다운', seconds: 75 }).join(' '), /랫 풀다운이에요/);
+  });
+  it('처음 하는 기구면 세팅부터 보자고 한다', () => {
+    assert.match(transitionLines('calm', { nextName: '핵 스쿼트', firstTime: true, seconds: 75 }).join(' '), /세팅부터/);
+  });
+});
+
+describe('시간 관리', () => {
+  const lifts = [
+    { name: '백 스쿼트', isolation: false, remainingSets: 3, secondsPerSet: 180 },
+    { name: '레그프레스', isolation: false, remainingSets: 3, secondsPerSet: 150 },
+    { name: '레그 익스텐션', isolation: true, remainingSets: 3, secondsPerSet: 100 },
+    { name: '카프레이즈', isolation: true, remainingSets: 3, secondsPerSet: 90 },
+  ];
+
+  it('시간 안에 끝나면 아무것도 줄이지 않는다', () => {
+    const result = paceCheck({ elapsedSeconds: 600, plannedSeconds: 50 * 60, lifts });
+    assert.deepEqual(result.trims, []);
+  });
+
+  it('조금 넘는 건 그냥 간다', () => {
+    const total = lifts.reduce((s, l) => s + l.remainingSets * l.secondsPerSet, 0);
+    const result = paceCheck({ elapsedSeconds: 0, plannedSeconds: total - PACE_TOLERANCE_SECONDS + 10, lifts });
+    assert.deepEqual(result.trims, []);
+  });
+
+  it('많이 밀리면 뒤 고립 종목부터 줄이고, 종목은 지우지 않는다', () => {
+    const result = paceCheck({ elapsedSeconds: 30 * 60, plannedSeconds: 50 * 60, lifts });
+    assert.ok(result.trims.length > 0);
+    const byIndex = new Map(result.trims.map((t) => [t.index, t.removeSets]));
+    assert.ok((byIndex.get(3) ?? 0) >= (byIndex.get(0) ?? 0), '뒤 · 고립부터');
+    for (const [index, remove] of byIndex) {
+      const floor = lifts[index]!.isolation ? 1 : 2;
+      assert.ok(lifts[index]!.remainingSets - remove >= floor, `${lifts[index]!.name}을 다 지우지 않는다`);
+    }
+  });
+
+  it('줄였다고 말한다', () => {
+    assert.match(trimLine('calm', [{ name: '카프레이즈', sets: 1 }]), /카프레이즈 1세트만/);
+  });
+
+  it('절반과 10분 남았을 때 한 번씩만 말한다', () => {
+    const planned = 50 * 60;
+    const half = timeCheck('calm', { elapsedSeconds: 26 * 60, plannedSeconds: planned, said: [] })!;
+    assert.equal(half.key, 'half');
+    assert.equal(timeCheck('calm', { elapsedSeconds: 27 * 60, plannedSeconds: planned, said: ['half'] }), null);
+    const last = timeCheck('calm', { elapsedSeconds: 41 * 60, plannedSeconds: planned, said: ['half'] })!;
+    assert.equal(last.key, 'last10');
+    assert.match(last.line, /9분 남았어요/);
+    assert.equal(timeCheck('calm', { elapsedSeconds: 42 * 60, plannedSeconds: planned, said: ['half', 'last10'] }), null);
+  });
+});
+
+describe('마무리 스트레칭', () => {
+  it('오늘 쓴 부위부터, 4분 안에, 호흡으로 끝난다', () => {
+    const steps = cooldownFor(['quads', 'hamstrings', 'glutes', 'calves', 'abs']);
+    assert.equal(steps[0]!.id, 'quad-stand');
+    assert.equal(steps[steps.length - 1]!.id, 'breath');
+    assert.ok(steps.reduce((s, x) => s + x.seconds, 0) <= COOLDOWN_SECONDS);
+  });
+  it('상체 날은 상체 스트레칭', () => {
+    const ids = cooldownFor(['chest', 'back', 'triceps']).map((s) => s.id);
+    assert.ok(ids.includes('chest-doorway') && ids.includes('lat-hang'));
+    assert.ok(!ids.includes('quad-stand'));
+  });
+  it('같은 스트레칭은 한 번만', () => {
+    const ids = cooldownFor(['chest', 'frontDelt']).map((s) => s.id);
+    assert.equal(new Set(ids).size, ids.length);
+  });
+  it('말이 짧고 존댓말이다', () => {
+    for (const style of STYLES) {
+      const steps = cooldownFor(['chest', 'quads']);
+      steps.forEach((step, i) => {
+        const line = cooldownLine(style, step, i, steps.length);
+        assert.ok(speechSeconds(line) < 14, line);
+        if (style === 'fired') assert.doesNotMatch(line, BANMAL);
+      });
+      assert.ok(cooldownDoneLine(style).length > 0);
+    }
+  });
+});

@@ -340,9 +340,9 @@ describe('멘트를 돌려 쓴다', () => {
     assert.equal(bestWeightBefore([], bench, TODAY), null);
   });
 
-  it('종목 위치를 말한다 — 절반, 마지막', () => {
+  it('마지막 종목이라고 말한다 — 절반은 PT 세션이 시간으로 말한다', () => {
     assert.match(beforeSetLines(base({ style: 'calm', liftIndex: 5, totalLifts: 6 })).join(' '), /마지막 종목/);
-    assert.match(beforeSetLines(base({ style: 'calm', liftIndex: 3, totalLifts: 6 })).join(' '), /절반/);
+    assert.doesNotMatch(beforeSetLines(base({ style: 'calm', liftIndex: 3, totalLifts: 6 })).join(' '), /절반/);
     assert.doesNotMatch(beforeSetLines(base({ style: 'calm', liftIndex: 1, totalLifts: 6 })).join(' '), /절반|마지막 종목/);
   });
 

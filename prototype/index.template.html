@@ -2327,6 +2327,19 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .count-settings { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; }
 .count-settings[aria-expanded="true"] { border-style: solid; }
 .input-mode { justify-self: start; background: none; border: none; padding: 2px 0; color: var(--accent); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+
+/* ── PT 세션 ───────────────────────────────────── */
+.pt-panel { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--surface-2); }
+.pt-panel-head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.pt-panel-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.pt-warm { display: grid; gap: 6px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 8px; }
+.pt-warm-head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.pt-warm-rest { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.pt-warm .pick { justify-self: start; }
+.pt-cool { display: grid; gap: 4px; padding: 14px; border: 1px solid var(--accent); border-radius: 14px; background: var(--surface-2); text-align: center; }
+.pt-cool-name { font-size: 18px; font-weight: 700; }
+.pt-cool-left { font-family: var(--mono); font-size: 40px; font-weight: 700; color: var(--accent); }
+.pt-cool-actions { display: flex; gap: 8px; justify-content: center; margin-top: 6px; }
 </style>
 
 <div class="wrap">
