@@ -125,6 +125,53 @@ export function speedOf(tempo: Tempo): 'slow' | 'normal' | 'fast' | undefined {
   return found?.id;
 }
 
+/**
+ * 종목마다 기본 박자.
+ *
+ * 스쿼트 한 개와 카프레이즈 한 개는 길이가 다르다. 하나의 속도를 모든
+ * 종목에 쓰면 어떤 종목에서는 늘 앞서가고 어떤 종목에서는 늘 기다린다.
+ * 종아리는 위에서 꽉 쥐고 아래에서 멈춰야 자극이 가므로 4초짜리다.
+ */
+export function defaultTempoFor(exercise: { id: string; pattern: string }): Tempo {
+  if (/calf/.test(exercise.id)) return { eccentric: 2, bottom: 1, concentric: 1, top: 1 };
+  if (exercise.pattern === 'core') return { eccentric: 2, bottom: 0, concentric: 1, top: 1 };
+  return DEFAULT_TEMPO;
+}
+
+/** 탭으로 맞출 때 받아 주는 한 회 길이 범위(초). */
+export const TAP_TEMPO_MIN = 1.5;
+export const TAP_TEMPO_MAX = 8;
+
+/**
+ * 탭한 박자로 템포를 만든다.
+ *
+ * 사람마다 한 개 하는 속도가 다르다. 정해 둔 "보통"이 그 사람에게는
+ * 빠르거나 느리다. 가볍게 한 세트 하면서(또는 허공에서) 한 개마다 탭하면
+ * 그 간격의 중간값을 한 회 길이로 쓴다. 평균이 아니라 중간값인 이유는
+ * 한 번 늦게 누른 탭이 박자 전체를 끌고 가지 않게 하려는 것이다.
+ *
+ * 내리는 데 2, 올리는 데 1의 비율로 나눈다 — 근비대 템포의 기본 비율이고,
+ * 0.5초 단위로 맞춘다.
+ */
+export function tempoFromTaps(timestampsMs: readonly number[]): Tempo | null {
+  if (timestampsMs.length < 3) return null;
+  const gaps: number[] = [];
+  for (let i = 1; i < timestampsMs.length; i += 1) {
+    const gap = (timestampsMs[i]! - timestampsMs[i - 1]!) / 1000;
+    if (gap > 0) gaps.push(gap);
+  }
+  if (gaps.length < 2) return null;
+  gaps.sort((a, b) => a - b);
+  const middle = gaps.length % 2
+    ? gaps[(gaps.length - 1) / 2]!
+    : (gaps[gaps.length / 2 - 1]! + gaps[gaps.length / 2]!) / 2;
+  const seconds = Math.min(TAP_TEMPO_MAX, Math.max(TAP_TEMPO_MIN, middle));
+  const half = (value: number) => Math.round(value * 2) / 2;
+  const concentric = Math.max(0.5, half(seconds / 3));
+  const eccentric = Math.max(0.5, half(seconds - concentric));
+  return { eccentric, bottom: 0, concentric, top: 0 };
+}
+
 /** `2-0-1-0` 처럼 현장 표기로. */
 export function tempoLabel(tempo: Tempo): string {
   return [tempo.eccentric, tempo.bottom, tempo.concentric, tempo.top].join('-');
@@ -169,7 +216,18 @@ export interface CueInput {
   leadInSeconds?: number;
   /** 마지막 하나 전에 붙이는 말. 없으면 "하나 남았습니다" — PT 모드는 "하나 더! 마지막!!" */
   lastCall?: string;
+  /**
+   * 마지막 몇 개는 기다려 준다.
+   *
+   * 사람은 지치면 느려진다. 마지막 세 개를 첫 개수와 같은 박자로 세면
+   * 앱이 사람보다 먼저 "열, 끝"을 외치고, 사람은 아직 아홉 개째를 밀고
+   * 있다. 트레이너는 그 자리에서 기다린다.
+   */
+  slowdown?: boolean;
 }
+
+/** 끝에서 n번째 반복에 더하는 시간(한 회 길이 대비). 마지막이 제일 길다. */
+const SLOWDOWN = [0.45, 0.3, 0.15];
 
 /**
  * 세트 하나를 세는 대본.
@@ -185,8 +243,12 @@ export function buildCues(input: CueInput): Cue[] {
   const min = Math.max(1, Math.min(max, Math.round(input.repRange.min)));
 
   const cues: Cue[] = [{ atMs: 0, say: '시작', rep: 0 }];
+  let elapsed = lead;
 
   for (let rep = 1; rep <= max; rep += 1) {
+    const fromEnd = max - rep;
+    const extra = input.slowdown && max >= 5 ? (SLOWDOWN[fromEnd] ?? 0) : 0;
+    elapsed += per * (1 + extra);
     let say = koreanCount(rep);
 
     /*
@@ -198,7 +260,7 @@ export function buildCues(input: CueInput): Cue[] {
     else if (rep === max - 1 && max > 1) say += ', ' + (input.lastCall ?? '하나 남았습니다');
     else if (rep === max) say += ', 끝';
 
-    cues.push({ atMs: Math.round((lead + per * rep) * 1000), say, rep });
+    cues.push({ atMs: Math.round(elapsed * 1000), say, rep });
   }
 
   return cues;

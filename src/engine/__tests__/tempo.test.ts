@@ -6,8 +6,10 @@ import {
   TEMPO_PRESETS,
   TEMPO_SPEEDS,
   buildCues,
-  koreanCount,
   repSeconds,
+  defaultTempoFor,
+  tempoFromTaps,
+  koreanCount,
   repsAt,
   setSeconds,
   speedOf,
@@ -167,5 +169,40 @@ describe('속도', () => {
         `${speed.label}: 내리는 구간이 올리는 구간보다 짧습니다`);
       assert.ok(speed.note.length > 0);
     }
+  });
+});
+
+describe('사람마다 · 종목마다 박자', () => {
+  it('종아리는 기본이 더 길다 — 위에서 쥐고 아래서 멈춘다', () => {
+    const calf = defaultTempoFor({ id: 'standing-calf-raise', pattern: 'isolation' });
+    const squat = defaultTempoFor({ id: 'back-squat', pattern: 'squat' });
+    assert.ok(repSeconds(calf) > repSeconds(squat));
+  });
+
+  it('탭한 간격의 중간값으로 한 회 길이를 정한다', () => {
+    // 4초 간격으로 눌렀는데 한 번만 늦게 눌렀다
+    const taps = [0, 4000, 8000, 12000, 19000];
+    const tempo = tempoFromTaps(taps)!;
+    assert.equal(repSeconds(tempo), 4, '늦은 한 번이 박자를 끌고 가지 않는다');
+    assert.ok(tempo.eccentric > tempo.concentric, '내리는 쪽이 길다');
+  });
+
+  it('너무 적게 누르면 정하지 않는다', () => {
+    assert.equal(tempoFromTaps([0, 3000]), null);
+  });
+
+  it('말이 안 되는 박자는 범위 안으로 잡는다', () => {
+    assert.ok(repSeconds(tempoFromTaps([0, 300, 600, 900])!) >= 1.5);
+    assert.ok(repSeconds(tempoFromTaps([0, 20000, 40000, 60000])!) <= 8);
+  });
+
+  it('마지막 세 개는 기다려 준다 — 지치면 느려진다', () => {
+    const range = { min: 8, max: 10 };
+    const even = buildCues({ repRange: range, leadInSeconds: 0 });
+    const slow = buildCues({ repRange: range, leadInSeconds: 0, slowdown: true });
+    const gap = (cues: typeof even, rep: number) =>
+      cues.find((c) => c.rep === rep)!.atMs - cues.find((c) => c.rep === rep - 1)!.atMs;
+    assert.equal(gap(slow, 3), gap(even, 3), '앞쪽 박자는 그대로');
+    assert.ok(gap(slow, 10) > gap(slow, 9) && gap(slow, 9) > gap(slow, 8) && gap(slow, 8) > gap(slow, 7));
   });
 });

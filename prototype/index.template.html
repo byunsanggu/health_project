@@ -2311,6 +2311,13 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .mistake-hint { display: grid; gap: 3px; font-size: 12px; padding: 7px 10px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 6px; margin-top: 6px; }
 .mistake-hint .mistake-sign { font-size: 12px; }
 .mistake-hint .mistake-fix { font-size: 12px; }
+
+/* ── 내 박자로 맞추기 ──────────────────────────── */
+.tap-pad { width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--accent); background: var(--surface-2); color: var(--accent); display: grid; place-content: center; gap: 6px; font: inherit; cursor: pointer; touch-action: manipulation; }
+.tap-pad:active { background: var(--accent); color: var(--accent-ink); }
+.tap-count { font-size: 44px; font-weight: 700; font-family: var(--mono); }
+.tap-hint { font-size: 13px; }
+.sound-tip { font-size: 11.5px; }
 </style>
 
 <div class="wrap">

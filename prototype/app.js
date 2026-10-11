@@ -234,6 +234,7 @@
         extraLifts: state.extraLifts,
         voiceOn: state.voiceOn,
         tempo: state.tempo,
+        tempoByExercise: state.tempoByExercise,
         autoCount: state.autoCount,
         nudgeOn: state.nudgeOn,
         friendName: state.friendName,
@@ -302,6 +303,7 @@
       state.extraLifts = settings.extraLifts || [];
       state.voiceOn = Boolean(settings.voiceOn);
       state.tempo = settings.tempo || null;
+      state.tempoByExercise = settings.tempoByExercise || {};
       state.autoCount = Boolean(settings.autoCount);
       state.nudgeOn = Boolean(settings.nudgeOn);
       state.friendName = settings.friendName || null;
@@ -754,6 +756,8 @@
     machineSettings: {},
     /* 회원이 "나도 이래요"를 누른 흔한 실수. { 종목id: [실수id] } — 코치가 그걸 먼저 짚는다 */
     mistakeFlags: {},
+    /* 종목마다 정한 박자. { 종목id: Tempo } — 스쿼트와 카프레이즈는 한 개 길이가 다르다 */
+    tempoByExercise: {},
     /** 지금 코치가 한 말. 소리가 안 나는 기기에서도 읽을 수 있게 화면에 띄운다 */
     coachLine: null,
     /** 이미 말한 자리. 다시 그릴 때마다 같은 말을 반복하지 않게 */
@@ -5470,8 +5474,71 @@
     return box;
   }
 
-  function tempoOf() {
-    return state.tempo || E.DEFAULT_TEMPO;
+  /**
+   * 이 종목의 박자. 종목에 정해 둔 것 → 전체 기본으로 고른 것 → 종목별 기본 순.
+   * 종목 없이 부르면 전체 기본이다(세어 주기 설정 화면).
+   */
+  function tempoOf(exercise) {
+    if (exercise && state.tempoByExercise[exercise.id]) return state.tempoByExercise[exercise.id];
+    if (state.tempo) return state.tempo;
+    return exercise ? E.defaultTempoFor(exercise) : E.DEFAULT_TEMPO;
+  }
+
+  function setExerciseTempo(exercise, tempo) {
+    state.tempoByExercise = Object.assign({}, state.tempoByExercise);
+    state.tempoByExercise[exercise.id] = tempo;
+    persist();
+  }
+
+  /**
+   * 내 박자로 맞추기 — 한 개 할 때마다 탭.
+   *
+   * 가벼운 무게로 몇 개 하면서, 아니면 허공에서 그 종목을 하는 셈 치고
+   * 한 개가 끝날 때마다 누른다. 네 번 누르면 그 간격으로 이 종목을 센다.
+   */
+  function openTapTempo(exercise) {
+    var taps = [];
+    var result = null;
+    var draw = function () {
+      var body = [];
+      body.push(el('p', { class: 'asset-note', text:
+        '평소 하는 속도로 ' + exercise.name + particleOf(exercise.name, '을/를') + ' 한 개 할 때마다 아래를 누르세요. ' +
+        '가벼운 무게로 해 보면서 눌러도 되고, 허공에서 동작을 따라 해도 됩니다.' }));
+      body.push(el('button', {
+        type: 'button', class: 'tap-pad',
+        onclick: function () {
+          taps.push(Date.now());
+          if (taps.length > 8) taps = taps.slice(-8);
+          result = E.tempoFromTaps(taps);
+          buzz(15);
+          draw();
+        },
+      }, [
+        el('span', { class: 'tap-count', text: taps.length === 0 ? '탭' : String(taps.length) }),
+        el('span', { class: 'tap-hint', text: taps.length < 4 ? (4 - taps.length) + '번 더' : '좋아요 — 더 눌러도 됩니다' }),
+      ]));
+      if (result && taps.length >= 4) {
+        body.push(el('p', { class: 'hint-line', text:
+          '한 개에 ' + E.repSeconds(result) + '초 (' + E.tempoLabel(result) + ') — 내리는 데 ' +
+          result.eccentric + '초, 올리는 데 ' + result.concentric + '초로 셉니다.' }));
+        body.push(el('button', {
+          type: 'button', class: 'finish', text: '이 박자로 세기',
+          onclick: function () {
+            setExerciseTempo(exercise, result);
+            pushLog('템포', '<b>' + exercise.name + '</b>' + particleOf(exercise.name, '은/는') + ' 내 박자로 셉니다 · 한 개 ' + E.repSeconds(result) + '초');
+            modal.close();
+            speak('하나, 둘');
+            render();
+          },
+        }));
+      }
+      body.push(el('button', {
+        type: 'button', class: 'pick', text: '다시 누르기',
+        onclick: function () { taps = []; result = null; draw(); },
+      }));
+      openModal('내 박자로 맞추기', exercise.name, body);
+    };
+    draw();
   }
 
   /** 세는 중이면 멈춘다. 화면을 떠날 때도 반드시 불러야 한다. */
@@ -5545,9 +5612,11 @@
 
     var lead = typeof leadSeconds === 'number' ? leadSeconds : 3;
     var input = {
-      repRange: set.targetReps, tempo: tempoOf(), leadInSeconds: lead,
+      repRange: set.targetReps, tempo: tempoOf(lift.exercise), leadInSeconds: lead,
       // PT 모드는 마지막 하나 전에 "하나 더! 마지막!!"
       lastCall: ptOn() ? E.lastCallLine(state.coach.style) : undefined,
+      // 지치면 느려진다. 마지막 세 개는 기다려 준다.
+      slowdown: true,
     };
     var cues = E.buildCues(input);
     var run = { liftIndex: liftIndex, setIndex: setIndex, rep: 0, timers: [], startedAt: Date.now() };
@@ -5616,7 +5685,9 @@
    * 있다는 걸 아무도 몰랐다. 쓰는 자리에 없는 설정은 없는 설정이다.
    */
   function countPanel(liftIndex, setIndex) {
-    var tempo = tempoOf();
+    var lifting = state.lifts[liftIndex];
+    var exercise = lifting && lifting.exercise;
+    var tempo = tempoOf(exercise);
     var speed = E.speedOf(tempo);
     var box = el('div', { class: 'count-panel' }, []);
 
@@ -5650,14 +5721,22 @@
         title: item.note,
         text: item.label,
         onclick: function () {
-          state.tempo = item.tempo;
-          pushLog('템포', '<b>' + item.label + '</b> · 한 회 ' +
+          // 속도는 이 종목에만 — 스쿼트를 천천히 한다고 카프레이즈까지 바뀌면 안 된다.
+          if (exercise) setExerciseTempo(exercise, item.tempo);
+          else { state.tempo = item.tempo; persist(); }
+          pushLog('템포', (exercise ? '<b>' + exercise.name + '</b> ' : '') + '<b>' + item.label + '</b> · 한 회 ' +
             E.repSeconds(item.tempo) + '초 — ' + item.note);
-          persist();
           render();
         },
       }));
     });
+    if (exercise) {
+      speeds.appendChild(el('button', {
+        type: 'button', class: 'chip tap-open', text: '내 박자로',
+        title: '한 개 할 때마다 탭해서 이 종목 박자를 맞춥니다',
+        onclick: function () { openTapTempo(exercise); },
+      }));
+    }
     /*
      * 어느 속도에도 안 맞으면(멈췄다 같은 것) 아무것도 켜지 않고, 대신
      * 지금 템포를 적어 둔다. 가까운 것을 켜 주면 사용자가 정한 템포가
@@ -5733,6 +5812,17 @@
     ]));
 
     box.appendChild(toggles);
+    /*
+     * 소리가 안 난다는 말은 거의 이 셋이다. 켠 사람에게만 한 줄 보여 준다.
+     * 아이폰은 무음 스위치가 켜져 있으면 말하기도 같이 꺼진다.
+     */
+    if ((voice || ptOn()) && canSpeak) {
+      var tips = [];
+      if (isIOS()) tips.push('무음 모드를 끄고');
+      tips.push('미디어 볼륨을 올려 주세요');
+      if (!koreanVoice()) tips.push('(이 기기에 한국어 음성이 없으면 설정 > 접근성에서 받을 수 있습니다)');
+      box.appendChild(el('p', { class: 'hint-line sound-tip', text: '소리가 안 들리면 ' + tips.join(' ') + '.' }));
+    }
     if (auto) {
       box.appendChild(el('p', { class: 'hint-line', text:
         '휴식이 끝나면 준비 ' + AUTO_LEAD_SECONDS + '초를 세고 저절로 시작합니다.' }));
@@ -7703,7 +7793,7 @@
    */
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
-    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'voiceRate', 'autoCount',
+    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'voiceRate', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
     'mistakeFlags',
   ];
