@@ -14500,6 +14500,40 @@ var GymSearch = (function () {
   }
 
   /**
+   * 지금 보여 줄 리포트 — 이번 주 아니면 지난주.
+   *
+   * 월요일 아침에 "이번 주는 쉬었습니다"가 떴다. 주가 막 시작했을 뿐이다.
+   * 이번 주에 아직 한 번도 안 했고 목요일까지면, 막 끝난 지난주를 보여 준다.
+   * 주말에 앱을 안 연 사람은 그래야 지난주 리포트를 본다.
+   */
+  function shownReport() {
+    var dayIndex = Math.round(
+      (Date.parse(state.todayDate + 'T00:00:00Z') - Date.parse(state.monday + 'T00:00:00Z')) / 86400000);
+    var started = weekSessions().some(function (item) { return (item.sets || []).length > 0; });
+    var lastMonday = E.addDays(state.monday, -7);
+    var lastSunday = E.addDays(state.monday, -1);
+    var lastWeek = state.history.filter(function (item) {
+      return item.date >= lastMonday && item.date <= lastSunday && (item.sets || []).length > 0;
+    });
+    if (!started && dayIndex < 4 && lastWeek.length > 0) {
+      return {
+        label: '지난주 리포트',
+        monday: lastMonday,
+        report: E.buildWeeklyReport({
+          sessions: lastWeek,
+          history: state.history,
+          landmarks: state.landmarks,
+          index: index,
+          from: lastMonday,
+          to: lastSunday,
+          targetSessions: trainingDays().length,
+        }),
+      };
+    }
+    return { label: '이번 주 리포트', monday: state.monday, report: thisWeekReport() };
+  }
+
+  /**
    * 한 주를 이미지 한 장으로.
    *
    * 회원을 붙잡는 건 기능이 아니라 **한 주가 끝났을 때 손에 남는 것**이다.
@@ -14725,9 +14759,10 @@ var GymSearch = (function () {
    * 미리보기를 화면에 그대로 띄운다 — 보내기 전에 뭘 보내는지 봐야 한다.
    */
   function openWeeklyReport() {
-    state.reportSeenWeek = state.monday;
+    var shown = shownReport();
+    if (shown.monday === state.monday) state.reportSeenWeek = state.monday;
     persist();
-    var report = thisWeekReport();
+    var report = shown.report;
     var dark = document.documentElement.getAttribute('data-theme') === 'dark'
       || (document.documentElement.getAttribute('data-theme') !== 'light'
         && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -14867,14 +14902,17 @@ var GymSearch = (function () {
     var nudge = reportNudge();
     if (nudge) screen.appendChild(nudge);
 
-    var weekReport = thisWeekReport();
+    var shownWeek = shownReport();
     screen.appendChild(el('button', {
       type: 'button', class: 'report-cta',
       onclick: openWeeklyReport,
     }, [
       el('span', { class: 'plan-main' }, [
-        el('span', { class: 'name', text: '이번 주 리포트' }),
-        el('span', { class: 'plan-sets', text: weekReport.headline }),
+        el('span', { class: 'name', text: shownWeek.label }),
+        el('span', { class: 'plan-sets', text: shownWeek.monday === state.monday &&
+          !weekSessions().some(function (item) { return (item.sets || []).length > 0; })
+          ? '이번 주는 아직 시작 전입니다'
+          : shownWeek.report.headline }),
       ]),
       el('span', { class: 'detail', text: '카톡으로 ›' }),
     ]));
