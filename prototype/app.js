@@ -211,6 +211,7 @@
         coach: state.coach,
         machineSettings: state.machineSettings,
         mistakeFlags: state.mistakeFlags,
+        inputMode: state.inputMode,
         diet: state.diet,
         comeback: state.comeback,
         comebackDeclined: state.comebackDeclined,
@@ -373,6 +374,7 @@
         : { mode: 'solo', style: 'calm' };
       state.machineSettings = settings.machineSettings || {};
       state.mistakeFlags = settings.mistakeFlags || {};
+      state.inputMode = settings.inputMode || null;
       state.diet = E.normalizeDiet(settings.diet);
       var sameAnswer = settings.machineSame;
       state.machineSame = sameAnswer && sameAnswer.date === state.todayDate
@@ -756,6 +758,10 @@
     machineSettings: {},
     /* 회원이 "나도 이래요"를 누른 흔한 실수. { 종목id: [실수id] } — 코치가 그걸 먼저 짚는다 */
     mistakeFlags: {},
+    /* 혼자 모드에서 세트를 마칠 때 묻는 방식 — 'feel' | 'rir' | null(단계대로) */
+    inputMode: null,
+    /* 세어 주기 설정 줄을 펼쳤는가 — 이 화면에서만 */
+    countMoreOpen: false,
     /* 종목마다 정한 박자. { 종목id: Tempo } — 스쿼트와 카프레이즈는 한 개 길이가 다르다 */
     tempoByExercise: {},
     /** 지금 코치가 한 말. 소리가 안 나는 기기에서도 읽을 수 있게 화면에 띄운다 */
@@ -1227,6 +1233,31 @@
     return Math.max(styleRir, start - (state.plan.weekInBlock - 1));
   }
 
+  /**
+   * 횟수 칸의 처음 값.
+   *
+   * 목표 상한(10회)을 넣어 두면 8개 한 사람은 매 세트 −를 두 번 누른다.
+   * 지난번 같은 순서의 세트를 같은 무게로 했으면 그때 한 횟수를 넣는다.
+   * 무게가 올랐으면 목표 하한부터 — 올린 날 지난번 횟수를 기대하면 안 된다.
+   * 기록이 없으면 목표 상한 그대로.
+   */
+  function defaultReps(exercise, order, weightKg, range) {
+    var last = null;
+    state.history.forEach(function (session) {
+      if (session.date >= state.todayDate) return;
+      if (last && session.date <= last.date) return;
+      var sets = (session.sets || []).filter(function (one) {
+        return one.exerciseId === exercise.id && !one.warmup && one.reps > 0;
+      });
+      if (sets.length) last = { date: session.date, sets: sets };
+    });
+    if (!last) return range.max;
+    var then = last.sets[Math.min(order, last.sets.length - 1)];
+    if (weightKg > then.weightKg + 0.01) return range.min;
+    if (weightKg < then.weightKg - 0.01) return range.max;
+    return Math.max(1, Math.min(range.max + 5, then.reps));
+  }
+
   function rebuildSession() {
     // 통증이 바뀌어 세션을 다시 짜도, 이미 끝낸 세트까지 되돌리면 안 된다.
     var previous = {};
@@ -1432,7 +1463,7 @@
             estimated: set.weightKg === null,
             targetReps: set.targetReps,
             targetRir: set.targetRir,
-            reps: set.targetReps.max,
+            reps: defaultReps(item.exercise, order, planned, set.targetReps),
             rir: null,
             done: false,
             adjustment: null,
@@ -5773,6 +5804,26 @@
     ]));
 
     /*
+     * 설정은 한 줄로 접어 둔다.
+     *
+     * 세트 카드마다 속도 · 소리 · 자동이 다 펼쳐져 있으면, 정작 매 세트
+     * 고쳐야 하는 무게와 횟수 칸이 그만큼 아래로 밀린다. 한 번 정하면
+     * 거의 안 바꾸는 것들이다. 접어 두되 지금 상태(소리 꺼짐 등)는 줄에
+     * 그대로 보여서, 소리가 왜 안 나는지는 펴지 않아도 안다.
+     */
+    var soundOn = Boolean(state.voiceOn) || ptOn();
+    var summary = el('button', {
+      type: 'button', class: 'count-settings', 'aria-expanded': String(Boolean(state.countMoreOpen)),
+      onclick: function () { state.countMoreOpen = !state.countMoreOpen; render(); },
+    }, [
+      el('span', { text: '속도 ' + E.repSeconds(tempo) + '초 · 소리 ' + (soundOn ? '켜짐' : '꺼짐') +
+        ' · 자동 ' + (state.autoCount ? '켜짐' : '꺼짐') }),
+      el('span', { class: 'count-tempo', text: state.countMoreOpen ? '접기 ▴' : '설정 ▾' }),
+    ]);
+    box.appendChild(summary);
+    if (!state.countMoreOpen) return box;
+
+    /*
      * 속도는 초로 줄 세운 축이다. 유튜브 배속과 다른 점이 하나 있다 —
      * 배속은 같은 것을 빨리 돌리는 것이지만, 여기서는 **다른 세트가 된다.**
      * 그래서 고를 때 그 말을 같이 띄운다.
@@ -6594,10 +6645,11 @@
      * 실제로 하는 말이고, 초보는 남은 횟수를 몰라도 가벼웠는지는 안다.
      * 남은 횟수 버튼은 아래에 그대로 둔다 — 정확히 아는 사람은 그걸 누른다.
      */
-    if (ptOn()) {
+    var byFeel = ptOn() || inputMode() === 'feel';
+    if (byFeel) {
       body.push(el('div', { class: 'rir-ask' }, [
         el('b', { text: (setIndex + 1) + '세트 끝내기' }),
-        el('span', { text: E.askFeelLine(state.coach.style) }),
+        el('span', { text: ptOn() ? E.askFeelLine(state.coach.style) : '무게는 어땠어요?' }),
       ]));
       body.push(el('div', { class: 'feel-row' }, E.FEELS.map(function (feel) {
         return el('button', {
@@ -6609,8 +6661,8 @@
         });
       })));
     }
-    body.push(el('div', { class: 'rir-ask' + (ptOn() ? ' quiet' : '') }, [
-      el('b', { text: ptOn() ? '정확히 아시면' : (setIndex + 1) + '세트 끝내기' }),
+    body.push(el('div', { class: 'rir-ask' + (byFeel ? ' quiet' : '') }, [
+      el('b', { text: byFeel ? '정확히 아시면' : (setIndex + 1) + '세트 끝내기' }),
       el('span', { text: '방금 세트, 몇 회 더 할 수 있었나요?' }),
     ]));
 
@@ -6649,10 +6701,30 @@
      */
     body.push(el('p', { class: 'hint-line', text:
       '누르면 기록되고 ' + nextLabel + '. 이 답으로 다음 세트와 다음 주 무게가 정해집니다.' }));
+    // 혼자 모드에서 묻는 방식을 바꾸는 자리. PT 모드는 늘 체감으로 묻는다.
+    if (!ptOn()) {
+      body.push(el('button', {
+        type: 'button', class: 'link-btn input-mode',
+        text: byFeel ? '남은 횟수로만 묻기' : '"무게 어땠어요?"로 묻기',
+        onclick: function () { state.inputMode = byFeel ? 'rir' : 'feel'; persist(); render(); },
+      }));
+    }
 
     return el('div', { class: 'set-now' }, [
       el('div', { class: 'now-body' }, body),
     ]);
+  }
+
+  /**
+   * 혼자 모드에서 세트를 마칠 때 묻는 방식.
+   *
+   * "몇 회 더 할 수 있었나요?"는 정확하지만 초보는 답을 모른다. 초보에게는
+   * "무게 어땠어요?"(가벼웠어요 · 딱 좋았어요 · 무거웠어요)로 묻고, 그 답을
+   * 그 주의 목표에 맞춰 남은 횟수로 바꿔 적는다. 직접 바꿀 수 있다.
+   */
+  function inputMode() {
+    if (state.inputMode === 'feel' || state.inputMode === 'rir') return state.inputMode;
+    return state.lifter && state.lifter.level === 'beginner' ? 'feel' : 'rir';
   }
 
   /**

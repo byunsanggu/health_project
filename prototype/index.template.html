@@ -2322,6 +2322,11 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .speed-big .speed-row { grid-template-columns: 1fr 56px 110px 56px; }
 .speed-detail-toggle, .speed-preview { justify-self: start; margin-top: 6px; }
 .progress-name { font-weight: 700; font-size: 14px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── 세어 주기 접힌 줄 · 묻는 방식 ──────────────── */
+.count-settings { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; }
+.count-settings[aria-expanded="true"] { border-style: solid; }
+.input-mode { justify-self: start; background: none; border: none; padding: 2px 0; color: var(--accent); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
 </style>
 
 <div class="wrap">
