@@ -9,7 +9,7 @@
  * 넣는 게 정상이다. 화면이 꺼지면 페이지의 타이머는 throttle되거나 멈추지만,
  * 서비스 워커의 알림은 시계까지 간다.
  */
-const VERSION = 'volume-coach-v1';
+const VERSION = 'volume-coach-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -39,7 +39,11 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
+      /*
+       * 브라우저 HTTP 캐시를 건너뛰고 서버에 확인한다(바뀐 게 없으면 304라 가볍다).
+       * 안 그러면 새로 올린 화면이 몇 분 동안 옛날 것으로 뜬다 — "버튼이 없다"가 그거였다.
+       */
+      fetch(request.url, { cache: 'no-cache', credentials: 'same-origin' })
         .then((response) => {
           const copy = response.clone();
           caches.open(VERSION).then((cache) => cache.put(request, copy)).catch(() => {});

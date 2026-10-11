@@ -4277,6 +4277,10 @@
 
     // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다.
     if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
+    // 시작은 했는데 아직 기록이 없을 때도 끝낼 길은 있어야 한다.
+    else if (state.sessionStartedAt) {
+      screen.appendChild(el('button', { type: 'button', class: 'finish quiet', text: '운동 끝내기', onclick: endWorkout }));
+    }
   }
 
   /**
@@ -6335,11 +6339,11 @@
       el('div', { class: 'progress-name' }, [
         el('span', { text: lift.exercise.name }),
         /*
-         * 운동 종료는 늘 보여야 한다. 마지막 종목에만 두었더니 "끝내는 버튼이
+         * 운동 끝내기는 늘 보여야 한다. 마지막 종목에만 두었더니 "끝내는 버튼이
          * 없다"가 나왔다 — 시간이 없어 중간에 나가는 날이 실제로 있다.
          * 누르면 바로 끝나지 않고 요약이 먼저 뜬다. 거기서 "오늘 마치기"를 눌러야 끝.
          */
-        el('button', { type: 'button', class: 'end-workout', text: '운동 종료', onclick: endWorkout }),
+        el('button', { type: 'button', class: 'end-workout', text: '운동 끝내기', onclick: endWorkout }),
       ]),
     ]));
 
@@ -7582,19 +7586,22 @@
    * 기록을 이력으로 넘기고 진행 화면에서 빠져나온다. 요약은 다시 볼 수
    * 있게 남겨둔다 — 닫자마자 사라지면 방금 본 숫자를 확인할 길이 없다.
    */
-  /** 머리띠의 "운동 종료". 세던 것을 멈추고, 기록이 있으면 요약을, 없으면 묻는다. */
+  /** "운동 끝내기". 세던 것을 멈추고, 기록이 있으면 요약을, 없으면 묻는다. */
   function endWorkout() {
     if (ptOn() && state.ptRun && !state.ptRun.cooled) pausePt(null);
     else stopCounting(false, true);
     render();
     if (state.todaySets.length > 0) { openSummary(); return; }
-    openModal('운동 종료', null, [
+    openModal('운동 끝내기', null, [
       el('p', { class: 'hint-line', text: '아직 기록한 세트가 없어요. 여기서 그만할까요?' }),
       el('div', { class: 'chip-row' }, [
         el('button', { type: 'button', class: 'finish', text: '그만하기', onclick: function () {
           stopRest();
           state.started = false;
           state.ptRun = null;
+          // 시계도 되돌린다 — 다음에 시작할 때 오늘 그만둔 시간까지 운동 시간에 들어가면 안 된다.
+          state.sessionStartedAt = null;
+          persist();
           modal.close();
           render();
         } }),
@@ -7652,7 +7659,7 @@
       type: 'button',
       class: 'finish' + (quiet ? ' quiet' : ' major'),
       text: quiet
-        ? '여기서 끝내기 · ' + done + '세트 요약'
+        ? '운동 끝내기 · ' + done + '세트 요약'
         : '오늘 운동 완료 · 요약 보기',
       onclick: openSummary,
     }));
