@@ -2312,12 +2312,16 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .mistake-hint .mistake-sign { font-size: 12px; }
 .mistake-hint .mistake-fix { font-size: 12px; }
 
-/* ── 내 박자로 맞추기 ──────────────────────────── */
-.tap-pad { width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--accent); background: var(--surface-2); color: var(--accent); display: grid; place-content: center; gap: 6px; font: inherit; cursor: pointer; touch-action: manipulation; }
-.tap-pad:active { background: var(--accent); color: var(--accent-ink); }
-.tap-count { font-size: 44px; font-weight: 700; font-family: var(--mono); }
-.tap-hint { font-size: 13px; }
 .sound-tip { font-size: 11.5px; }
+
+/* ── 속도 수정 ─────────────────────────────────── */
+.speed-row { display: grid; grid-template-columns: 1fr 48px 90px 48px; align-items: center; gap: 6px; margin: 4px 0; }
+.speed-label { font-size: 13px; font-weight: 600; }
+.speed-value { text-align: center; font-family: var(--mono); font-size: 18px; font-weight: 700; }
+.speed-big .speed-value { font-size: 30px; }
+.speed-big .speed-row { grid-template-columns: 1fr 56px 110px 56px; }
+.speed-detail-toggle, .speed-preview { justify-self: start; margin-top: 6px; }
+.progress-name { font-weight: 700; font-size: 14px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 
 <div class="wrap">

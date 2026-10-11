@@ -138,40 +138,6 @@ export function defaultTempoFor(exercise: { id: string; pattern: string }): Temp
   return DEFAULT_TEMPO;
 }
 
-/** 탭으로 맞출 때 받아 주는 한 회 길이 범위(초). */
-export const TAP_TEMPO_MIN = 1.5;
-export const TAP_TEMPO_MAX = 8;
-
-/**
- * 탭한 박자로 템포를 만든다.
- *
- * 사람마다 한 개 하는 속도가 다르다. 정해 둔 "보통"이 그 사람에게는
- * 빠르거나 느리다. 가볍게 한 세트 하면서(또는 허공에서) 한 개마다 탭하면
- * 그 간격의 중간값을 한 회 길이로 쓴다. 평균이 아니라 중간값인 이유는
- * 한 번 늦게 누른 탭이 박자 전체를 끌고 가지 않게 하려는 것이다.
- *
- * 내리는 데 2, 올리는 데 1의 비율로 나눈다 — 근비대 템포의 기본 비율이고,
- * 0.5초 단위로 맞춘다.
- */
-export function tempoFromTaps(timestampsMs: readonly number[]): Tempo | null {
-  if (timestampsMs.length < 3) return null;
-  const gaps: number[] = [];
-  for (let i = 1; i < timestampsMs.length; i += 1) {
-    const gap = (timestampsMs[i]! - timestampsMs[i - 1]!) / 1000;
-    if (gap > 0) gaps.push(gap);
-  }
-  if (gaps.length < 2) return null;
-  gaps.sort((a, b) => a - b);
-  const middle = gaps.length % 2
-    ? gaps[(gaps.length - 1) / 2]!
-    : (gaps[gaps.length / 2 - 1]! + gaps[gaps.length / 2]!) / 2;
-  const seconds = Math.min(TAP_TEMPO_MAX, Math.max(TAP_TEMPO_MIN, middle));
-  const half = (value: number) => Math.round(value * 2) / 2;
-  const concentric = Math.max(0.5, half(seconds / 3));
-  const eccentric = Math.max(0.5, half(seconds - concentric));
-  return { eccentric, bottom: 0, concentric, top: 0 };
-}
-
 /** `2-0-1-0` 처럼 현장 표기로. */
 export function tempoLabel(tempo: Tempo): string {
   return [tempo.eccentric, tempo.bottom, tempo.concentric, tempo.top].join('-');

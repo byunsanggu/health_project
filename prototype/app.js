@@ -5491,54 +5491,120 @@
   }
 
   /**
-   * 내 박자로 맞추기 — 한 개 할 때마다 탭.
+   * 속도 수정.
    *
-   * 가벼운 무게로 몇 개 하면서, 아니면 허공에서 그 종목을 하는 셈 치고
-   * 한 개가 끝날 때마다 누른다. 네 번 누르면 그 간격으로 이 종목을 센다.
+   * 한 개에 몇 초로 셀지 직접 고친다. 사람마다, 종목마다 한 개 하는 속도가
+   * 다르다 — 정해 둔 "보통"이 어떤 사람에게는 늘 앞서가고 어떤 사람에게는
+   * 늘 기다린다. 큰 숫자 하나(한 개에 몇 초)만 고치면 내리기 · 올리기는
+   * 2:1로 나뉘고, 세부를 펴면 넷을 따로 고칠 수 있다. "들어 보기"로 세
+   * 개를 세어 보고 정한다.
    */
-  function openTapTempo(exercise) {
-    var taps = [];
-    var result = null;
+  function openSpeedEdit(exercise) {
+    var draft = Object.assign({}, tempoOf(exercise));
+    var detail = false;
+    var previewTimers = [];
+    var stopPreview = function () {
+      previewTimers.forEach(function (id) { clearTimeout(id); });
+      previewTimers = [];
+    };
+    var half = function (value) { return Math.round(value * 2) / 2; };
+    var withTotal = function (total) {
+      var pauses = draft.bottom + draft.top;
+      var moving = Math.max(1, total - pauses);
+      var up = Math.max(0.5, half(moving / 3));
+      return { eccentric: Math.max(0.5, half(moving - up)), bottom: draft.bottom, concentric: up, top: draft.top };
+    };
+    var stepper = function (label, value, onChange, min, max) {
+      return el('div', { class: 'speed-row' }, [
+        el('span', { class: 'speed-label', text: label }),
+        el('button', { type: 'button', class: 'nudge', text: '−', 'aria-label': label + ' 줄이기',
+          disabled: value <= min ? '' : null, onclick: function () { onChange(Math.max(min, half(value - 0.5))); } }),
+        el('span', { class: 'speed-value', text: value + '초' }),
+        el('button', { type: 'button', class: 'nudge', text: '+', 'aria-label': label + ' 늘리기',
+          disabled: value >= max ? '' : null, onclick: function () { onChange(Math.min(max, half(value + 0.5))); } }),
+      ]);
+    };
     var draw = function () {
+      var total = E.repSeconds(draft);
       var body = [];
-      body.push(el('p', { class: 'asset-note', text:
-        '평소 하는 속도로 ' + exercise.name + particleOf(exercise.name, '을/를') + ' 한 개 할 때마다 아래를 누르세요. ' +
-        '가벼운 무게로 해 보면서 눌러도 되고, 허공에서 동작을 따라 해도 됩니다.' }));
-      body.push(el('button', {
-        type: 'button', class: 'tap-pad',
-        onclick: function () {
-          taps.push(Date.now());
-          if (taps.length > 8) taps = taps.slice(-8);
-          result = E.tempoFromTaps(taps);
-          buzz(15);
-          draw();
-        },
-      }, [
-        el('span', { class: 'tap-count', text: taps.length === 0 ? '탭' : String(taps.length) }),
-        el('span', { class: 'tap-hint', text: taps.length < 4 ? (4 - taps.length) + '번 더' : '좋아요 — 더 눌러도 됩니다' }),
+      body.push(el('div', { class: 'speed-big' }, [
+        stepper('한 개에', total, function (next) { draft = withTotal(next); draw(); }, 1.5, 8),
       ]));
-      if (result && taps.length >= 4) {
-        body.push(el('p', { class: 'hint-line', text:
-          '한 개에 ' + E.repSeconds(result) + '초 (' + E.tempoLabel(result) + ') — 내리는 데 ' +
-          result.eccentric + '초, 올리는 데 ' + result.concentric + '초로 셉니다.' }));
-        body.push(el('button', {
-          type: 'button', class: 'finish', text: '이 박자로 세기',
-          onclick: function () {
-            setExerciseTempo(exercise, result);
-            pushLog('템포', '<b>' + exercise.name + '</b>' + particleOf(exercise.name, '은/는') + ' 내 박자로 셉니다 · 한 개 ' + E.repSeconds(result) + '초');
-            modal.close();
-            speak('하나, 둘');
-            render();
-          },
-        }));
-      }
+      body.push(el('p', { class: 'hint-line', text:
+        '내리는 데 ' + draft.eccentric + '초 · 올리는 데 ' + draft.concentric + '초' +
+        (draft.bottom ? ' · 아래서 ' + draft.bottom + '초 멈춤' : '') +
+        (draft.top ? ' · 위에서 ' + draft.top + '초 멈춤' : '') +
+        ' — 10개면 ' + Math.round(total * 10) + '초' }));
+
+      body.push(el('div', { class: 'chip-row' }, E.TEMPO_SPEEDS.concat([E.TEMPO_PRESETS.filter(function (p) { return p.id === 'pause'; })[0]])
+        .filter(Boolean).map(function (item) {
+          var on = E.tempoLabel(item.tempo) === E.tempoLabel(draft);
+          return el('button', {
+            type: 'button', class: 'pick', 'aria-pressed': String(on), title: item.note, text: item.label,
+            onclick: function () { draft = Object.assign({}, item.tempo); draw(); },
+          });
+        })));
+
       body.push(el('button', {
-        type: 'button', class: 'pick', text: '다시 누르기',
-        onclick: function () { taps = []; result = null; draw(); },
+        type: 'button', class: 'pick speed-detail-toggle', 'aria-expanded': String(detail),
+        text: detail ? '세부 접기' : '내리기 · 멈춤 · 올리기 따로 고치기',
+        onclick: function () { detail = !detail; draw(); },
       }));
-      openModal('내 박자로 맞추기', exercise.name, body);
+      if (detail) {
+        body.push(stepper('내리기', draft.eccentric, function (v) { draft.eccentric = v; draw(); }, 0.5, 6));
+        body.push(stepper('아래 멈춤', draft.bottom, function (v) { draft.bottom = v; draw(); }, 0, 4));
+        body.push(stepper('올리기', draft.concentric, function (v) { draft.concentric = v; draw(); }, 0.5, 4));
+        body.push(stepper('위 멈춤', draft.top, function (v) { draft.top = v; draw(); }, 0, 4));
+      }
+
+      body.push(el('button', {
+        type: 'button', class: 'pick speed-preview', text: '▶ 들어 보기 (세 개)',
+        onclick: function () {
+          stopPreview();
+          var per = E.repSeconds(draft) * 1000;
+          ['하나', '둘', '셋'].forEach(function (word, i) {
+            previewTimers.push(setTimeout(function () { sayNow(word); }, i * per));
+          });
+        },
+      }));
+      body.push(el('button', {
+        type: 'button', class: 'finish', text: exercise.name + ' 이 속도로',
+        onclick: function () {
+          stopPreview();
+          setExerciseTempo(exercise, Object.assign({}, draft));
+          pushLog('템포', '<b>' + exercise.name + '</b> 한 개 ' + E.repSeconds(draft) + '초 (' + E.tempoLabel(draft) + ')');
+          modal.close();
+          render();
+        },
+      }));
+      body.push(el('button', {
+        type: 'button', class: 'pick', text: '모든 종목을 이 속도로',
+        onclick: function () {
+          stopPreview();
+          state.tempo = Object.assign({}, draft);
+          state.tempoByExercise = {};
+          pushLog('템포', '모든 종목 한 개 ' + E.repSeconds(draft) + '초 (' + E.tempoLabel(draft) + ')');
+          persist();
+          modal.close();
+          render();
+        },
+      }));
+      openModal('속도 수정', exercise.name, body);
     };
     draw();
+  }
+
+  /** 소리 스위치와 상관없이 지금 한 번 읽는다 — 들어 보기용. */
+  function sayNow(text) {
+    if (!('speechSynthesis' in window)) return;
+    try {
+      var utter = new SpeechSynthesisUtterance(text);
+      var voice = koreanVoice();
+      if (voice) utter.voice = voice;
+      utter.lang = 'ko-KR';
+      utter.rate = clamp(state.voiceRate || 1, 0.5, 2);
+      window.speechSynthesis.speak(utter);
+    } catch (err) { void err; }
   }
 
   /** 세는 중이면 멈춘다. 화면을 떠날 때도 반드시 불러야 한다. */
@@ -5732,9 +5798,9 @@
     });
     if (exercise) {
       speeds.appendChild(el('button', {
-        type: 'button', class: 'chip tap-open', text: '내 박자로',
-        title: '한 개 할 때마다 탭해서 이 종목 박자를 맞춥니다',
-        onclick: function () { openTapTempo(exercise); },
+        type: 'button', class: 'chip speed-edit', text: '속도 수정',
+        title: '한 개에 몇 초로 셀지 직접 고칩니다 — 이 종목만',
+        onclick: function () { openSpeedEdit(exercise); },
       }));
     }
     /*
@@ -6123,6 +6189,11 @@
           el('span', { id: 'session-elapsed', text: elapsedText() }),
         ]),
       ]),
+      /*
+       * 지금 무슨 종목인지는 늘 보여야 한다. 화면이 이번 세트로 내려가면
+       * 카드 맨 위의 종목 이름이 이 띠 밑으로 숨는다.
+       */
+      el('div', { class: 'progress-name', text: lift.exercise.name }),
     ]));
 
     renderWarnings();

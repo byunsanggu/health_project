@@ -8,7 +8,6 @@ import {
   buildCues,
   repSeconds,
   defaultTempoFor,
-  tempoFromTaps,
   koreanCount,
   repsAt,
   setSeconds,
@@ -177,23 +176,6 @@ describe('사람마다 · 종목마다 박자', () => {
     const calf = defaultTempoFor({ id: 'standing-calf-raise', pattern: 'isolation' });
     const squat = defaultTempoFor({ id: 'back-squat', pattern: 'squat' });
     assert.ok(repSeconds(calf) > repSeconds(squat));
-  });
-
-  it('탭한 간격의 중간값으로 한 회 길이를 정한다', () => {
-    // 4초 간격으로 눌렀는데 한 번만 늦게 눌렀다
-    const taps = [0, 4000, 8000, 12000, 19000];
-    const tempo = tempoFromTaps(taps)!;
-    assert.equal(repSeconds(tempo), 4, '늦은 한 번이 박자를 끌고 가지 않는다');
-    assert.ok(tempo.eccentric > tempo.concentric, '내리는 쪽이 길다');
-  });
-
-  it('너무 적게 누르면 정하지 않는다', () => {
-    assert.equal(tempoFromTaps([0, 3000]), null);
-  });
-
-  it('말이 안 되는 박자는 범위 안으로 잡는다', () => {
-    assert.ok(repSeconds(tempoFromTaps([0, 300, 600, 900])!) >= 1.5);
-    assert.ok(repSeconds(tempoFromTaps([0, 20000, 40000, 60000])!) <= 8);
   });
 
   it('마지막 세 개는 기다려 준다 — 지치면 느려진다', () => {
