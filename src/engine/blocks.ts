@@ -122,6 +122,38 @@ export function blockStatus(block: TrainingBlock, today: string): BlockStatus {
   return { stage: 'done', weekInBlock, accumulationWeeks };
 }
 
+/** 이만큼 쉬었으면 블록을 이어 세지 않는다. */
+export const BLOCK_RESTART_GAP_DAYS = 14;
+
+/**
+ * 오래 쉬었으면 블록을 이번 주부터 다시 센다.
+ *
+ * 블록 주차는 날짜로 센다. 그래서 3주를 쉬고 온 사람도 달력상 6주차면
+ * 디로드가 나온다 — 쉬고 온 사람에게 "덜어내는 주"를 주는 트레이너는 없다.
+ * 2주 넘게 기록이 없으면 같은 단계, 같은 번호로 1주차부터 다시 시작한다.
+ * 무게를 얼마나 내릴지는 복귀(comeback)가 따로 정한다.
+ */
+export function restartIfInterrupted(
+  block: TrainingBlock,
+  history: readonly SessionLog[],
+  today: string,
+): TrainingBlock {
+  const monday = weekStart(today);
+  if (monday <= block.startedOn) return block;
+  let last: string | null = null;
+  for (const session of history) {
+    if (session.date >= today) continue;
+    if (!session.sets.some((set) => !set.warmup && set.reps > 0)) continue;
+    if (last === null || session.date > last) last = session.date;
+  }
+  // 블록을 시작하고 한 번도 안 했으면, 처음 나온 이번 주가 1주차다.
+  const quiet = last === null || last < block.startedOn
+    ? true
+    : daysBetween(last, monday) >= BLOCK_RESTART_GAP_DAYS;
+  if (!quiet) return block;
+  return { ...block, startedOn: monday, deloadOn: null };
+}
+
 /** 이번 주를 디로드로 적어 둔다. 이미 적혀 있으면 그대로. */
 export function markDeload(block: TrainingBlock, today: string): TrainingBlock {
   if (block.deloadOn) return block;

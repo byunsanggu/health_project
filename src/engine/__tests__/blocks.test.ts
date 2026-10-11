@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   blockStatus, markDeload, newlyIntroduced, nextBlock, programChanges, programOptionsFor,
-  reviewBlock, startTraining, TECHNICAL_ORDER, type TrainingBlock,
+  restartIfInterrupted, reviewBlock, startTraining, TECHNICAL_ORDER, type TrainingBlock,
 } from '../blocks.ts';
 import { buildProgram, type OnboardingAnswers } from '../onboarding.ts';
 import { COMMON_EQUIPMENT_IDS, availableExercises } from '../equipment.ts';
@@ -174,5 +174,38 @@ describe('블록이 바뀌면 보조 종목을 바꾼다', () => {
       });
     });
     assert.ok(programChanges(before, after).length >= 4, '보조가 여럿 바뀐다');
+  });
+});
+
+describe('오래 쉬면 블록을 다시 센다', () => {
+  it('2주 넘게 기록이 없으면 이번 주가 1주차다 — 쉬고 온 사람에게 디로드를 주지 않는다', () => {
+    const block = startTraining({ today: MONDAY, level: 'intermediate' });
+    const history = trained(block, 2, 4);
+    const today = addDays(MONDAY, 35);   // 달력상 6주차 = 디로드
+    assert.equal(blockStatus(block, today).stage, 'deload');
+    const restarted = restartIfInterrupted(block, history, today);
+    assert.equal(restarted.startedOn, addDays(MONDAY, 35));
+    assert.equal(blockStatus(restarted, today).stage, 'accumulation');
+    assert.equal(blockStatus(restarted, today).weekInBlock, 1);
+    assert.equal(restarted.number, block.number, '같은 블록을 다시 하는 것');
+  });
+
+  it('꾸준히 왔으면 그대로 센다', () => {
+    const block = startTraining({ today: MONDAY, level: 'intermediate' });
+    const today = addDays(MONDAY, 35);
+    assert.equal(restartIfInterrupted(block, trained(block, 5, 4), today), block);
+  });
+
+  it('한 주만 빠진 건 쉰 게 아니다', () => {
+    const block = startTraining({ today: MONDAY, level: 'intermediate' });
+    const history = trained(block, 3, 4);   // 3주 하고
+    const today = addDays(MONDAY, 28);       // 한 주 비우고 5주차
+    assert.equal(restartIfInterrupted(block, history, today), block);
+  });
+
+  it('블록을 시작하고 한 번도 안 왔으면 처음 온 주가 1주차다', () => {
+    const block = startTraining({ today: MONDAY, level: 'beginner' });
+    const today = addDays(MONDAY, 10);
+    assert.equal(restartIfInterrupted(block, [], today).startedOn, addDays(MONDAY, 7));
   });
 });

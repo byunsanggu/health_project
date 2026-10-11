@@ -325,7 +325,10 @@
        * 어제 고른 날, 어제 붙인 종목이 오늘 화면에 남아 있으면 안 된다.
        * 기록은 이미 저장소의 세션으로 남아 있다.
        */
-      var sameDay = !LIVE || settings.todayDate === todayISO();
+      var sameDay = !LIVE || settings.todayDate === todayISO() ||
+        Boolean(continuingDay(settings.started, settings.sessionClosed, settings.sessionStartedAt, settings.todayDate));
+      // 이어 가는 운동이면 그 날짜를 먼저 들고 들어간다 — loadLive가 그 날로 짠다.
+      if (LIVE && sameDay) state.todayDate = settings.todayDate || null;
       if (!sameDay) {
         state.started = false;
         state.sessionClosed = false;
@@ -969,8 +972,22 @@
    * 하루 안에서 다시 불리면(기구를 바꿨다, 체중을 고쳤다) 오늘 한 세트는
    * 그대로 둔다. 날이 바뀌었을 때만 오늘치를 비운다.
    */
+  /**
+   * 자정을 넘겨 이어지는 운동이면 그 운동을 시작한 날이 아직 "오늘"이다.
+   *
+   * 24시간 헬스장에서 23시 40분에 시작한 사람이 0시 20분에 화면을 다시
+   * 켜면 새 날의 다른 운동이 떠 있었다. 시작한 지 5시간 안이고 아직 마치지
+   * 않았으면 시작한 날로 이어 간다.
+   */
+  var OVERNIGHT_MS = 5 * 60 * 60 * 1000;
+  function continuingDay(started, closed, startedAt, day) {
+    if (!started || closed || !startedAt || !day) return null;
+    if (Date.now() - startedAt > OVERNIGHT_MS) return null;
+    return day < todayISO() ? day : null;
+  }
+
   function loadLive() {
-    var today = todayISO();
+    var today = continuingDay(state.started, state.sessionClosed, state.sessionStartedAt, state.todayDate) || todayISO();
     var newDay = state.todayDate !== today;
     state.scenario = 'normal';
     state.todayDate = today;
@@ -1007,6 +1024,12 @@
         level: state.lifter.level,
         monthsTraining: state.answers && state.answers.monthsTraining,
       });
+    }
+    // 2주 넘게 쉬었으면 블록을 이번 주부터 다시 센다 — 쉬고 온 사람에게 디로드를 주지 않는다.
+    var restarted = E.restartIfInterrupted(state.block, state.history, today);
+    if (restarted.startedOn !== state.block.startedOn) {
+      state.block = restarted;
+      pushLog('블록', '한동안 쉬셔서 블록을 이번 주부터 다시 셉니다.');
     }
     advanceBlockIfDone();
     state.lifter.level = state.block.level;
