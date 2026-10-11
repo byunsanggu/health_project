@@ -45,6 +45,7 @@ export * from './bodyTrend.ts';
 export * from './protein.ts';
 export * from './meals.ts';
 export * from './coach.ts';
+export * from './mistakes.ts';
 export * from './setupGuide.ts';
 export * from './nudge.ts';
 export * from './friends.ts';

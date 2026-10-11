@@ -210,6 +210,7 @@
         machinePound: state.machinePound,
         coach: state.coach,
         machineSettings: state.machineSettings,
+        mistakeFlags: state.mistakeFlags,
         diet: state.diet,
         comeback: state.comeback,
         comebackDeclined: state.comebackDeclined,
@@ -366,6 +367,7 @@
         ? { mode: settings.coach.mode === 'pt' ? 'pt' : 'solo', style: settings.coach.style || 'calm' }
         : { mode: 'solo', style: 'calm' };
       state.machineSettings = settings.machineSettings || {};
+      state.mistakeFlags = settings.mistakeFlags || {};
       state.diet = E.normalizeDiet(settings.diet);
       var sameAnswer = settings.machineSame;
       state.machineSame = sameAnswer && sameAnswer.date === state.todayDate
@@ -747,6 +749,8 @@
     diet: { avoid: [], budget: 'normal', lunch: 'cook' },
     /** 기계 세팅 ("시트 4 · 등받이 2"). 헬스장|종목|기계 → 글 */
     machineSettings: {},
+    /* 회원이 "나도 이래요"를 누른 흔한 실수. { 종목id: [실수id] } — 코치가 그걸 먼저 짚는다 */
+    mistakeFlags: {},
     /** 지금 코치가 한 말. 소리가 안 나는 기기에서도 읽을 수 있게 화면에 띄운다 */
     coachLine: null,
     /** 이미 말한 자리. 다시 그릴 때마다 같은 말을 반복하지 않게 */
@@ -3096,7 +3100,44 @@
       })));
     }
 
-    if (demo.mistakes.length > 0) {
+    /*
+     * 흔한 실수 — 무엇이 틀렸는지, 어떻게 고치는지, 왜 그런지.
+     * "나도 이래요"를 누르면 PT 코치가 그 실수를 먼저 짚고, 혼자 할 때도
+     * 세트 화면에 고치는 말이 뜬다.
+     */
+    var mistakes = E.mistakesFor(exercise);
+    if (mistakes.length > 0) {
+      body.push(el('div', { class: 'list-label', text: '흔한 실수 · 이렇게 고쳐요' }));
+      var list = el('div', { class: 'mistake-list' }, []);
+      var drawMistakes = function () {
+        list.textContent = '';
+        var flagged = state.mistakeFlags[exercise.id] || [];
+        mistakes.forEach(function (item) {
+          var mine = flagged.indexOf(item.id) >= 0;
+          list.appendChild(el('div', { class: 'mistake-row' + (mine ? ' mine' : '') }, [
+            el('div', { class: 'mistake-sign', text: item.sign }),
+            el('div', { class: 'mistake-fix', text: item.cue + '.' }),
+            el('div', { class: 'mistake-why', text: item.why }),
+            el('button', {
+              type: 'button', class: 'pick mistake-flag', 'aria-pressed': String(mine),
+              text: mine ? '체크함 · 코치가 짚어 줍니다' : '나도 이래요',
+              onclick: function () {
+                var now = (state.mistakeFlags[exercise.id] || []).slice();
+                var at = now.indexOf(item.id);
+                if (at >= 0) now.splice(at, 1); else now.push(item.id);
+                state.mistakeFlags = Object.assign({}, state.mistakeFlags);
+                if (now.length) state.mistakeFlags[exercise.id] = now;
+                else delete state.mistakeFlags[exercise.id];
+                persist();
+                drawMistakes();
+              },
+            }),
+          ]));
+        });
+      };
+      drawMistakes();
+      body.push(list);
+    } else if (demo.mistakes.length > 0) {
       body.push(el('div', { class: 'list-label', text: '흔한 실수' }));
       body.push(el('ul', { class: 'cue-list mistakes' }, demo.mistakes.map(function (mistake) {
         return el('li', {}, [el('span', { text: mistake })]);
@@ -5134,7 +5175,29 @@
       machineSetting: state.machineSettings[settingKeyFor(lift)] || null,
       liftIndex: liftIndex,
       totalLifts: state.lifts.length,
+      watch: watchFor(lift, setIndex, first),
     }));
+  }
+
+  /** 이번 세트에 짚을 흔한 실수 — 체크한 것, 무거웠던 뒤, 처음, 마지막 세트. */
+  function watchFor(lift, setIndex, firstTime) {
+    var picked = E.mistakeToWatch({
+      exercise: lift.exercise,
+      setIndex: setIndex,
+      totalSets: lift.sets.length,
+      flagged: state.mistakeFlags[lift.exercise.id] || [],
+      afterHeavy: setIndex > 0 && lift.lastFeel === 'heavy',
+      firstTime: firstTime,
+    });
+    return picked ? { cue: picked.mistake.cue, moment: picked.moment } : null;
+  }
+
+  /** 세트 중 자세 한마디에 쓸 짧은 말 — 체크한 실수가 있으면 그것만. */
+  function formShorts(exercise) {
+    var all = E.mistakesFor(exercise);
+    var flagged = state.mistakeFlags[exercise.id] || [];
+    var mine = all.filter(function (item) { return flagged.indexOf(item.id) >= 0; });
+    return (mine.length ? mine : all).map(function (item) { return item.short; });
   }
 
   /**
@@ -5152,6 +5215,8 @@
 
     if (feel === 'hurt') return stopForPain(liftIndex, setIndex, target);
 
+    // 다음 세트 전 말이 이걸 본다 — 무거웠다면 그때 제일 잘 무너지는 자세를 짚는다.
+    lift.lastFeel = feel;
     completeSet(liftIndex, setIndex, E.feelToRir(feel, target));
     coachAfter(liftIndex, setIndex, feel, weight, reps);
   }
@@ -5504,7 +5569,8 @@
         // 두 번째 개수 뒤에 자세 한마디 — 리듬이 잡힌 자리, 아직 지치기 전.
         if (ptOn() && set.targetReps.max >= 6 && cue.rep === 2 && set.targetReps.min !== 2) {
           var lifted = state.lifts[liftIndex];
-          var form = lifted && E.formCueLine(state.coach.style, lifted.exercise.pattern, liftIndex + setIndex);
+          var form = lifted && E.formCueLine(state.coach.style, lifted.exercise.pattern, liftIndex + setIndex,
+            formShorts(lifted.exercise));
           if (form) speak(E.forSpeech(form));
         }
         // 화면의 숫자도 같이 올라간다 — 소리가 안 나는 기기에서도 세어진다.
@@ -6564,6 +6630,19 @@
      */
     if (lift.note) card.appendChild(el('div', { class: 'lift-note below', text: lift.note }));
 
+    // 체크해 둔 실수는 혼자 할 때도 보인다 — 말해 줄 사람이 없으면 화면이 대신한다.
+    var flaggedHere = E.mistakesFor(lift.exercise).filter(function (item) {
+      return (state.mistakeFlags[lift.exercise.id] || []).indexOf(item.id) >= 0;
+    });
+    if (flaggedHere.length > 0) {
+      card.appendChild(el('div', { class: 'mistake-hint' }, flaggedHere.map(function (item) {
+        return el('div', {}, [
+          el('span', { class: 'mistake-sign', text: item.sign }),
+          el('span', { class: 'mistake-fix', text: ' → ' + item.cue }),
+        ]);
+      })));
+    }
+
     var decision = renderDecision(lift);
     if (decision) card.appendChild(decision);
 
@@ -7603,6 +7682,7 @@
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
     'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'voiceRate', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
+    'mistakeFlags',
   ];
 
   function sharedSettings() {

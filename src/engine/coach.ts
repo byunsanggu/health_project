@@ -17,6 +17,7 @@
 import { weightHistoryFor, type HistoryScope } from './gymWeight.ts';
 import { weightLabelIn } from './units.ts';
 import type { Exercise, MovementPattern, SessionLog } from './types.ts';
+import type { MistakeMoment } from './mistakes.ts';
 
 /* ── 말투 ──────────────────────────────────────── */
 
@@ -250,6 +251,35 @@ export interface BeforeSetInput {
   liftIndex?: number;
   /** 오늘 종목 수 — "절반 왔어요", "마지막 종목입니다"를 말하는 데 쓴다 */
   totalLifts?: number;
+  /** 이번 세트에 짚을 흔한 실수 (mistakeToWatch). 있으면 동작 포인트 대신 말한다 */
+  watch?: { cue: string; moment: MistakeMoment } | null;
+}
+
+/**
+ * 흔한 실수를 짚는 말. 왜 지금 말하는지가 앞머리로 붙는다 —
+ * "체크하신 거", "무거울 때", "처음이라", "지칠 때".
+ */
+export function watchLine(style: CoachStyle, cue: string, moment: MistakeMoment): string {
+  if (style === 'data') {
+    const tag = { flagged: '체크 항목', heavy: '고중량 주의', first: '주의', lastSet: '피로 주의' }[moment];
+    return `${tag}: ${cue}.`;
+  }
+  if (style === 'fired') {
+    const head = {
+      flagged: '체크하신 거 잊지 마세요.',
+      heavy: '무거울 때 자세가 먼저 무너집니다.',
+      first: '제일 많이 틀리는 거 하나만요.',
+      lastSet: '지칠 때 무너집니다.',
+    }[moment];
+    return `${head} ${cue}!`;
+  }
+  const head = {
+    flagged: '체크해 두신 거예요.',
+    heavy: '무거울수록 자세가 먼저예요.',
+    first: '제일 많이 하는 실수 하나만 말할게요.',
+    lastSet: '마지막 세트는 지칠 때라 자세를 더 봐요.',
+  }[moment];
+  return `${head} ${cue}.`;
 }
 
 /**
@@ -356,7 +386,8 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
       lines.push(`${head}, ${today} ${reps}요.${isLast ? ' 마지막 세트예요.' : ''}`);
       if (!isLast && !cue) lines.push(pick(CALM_MIDDLE, turn));
     }
-    if (cue && style !== 'data') lines.push(endWith(cue, style === 'fired' ? '!' : '.'));
+    if (input.watch) lines.push(watchLine(style, input.watch.cue, input.watch.moment));
+    else if (cue && style !== 'data') lines.push(endWith(cue, style === 'fired' ? '!' : '.'));
     return lines;
   }
 
@@ -419,7 +450,9 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
     lines.push(`오늘은 ${today} ${reps} 해 볼게요.`);
   }
 
-  if (cue && style !== 'data') lines.push(endWith(cue, style === 'fired' ? '!' : '.'));
+  // 짚을 실수가 있으면 그걸 말하고 동작 포인트는 쉰다 — 한 세트에 한 가지.
+  if (input.watch) lines.push(watchLine(style, input.watch.cue, input.watch.moment));
+  else if (cue && style !== 'data') lines.push(endWith(cue, style === 'fired' ? '!' : '.'));
   return lines;
 }
 
@@ -498,8 +531,18 @@ const FORM_CUES: Partial<Record<MovementPattern, { fired: readonly string[]; cal
   },
 };
 
-export function formCueLine(style: CoachStyle, pattern: MovementPattern, at = 0): string | null {
+export function formCueLine(
+  style: CoachStyle,
+  pattern: MovementPattern,
+  at = 0,
+  /** 그 종목의 흔한 실수에서 뽑은 짧은 말 — 있으면 이쪽을 먼저 쓴다 */
+  shorts?: readonly string[],
+): string | null {
   if (style === 'data') return null;
+  if (shorts && shorts.length > 0) {
+    const short = pick(shorts, at);
+    return style === 'fired' ? `${short}!` : `${short}요.`;
+  }
   const cues = FORM_CUES[pattern];
   return cues ? pick(cues[style], at) : null;
 }
@@ -831,8 +874,8 @@ export function sessionStartLines(input: SessionStartInput): string[] {
   // 컨디션이 낮은 날은 그 말이 제일 먼저다 — 블록 이야기보다 오늘 몸이 우선이다.
   if (input.condition !== undefined && input.condition < LOW_CONDITION && !input.firstEver) {
     lines.push(style === 'data' ? `컨디션 ${input.condition}%. 무게 유지 권장.`
-      : style === 'fired' ? '오늘 컨디션이 좀 떨어져 있습니다. 무게 욕심보다 자세로 이기는 날입니다.'
-        : '오늘은 컨디션이 좀 낮아요. 무게보다 자세에 집중해요. 힘들면 세트 줄여도 괜찮아요.');
+      : style === 'fired' ? '컨디션이 좀 떨어져 있습니다. 무게 욕심보다 자세로 이기는 날입니다.'
+        : '컨디션이 좀 낮아요. 무게보다 자세에 집중해요. 힘들면 세트 줄여도 괜찮아요.');
     return lines;
   }
 
