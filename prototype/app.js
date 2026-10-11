@@ -5764,7 +5764,7 @@
     if (say) say.textContent = word;
   }
 
-  function startCounting(liftIndex, setIndex, leadSeconds) {
+  function startCounting(liftIndex, setIndex, leadSeconds, fromRep) {
     stopCounting(false);
     var lift = state.lifts[liftIndex];
     var set = lift && lift.sets[setIndex];
@@ -5779,7 +5779,18 @@
       slowdown: true,
     };
     var cues = E.buildCues(input);
-    var run = { liftIndex: liftIndex, setIndex: setIndex, rep: 0, timers: [], startedAt: Date.now() };
+    /*
+     * 멈췄던 자리부터 이어서 센다. 넷까지 했으면 다섯부터 — 처음부터 다시
+     * 세면 이미 한 네 개를 또 하게 된다. 박자는 그 자리부터 같은 간격이다.
+     */
+    var from = Math.max(0, Math.min((fromRep | 0), set.targetReps.max - 1));
+    if (from > 0) {
+      var mark = cues.filter(function (cue) { return cue.rep === from; })[0];
+      var shift = mark ? mark.atMs - lead * 1000 : 0;
+      cues = cues.filter(function (cue) { return cue.rep === 0 || cue.rep > from; })
+        .map(function (cue) { return cue.rep === 0 ? cue : { atMs: cue.atMs - shift, say: cue.say, rep: cue.rep }; });
+    }
+    var run = { liftIndex: liftIndex, setIndex: setIndex, rep: from, timers: [], startedAt: Date.now() };
     state.counting = run;
 
     /*
@@ -5803,7 +5814,7 @@
     }
     run.timers.push(setTimeout(function () {
       if (state.counting !== run) return;
-      showCount('시작', '');
+      showCount(from > 0 ? String(from) : '시작', '');
       speak('시작');
     }, lead * 1000));
 
@@ -6024,10 +6035,22 @@
         el('b', { id: 'count-now', text: run.rep > 0 ? String(run.rep) : '준비' }),
         el('span', { id: 'count-say', text: '' }),
       ]),
-      el('button', {
-        type: 'button', class: 'finish quiet', text: '멈추기',
-        onclick: function () { stopCounting(true); },
-      }),
+      /*
+       * PT에서는 두 가지 멈춤이 다르다. "여기까지"는 세트를 끝내는 것(몇 개
+       * 했는지 적고 묻는다), "일시정지"는 전화가 왔거나 벤치를 고쳐야 할 때 —
+       * 돌아오면 멈춘 다음 개수부터 이어서 센다.
+       */
+      ptOn()
+        ? el('div', { class: 'count-live-actions' }, [
+            el('button', { type: 'button', class: 'finish quiet pt-pause', text: 'Ⅱ 일시정지',
+              onclick: function () { pausePt(null); render(); } }),
+            el('button', { type: 'button', class: 'finish quiet', text: '여기까지',
+              onclick: function () { stopCounting(true); } }),
+          ])
+        : el('button', {
+            type: 'button', class: 'finish quiet', text: '멈추기',
+            onclick: function () { stopCounting(true); },
+          }),
     ]);
   }
 
@@ -6309,7 +6332,15 @@
        * 지금 무슨 종목인지는 늘 보여야 한다. 화면이 이번 세트로 내려가면
        * 카드 맨 위의 종목 이름이 이 띠 밑으로 숨는다.
        */
-      el('div', { class: 'progress-name', text: lift.exercise.name }),
+      el('div', { class: 'progress-name' }, [
+        el('span', { text: lift.exercise.name }),
+        /*
+         * 운동 종료는 늘 보여야 한다. 마지막 종목에만 두었더니 "끝내는 버튼이
+         * 없다"가 나왔다 — 시간이 없어 중간에 나가는 날이 실제로 있다.
+         * 누르면 바로 끝나지 않고 요약이 먼저 뜬다. 거기서 "오늘 마치기"를 눌러야 끝.
+         */
+        el('button', { type: 'button', class: 'end-workout', text: '운동 종료', onclick: endWorkout }),
+      ]),
     ]));
 
     renderWarnings();
@@ -6587,7 +6618,7 @@
    * 워밍업을 같이 한다 — 무게를 불러 주고, 개수를 세고, 짧게 쉬고, 올린다.
    * 끝나면 그대로 첫 본세트로 들어간다. 건너뛸 수 있다.
    */
-  function runWarmup(liftIndex) {
+  function runWarmup(liftIndex, startAt) {
     var lift = state.lifts[liftIndex];
     var steps = lift.warmup.sets.map(function (set) {
       return { weightKg: set.weightKg, reps: set.reps, restSeconds: Math.min(60, set.restSeconds || 45) };
@@ -6625,7 +6656,7 @@
         }
       }, end + 1500);
     };
-    step(0);
+    step(Math.max(0, Math.min(steps.length - 1, startAt | 0)));
   }
 
   function finishWarmup(liftIndex, spoken) {
@@ -6863,6 +6894,14 @@
     if (!pt || pt.paused) return;
     pt.paused = true;
     pt.pausedWhy = why || null;
+    // 어디까지 했는지 적어 둔다 — 돌아오면 거기서부터.
+    pt.resume = null;
+    if (state.counting) {
+      pt.resume = { liftIndex: state.counting.liftIndex, setIndex: state.counting.setIndex, rep: state.counting.rep };
+    } else if (pt.warm) {
+      // 워밍업 세트 사이에 쉬던 중이면 다음 워밍업 세트부터
+      pt.resume = { liftIndex: pt.warm.liftIndex, warmIndex: pt.warm.index + (pt.warm.phase === 'rest' ? 1 : 0) };
+    }
     stopCounting(false, true);
     if (pt.warm) { pt.warm.timers.forEach(function (id) { clearTimeout(id); }); pt.warm = null; }
     if (pt.cool) {
@@ -6879,9 +6918,25 @@
     pt.paused = false;
     pt.pausedWhy = null;
     state.autoCountedFor = null;
+    var at = pt.resume;
+    pt.resume = null;
+    // 스트레칭 중에 멈췄으면 하던 스트레칭을 다시 한다.
+    if (pt.cool) { speak(state.coach.style === 'fired' ? '다시 갑니다!' : '다시 할게요.'); cooldownStep(pt.cool, Math.max(0, pt.cool.index)); return; }
+    var lift = at && state.lifts[at.liftIndex];
+    if (lift && typeof at.warmIndex === 'number' && needsWarmup(lift) && at.warmIndex < lift.warmup.sets.length) {
+      state.autoCountedFor = at.liftIndex + ':0';
+      runWarmup(at.liftIndex, at.warmIndex);
+      return;
+    }
+    var set = lift && typeof at.setIndex === 'number' ? lift.sets[at.setIndex] : null;
+    if (set && !set.done && at.rep > 0 && !state.rest) {
+      state.autoCountedFor = at.liftIndex + ':' + at.setIndex;
+      var next = E.koreanCount(at.rep + 1);
+      speak(state.coach.style === 'data' ? next + '부터.' : '이어서 갈게요. ' + next + '부터요.');
+      startCounting(at.liftIndex, at.setIndex, 4, at.rep);
+      return;
+    }
     speak(state.coach.style === 'fired' ? '다시 갑니다!' : '다시 할게요.');
-    // 스트레칭 중에 멈췄으면 하던 스트레칭을 처음부터 다시 한다.
-    if (pt.cool) { cooldownStep(pt.cool, Math.max(0, pt.cool.index)); return; }
     render();
   }
 
@@ -6895,7 +6950,7 @@
         el('span', { class: 'count-tempo', text: Math.floor(elapsedSeconds() / 60) + '분 / ' + planned + '분' }),
       ]),
       pt.paused && pt.pausedWhy === 'background'
-        ? el('p', { class: 'hint-line pt-away', text: '다른 앱에 다녀오셔서 멈춰 뒀어요. ▶ 계속을 누르면 이 세트를 다시 세어 드려요.' })
+        ? el('p', { class: 'hint-line pt-away', text: '다른 앱에 다녀오셔서 멈춰 뒀어요. ▶ 계속을 누르면 멈춘 데서부터 이어서 세어 드려요.' })
         : null,
     ]);
     var actions = el('div', { class: 'pt-panel-actions' }, []);
@@ -6913,6 +6968,7 @@
       onclick: function () {
         pt.paused = false;
         pt.pausedWhy = null;
+        pt.resume = null;
         state.autoCountedFor = liftIndex + ':' + setIndex;
         // 쉬는 중에 눌렀으면 휴식을 끝내고 시작한다 — 휴식이 남아 있으면 끝난 뒤 물을 버튼이 숨는다.
         if (state.rest) stopRest();
@@ -7526,8 +7582,40 @@
    * 기록을 이력으로 넘기고 진행 화면에서 빠져나온다. 요약은 다시 볼 수
    * 있게 남겨둔다 — 닫자마자 사라지면 방금 본 숫자를 확인할 길이 없다.
    */
+  /** 머리띠의 "운동 종료". 세던 것을 멈추고, 기록이 있으면 요약을, 없으면 묻는다. */
+  function endWorkout() {
+    if (ptOn() && state.ptRun && !state.ptRun.cooled) pausePt(null);
+    else stopCounting(false, true);
+    render();
+    if (state.todaySets.length > 0) { openSummary(); return; }
+    openModal('운동 종료', null, [
+      el('p', { class: 'hint-line', text: '아직 기록한 세트가 없어요. 여기서 그만할까요?' }),
+      el('div', { class: 'chip-row' }, [
+        el('button', { type: 'button', class: 'finish', text: '그만하기', onclick: function () {
+          stopRest();
+          state.started = false;
+          state.ptRun = null;
+          modal.close();
+          render();
+        } }),
+        el('button', { type: 'button', class: 'finish quiet', text: '계속하기', onclick: function () {
+          modal.close();
+          render();
+        } }),
+      ]),
+    ]);
+  }
+
   function closeToday() {
     if (state.todaySets.length === 0) return;
+    // 세던 것 · PT가 이끌던 것도 같이 멈춘다 — 화면은 닫혔는데 숫자 소리가 계속 나면 안 된다.
+    stopCounting(false, true);
+    if (state.ptRun) {
+      if (state.ptRun.warm) state.ptRun.warm.timers.forEach(function (id) { clearTimeout(id); });
+      if (state.ptRun.cool) state.ptRun.cool.timers.forEach(function (id) { clearTimeout(id); });
+      state.ptRun.warm = null;
+      state.ptRun.cool = null;
+    }
     /*
      * 휴식 타이머도 같이 멈춘다. "오늘 운동을 마쳤습니다" 밑에서
      * 휴식 0:44가 계속 돌면 끝난 게 아닌 것처럼 보이고, 화면을 끈 뒤에도

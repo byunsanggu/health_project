@@ -2330,7 +2330,10 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .speed-big .speed-value { font-size: 30px; }
 .speed-big .speed-row { grid-template-columns: 1fr 56px 110px 56px; }
 .speed-detail-toggle, .speed-preview { justify-self: start; margin-top: 6px; }
-.progress-name { font-weight: 700; font-size: 14px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.progress-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-top: 6px; }
+.progress-name > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.end-workout { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.end-workout:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ── 세어 주기 접힌 줄 · 묻는 방식 ──────────────── */
 .count-settings { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; }
@@ -2338,6 +2341,7 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .input-mode { justify-self: start; background: none; border: none; padding: 2px 0; color: var(--accent); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
 
 /* ── PT 세션 ───────────────────────────────────── */
+.count-live-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pt-away, .pt-resting { color: var(--accent); font-weight: 600; margin: 0; }
 .pt-panel { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--surface-2); }
 .pt-panel-head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
