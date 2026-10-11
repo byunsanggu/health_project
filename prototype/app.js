@@ -1783,7 +1783,7 @@
       endsAt: state.rest.endsAt,
       body: lift.exercise.name + ' ' + (setIndex + 2 <= lift.sets.length
         ? (setIndex + 2) + '세트를 시작하세요.'
-        : '다음 종목으로 넘어가세요.'),
+        : '다음 종목으로 넘어가세요.') + (ptOn() ? ' 앱을 열면 세어 드려요.' : ''),
     });
     renderRest();
   }
@@ -1906,6 +1906,11 @@
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState !== 'visible') {
       releaseWakeLock();
+      // PT는 화면 밖에서 말을 못 한다. 엉킨 숫자를 세느니 멈춰 둔다.
+      if (ptOn() && state.started && state.ptRun && !state.ptRun.cooled) {
+        pausePt('background');
+        render();
+      }
       return;
     }
     if (ptOn() && state.started) acquireWakeLock();
@@ -5372,7 +5377,8 @@
    */
   function stopForPain(liftIndex, setIndex, target) {
     var lift = state.lifts[liftIndex];
-    completeSet(liftIndex, setIndex, target);
+    // setIndex가 null이면 쉬는 중에 아프다고 한 것 — 하지 않은 세트는 적지 않는다.
+    if (setIndex !== null) completeSet(liftIndex, setIndex, target);
     lift.sets = lift.sets.filter(function (item) { return item.done; });
     lift.decision = null;
     if (state.rest) stopRest();
@@ -6812,6 +6818,19 @@
     if (!cool) return null;
     var waiting = cool.index < 0;
     var item = cool.steps[Math.max(0, cool.index)];
+    if (state.ptRun.paused) {
+      return el('div', { class: 'pt-cool' }, [
+        el('div', { class: 'label', text: '마무리 스트레칭 · 일시정지' }),
+        el('div', { class: 'pt-cool-name', text: item.name }),
+        el('p', { class: 'hint-line', text: state.ptRun.pausedWhy === 'background'
+          ? '다른 앱에 다녀오셔서 멈춰 뒀어요.' : '멈춰 뒀어요.' }),
+        el('div', { class: 'pt-cool-actions' }, [
+          el('button', { type: 'button', class: 'pick', text: '▶ 이어서', onclick: resumePt }),
+          el('button', { type: 'button', class: 'pick', text: '스트레칭 끝내기',
+            onclick: function () { endCooldown(false); } }),
+        ]),
+      ]);
+    }
     var left = cool.endsAt ? Math.max(0, Math.ceil((cool.endsAt - Date.now()) / 1000)) : item.seconds;
     return el('div', { class: 'pt-cool' }, [
       el('div', { class: 'label', text: '마무리 스트레칭 ' + (waiting ? '· 곧 시작' : (cool.index + 1) + ' / ' + cool.steps.length) }),
@@ -6831,6 +6850,41 @@
   }
 
   /** PT 모드의 세트 칸 — 박자 버튼 대신 진행 상황과 멈춤. */
+  /**
+   * PT를 멈춘다. 손으로 눌렀을 때와, 다른 앱으로 나갔을 때(why = 'background').
+   *
+   * 웹은 화면이 꺼지거나 다른 앱으로 가면 타이머가 늦게 돌고 말소리가 끊긴다.
+   * 그대로 두면 숫자가 몰아서 나오거나, 아무도 안 듣는 사이에 세트가 "끝"난다.
+   * 그래서 나가는 순간 멈춰 두고, 돌아오면 이어서 한다. 휴식 시간은 끝나는
+   * 시각으로 재므로 나가 있는 동안에도 맞게 흐른다.
+   */
+  function pausePt(why) {
+    var pt = state.ptRun;
+    if (!pt || pt.paused) return;
+    pt.paused = true;
+    pt.pausedWhy = why || null;
+    stopCounting(false, true);
+    if (pt.warm) { pt.warm.timers.forEach(function (id) { clearTimeout(id); }); pt.warm = null; }
+    if (pt.cool) {
+      pt.cool.timers.forEach(function (id) { clearTimeout(id); });
+      pt.cool.timers = [];
+      pt.cool.endsAt = null;
+    }
+    try { window.speechSynthesis.cancel(); } catch (err) { void err; }
+  }
+
+  function resumePt() {
+    var pt = state.ptRun;
+    if (!pt) return;
+    pt.paused = false;
+    pt.pausedWhy = null;
+    state.autoCountedFor = null;
+    speak(state.coach.style === 'fired' ? '다시 갑니다!' : '다시 할게요.');
+    // 스트레칭 중에 멈췄으면 하던 스트레칭을 처음부터 다시 한다.
+    if (pt.cool) { cooldownStep(pt.cool, Math.max(0, pt.cool.index)); return; }
+    render();
+  }
+
   function ptPanel(liftIndex, setIndex) {
     var pt = ensurePtRun();
     var lifting = state.lifts[liftIndex];
@@ -6840,21 +6894,16 @@
         el('b', { text: pt.paused ? 'PT 일시정지' : 'PT 진행 중' }),
         el('span', { class: 'count-tempo', text: Math.floor(elapsedSeconds() / 60) + '분 / ' + planned + '분' }),
       ]),
+      pt.paused && pt.pausedWhy === 'background'
+        ? el('p', { class: 'hint-line pt-away', text: '다른 앱에 다녀오셔서 멈춰 뒀어요. ▶ 계속을 누르면 이 세트를 다시 세어 드려요.' })
+        : null,
     ]);
     var actions = el('div', { class: 'pt-panel-actions' }, []);
     actions.appendChild(el('button', {
       type: 'button', class: 'pick pt-pause', text: pt.paused ? '▶ 계속' : 'Ⅱ 일시정지',
       onclick: function () {
-        pt.paused = !pt.paused;
-        if (pt.paused) {
-          stopCounting(false, true);
-          if (pt.warm) { pt.warm.timers.forEach(function (id) { clearTimeout(id); }); pt.warm = null; }
-          try { window.speechSynthesis.cancel(); } catch (err) { void err; }
-        } else {
-          state.autoCountedFor = null;
-          speak(state.coach.style === 'fired' ? '다시 갑니다!' : '다시 할게요.');
-        }
-        render();
+        if (pt.paused) resumePt();
+        else { pausePt(null); render(); }
       },
     }));
     // 아파서 멈췄거나 일시정지 뒤에는 여기서 다시 시작한다 — 워밍업 전이면 워밍업부터.
@@ -6863,7 +6912,10 @@
       type: 'button', class: 'pick pt-go', text: state.counting ? '처음부터 다시 세기' : '▶ 이 세트 시작',
       onclick: function () {
         pt.paused = false;
+        pt.pausedWhy = null;
         state.autoCountedFor = liftIndex + ':' + setIndex;
+        // 쉬는 중에 눌렀으면 휴식을 끝내고 시작한다 — 휴식이 남아 있으면 끝난 뒤 물을 버튼이 숨는다.
+        if (state.rest) stopRest();
         if (lifting && setIndex === 0 && needsWarmup(lifting)) runWarmup(liftIndex);
         else if (state.counting) startCounting(liftIndex, setIndex, 3);
         else beginSet(liftIndex, setIndex);
@@ -7066,6 +7118,44 @@
       var banner = ptWarmBanner(lift, liftIndex);
       if (banner) body.push(banner);
       body.push(el('p', { class: 'hint-line', text: '워밍업이 끝나면 바로 본세트로 넘어갑니다.' }));
+      return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
+    }
+
+    /*
+     * PT에서 쉬는 동안에도 아직 안 한 세트의 "끝내기" 버튼을 숨긴다.
+     * 물 마시다 "딱 좋았어요"를 스치면 하지도 않은 세트가 기록됐다.
+     * 바로 하고 싶으면 휴식 막대의 "바로 시작" — 그러면 세어 주고 묻는다.
+     */
+    if (ptOn() && state.rest && !set.done) {
+      body.push(el('p', { class: 'hint-line pt-resting', text: '쉬는 중이에요. 끝나면 ' +
+        (setIndex + 1) + '세트를 세어 드려요 — 바로 하려면 아래 "바로 시작".' }));
+      /*
+       * 아픈 건 쉬는 중에도 말할 수 있어야 한다 — 방금 세트 끝나고 물 마시다
+       * 어깨가 찌릿한 게 흔한 순서다. 이건 하지 않은 세트를 적지 않고 남은
+       * 세트만 뺀다. 쉬는 중에 아프다고 한 세트는 직전 세트(이미 적힘)다.
+       */
+      var restingLift = state.rest.exerciseId === lift.exercise.id ? liftIndex
+        : state.lifts.findIndex(function (item) { return item.exercise.id === state.rest.exerciseId; });
+      body.push(el('div', { class: 'feel-row' }, [
+        el('button', {
+          type: 'button', class: 'feel hurt',
+          'aria-label': '아픈 데 있어요 — 이 종목 남은 세트를 뺍니다',
+          text: '아픈 데 있어요',
+          onclick: function () {
+            if (restingLift >= 0 && restingLift !== liftIndex) {
+              // 종목을 막 넘어온 휴식 — 아픈 건 방금 끝낸 종목이고, 그 종목은 이미 다 했다.
+              if (state.rest) stopRest();
+              pushLog('통증', '<b>' + state.lifts[restingLift].exercise.name + '</b> 뒤에 아프다고 하셨습니다.');
+              state.autoCountedFor = liftIndex + ':' + setIndex;
+              coachSay(E.afterSetLines({ style: state.coach.style, feel: 'hurt', lastOfLift: true })
+                .concat(['괜찮아지시면 다음 종목에서 시작을 눌러 주세요.']));
+              render();
+              return;
+            }
+            stopForPain(liftIndex, null);
+          },
+        }),
+      ]));
       return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
     }
 
