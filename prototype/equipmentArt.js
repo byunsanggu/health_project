@@ -175,6 +175,30 @@
       '<rect x="14" y="36" width="16" height="5" rx="2"/>' +
       '<path d="M22 41 V44"/><path d="M14 44 h16"/>',
 
+    treadmill:
+      // 비스듬한 벨트 위로 손잡이 기둥과 계기판
+      '<path d="M10 38 L50 34 l2 4 -40 4 Z"/>' +
+      '<path d="M46 34 L42 12"/>' +
+      '<rect x="36" y="8" width="12" height="5" rx="1.5"/>',
+
+    'stationary-bike':
+      // 큰 바퀴(플라이휠) 위 안장과 핸들
+      '<circle cx="22" cy="32" r="8"/>' +
+      '<path d="M22 32 L32 18 L44 24 M30 18 h-6 M44 24 V38 M38 38 h12"/>' +
+      '<path d="M44 24 L48 16 h5"/>',
+
+    'rowing-machine':
+      // 긴 레일 위 의자, 앞쪽 바퀴와 손잡이
+      '<path d="M8 36 H56"/>' +
+      '<circle cx="50" cy="28" r="6"/>' +
+      '<rect x="20" y="30" width="10" height="4" rx="1.5"/>' +
+      '<path d="M44 28 h-10"/>',
+
+    'stair-climber':
+      // 계단이 돌아가는 상자와 손잡이
+      '<path d="M14 40 V30 h8 v-6 h8 v-6 h8 V40 Z"/>' +
+      '<path d="M44 40 V14 M44 14 h-6"/>',
+
     'foam-roller':
       // 굵은 원통. 옆면 무늬로 스펀지인 걸 보인다
       '<rect x="12" y="18" width="40" height="14" rx="7"/>' +

@@ -169,6 +169,7 @@ export const SAMPLE_DIRECTORY: readonly GymDirectoryEntry[] = [
       'leg-press-machine', 'hack-squat-machine', 'leg-extension-machine', 'leg-curl-machine',
       'calf-raise-machine', 'seated-calf-machine', 'hip-thrust-machine', 't-bar-row-machine',
       'ab-wheel', 'landmine', 'back-extension-bench',
+      'treadmill', 'stationary-bike', 'rowing-machine', 'stair-climber', 'foam-roller',
     ],
   },
   {
@@ -183,6 +184,7 @@ export const SAMPLE_DIRECTORY: readonly GymDirectoryEntry[] = [
       'bench-incline', 'pull-up-bar', 'cable-station', 'lat-pulldown-machine',
       'seated-row-machine', 'chest-press-machine', 'pec-deck-machine',
       'leg-press-machine', 'leg-extension-machine', 'leg-curl-machine', 'calf-raise-machine',
+      'treadmill', 'stationary-bike',
     ],
   },
   {
@@ -192,7 +194,7 @@ export const SAMPLE_DIRECTORY: readonly GymDirectoryEntry[] = [
     location: { lat: 37.56, lng: 126.98 },
     source: 'user',
     verifiedAt: '2026-09-02',
-    equipmentIds: ['floor', 'dumbbells', 'bench-flat', 'bench-incline', 'cable-station', 'lat-pulldown-machine'],
+    equipmentIds: ['floor', 'dumbbells', 'bench-flat', 'bench-incline', 'cable-station', 'lat-pulldown-machine', 'treadmill'],
   },
   {
     id: 'sample-barbell',
@@ -204,6 +206,7 @@ export const SAMPLE_DIRECTORY: readonly GymDirectoryEntry[] = [
     equipmentIds: [
       'floor', 'barbell-set', 'ez-bar', 'dumbbells', 'power-rack', 'bench-flat',
       'bench-incline', 'pull-up-bar', 'dip-station', 'landmine', 'back-extension-bench',
+      'rowing-machine', 'foam-roller',
     ],
   },
 ];

@@ -235,61 +235,126 @@ export function timeCheck(style: CoachStyle, input: {
  * 시작에는 관절을 끝까지 움직여 체온을 올리고, 오늘 쓸 부위를 깨운다.
  * 그 뒤 종목 워밍업은 오늘 처음 하는 복합 동작에만 두세 세트.
  */
-export type MobilityStep = CooldownStep;
+export interface MobilityStep extends CooldownStep {
+  /** 이 기구가 있어야 하는 동작 (헬스장 기구 id). 하나라도 있으면 된다 */
+  needs?: readonly string[];
+  /** 바닥(매트)에서 하는 동작 */
+  floor?: boolean;
+  /** 이 동작을 못 할 때만 쓰는 대신 동작 (매트가 없을 때 서서 하는 것) */
+  insteadOf?: string;
+}
 
-const MARCH: MobilityStep = {
-  id: 'march', name: '제자리 걷기', seconds: 40,
-  cue: '무릎을 높이 올리며 걷고, 팔은 크게 앞뒤로 흔드세요', muscles: [],
-};
+/*
+ * 시작 — 체온부터. 헬스장 한가운데서 제자리 걷기는 어색하다. 유산소 기구가
+ * 있으면 그걸로 2분, 없으면 바로 관절 동작으로 들어간다.
+ */
+const OPENERS: readonly MobilityStep[] = [
+  { id: 'treadmill-walk', name: '러닝머신 빠르게 걷기', seconds: 120, cue: '경사 3에서 5, 숨이 살짝 찰 정도로 걸으세요', muscles: [], needs: ['treadmill'] },
+  { id: 'bike-easy', name: '실내 사이클', seconds: 120, cue: '가볍게 밟다가 마지막 30초만 조금 빠르게', muscles: [], needs: ['stationary-bike'] },
+  { id: 'row-easy', name: '로잉머신', seconds: 120, cue: '다리로 밀고 팔은 마지막에. 가볍게, 숨이 살짝 찰 정도로', muscles: [], needs: ['rowing-machine'] },
+  { id: 'stairs-easy', name: '천국의 계단', seconds: 90, cue: '제일 느린 속도로. 손잡이에 기대지 말고', muscles: [], needs: ['stair-climber'] },
+];
 
+/** 폼롤러 — 있으면 오늘 제일 많이 쓸 부위 한두 곳만. 오래 굴리는 건 끝나고. */
+const ROLLS: readonly MobilityStep[] = [
+  { id: 'roll-upper-back', name: '폼롤러 등 위쪽', seconds: 40, cue: '날개뼈 아래에 롤러를 두고 엉덩이를 들어 위아래로 천천히', muscles: ['back', 'traps', 'rearDelt'], needs: ['foam-roller'], floor: true },
+  { id: 'roll-lats', name: '폼롤러 옆구리', seconds: 40, cue: '옆으로 누워 겨드랑이 아래를 굴리세요. 아픈 곳에서 잠깐 멈추고', muscles: ['back'], sides: true, needs: ['foam-roller'], floor: true },
+  { id: 'roll-quads', name: '폼롤러 앞허벅지', seconds: 40, cue: '엎드려 허벅지 앞을 무릎 위부터 골반까지 굴리세요', muscles: ['quads'], needs: ['foam-roller'], floor: true },
+  { id: 'roll-glutes', name: '폼롤러 엉덩이', seconds: 40, cue: '롤러에 앉아 한쪽 발목을 반대 무릎에 올리고 굴리세요', muscles: ['glutes'], sides: true, needs: ['foam-roller'], floor: true },
+  { id: 'roll-hams-calves', name: '폼롤러 뒤허벅지 · 종아리', seconds: 40, cue: '앉아서 다리 뒤쪽을 종아리부터 허벅지까지 굴리세요', muscles: ['hamstrings', 'calves'], needs: ['foam-roller'], floor: true },
+  { id: 'roll-chest', name: '폼롤러 가슴 · 어깨 앞', seconds: 30, cue: '엎드려 롤러를 가슴 옆에 대고 팔을 벌린 채 좌우로 굴리세요', muscles: ['chest', 'frontDelt'], sides: true, needs: ['foam-roller'], floor: true },
+];
+
+/** 움직이는 스트레칭. 바닥 동작은 매트가 없으면 서서 하는 동작으로 바꾼다. */
 const MOVES: readonly MobilityStep[] = [
   { id: 'arm-circle', name: '팔 크게 돌리기', seconds: 30, cue: '팔을 쭉 펴고 앞으로 열 번, 뒤로 열 번 크게 돌리세요', muscles: ['frontDelt', 'sideDelt', 'chest'] },
+  { id: 'band-pull-apart', name: '밴드 벌리기', seconds: 30, cue: '밴드를 어깨너비로 잡고 가슴 앞에서 양옆으로 벌리세요. 날개뼈를 모으면서', muscles: ['rearDelt', 'traps', 'back'], needs: ['resistance-bands'] },
   { id: 'wy-raise', name: 'W-Y 올리기', seconds: 30, cue: '팔을 W 모양으로 당겼다가 Y 모양으로 머리 위까지 뻗으세요. 날개뼈를 모으면서', muscles: ['rearDelt', 'traps', 'back'] },
-  { id: 'thoracic', name: '등 회전', seconds: 40, cue: '네발 자세에서 한 손을 머리에 대고 팔꿈치를 천장 쪽으로 돌려 여세요', sides: true, muscles: ['back', 'chest'] },
-  { id: 'cat-cow', name: '고양이 · 소 자세', seconds: 30, cue: '네발 자세에서 등을 둥글게 말았다가 천천히 내리세요. 숨과 같이', muscles: ['back', 'abs'] },
-  { id: 'pushup-dog', name: '푸시업 · 다운독', seconds: 30, cue: '푸시업 자세에서 엉덩이를 높이 들었다가 다시 내려오세요', muscles: ['chest', 'triceps', 'frontDelt'] },
+  { id: 'thoracic', name: '등 회전', seconds: 40, cue: '네발 자세에서 한 손을 머리에 대고 팔꿈치를 천장 쪽으로 돌려 여세요', sides: true, muscles: ['back', 'chest'], floor: true },
+  { id: 'standing-rotation', name: '서서 몸통 돌리기', seconds: 30, insteadOf: 'thoracic', cue: '무릎을 살짝 굽히고 팔을 가슴 앞에 모아 좌우로 천천히 돌리세요. 골반은 앞을 보게', muscles: ['back', 'chest', 'abs'] },
+  { id: 'cat-cow', name: '고양이 · 소 자세', seconds: 30, cue: '네발 자세에서 등을 둥글게 말았다가 천천히 내리세요. 숨과 같이', muscles: ['back', 'abs'], floor: true },
+  { id: 'pushup-dog', name: '푸시업 · 다운독', seconds: 30, cue: '푸시업 자세에서 엉덩이를 높이 들었다가 다시 내려오세요', muscles: ['chest', 'triceps', 'frontDelt'], floor: true },
+  { id: 'wall-pushup', name: '벽 푸시업', seconds: 30, insteadOf: 'pushup-dog', cue: '벽에 손을 짚고 가슴이 닿을 듯 천천히 열 번', muscles: ['chest', 'triceps', 'frontDelt'] },
   { id: 'wrist-elbow', name: '손목 · 팔꿈치 돌리기', seconds: 20, cue: '주먹을 쥐고 손목을 돌리고, 팔꿈치를 굽혔다 폈다 하세요', muscles: ['biceps', 'triceps', 'forearms'] },
   { id: 'bw-squat', name: '맨몸 스쿼트', seconds: 40, cue: '천천히 앉았다 일어나세요. 바닥에서 무릎을 바깥으로 밀면서', muscles: ['quads', 'glutes'] },
   { id: 'worlds-greatest', name: '런지 + 몸통 돌리기', seconds: 40, cue: '크게 런지로 앉아 앞발 쪽 팔을 하늘로 뻗으며 몸통을 여세요', sides: true, muscles: ['glutes', 'hamstrings', 'quads', 'back'] },
-  { id: 'leg-swing', name: '다리 앞뒤 흔들기', seconds: 30, cue: '벽을 잡고 다리를 앞뒤로 크게 흔드세요. 허리는 세운 채', sides: true, muscles: ['hamstrings', 'glutes'] },
-  { id: 'glute-bridge', name: '힙 브릿지', seconds: 30, cue: '누워서 무릎을 세우고 엉덩이를 들어 1초 조이고 내리세요', muscles: ['glutes', 'hamstrings'] },
+  { id: 'leg-swing', name: '다리 앞뒤 흔들기', seconds: 30, cue: '기둥을 잡고 다리를 앞뒤로 크게 흔드세요. 허리는 세운 채', sides: true, muscles: ['hamstrings', 'glutes'] },
+  { id: 'glute-bridge', name: '힙 브릿지', seconds: 30, cue: '누워서 무릎을 세우고 엉덩이를 들어 1초 조이고 내리세요', muscles: ['glutes', 'hamstrings'], floor: true },
+  { id: 'hip-hinge', name: '맨몸 힙 힌지', seconds: 30, insteadOf: 'glute-bridge', cue: '손을 골반에 두고 엉덩이를 뒤로 빼며 숙였다 일어나세요. 등은 곧게', muscles: ['glutes', 'hamstrings'] },
   { id: 'ankle-rock', name: '발목 앞뒤로 밀기', seconds: 20, cue: '벽 앞에서 무릎을 벽 쪽으로 밀었다 빼세요', sides: true, muscles: ['calves'] },
-  { id: 'dead-bug', name: '데드버그', seconds: 30, cue: '누워서 팔다리를 들고, 반대쪽 팔과 다리를 천천히 뻗으세요. 허리는 바닥에', muscles: ['abs'] },
+  { id: 'dead-bug', name: '데드버그', seconds: 30, cue: '누워서 팔다리를 들고, 반대쪽 팔과 다리를 천천히 뻗으세요. 허리는 바닥에', muscles: ['abs'], floor: true },
+  { id: 'standing-knee', name: '서서 무릎 · 팔꿈치 닿기', seconds: 30, insteadOf: 'dead-bug', cue: '무릎을 들어 반대 팔꿈치에 닿게, 배에 힘을 주고 천천히', muscles: ['abs'] },
 ];
 
 /** 몸 풀기에 쓰는 시간. */
 export const MOBILITY_SECONDS = 5 * 60;
 
+export interface MobilityOptions {
+  /** 이 헬스장에 있는 기구 id. 없으면 맨몸 · 서서 하는 동작만 */
+  equipment?: readonly string[];
+  budgetSeconds?: number;
+}
+
 /**
- * 오늘 쓸 부위 위주로 5분 — 처음은 제자리 걷기로 체온부터.
- * 같은 동작은 한 번만, 부위가 겹치면 다음 부위로.
+ * 오늘 쓸 부위와 이 헬스장 기구로 5분을 짠다.
+ *
+ * 순서: 유산소 기구 2분(있으면) → 폼롤러로 제일 많이 쓸 부위 한두 곳(있으면)
+ * → 움직이는 스트레칭으로 남은 시간. 매트 공간이 없으면 바닥 동작은 빼고
+ * 서서 하는 동작으로 대신한다.
  */
 export function mobilityFor(
   muscles: readonly MuscleGroup[],
-  budgetSeconds = MOBILITY_SECONDS,
+  options: MobilityOptions | number = {},
 ): MobilityStep[] {
-  const steps: MobilityStep[] = [MARCH];
-  let used = MARCH.seconds;
-  const add = (move: MobilityStep | undefined) => {
-    if (!move || steps.includes(move) || used + move.seconds > budgetSeconds) return;
-    steps.push(move);
-    used += move.seconds;
+  const opts: MobilityOptions = typeof options === 'number' ? { budgetSeconds: options } : options;
+  const budget = opts.budgetSeconds ?? MOBILITY_SECONDS;
+  const have = new Set(opts.equipment ?? []);
+  const possible = (step: MobilityStep) =>
+    (!step.needs || step.needs.some((id) => have.has(id))) && (!step.floor || have.has('floor'));
+  // 대신 동작은 원래 동작을 못 할 때만 — 둘 다 넣으면 같은 걸 두 번 한다
+  const usable = (step: MobilityStep): boolean => {
+    if (!possible(step)) return false;
+    const original = step.insteadOf ? MOVES.find((move) => move.id === step.insteadOf) : undefined;
+    return !original || !possible(original);
   };
-  for (const muscle of muscles) add(MOVES.find((move) => move.muscles.includes(muscle) && !steps.includes(move)));
-  // 시간이 남으면 같은 부위의 다른 동작으로 채운다
+
+  const steps: MobilityStep[] = [];
+  let used = 0;
+  const add = (step: MobilityStep | undefined, cap = budget) => {
+    if (!step || steps.includes(step) || !usable(step) || used + step.seconds > cap) return false;
+    steps.push(step);
+    used += step.seconds;
+    return true;
+  };
+
+  add(OPENERS.find(usable));
+  // 폼롤러는 두 곳까지, 1분 20초를 넘기지 않는다
+  let rolls = 0;
   for (const muscle of muscles) {
-    for (const move of MOVES) if (move.muscles.includes(muscle)) add(move);
+    if (rolls >= 2) break;
+    if (add(ROLLS.find((roll) => roll.muscles.includes(muscle) && !steps.includes(roll)), used + 80)) rolls += 1;
   }
+  for (const muscle of muscles) add(MOVES.find((move) => move.muscles.includes(muscle) && usable(move) && !steps.includes(move)));
+  for (const muscle of muscles) for (const move of MOVES) if (move.muscles.includes(muscle)) add(move);
+  // 기구가 없어 3분도 안 되면 몸 전체 동작으로 채운다
+  for (const move of MOVES) if (used < 180) add(move);
   return steps;
 }
 
-export function mobilityLine(style: CoachStyle, step: MobilityStep, index: number, total: number): string {
+/** 몸 풀기 전체 길이(분) — 화면과 첫마디가 같은 숫자를 말하게. */
+export function mobilityMinutes(steps: readonly MobilityStep[]): number {
+  return Math.max(1, Math.round(steps.reduce((sum, step) => sum + step.seconds, 0) / 60));
+}
+
+export function mobilityLine(style: CoachStyle, step: MobilityStep, index: number, total: number, minutes = 5): string {
   const head = index === 0
-    ? (style === 'fired' ? '몸부터 풉니다. 5분! ' : style === 'data' ? '몸 풀기 5분. ' : '몸부터 풀게요. 5분이에요. ')
+    ? (style === 'fired' ? `몸부터 풉니다. ${minutes}분! ` : style === 'data' ? `몸 풀기 ${minutes}분. ` : `몸부터 풀게요. ${minutes}분이에요. `)
     : '';
-  if (style === 'data') return `${head}${index + 1}/${total} ${step.name} ${step.seconds}초.`;
+  // "120초"가 아니라 "2분" — 트레이너가 말하는 대로
+  const time = restSpoken(step.seconds);
+  if (style === 'data') return `${head}${index + 1}/${total} ${step.name} ${time}.`;
   const sides = step.sides ? ' 반쯤 지나면 반대쪽이요.' : '';
-  return `${head}${step.name} ${step.seconds}초. ${step.cue}.${sides}`;
+  return `${head}${step.name} ${time}. ${step.cue}.${sides}`;
 }
 
 export function mobilityDoneLine(style: CoachStyle): string {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
-  COOLDOWN_SECONDS, MOBILITY_SECONDS, PACE_TOLERANCE_SECONDS, mobilityDoneLine, mobilityFor, mobilityLine, cooldownDoneLine, cooldownFor, cooldownLine,
+  COOLDOWN_SECONDS, MOBILITY_SECONDS, PACE_TOLERANCE_SECONDS, mobilityDoneLine, mobilityFor, mobilityLine, mobilityMinutes, cooldownDoneLine, cooldownFor, cooldownLine,
   paceCheck, restAnnounceLine, restSpoken, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from '../ptSession.ts';
 import { speechSeconds } from '../coach.ts';
@@ -143,29 +143,65 @@ describe('세트 사이 휴식 안내', () => {
 });
 
 describe('몸 풀기', () => {
-  it('제자리 걷기로 시작해 오늘 쓸 부위의 동작을 5분 안에 고른다', () => {
-    const steps = mobilityFor(['chest', 'frontDelt', 'triceps']);
-    assert.equal(steps[0]!.id, 'march');
-    assert.ok(steps.some((step) => step.muscles.includes('chest')));
-    const total = steps.reduce((sum, step) => sum + step.seconds, 0);
-    assert.ok(total <= MOBILITY_SECONDS && total >= 150, String(total));
+  const FULL = ['treadmill', 'stationary-bike', 'foam-roller', 'floor', 'resistance-bands'];
+  const total = (steps: { seconds: number }[]) => steps.reduce((sum, step) => sum + step.seconds, 0);
+
+  it('러닝머신이 있으면 러닝머신 2분으로 시작한다 — 제자리 걷기는 없다', () => {
+    const steps = mobilityFor(['chest', 'frontDelt', 'triceps'], { equipment: FULL });
+    assert.equal(steps[0]!.id, 'treadmill-walk');
+    assert.ok(!steps.some((step) => step.id === 'march'));
+    assert.ok(total(steps) <= MOBILITY_SECONDS && total(steps) >= 200, String(total(steps)));
     assert.equal(new Set(steps.map((step) => step.id)).size, steps.length);
   });
 
-  it('하체 날은 하체 동작', () => {
-    const steps = mobilityFor(['quads', 'glutes', 'hamstrings']);
+  it('러닝머신이 없으면 사이클, 유산소 기구가 없으면 바로 관절 동작', () => {
+    assert.equal(mobilityFor(['quads'], { equipment: ['stationary-bike', 'floor'] })[0]!.id, 'bike-easy');
+    const none = mobilityFor(['quads'], { equipment: ['floor'] });
+    assert.ok(!['treadmill-walk', 'bike-easy', 'row-easy', 'stairs-easy'].includes(none[0]!.id));
+  });
+
+  it('폼롤러가 있으면 오늘 제일 많이 쓸 부위 한두 곳만 굴린다', () => {
+    const legs = mobilityFor(['quads', 'glutes', 'hamstrings'], { equipment: FULL });
+    const rolls = legs.filter((step) => step.id.startsWith('roll-'));
+    assert.ok(rolls.length >= 1 && rolls.length <= 2, String(rolls.length));
+    assert.equal(rolls[0]!.id, 'roll-quads');
+    assert.ok(!mobilityFor(['quads'], { equipment: ['treadmill', 'floor'] }).some((step) => step.id.startsWith('roll-')));
+  });
+
+  it('매트 공간이 없으면 바닥 동작 대신 서서 하는 동작', () => {
+    const steps = mobilityFor(['chest', 'back', 'glutes', 'abs'], { equipment: ['treadmill'] });
+    assert.ok(!steps.some((step) => step.floor), steps.map((step) => step.id).join(','));
+    assert.ok(steps.some((step) => step.id === 'wall-pushup' || step.id === 'standing-rotation'));
+  });
+
+  it('대신 동작은 원래 동작을 못 할 때만 — 푸시업과 벽 푸시업을 같이 넣지 않는다', () => {
+    const mat = mobilityFor(['chest', 'triceps'], { equipment: FULL }).map((step) => step.id);
+    assert.ok(!(mat.includes('pushup-dog') && mat.includes('wall-pushup')));
+    const noMat = mobilityFor(['chest', 'triceps'], { equipment: ['treadmill'] }).map((step) => step.id);
+    assert.ok(noMat.includes('wall-pushup') && !noMat.includes('pushup-dog'));
+  });
+
+  it('기구가 하나도 없어도 3분은 채우고, 첫마디는 실제 길이를 말한다', () => {
+    const steps = mobilityFor(['quads', 'glutes'], { equipment: [] });
+    assert.ok(total(steps) >= 180, String(total(steps)));
+    const minutes = mobilityMinutes(steps);
+    assert.match(mobilityLine('calm', steps[0]!, 0, steps.length, minutes), new RegExp(minutes + '분이에요'));
+  });
+
+  it('하체 날은 하체 동작, 상체 동작은 넣지 않는다', () => {
+    const steps = mobilityFor(['quads', 'glutes', 'hamstrings'], { equipment: FULL });
     assert.ok(steps.some((step) => step.id === 'bw-squat'));
     assert.ok(!steps.some((step) => step.id === 'arm-circle'));
   });
 
   it('가만히 늘리는 스트레칭이 아니라 움직이는 동작이다 — 마무리 스트레칭과 겹치지 않는다', () => {
-    const warm = mobilityFor(['chest', 'back', 'quads', 'hamstrings', 'glutes']).map((step) => step.id);
+    const warm = mobilityFor(['chest', 'back', 'quads', 'hamstrings', 'glutes'], { equipment: FULL }).map((step) => step.id);
     const cool = cooldownFor(['chest', 'back', 'quads', 'hamstrings', 'glutes']).map((step) => step.id);
     assert.equal(warm.filter((id) => cool.includes(id)).length, 0);
   });
 
   it('첫 동작에 몇 분인지 말하고, 빡센 말투도 존댓말', () => {
-    const steps = mobilityFor(['chest']);
+    const steps = mobilityFor(['chest'], { equipment: FULL });
     assert.match(mobilityLine('calm', steps[0]!, 0, steps.length), /5분/);
     assert.match(mobilityLine('fired', steps[0]!, 0, steps.length), /니다/);
     assert.match(mobilityDoneLine('fired'), /니다/);

@@ -4177,12 +4177,12 @@
      * 시작은 몸 풀기 5분(움직이는 스트레칭). 종목마다 워밍업 세트를 밟는 대신이다 —
      * 워밍업 세트는 오늘 처음 하는 복합 동작에만 남는다.
      */
-    var moves = E.mobilityFor(plannedMusclesToday());
+    var moves = E.mobilityFor(plannedMusclesToday(), { equipment: warmupEquipment() });
     rows.push(el('div', { class: 'plan-row warm-row' }, [
       el('span', { class: 'lift-thumb warm', 'aria-hidden': 'true', text: '↗' }),
       el('span', { class: 'plan-main' }, [
-        el('span', { class: 'name' }, [el('span', { text: '몸 풀기 5분' })]),
-        el('span', { class: 'plan-sets', text: moves.slice(1, 4).map(function (move) { return move.name; }).join(' · ') +
+        el('span', { class: 'name' }, [el('span', { text: '몸 풀기 ' + E.mobilityMinutes(moves) + '분' })]),
+        el('span', { class: 'plan-sets', text: moves.slice(0, 3).map(function (move) { return move.name; }).join(' · ') +
           (warmupSets > 0 ? ' — 워밍업 세트는 필요한 종목만 ' + warmupSets + '세트' : '') }),
       ]),
     ]));
@@ -6858,11 +6858,28 @@
     return Object.keys(count).sort(function (a, b) { return count[b] - count[a]; });
   }
 
+  /**
+   * 몸 풀기를 고를 때 쓰는 이 헬스장 기구.
+   *
+   * 유산소 기구를 아직 안 적은 헬스장이 많다(예전에 등록한 곳은 목록에 없었다).
+   * 케이블이나 레그프레스가 있는 일반 헬스장이면 러닝머신은 있다고 본다 —
+   * 없으면 헬스장 기구에서 끄면 된다.
+   */
+  function warmupEquipment() {
+    var entry = state.gymBook ? E.activeGym(state.gymBook) : null;
+    var ids = entry && entry.equipmentIds ? entry.equipmentIds.slice() : ['floor'];
+    var cardio = ['treadmill', 'stationary-bike', 'rowing-machine', 'stair-climber'];
+    var knowsCardio = ids.some(function (id) { return cardio.indexOf(id) >= 0; });
+    var commercial = ids.some(function (id) { return id === 'cable-station' || id === 'leg-press-machine' || id === 'smith-machine'; });
+    if (!knowsCardio && commercial) ids.push('treadmill');
+    return ids;
+  }
+
   /** 몸 풀기 — 오늘 쓸 부위 위주로 5분, 움직이는 스트레칭을 말로 이끈다. */
   function startPrep(delayMs) {
     var pt = ensurePtRun();
     if (pt.prep || pt.prepped) return;
-    var run = { steps: E.mobilityFor(plannedMusclesToday()), index: -1, endsAt: null, timers: [] };
+    var run = { steps: E.mobilityFor(plannedMusclesToday(), { equipment: warmupEquipment() }), index: -1, endsAt: null, timers: [] };
     pt.prep = run;
     run.timers.push(setTimeout(function () { if (ptAlive(run, 'prep')) prepStep(run, 0); }, delayMs || 0));
     render();
@@ -6875,7 +6892,7 @@
     var later = function (fn, ms) { run.timers.push(setTimeout(function () { if (ptAlive(run, 'prep')) fn(); }, ms)); };
     run.index = i;
     var item = run.steps[i];
-    var line = E.mobilityLine(state.coach.style, item, i, run.steps.length);
+    var line = E.mobilityLine(state.coach.style, item, i, run.steps.length, E.mobilityMinutes(run.steps));
     coachSay([line]);
     var talk = Math.ceil(E.speechSeconds(line)) * 1000;
     run.endsAt = Date.now() + talk + item.seconds * 1000;
@@ -7227,7 +7244,7 @@
       var step = pt.prep.steps[Math.max(0, pt.prep.index)];
       // 말하는 동안은 동작 시간이 아직 안 줄어든다
       var leftSec = Math.min(step.seconds, Math.max(0, Math.ceil((pt.prep.endsAt - Date.now()) / 1000)));
-      prepLeft.textContent = leftSec + '초';
+      prepLeft.textContent = leftSec >= 60 ? E.formatDuration(leftSec) : leftSec + '초';
       setRingFraction('focus-ring-bar', leftSec / step.seconds);
     }
     var askLeft = document.getElementById('focus-ask-left');
@@ -7274,7 +7291,7 @@
     ]));
     focusHost.appendChild(el('div', { class: 'focus-title' }, phase === 'prep' ? [
       el('span', { class: 'focus-pos', text: '운동 전' }),
-      el('b', { text: '몸 풀기 5분' }),
+      el('b', { text: '몸 풀기 ' + E.mobilityMinutes(state.ptRun && state.ptRun.prep ? state.ptRun.prep.steps : []) + '분' }),
     ] : [
       el('span', { class: 'focus-pos', text: '종목 ' + (state.liftCursor + 1) + ' / ' + total }),
       el('b', { text: lift ? lift.exercise.name : '' }),
@@ -7328,7 +7345,7 @@
       var moveLeft = prep.endsAt ? Math.min(move.seconds, Math.max(0, Math.ceil((prep.endsAt - Date.now()) / 1000))) : move.seconds;
       middle.appendChild(focusRing(waitingPrep ? 1 : Math.min(1, moveLeft / move.seconds), 'focus-ring-bar', [
         el('span', { class: 'focus-of', text: waitingPrep ? '곧 시작' : '몸 풀기 ' + (prep.index + 1) + ' / ' + prep.steps.length }),
-        el('b', { class: 'focus-num rest', id: 'focus-prep-left', text: moveLeft + '초' }),
+        el('b', { class: 'focus-num rest', id: 'focus-prep-left', text: moveLeft >= 60 ? E.formatDuration(moveLeft) : moveLeft + '초' }),
       ]));
       middle.appendChild(el('div', { class: 'focus-what' }, [el('b', { text: move.name })]));
       middle.appendChild(el('div', { class: 'focus-setting', text: move.cue + (move.sides ? ' · 반쯤에서 반대쪽' : '') }));

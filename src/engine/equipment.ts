@@ -9,7 +9,7 @@ import type { Exercise, MuscleGroup } from './types.ts';
  * 온보딩에서 "내 헬스장에 있는 것"을 하나씩 켜면 종목이 열린다.
  * 종목 41개를 일일이 고르게 하면 아무도 끝까지 못 간다 — 기구 단위라야 한다.
  */
-export type EquipmentCategory = 'rack' | 'bench' | 'freeweight' | 'machine' | 'cable' | 'bodyweight';
+export type EquipmentCategory = 'rack' | 'bench' | 'freeweight' | 'machine' | 'cable' | 'bodyweight' | 'cardio';
 
 export const CATEGORY_LABELS_KO: Record<EquipmentCategory, string> = {
   rack: '랙 · 프레임',
@@ -18,6 +18,7 @@ export const CATEGORY_LABELS_KO: Record<EquipmentCategory, string> = {
   machine: '머신',
   cable: '케이블',
   bodyweight: '맨몸',
+  cardio: '유산소',
 };
 
 export interface EquipmentMeasurement {
@@ -147,6 +148,14 @@ export const EQUIPMENT_CATALOG: readonly EquipmentItem[] = [
    * 전부 적는 사람에게 "폼롤러는 어디 켜요?"가 남으면 목록이 틀린 것이다.
    */
   { id: 'foam-roller', name: '폼롤러', category: 'bodyweight' },
+  /*
+   * 유산소 기구도 종목을 열지 않는다. 몸 풀기를 어디서 시작할지 고르는 데 쓴다 —
+   * 헬스장 한가운데서 제자리 걷기를 시키는 것보다 러닝머신 2분이 자연스럽다.
+   */
+  { id: 'treadmill', name: '러닝머신', category: 'cardio', common: true },
+  { id: 'stationary-bike', name: '실내 사이클', category: 'cardio', common: true },
+  { id: 'rowing-machine', name: '로잉머신', category: 'cardio' },
+  { id: 'stair-climber', name: '천국의 계단 (스텝밀)', category: 'cardio' },
   {
     id: 'smith-machine', name: '스미스머신', category: 'rack', common: true,
     measurement: {
@@ -736,6 +745,22 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
   'foam-roller': {
     aka: ['폼 롤러', '마사지 롤러'],
     look: '원통 모양 스펀지. 몸을 굴려 근육을 풉니다',
+  },
+  treadmill: {
+    aka: ['런닝머신', '트레드밀', '러닝 머신', '런닝 머신'],
+    look: '벨트가 돌아가는 위를 걷거나 뛰는 기계',
+  },
+  'stationary-bike': {
+    aka: ['사이클', '실내자전거', '실내 자전거', '스핀 바이크', '스피닝', '자전거'],
+    look: '바퀴 없이 페달만 밟는 자전거',
+  },
+  'rowing-machine': {
+    aka: ['로잉 머신', '로잉', '로워', '조정 머신'],
+    look: '앉아서 손잡이 줄을 당기며 레일 위로 미끄러지는 기계',
+  },
+  'stair-climber': {
+    aka: ['천국의계단', '스텝밀', '스텝 밀', '계단 머신', '스테퍼'],
+    look: '끝없이 올라오는 계단을 오르는 기계',
   },
   'smith-machine': {
     aka: ['스미스', '레일 달린 바벨', '가이드 바벨', '스미스 머신', '스미스 랙'],
