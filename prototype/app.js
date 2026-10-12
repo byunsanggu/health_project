@@ -4178,7 +4178,7 @@
      * 워밍업 세트는 오늘 처음 하는 복합 동작에만 남는다.
      */
     var moves = E.mobilityFor(plannedMusclesToday());
-    rows.push(el('div', { class: 'plan-row' }, [
+    rows.push(el('div', { class: 'plan-row warm-row' }, [
       el('span', { class: 'lift-thumb warm', 'aria-hidden': 'true', text: '↗' }),
       el('span', { class: 'plan-main' }, [
         el('span', { class: 'name' }, [el('span', { text: '몸 풀기 5분' })]),
