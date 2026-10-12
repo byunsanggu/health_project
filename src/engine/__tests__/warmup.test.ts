@@ -117,3 +117,23 @@ describe('warmedMusclesOf', () => {
     assert.ok(!muscles.includes('quads'));
   });
 });
+
+describe('몸 풀기를 한 날의 워밍업', () => {
+  it('고립 운동과 이미 데운 부위는 바로 본세트', () => {
+    const lateral = exerciseById('lateral-raise') as Exercise;
+    assert.equal(planWarmup({ exercise: lateral, workingWeightKg: 10, workingReps: 12, generalWarmupDone: true }).sets.length, 0);
+    assert.equal(planWarmup({ exercise: pushdown, workingWeightKg: 30, workingReps: 12, generalWarmupDone: true }).sets.length, 0);
+    const warm = warmedMusclesOf(bench);
+    assert.equal(planWarmup({ exercise: incline, workingWeightKg: 30, workingReps: 10, alreadyWarmedMuscles: warm, generalWarmupDone: true }).sets.length, 0);
+  });
+
+  it('오늘 처음 하는 복합 동작은 두세 세트 — 빈 바 없이', () => {
+    const normal = planWarmup({ exercise: bench, workingWeightKg: 80, workingReps: 10, barKg: 20, generalWarmupDone: true });
+    const heavy = planWarmup({ exercise: squat, workingWeightKg: 100, workingReps: 5, barKg: 20, generalWarmupDone: true });
+    assert.equal(normal.sets.length, 2);
+    assert.equal(heavy.sets.length, 3);
+    assert.ok(!normal.sets.some((set) => set.note === '빈 바'));
+    const old = planWarmup({ exercise: squat, workingWeightKg: 100, workingReps: 5, barKg: 20 });
+    assert.ok(heavy.sets.length < old.sets.length);
+  });
+});

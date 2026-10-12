@@ -38,6 +38,8 @@ export interface TimeOptions {
   includeWarmup?: boolean;
   /** 종목별 기구 명세 — 워밍업 중량 계산에 쓴다 */
   loadingFor?: (exercise: Exercise) => LoadingSpec | null;
+  /** 시작에 하는 몸 풀기(초). 주면 종목 워밍업은 필요한 종목만 짧게 계산한다. */
+  generalWarmupSeconds?: number;
 }
 
 const DEFAULTS = {
@@ -116,6 +118,7 @@ export function estimateSessionTime(
         workingReps: reps,
         alreadyWarmedMuscles: [...warmed],
         loading: options.loadingFor ? options.loadingFor(item.exercise) : item.loading ?? null,
+        generalWarmupDone: (config.generalWarmupSeconds ?? 0) > 0,
       });
       warmupSeconds = Math.round(plan.estimatedSeconds);
     }
@@ -139,6 +142,7 @@ export function estimateSessionTime(
     };
   });
 
+  if (config.includeWarmup) warmupTotal += Math.max(0, config.generalWarmupSeconds ?? 0);
   const transition = Math.max(0, exercises.length - 1) * config.transitionSeconds;
   const totalSeconds = Math.round(warmupTotal + workTotal + restTotal + transition);
 

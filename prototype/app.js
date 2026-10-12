@@ -1381,6 +1381,8 @@
         // 휴식을 2분으로 늘렸는데 "50분이면 6종목"이라고 하면 거짓말이 된다
         restBand: state.restBand || undefined,
         restOverrides: state.restOverrides,
+        // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
+        generalWarmupSeconds: E.MOBILITY_SECONDS,
         allowShortRest: state.style === 'density',
       });
       built = state.timeFit.session;
@@ -1431,6 +1433,8 @@
         alreadyWarmedMuscles: warmed.slice(),
         loading: item.loading,
         barKg: item.loading && item.loading.kind === 'barbell' ? item.loading.barKg : undefined,
+        // 시작에 몸 풀기를 하므로 종목 워밍업은 오늘 처음 하는 복합 동작에만
+        generalWarmupDone: true,
       });
       E.warmedMusclesOf(item.exercise).forEach(function (m) {
         if (warmed.indexOf(m) < 0) warmed.push(m);
@@ -2862,6 +2866,7 @@
         alreadyWarmedMuscles: [],
         loading: loading,
         barKg: loading && loading.kind === 'barbell' ? loading.barKg : undefined,
+        generalWarmupDone: true,
       }),
       decision: null,
       note: prescription.reason,
@@ -3299,6 +3304,8 @@
       restMultiplier: E.styleProfile(state.style).restMultiplier,
       restBand: state.restBand || undefined,
       restOverrides: state.restOverrides,
+      // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
+      generalWarmupSeconds: E.MOBILITY_SECONDS,
     });
     return {
       estimate: estimate,
@@ -4039,6 +4046,8 @@
       restMultiplier: E.styleProfile(state.style).restMultiplier,
       restBand: state.restBand || undefined,
       restOverrides: state.restOverrides,
+      // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
+      generalWarmupSeconds: E.MOBILITY_SECONDS,
       allowShortRest: state.style === 'density',
     };
   }
@@ -4164,15 +4173,19 @@
     var warmupSets = state.lifts.reduce(function (sum, lift) {
       return sum + (lift.warmup && lift.warmup.sets ? lift.warmup.sets.length : 0);
     }, 0);
-    if (warmupSets > 0) {
-      rows.push(el('div', { class: 'plan-row' }, [
-        el('span', { class: 'lift-thumb warm', 'aria-hidden': 'true', text: '↗' }),
-        el('span', { class: 'plan-main' }, [
-          el('span', { class: 'name' }, [el('span', { text: '워밍업' })]),
-          el('span', { class: 'plan-sets', text: warmupSets + '세트 · 종목마다 자동' }),
-        ]),
-      ]));
-    }
+    /*
+     * 시작은 몸 풀기 5분(움직이는 스트레칭). 종목마다 워밍업 세트를 밟는 대신이다 —
+     * 워밍업 세트는 오늘 처음 하는 복합 동작에만 남는다.
+     */
+    var moves = E.mobilityFor(plannedMusclesToday());
+    rows.push(el('div', { class: 'plan-row' }, [
+      el('span', { class: 'lift-thumb warm', 'aria-hidden': 'true', text: '↗' }),
+      el('span', { class: 'plan-main' }, [
+        el('span', { class: 'name' }, [el('span', { text: '몸 풀기 5분' })]),
+        el('span', { class: 'plan-sets', text: moves.slice(1, 4).map(function (move) { return move.name; }).join(' · ') +
+          (warmupSets > 0 ? ' — 워밍업 세트는 필요한 종목만 ' + warmupSets + '세트' : '') }),
+      ]),
+    ]));
 
     state.lifts.forEach(function (lift) {
       var done = lift.sets.filter(function (set) { return set.done; }).length;
@@ -4274,9 +4287,11 @@
            * 않는다. 그리고 화면을 켜 둔다 — 운동 중에 화면이 꺼지면 말도
            * 끊긴다.
            */
-          coachSay(coachStartLines(doneSets > 0));
-          ensurePtRun();
+          var opening = coachSay(coachStartLines(doneSets > 0));
+          var run = ensurePtRun();
           acquireWakeLock();
+          // 처음 시작이면 몸부터 푼다 — 시작 말이 끝난 뒤에
+          if (doneSets === 0 && !run.prepped) startPrep(Math.ceil(E.speechSeconds(opening || '')) * 1000 + 800);
         }
         // 시계는 여기서 돈다. 세트를 기록해야 시작하면 워밍업 시간이 빠진다.
         if (!state.sessionStartedAt) state.sessionStartedAt = Date.now();
@@ -5439,6 +5454,8 @@
         restMultiplier: E.styleProfile(state.style).restMultiplier,
         restBand: state.restBand || undefined,
         restOverrides: state.restOverrides,
+        // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
+        generalWarmupSeconds: E.MOBILITY_SECONDS,
       });
     } catch (err) { estimate = null; }
     var status = state.block ? E.blockStatus(state.block, state.todayDate) : null;
@@ -6277,6 +6294,8 @@
         restMultiplier: E.styleProfile(state.style).restMultiplier,
         restBand: state.restBand || undefined,
         restOverrides: state.restOverrides,
+        // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
+        generalWarmupSeconds: E.MOBILITY_SECONDS,
       });
       body.push(el('p', { class: 'hint-line', text:
         '지금 설정으로 오늘 ' + state.lifts.length + '종목 · 약 ' +
@@ -6580,7 +6599,7 @@
     var auto = state.autoCount || ptOn();
     if (!auto || state.rest || state.counting || !state.started) return;
     // PT가 멈춰 있거나 워밍업 · 스트레칭을 이끄는 중이면 세트를 시작하지 않는다.
-    if (ptOn() && state.ptRun && (state.ptRun.paused || state.ptRun.warm || state.ptRun.cool)) return;
+    if (ptOn() && state.ptRun && (state.ptRun.paused || state.ptRun.warm || state.ptRun.cool || state.ptRun.prep)) return;
     var key = liftIndex + ':' + setIndex;
     if (state.autoCountedFor === key) return;
     state.autoCountedFor = key;
@@ -6616,7 +6635,7 @@
 
   function ensurePtRun() {
     if (!state.ptRun || state.ptRun.day !== state.todayDate) {
-      state.ptRun = { day: state.todayDate, said: [], warm: null, cool: null, paused: false };
+      state.ptRun = { day: state.todayDate, said: [], warm: null, cool: null, prep: null, prepped: false, paused: false };
     }
     return state.ptRun;
   }
@@ -6630,6 +6649,8 @@
           restMultiplier: E.styleProfile(state.style).restMultiplier,
           restBand: state.restBand || undefined,
           restOverrides: state.restOverrides,
+          // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
+          generalWarmupSeconds: E.MOBILITY_SECONDS,
         });
         minutes = estimate && estimate.totalMinutes;
       } catch (err) { minutes = null; }
@@ -6825,6 +6846,58 @@
     return Object.keys(count).sort(function (a, b) { return count[b] - count[a]; });
   }
 
+  /** 오늘 할 부위 — 세트가 많은 순서. 몸 풀기가 이 순서로 고른다. */
+  function plannedMusclesToday() {
+    var count = {};
+    state.lifts.forEach(function (lift) {
+      var open = lift.sets.filter(function (set) { return !set.done; }).length;
+      E.warmedMusclesOf(lift.exercise).forEach(function (muscle) {
+        count[muscle] = (count[muscle] || 0) + open * (lift.exercise.contribution[muscle] || 0.5);
+      });
+    });
+    return Object.keys(count).sort(function (a, b) { return count[b] - count[a]; });
+  }
+
+  /** 몸 풀기 — 오늘 쓸 부위 위주로 5분, 움직이는 스트레칭을 말로 이끈다. */
+  function startPrep(delayMs) {
+    var pt = ensurePtRun();
+    if (pt.prep || pt.prepped) return;
+    var run = { steps: E.mobilityFor(plannedMusclesToday()), index: -1, endsAt: null, timers: [] };
+    pt.prep = run;
+    run.timers.push(setTimeout(function () { if (ptAlive(run, 'prep')) prepStep(run, 0); }, delayMs || 0));
+    render();
+  }
+
+  function prepStep(run, i) {
+    run.timers.forEach(function (id) { clearTimeout(id); });
+    run.timers = [];
+    if (i >= run.steps.length) return endPrep(true);
+    var later = function (fn, ms) { run.timers.push(setTimeout(function () { if (ptAlive(run, 'prep')) fn(); }, ms)); };
+    run.index = i;
+    var item = run.steps[i];
+    var line = E.mobilityLine(state.coach.style, item, i, run.steps.length);
+    coachSay([line]);
+    var talk = Math.ceil(E.speechSeconds(line)) * 1000;
+    run.endsAt = Date.now() + talk + item.seconds * 1000;
+    run.talkMs = talk;
+    render();
+    if (item.sides) later(function () { coachSay([E.cooldownSwitchLine(state.coach.style)]); }, talk + item.seconds * 500);
+    later(function () { prepStep(run, i + 1); }, talk + item.seconds * 1000);
+  }
+
+  /** 몸 풀기 끝 — 바로 첫 종목(필요하면 그 종목 워밍업)으로. */
+  function endPrep(spoken) {
+    var pt = state.ptRun;
+    if (!pt || !pt.prep) return;
+    pt.prep.timers.forEach(function (id) { clearTimeout(id); });
+    pt.prep = null;
+    pt.prepped = true;
+    if (spoken) coachSay([E.mobilityDoneLine(state.coach.style)]);
+    else { try { window.speechSynthesis.cancel(); } catch (err) { void err; } }
+    state.autoCountedFor = null;
+    render();
+  }
+
   /** 마무리 스트레칭 — 오늘 쓴 부위 위주로 4분, 말로 이끈다. */
   function startCooldown(delayMs) {
     var pt = ensurePtRun();
@@ -6948,6 +7021,11 @@
       pt.cool.timers = [];
       pt.cool.endsAt = null;
     }
+    if (pt.prep) {
+      pt.prep.timers.forEach(function (id) { clearTimeout(id); });
+      pt.prep.timers = [];
+      pt.prep.endsAt = null;
+    }
     try { window.speechSynthesis.cancel(); } catch (err) { void err; }
   }
 
@@ -6963,6 +7041,8 @@
     if (state.askFor && !state.counting) startAskWindow();
     // 스트레칭 중에 멈췄으면 하던 스트레칭을 다시 한다.
     if (pt.cool) { speak(state.coach.style === 'fired' ? '다시 갑니다!' : '다시 할게요.'); cooldownStep(pt.cool, Math.max(0, pt.cool.index)); return; }
+    // 몸 풀기 중에 멈췄으면 하던 동작부터
+    if (pt.prep) { prepStep(pt.prep, Math.max(0, pt.prep.index)); return; }
     var lift = at && state.lifts[at.liftIndex];
     if (lift && typeof at.warmIndex === 'number' && needsWarmup(lift) && at.warmIndex < lift.warmup.sets.length) {
       state.autoCountedFor = at.liftIndex + ':0';
@@ -7057,6 +7137,7 @@
     var pt = state.ptRun;
     if (!pt || pt.cool) return null;
     if (pt.paused) return 'paused';
+    if (pt.prep) return 'prep';
     if (pt.warm) return 'warm';
     if (state.counting) return 'count';
     if (state.rest) return 'rest';
@@ -7141,6 +7222,14 @@
       var warmLeft = document.getElementById('focus-warm-left');
       if (warmLeft && pt.warm.endsAt) warmLeft.textContent = '다음 워밍업까지 ' + Math.max(0, Math.ceil((pt.warm.endsAt - Date.now()) / 1000)) + '초';
     }
+    var prepLeft = document.getElementById('focus-prep-left');
+    if (prepLeft && pt && pt.prep && pt.prep.endsAt) {
+      var step = pt.prep.steps[Math.max(0, pt.prep.index)];
+      // 말하는 동안은 동작 시간이 아직 안 줄어든다
+      var leftSec = Math.min(step.seconds, Math.max(0, Math.ceil((pt.prep.endsAt - Date.now()) / 1000)));
+      prepLeft.textContent = leftSec + '초';
+      setRingFraction('focus-ring-bar', leftSec / step.seconds);
+    }
     var askLeft = document.getElementById('focus-ask-left');
     if (askLeft && state.askUntil) {
       var fallback = (E.FEELS.filter(function (feel) { return feel.id === (state.askDefault || 'right'); })[0] || {}).label || '딱 좋았어요';
@@ -7183,7 +7272,10 @@
       el('span', { class: 'focus-elapsed', id: 'focus-elapsed', text: elapsedText() }),
       el('button', { type: 'button', class: 'end-workout', text: '운동 끝내기', onclick: endWorkout }),
     ]));
-    focusHost.appendChild(el('div', { class: 'focus-title' }, [
+    focusHost.appendChild(el('div', { class: 'focus-title' }, phase === 'prep' ? [
+      el('span', { class: 'focus-pos', text: '운동 전' }),
+      el('b', { text: '몸 풀기 5분' }),
+    ] : [
       el('span', { class: 'focus-pos', text: '종목 ' + (state.liftCursor + 1) + ' / ' + total }),
       el('b', { text: lift ? lift.exercise.name : '' }),
     ]));
@@ -7229,6 +7321,23 @@
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '−30초', onclick: function () { extendRest(-30); } }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn primary rest-more', text: '+30초', onclick: function () { extendRest(30); } }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '바로 시작', onclick: stopRest }));
+    } else if (phase === 'prep' && pt && pt.prep) {
+      var prep = pt.prep;
+      var waitingPrep = prep.index < 0;
+      var move = prep.steps[Math.max(0, prep.index)];
+      var moveLeft = prep.endsAt ? Math.min(move.seconds, Math.max(0, Math.ceil((prep.endsAt - Date.now()) / 1000))) : move.seconds;
+      middle.appendChild(focusRing(waitingPrep ? 1 : Math.min(1, moveLeft / move.seconds), 'focus-ring-bar', [
+        el('span', { class: 'focus-of', text: waitingPrep ? '곧 시작' : '몸 풀기 ' + (prep.index + 1) + ' / ' + prep.steps.length }),
+        el('b', { class: 'focus-num rest', id: 'focus-prep-left', text: moveLeft + '초' }),
+      ]));
+      middle.appendChild(el('div', { class: 'focus-what' }, [el('b', { text: move.name })]));
+      middle.appendChild(el('div', { class: 'focus-setting', text: move.cue + (move.sides ? ' · 반쯤에서 반대쪽' : '') }));
+      var nextMove = prep.steps[Math.max(0, prep.index) + 1];
+      middle.appendChild(el('div', { class: 'focus-next', text: nextMove ? '다음 · ' + nextMove.name : '다음 · ' + (lift ? lift.exercise.name : '운동 시작') }));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: waitingPrep ? '지금 시작' : '다음 동작',
+        onclick: function () { try { window.speechSynthesis.cancel(); } catch (err) { void err; } prepStep(prep, prep.index + 1); } }));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '몸 풀기 건너뛰기',
+        onclick: function () { endPrep(false); } }));
     } else if (phase === 'warm' && pt && pt.warm) {
       var warm = pt.warm;
       var step = warm.step || { weightKg: 0, reps: 0 };
@@ -7302,7 +7411,7 @@
     var planned = Math.round(ptPlannedSeconds() / 60);
     var box = el('div', { class: 'pt-panel' }, [
       el('div', { class: 'pt-panel-head' }, [
-        el('b', { text: pt.paused ? 'PT 일시정지' : 'PT 진행 중' }),
+        el('b', { text: pt.paused ? 'PT 일시정지' : (pt.prep ? 'PT · 몸 푸는 중' : 'PT 진행 중') }),
         el('span', { class: 'count-tempo', text: Math.floor(elapsedSeconds() / 60) + '분 / ' + planned + '분' }),
       ]),
       pt.paused && pt.pausedWhy === 'background'
@@ -7325,6 +7434,8 @@
         pt.paused = false;
         pt.pausedWhy = null;
         pt.resume = null;
+        // 몸 풀기 중에 눌렀으면 몸 풀기는 거기서 끝낸다
+        if (pt.prep) { pt.prep.timers.forEach(function (id) { clearTimeout(id); }); pt.prep = null; pt.prepped = true; }
         state.autoCountedFor = liftIndex + ':' + setIndex;
         // 쉬는 중에 눌렀으면 휴식을 끝내고 시작한다 — 휴식이 남아 있으면 끝난 뒤 물을 버튼이 숨는다.
         if (state.rest) stopRest();

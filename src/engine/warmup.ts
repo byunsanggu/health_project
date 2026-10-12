@@ -42,7 +42,19 @@ export interface WarmupInput {
   loading?: LoadingSpec | null;
   /** 빈 바 무게 — 바벨 종목의 첫 램프에 쓴다 */
   barKg?: number;
+  /**
+   * 운동 시작에 몸 풀기(동적 스트레칭 5분)를 했는가.
+   *
+   * 했으면 종목마다 램프를 다 밟을 필요가 없다. 몸은 이미 데워졌고, 남은 건
+   * 그 종목의 중량 감각뿐이다 — 처음 하는 복합 동작에만 두세 세트, 고립 운동과
+   * 앞 종목이 데운 부위는 바로 본세트. 종목마다 네 세트씩 밟으면 50분 중
+   * 15분이 워밍업이 되고, 정작 본세트에서 쓸 힘이 빠진다.
+   */
+  generalWarmupDone?: boolean;
 }
+
+/** 이보다 가벼운 본세트는 첫 세트가 곧 워밍업이다. */
+const LIGHT_WORKING_KG = 20;
 
 /** 램프 단계 — 무거워질수록 반복을 줄인다. */
 const FULL_RAMP: readonly { percent: number; reps: number }[] = [
@@ -81,8 +93,22 @@ export function planWarmup(input: WarmupInput): WarmupPlan {
 
   let ramp: readonly { percent: number; reps: number }[];
   let note: string;
+  const lean = Boolean(input.generalWarmupDone);
 
-  if (alreadyWarm && isIsolation) {
+  if (lean && (isIsolation || alreadyWarm || workingWeightKg < LIGHT_WORKING_KG)) {
+    ramp = [];
+    note = isIsolation
+      ? '몸 풀기와 앞 종목으로 충분합니다. 첫 세트를 조금 여유 있게 시작하세요.'
+      : alreadyWarm
+        ? '앞 종목에서 이미 데워진 부위입니다. 바로 본세트로 갑니다.'
+        : '본세트 중량이 가벼워 첫 세트가 곧 워밍업입니다.';
+  } else if (lean) {
+    // 몸은 풀렸으니 중량 감각만 — 무거운 날은 세 단계, 보통은 두 단계
+    ramp = heavy ? FULL_RAMP.slice(1) : SHORT_RAMP;
+    note = heavy
+      ? '오늘 처음 하는 고중량 복합 동작입니다. 세 단계로 중량을 올립니다.'
+      : '오늘 처음 하는 복합 동작입니다. 두 단계로 중량 감각만 잡습니다.';
+  } else if (alreadyWarm && isIsolation) {
     ramp = [];
     note = '앞 종목에서 이미 데워진 부위입니다. 첫 세트를 조금 여유 있게 시작하세요.';
   } else if (alreadyWarm) {
@@ -102,7 +128,8 @@ export function planWarmup(input: WarmupInput): WarmupPlan {
   const sets: WarmupSet[] = [];
 
   // 바벨 종목은 빈 바부터 시작한다. 램프 첫 단계가 빈 바보다 가벼우면 의미가 없다.
-  if (!alreadyWarm && input.barKg && input.barKg > 0 && ramp.length > 0) {
+  // 몸 풀기를 했으면 빈 바는 건너뛴다 — 데우는 건 이미 했다
+  if (!lean && !alreadyWarm && input.barKg && input.barKg > 0 && ramp.length > 0) {
     const firstRampWeight = snap(workingWeightKg * ramp[0]!.percent);
     if (firstRampWeight > input.barKg) {
       sets.push({

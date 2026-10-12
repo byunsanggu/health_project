@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
-  COOLDOWN_SECONDS, PACE_TOLERANCE_SECONDS, cooldownDoneLine, cooldownFor, cooldownLine,
+  COOLDOWN_SECONDS, MOBILITY_SECONDS, PACE_TOLERANCE_SECONDS, mobilityDoneLine, mobilityFor, mobilityLine, cooldownDoneLine, cooldownFor, cooldownLine,
   paceCheck, restAnnounceLine, restSpoken, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from '../ptSession.ts';
 import { speechSeconds } from '../coach.ts';
@@ -139,5 +139,35 @@ describe('세트 사이 휴식 안내', () => {
 
   it('빡센 말투도 존댓말이다', () => {
     assert.match(restAnnounceLine('fired', { seconds: 60, nextSet: 2 }), /니다/);
+  });
+});
+
+describe('몸 풀기', () => {
+  it('제자리 걷기로 시작해 오늘 쓸 부위의 동작을 5분 안에 고른다', () => {
+    const steps = mobilityFor(['chest', 'frontDelt', 'triceps']);
+    assert.equal(steps[0]!.id, 'march');
+    assert.ok(steps.some((step) => step.muscles.includes('chest')));
+    const total = steps.reduce((sum, step) => sum + step.seconds, 0);
+    assert.ok(total <= MOBILITY_SECONDS && total >= 150, String(total));
+    assert.equal(new Set(steps.map((step) => step.id)).size, steps.length);
+  });
+
+  it('하체 날은 하체 동작', () => {
+    const steps = mobilityFor(['quads', 'glutes', 'hamstrings']);
+    assert.ok(steps.some((step) => step.id === 'bw-squat'));
+    assert.ok(!steps.some((step) => step.id === 'arm-circle'));
+  });
+
+  it('가만히 늘리는 스트레칭이 아니라 움직이는 동작이다 — 마무리 스트레칭과 겹치지 않는다', () => {
+    const warm = mobilityFor(['chest', 'back', 'quads', 'hamstrings', 'glutes']).map((step) => step.id);
+    const cool = cooldownFor(['chest', 'back', 'quads', 'hamstrings', 'glutes']).map((step) => step.id);
+    assert.equal(warm.filter((id) => cool.includes(id)).length, 0);
+  });
+
+  it('첫 동작에 몇 분인지 말하고, 빡센 말투도 존댓말', () => {
+    const steps = mobilityFor(['chest']);
+    assert.match(mobilityLine('calm', steps[0]!, 0, steps.length), /5분/);
+    assert.match(mobilityLine('fired', steps[0]!, 0, steps.length), /니다/);
+    assert.match(mobilityDoneLine('fired'), /니다/);
   });
 });

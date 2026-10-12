@@ -225,6 +225,79 @@ export function timeCheck(style: CoachStyle, input: {
   return null;
 }
 
+/* ── 몸 풀기 (운동 시작) ───────────────────────── */
+
+/*
+ * 종목마다 워밍업 세트를 네 개씩 밟는 대신, 시작에 5분 몸을 푼다.
+ *
+ * **움직이는 스트레칭(동적)이다.** 30초씩 가만히 늘리는 스트레칭은 근육을
+ * 잠깐 느슨하게 만들어 첫 세트 힘이 빠진다 — 그건 끝나고 하는 것이다.
+ * 시작에는 관절을 끝까지 움직여 체온을 올리고, 오늘 쓸 부위를 깨운다.
+ * 그 뒤 종목 워밍업은 오늘 처음 하는 복합 동작에만 두세 세트.
+ */
+export type MobilityStep = CooldownStep;
+
+const MARCH: MobilityStep = {
+  id: 'march', name: '제자리 걷기', seconds: 40,
+  cue: '무릎을 높이 올리며 걷고, 팔은 크게 앞뒤로 흔드세요', muscles: [],
+};
+
+const MOVES: readonly MobilityStep[] = [
+  { id: 'arm-circle', name: '팔 크게 돌리기', seconds: 30, cue: '팔을 쭉 펴고 앞으로 열 번, 뒤로 열 번 크게 돌리세요', muscles: ['frontDelt', 'sideDelt', 'chest'] },
+  { id: 'wy-raise', name: 'W-Y 올리기', seconds: 30, cue: '팔을 W 모양으로 당겼다가 Y 모양으로 머리 위까지 뻗으세요. 날개뼈를 모으면서', muscles: ['rearDelt', 'traps', 'back'] },
+  { id: 'thoracic', name: '등 회전', seconds: 40, cue: '네발 자세에서 한 손을 머리에 대고 팔꿈치를 천장 쪽으로 돌려 여세요', sides: true, muscles: ['back', 'chest'] },
+  { id: 'cat-cow', name: '고양이 · 소 자세', seconds: 30, cue: '네발 자세에서 등을 둥글게 말았다가 천천히 내리세요. 숨과 같이', muscles: ['back', 'abs'] },
+  { id: 'pushup-dog', name: '푸시업 · 다운독', seconds: 30, cue: '푸시업 자세에서 엉덩이를 높이 들었다가 다시 내려오세요', muscles: ['chest', 'triceps', 'frontDelt'] },
+  { id: 'wrist-elbow', name: '손목 · 팔꿈치 돌리기', seconds: 20, cue: '주먹을 쥐고 손목을 돌리고, 팔꿈치를 굽혔다 폈다 하세요', muscles: ['biceps', 'triceps', 'forearms'] },
+  { id: 'bw-squat', name: '맨몸 스쿼트', seconds: 40, cue: '천천히 앉았다 일어나세요. 바닥에서 무릎을 바깥으로 밀면서', muscles: ['quads', 'glutes'] },
+  { id: 'worlds-greatest', name: '런지 + 몸통 돌리기', seconds: 40, cue: '크게 런지로 앉아 앞발 쪽 팔을 하늘로 뻗으며 몸통을 여세요', sides: true, muscles: ['glutes', 'hamstrings', 'quads', 'back'] },
+  { id: 'leg-swing', name: '다리 앞뒤 흔들기', seconds: 30, cue: '벽을 잡고 다리를 앞뒤로 크게 흔드세요. 허리는 세운 채', sides: true, muscles: ['hamstrings', 'glutes'] },
+  { id: 'glute-bridge', name: '힙 브릿지', seconds: 30, cue: '누워서 무릎을 세우고 엉덩이를 들어 1초 조이고 내리세요', muscles: ['glutes', 'hamstrings'] },
+  { id: 'ankle-rock', name: '발목 앞뒤로 밀기', seconds: 20, cue: '벽 앞에서 무릎을 벽 쪽으로 밀었다 빼세요', sides: true, muscles: ['calves'] },
+  { id: 'dead-bug', name: '데드버그', seconds: 30, cue: '누워서 팔다리를 들고, 반대쪽 팔과 다리를 천천히 뻗으세요. 허리는 바닥에', muscles: ['abs'] },
+];
+
+/** 몸 풀기에 쓰는 시간. */
+export const MOBILITY_SECONDS = 5 * 60;
+
+/**
+ * 오늘 쓸 부위 위주로 5분 — 처음은 제자리 걷기로 체온부터.
+ * 같은 동작은 한 번만, 부위가 겹치면 다음 부위로.
+ */
+export function mobilityFor(
+  muscles: readonly MuscleGroup[],
+  budgetSeconds = MOBILITY_SECONDS,
+): MobilityStep[] {
+  const steps: MobilityStep[] = [MARCH];
+  let used = MARCH.seconds;
+  const add = (move: MobilityStep | undefined) => {
+    if (!move || steps.includes(move) || used + move.seconds > budgetSeconds) return;
+    steps.push(move);
+    used += move.seconds;
+  };
+  for (const muscle of muscles) add(MOVES.find((move) => move.muscles.includes(muscle) && !steps.includes(move)));
+  // 시간이 남으면 같은 부위의 다른 동작으로 채운다
+  for (const muscle of muscles) {
+    for (const move of MOVES) if (move.muscles.includes(muscle)) add(move);
+  }
+  return steps;
+}
+
+export function mobilityLine(style: CoachStyle, step: MobilityStep, index: number, total: number): string {
+  const head = index === 0
+    ? (style === 'fired' ? '몸부터 풉니다. 5분! ' : style === 'data' ? '몸 풀기 5분. ' : '몸부터 풀게요. 5분이에요. ')
+    : '';
+  if (style === 'data') return `${head}${index + 1}/${total} ${step.name} ${step.seconds}초.`;
+  const sides = step.sides ? ' 반쯤 지나면 반대쪽이요.' : '';
+  return `${head}${step.name} ${step.seconds}초. ${step.cue}.${sides}`;
+}
+
+export function mobilityDoneLine(style: CoachStyle): string {
+  if (style === 'data') return '몸 풀기 종료. 운동 시작.';
+  if (style === 'fired') return '몸 다 풀렸습니다. 이제 갑니다!';
+  return '몸 다 풀렸어요. 이제 운동 시작할게요.';
+}
+
 /* ── 마무리 스트레칭 ───────────────────────────── */
 
 export interface CooldownStep {
