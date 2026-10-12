@@ -2341,6 +2341,41 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .input-mode { justify-self: start; background: none; border: none; padding: 2px 0; color: var(--accent); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
 
 /* ── PT 세션 ───────────────────────────────────── */
+/* ── PT 집중 화면 — 세트 중에는 지금 할 것만 크게 ── */
+.focus { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; overflow-y: auto; background: var(--surface); }
+.focus-top { display: flex; align-items: center; gap: 8px; }
+.focus-more { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.focus-elapsed { flex: 1; text-align: center; font-family: var(--mono); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
+.focus-title { display: grid; gap: 2px; }
+.focus-pos { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
+.focus-title b { font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+.focus-middle { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 0; }
+.focus-ring { position: relative; width: min(62vw, 230px, 30dvh); min-width: 150px; aspect-ratio: 1; }
+.focus-ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.focus-ring-track { fill: none; stroke: var(--line-soft); stroke-width: 10; }
+.focus-ring-bar { fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset .35s ease; }
+.focus-ring-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.focus-num { font-family: var(--mono); font-size: 76px; font-weight: 700; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.focus-num.wide { font-size: 40px; }
+.focus-num.rest { font-size: 54px; }
+.focus-of { font-size: 14px; color: var(--muted); font-weight: 600; }
+.focus-what { text-align: center; font-size: 15px; }
+.focus-what b { color: var(--accent); }
+.focus-setting { font-size: 13px; color: var(--muted); }
+.focus-soon { min-height: 18px; font-size: 13px; font-weight: 600; color: var(--accent); }
+.focus-say { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line-soft); font-size: 14px; line-height: 1.5; min-height: 44px; max-height: 7.6em; overflow-y: auto; }
+.focus-say:empty { visibility: hidden; }
+.focus-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.focus-actions.three { grid-template-columns: 1fr 1fr 1fr; }
+.focus-btn { min-height: 54px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-size: 15px; font-weight: 600; color: var(--ink, inherit); }
+.focus-btn.primary { border-color: var(--accent); color: var(--accent); }
+.focus-actions:has(.focus-btn:only-child) { grid-template-columns: 1fr; }
+.focus-btn.quiet { color: var(--muted); }
+.focus-ask { display: grid; gap: 4px; text-align: center; }
+.focus-ask b { font-size: 22px; color: var(--accent); }
+.focus-ask span { font-size: 15px; }
+.focus-feels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.focus-hurt { align-self: center; border: 0; background: none; font-size: 13px; color: var(--muted); text-decoration: underline; padding: 4px; }
 .count-live-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pt-away, .pt-resting { color: var(--accent); font-weight: 600; margin: 0; }
 .pt-panel { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--surface-2); }
@@ -2372,6 +2407,7 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
     <div class="screen" id="screen"></div>
     <div class="rest-host" id="rest-host" hidden></div>
     <nav class="tabbar" id="tabbar" role="tablist" aria-label="화면 전환"></nav>
+    <div class="focus" id="focus" hidden></div>
   </div>
 
   <div class="panel">

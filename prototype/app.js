@@ -1514,6 +1514,9 @@
     // 세는 중에 RIR을 누를 수 있다. 소리가 혼자 남으면 다음 세트와 겹친다.
     // 이미 답을 눌렀다. 여기서 "무게 어땠어요?"를 또 물으면 답한 사람에게 다시 묻는 꼴이다.
     if (state.counting) stopCounting(true, true);
+    state.askFor = null;
+    // 세트를 적으면 다시 집중 화면으로 — 기록을 고치러 "자세히"로 갔던 것은 이 세트 한 번이다.
+    state.focusHidden = false;
     var lift = state.lifts[liftIndex];
     var set = lift.sets[setIndex];
     var rule = { repRange: lift.repRange, targetRir: lift.targetRir };
@@ -1841,6 +1844,7 @@
     var warm = state.ptRun && state.ptRun.warm;
     var warmNode = document.getElementById('pt-warm-left');
     if (warm && warmNode && warm.endsAt) warmNode.textContent = '다음까지 ' + Math.max(0, Math.ceil((warm.endsAt - Date.now()) / 1000)) + '초';
+    focusTick();
   }
 
   // 화면 전체를 다시 그리지 않고 숫자만 바꾼다 — 1초마다 다시 그리면 못 쓴다.
@@ -1864,6 +1868,7 @@
 
     if (node) node.textContent = E.formatDuration(remaining);
     if (bar) bar.style.width = (100 - (remaining / state.rest.total) * 100) + '%';
+    focusTick();
     coachDuringRest(remaining);
     // "곧 시작" 안내로 바뀌는 순간과 +30초로 다시 늘어난 순간에만 막대를 다시 그린다.
     if (remaining > 0 && Boolean(state.rest.soonShown) !== restSoon()) {
@@ -1927,6 +1932,9 @@
     if (!host) return;
     host.textContent = '';
     host.hidden = !state.rest;
+    // 휴식이 저절로 시작 · 끝 · 연장될 때도 집중 화면이 따라간다. 집중 화면이 휴식을 크게 보여 주면 아래 막대는 숨긴다.
+    if (ptOn() && state.started) renderFocus();
+    if (focusOn()) host.hidden = true;
     if (!state.rest) return;
 
     var remaining = restRemaining();
@@ -2274,6 +2282,7 @@
 
   var screen = document.getElementById('screen');
   var tabbar = document.getElementById('tabbar');
+  var focusHost = document.getElementById('focus');
   var logEl = document.getElementById('log');
   var scenariosEl = document.getElementById('scenarios');
   var scenarioNote = document.getElementById('scenario-note');
@@ -2472,6 +2481,7 @@
     }
 
     renderRest();
+    renderFocus();
     renderLog();
     renderScenarios();
     persist();
@@ -5233,6 +5243,8 @@
     state.coachLine = text;
     var bubble = document.getElementById('coach-say');
     if (bubble) bubble.textContent = text;
+    var subtitle = document.getElementById('focus-say');
+    if (subtitle) subtitle.textContent = text;
     speak(E.forSpeech(text));
     return text;
   }
@@ -5730,7 +5742,11 @@
       if (set && !set.done) set.reps = run.rep;
       // 트레이너는 세트가 끝나면 묻는다. 버튼을 찾게 두지 않는다.
       asked = Boolean(ptOn() && !silent && set && !set.done);
-      if (asked) coachSay([E.askFeelLine(state.coach.style, run.liftIndex + run.setIndex)]);
+      if (asked) {
+        // 집중 화면이 "무게 어땠어요?" 버튼을 띄우는 신호
+        state.askFor = run.liftIndex + ':' + run.setIndex;
+        coachSay([E.askFeelLine(state.coach.style, run.liftIndex + run.setIndex)]);
+      }
     }
     render();
     /*
@@ -5770,6 +5786,7 @@
     }
     var say = document.getElementById('count-say');
     if (say) say.textContent = word;
+    focusTick();
   }
 
   function startCounting(liftIndex, setIndex, leadSeconds, fromRep) {
@@ -5787,6 +5804,7 @@
       slowdown: true,
     };
     var cues = E.buildCues(input);
+    state.focusHidden = false;
     /*
      * 멈췄던 자리부터 이어서 센다. 넷까지 했으면 다섯부터 — 처음부터 다시
      * 세면 이미 한 네 개를 또 하게 된다. 박자는 그 자리부터 같은 간격이다.
@@ -6640,17 +6658,22 @@
       run.index = i;
       run.phase = 'set';
       run.endsAt = null;
+      // 집중 화면이 읽는 값 — 아래 render() 전에 채워 둔다
+      run.reps = steps[i].reps;
+      run.rep = 0;
+      run.total = steps.length;
+      run.step = steps[i];
       var line = E.warmupSetLine(state.coach.style, lift.exercise.name, i, steps, inPounds(lift.exercise.id));
       coachSay([line]);
       render();
       var lead = Math.ceil(E.speechSeconds(line)) + 2;
       var cues = E.buildCues({ repRange: { min: steps[i].reps, max: steps[i].reps }, tempo: tempoOf(lift.exercise), leadInSeconds: lead });
-      later(function () { speak('시작'); }, lead * 1000);
+      later(function () { speak('시작'); showCount('시작', ''); }, lead * 1000);
       var end = 0;
       cues.forEach(function (cue) {
         if (cue.rep === 0) return;
         end = Math.max(end, cue.atMs);
-        later(function () { speak(cue.say); }, cue.atMs);
+        later(function () { run.rep = cue.rep; speak(cue.say); showCount(String(cue.rep), cue.say); }, cue.atMs);
       });
       later(function () {
         if (i < steps.length - 1) {
@@ -6948,6 +6971,245 @@
     render();
   }
 
+
+  /* ── PT 집중 화면 ──────────────────────────────── */
+
+  /*
+   * 세트 중에는 화면 하나에 지금 할 것만 크게.
+   *
+   * 기구 앞에서 폰을 보는 시간은 1~2초다. 그 사이에 읽혀야 하는 건 지금 몇 개째인지,
+   * 몇 초 쉬고 무엇을 하는지, 트레이너가 방금 뭐라고 했는지 — 셋뿐이다. 숫자칸 ·
+   * 처방 · 기록 같은 나머지는 "자세히 보기"에 그대로 있다.
+   *
+   * PT 모드에서만 뜬다. 혼자 하는 사람은 지금 화면 그대로.
+   */
+  function focusPhase() {
+    if (!ptOn() || !state.started || state.tab !== 'today') return null;
+    if (state.onboarding.active || state.authOpen || state.focusHidden) return null;
+    var pt = state.ptRun;
+    if (!pt || pt.cool) return null;
+    if (pt.paused) return 'paused';
+    if (pt.warm) return 'warm';
+    if (state.counting) return 'count';
+    if (state.rest) return 'rest';
+    var ref = focusSetRef();
+    if (ref && state.askFor === ref.liftIndex + ':' + ref.setIndex) return 'ask';
+    return null;
+  }
+
+  function focusOn() {
+    return Boolean(focusHost && !focusHost.hidden);
+  }
+
+  /** 지금 할(또는 방금 센) 세트. */
+  function focusSetRef() {
+    if (state.counting) {
+      var counted = state.lifts[state.counting.liftIndex];
+      return { liftIndex: state.counting.liftIndex, setIndex: state.counting.setIndex, lift: counted, set: counted.sets[state.counting.setIndex] };
+    }
+    // 지금 종목을 다 했으면(종목 넘어가는 휴식) 다음에 할 종목
+    for (var i = state.liftCursor; i < state.lifts.length; i += 1) {
+      var lift = state.lifts[i];
+      var setIndex = lift ? lift.sets.findIndex(function (set) { return !set.done; }) : -1;
+      if (setIndex >= 0) return { liftIndex: i, setIndex: setIndex, lift: lift, set: lift.sets[setIndex] };
+    }
+    return null;
+  }
+
+  var RING_R = 84;
+  var RING_C = 2 * Math.PI * RING_R;
+
+  function focusRing(fraction, id, inner) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 200 200');
+    svg.setAttribute('class', 'focus-ring-svg');
+    svg.setAttribute('aria-hidden', 'true');
+    var track = document.createElementNS(ns, 'circle');
+    track.setAttribute('cx', '100'); track.setAttribute('cy', '100'); track.setAttribute('r', String(RING_R));
+    track.setAttribute('class', 'focus-ring-track');
+    var bar = document.createElementNS(ns, 'circle');
+    bar.setAttribute('cx', '100'); bar.setAttribute('cy', '100'); bar.setAttribute('r', String(RING_R));
+    bar.setAttribute('class', 'focus-ring-bar');
+    bar.setAttribute('id', id);
+    bar.setAttribute('stroke-dasharray', String(RING_C));
+    bar.setAttribute('stroke-dashoffset', String(RING_C * (1 - Math.max(0, Math.min(1, fraction)))));
+    svg.appendChild(track);
+    svg.appendChild(bar);
+    return el('div', { class: 'focus-ring' }, [svg, el('div', { class: 'focus-ring-inner' }, inner)]);
+  }
+
+  function setRingFraction(id, fraction) {
+    var bar = document.getElementById(id);
+    if (bar) bar.setAttribute('stroke-dashoffset', String(RING_C * (1 - Math.max(0, Math.min(1, fraction)))));
+  }
+
+  function loadText(lift, weightKg) {
+    return weightKg > 0 ? E.weightLabelIn(weightKg, inPounds(lift.exercise.id)) : '맨몸';
+  }
+
+  function repsText(range) {
+    return range.min === range.max ? range.max + '회' : range.min + '–' + range.max + '회';
+  }
+
+  /** 숫자 · 고리 · 남은 초만 바꾼다. 매초 전체를 다시 그리면 버튼이 눌리다 만다. */
+  function focusTick() {
+    if (!focusOn()) return;
+    var elapsedNode = document.getElementById('focus-elapsed');
+    if (elapsedNode) elapsedNode.textContent = elapsedText();
+    var pt = state.ptRun;
+    var num = document.getElementById('focus-num');
+    if (state.counting && num) {
+      var ref = focusSetRef();
+      var max = ref && ref.set ? ref.set.targetReps.max : 10;
+      var live = document.getElementById('count-now');
+      num.textContent = state.counting.rep > 0 ? String(state.counting.rep) : (live ? live.textContent : '준비');
+      num.classList.toggle('wide', !/^\d+$/.test(num.textContent));
+      setRingFraction('focus-ring-bar', state.counting.rep / max);
+    } else if (pt && pt.warm && num) {
+      num.textContent = pt.warm.phase === 'rest' ? '휴식' : (pt.warm.rep > 0 ? String(pt.warm.rep) : '준비');
+      num.classList.toggle('wide', !/^\d+$/.test(num.textContent));
+      setRingFraction('focus-ring-bar', pt.warm.phase === 'rest' ? 1 : (pt.warm.rep || 0) / (pt.warm.reps || 1));
+      var warmLeft = document.getElementById('focus-warm-left');
+      if (warmLeft && pt.warm.endsAt) warmLeft.textContent = '다음 워밍업까지 ' + Math.max(0, Math.ceil((pt.warm.endsAt - Date.now()) / 1000)) + '초';
+    }
+    var restTime = document.getElementById('focus-rest-time');
+    if (state.rest && restTime) {
+      var remaining = restRemaining();
+      restTime.textContent = E.formatDuration(remaining);
+      setRingFraction('focus-ring-bar', remaining / state.rest.total);
+    }
+  }
+
+  function renderFocus() {
+    if (!focusHost) return;
+    var phase = focusPhase();
+    var was = !focusHost.hidden;
+    focusHost.hidden = !phase;
+    screen.hidden = Boolean(phase);
+    if (phase) {
+      tabbar.hidden = true;
+      var restHost = document.getElementById('rest-host');
+      if (restHost) restHost.hidden = true;
+    } else if (was) {
+      tabbar.hidden = Boolean(state.onboarding.active || state.authOpen);
+      var host = document.getElementById('rest-host');
+      if (host) host.hidden = !state.rest;
+    }
+    focusHost.textContent = '';
+    if (!phase) return;
+
+    var ref = focusSetRef();
+    var lift = ref ? ref.lift : state.lifts[state.liftCursor];
+    var total = state.lifts.length;
+
+    focusHost.appendChild(el('div', { class: 'focus-top' }, [
+      el('button', { type: 'button', class: 'focus-more', text: '자세히 보기',
+        title: '무게 · 횟수 칸과 오늘 목록이 있는 화면',
+        onclick: function () { state.focusHidden = true; render(); } }),
+      el('span', { class: 'focus-elapsed', id: 'focus-elapsed', text: elapsedText() }),
+      el('button', { type: 'button', class: 'end-workout', text: '운동 끝내기', onclick: endWorkout }),
+    ]));
+    focusHost.appendChild(el('div', { class: 'focus-title' }, [
+      el('span', { class: 'focus-pos', text: '종목 ' + (state.liftCursor + 1) + ' / ' + total }),
+      el('b', { text: lift ? lift.exercise.name : '' }),
+    ]));
+
+    var middle = el('div', { class: 'focus-middle' }, []);
+    var actions = el('div', { class: 'focus-actions' }, []);
+    var pt = state.ptRun;
+
+    if (phase === 'count' && ref) {
+      var max = ref.set.targetReps.max;
+      var rep = state.counting.rep;
+      middle.appendChild(focusRing(rep / max, 'focus-ring-bar', [
+        el('b', { class: 'focus-num' + (rep > 0 ? '' : ' wide'), id: 'focus-num', text: rep > 0 ? String(rep) : '준비' }),
+        el('span', { class: 'focus-of', text: '/ ' + max + '회' }),
+      ]));
+      middle.appendChild(el('div', { class: 'focus-what' }, [
+        el('b', { text: (ref.setIndex + 1) + '세트' }),
+        el('span', { text: ' / ' + ref.lift.sets.length + ' · ' + loadText(ref.lift, ref.set.weightKg) + ' × ' + repsText(ref.set.targetReps) }),
+      ]));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn pt-pause', text: 'Ⅱ 일시정지',
+        onclick: function () { pausePt(null); render(); } }));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '여기까지',
+        title: '세트를 여기서 끝내고 기록합니다', onclick: function () { stopCounting(true); } }));
+    } else if (phase === 'rest') {
+      var remaining = restRemaining();
+      var nextLift = ref ? ref.lift : null;
+      var nextSet = ref ? ref.set : null;
+      middle.appendChild(focusRing(remaining / state.rest.total, 'focus-ring-bar', [
+        el('span', { class: 'focus-of', text: '휴식' }),
+        el('b', { class: 'focus-num rest', id: 'focus-rest-time', text: E.formatDuration(remaining) }),
+      ]));
+      middle.appendChild(el('div', { class: 'focus-what' }, [
+        el('b', { text: '쉬고 → ' + (state.rest.next || '다음') }),
+        nextSet ? el('span', { text: ' · ' + loadText(nextLift, nextSet.weightKg) + ' × ' + repsText(nextSet.targetReps) }) : null,
+      ]));
+      // 다음이 다른 기구면 세팅을 미리 — 걸어가면서 볼 수 있게
+      var setting = nextLift && nextLift.exercise.id !== state.rest.exerciseId
+        ? state.machineSettings[settingKeyFor(nextLift)] : null;
+      if (setting) middle.appendChild(el('div', { class: 'focus-setting', text: '세팅 · ' + setting }));
+      middle.appendChild(el('div', { class: 'focus-soon', text: restSoon() ? '곧 시작해요 · 더 쉬려면 +30초' : '' }));
+      actions.classList.add('three');
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '−30초', onclick: function () { extendRest(-30); } }));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn primary rest-more', text: '+30초', onclick: function () { extendRest(30); } }));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '바로 시작', onclick: stopRest }));
+    } else if (phase === 'warm' && pt && pt.warm) {
+      var warm = pt.warm;
+      var step = warm.step || { weightKg: 0, reps: 0 };
+      var resting = warm.phase === 'rest';
+      middle.appendChild(focusRing(resting ? 1 : (warm.rep || 0) / (warm.reps || 1), 'focus-ring-bar', [
+        el('b', { class: 'focus-num' + (warm.rep > 0 && !resting ? '' : ' wide'), id: 'focus-num', text: resting ? '휴식' : (warm.rep > 0 ? String(warm.rep) : '준비') }),
+        el('span', { class: 'focus-of', text: resting ? '' : '/ ' + (warm.reps || 0) + '회' }),
+      ]));
+      middle.appendChild(el('div', { class: 'focus-what' }, [
+        el('b', { text: '워밍업 ' + (warm.index + 1) + ' / ' + (warm.total || 1) }),
+        el('span', { text: ' · ' + loadText(lift, step.weightKg) + ' × ' + step.reps + '회' }),
+      ]));
+      if (resting) middle.appendChild(el('div', { class: 'focus-setting', id: 'focus-warm-left', text: '' }));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn pt-pause', text: 'Ⅱ 일시정지',
+        onclick: function () { pausePt(null); render(); } }));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '워밍업 건너뛰기',
+        onclick: function () { try { window.speechSynthesis.cancel(); } catch (err) { void err; } skipWarmup(warm.liftIndex); } }));
+    } else if (phase === 'ask' && ref) {
+      middle.appendChild(el('div', { class: 'focus-ask' }, [
+        el('b', { text: (ref.setIndex + 1) + '세트 · ' + ref.set.reps + '회' }),
+        el('span', { text: loadText(ref.lift, ref.set.weightKg) + ' — 무게는 어땠어요?' }),
+      ]));
+      var feels = el('div', { class: 'focus-feels' }, E.FEELS.map(function (feel) {
+        return el('button', {
+          type: 'button', class: 'feel' + (feel.id === 'hurt' ? ' hurt' : ''), text: feel.label,
+          onclick: function () { finishByFeel(ref.liftIndex, ref.setIndex, feel.id); },
+        });
+      }));
+      middle.appendChild(feels);
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn quiet', text: '횟수 · 무게 고치기',
+        title: '숫자칸이 있는 화면에서 고친 뒤 기록합니다',
+        onclick: function () { state.focusHidden = true; render(); } }));
+    } else if (phase === 'paused') {
+      middle.appendChild(focusRing(0, 'focus-ring-bar', [
+        el('b', { class: 'focus-num wide', text: 'Ⅱ' }),
+        el('span', { class: 'focus-of', text: 'PT 일시정지' }),
+      ]));
+      middle.appendChild(el('div', { class: 'focus-what' }, [
+        el('span', { text: pt.pausedWhy === 'background'
+          ? '다른 앱에 다녀오셔서 멈춰 뒀어요.'
+          : (pt.resume && pt.resume.rep > 0 ? pt.resume.rep + '개까지 했어요. 이어서 셀게요.' : '준비되면 계속을 눌러 주세요.') }),
+      ]));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn primary pt-pause', text: '▶ 계속', onclick: resumePt }));
+    }
+
+    focusHost.appendChild(middle);
+    // 트레이너가 방금 한 말 — 소리가 안 들려도 읽힌다
+    focusHost.appendChild(el('p', { class: 'focus-say', id: 'focus-say', 'aria-live': 'polite', text: state.coachLine || '' }));
+    focusHost.appendChild(actions);
+    if (phase === 'rest' && ref) {
+      focusHost.appendChild(el('button', { type: 'button', class: 'focus-hurt', text: '아픈 데 있어요',
+        onclick: function () { hurtWhileResting(ref.liftIndex, ref.setIndex); } }));
+    }
+  }
+
   function ptPanel(liftIndex, setIndex) {
     var pt = ensurePtRun();
     var lifting = state.lifts[liftIndex];
@@ -6985,6 +7247,12 @@
         else beginSet(liftIndex, setIndex);
       },
     }));
+    if (state.focusHidden) {
+      actions.appendChild(el('button', {
+        type: 'button', class: 'pick pt-focus-back', text: '⤢ 집중 화면',
+        onclick: function () { state.focusHidden = false; render(); },
+      }));
+    }
     if (lifting) {
       actions.appendChild(el('button', {
         type: 'button', class: 'pick', text: '속도 ' + E.repSeconds(tempoOf(lifting.exercise)) + '초',
@@ -7011,6 +7279,24 @@
     if (isLast && ptOn()) rest = Math.max(rest, E.TRANSITION_REST_SECONDS);
     return line + ' → ' + E.restSpoken(rest) + ' 쉬고 ' +
       (isLast ? next.exercise.name : (setIndex + 2) + '세트');
+  }
+
+  /** 쉬는 중에 "아픈 데 있어요". 하지 않은 세트는 적지 않는다. */
+  function hurtWhileResting(liftIndex, setIndex) {
+    var lift = state.lifts[liftIndex];
+    var restingLift = !state.rest || state.rest.exerciseId === lift.exercise.id ? liftIndex
+      : state.lifts.findIndex(function (item) { return item.exercise.id === state.rest.exerciseId; });
+    if (restingLift >= 0 && restingLift !== liftIndex) {
+      // 종목을 막 넘어온 휴식 — 아픈 건 방금 끝낸 종목이고, 그 종목은 이미 다 했다.
+      if (state.rest) stopRest();
+      pushLog('통증', '<b>' + state.lifts[restingLift].exercise.name + '</b> 뒤에 아프다고 하셨습니다.');
+      state.autoCountedFor = liftIndex + ':' + setIndex;
+      coachSay(E.afterSetLines({ style: state.coach.style, feel: 'hurt', lastOfLift: true })
+        .concat(['괜찮아지시면 다음 종목에서 시작을 눌러 주세요.']));
+      render();
+      return;
+    }
+    stopForPain(liftIndex, null);
   }
 
   /** 지금 할 세트. 화면에서 제일 커야 한다 — 지금 할 일은 이것 하나다. */
@@ -7198,26 +7484,12 @@
        * 어깨가 찌릿한 게 흔한 순서다. 이건 하지 않은 세트를 적지 않고 남은
        * 세트만 뺀다. 쉬는 중에 아프다고 한 세트는 직전 세트(이미 적힘)다.
        */
-      var restingLift = state.rest.exerciseId === lift.exercise.id ? liftIndex
-        : state.lifts.findIndex(function (item) { return item.exercise.id === state.rest.exerciseId; });
       body.push(el('div', { class: 'feel-row' }, [
         el('button', {
           type: 'button', class: 'feel hurt',
           'aria-label': '아픈 데 있어요 — 이 종목 남은 세트를 뺍니다',
           text: '아픈 데 있어요',
-          onclick: function () {
-            if (restingLift >= 0 && restingLift !== liftIndex) {
-              // 종목을 막 넘어온 휴식 — 아픈 건 방금 끝낸 종목이고, 그 종목은 이미 다 했다.
-              if (state.rest) stopRest();
-              pushLog('통증', '<b>' + state.lifts[restingLift].exercise.name + '</b> 뒤에 아프다고 하셨습니다.');
-              state.autoCountedFor = liftIndex + ':' + setIndex;
-              coachSay(E.afterSetLines({ style: state.coach.style, feel: 'hurt', lastOfLift: true })
-                .concat(['괜찮아지시면 다음 종목에서 시작을 눌러 주세요.']));
-              render();
-              return;
-            }
-            stopForPain(liftIndex, null);
-          },
+          onclick: function () { hurtWhileResting(liftIndex, setIndex); },
         }),
       ]));
       return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
