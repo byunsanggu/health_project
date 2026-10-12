@@ -1515,6 +1515,7 @@
     // 이미 답을 눌렀다. 여기서 "무게 어땠어요?"를 또 물으면 답한 사람에게 다시 묻는 꼴이다.
     if (state.counting) stopCounting(true, true);
     state.askFor = null;
+    clearAskWindow();
     // 세트를 적으면 다시 집중 화면으로 — 기록을 고치러 "자세히"로 갔던 것은 이 세트 한 번이다.
     state.focusHidden = false;
     var lift = state.lifts[liftIndex];
@@ -1764,6 +1765,9 @@
     var reason = override ? override.reason : prescription.reason;
 
     var nextLift = state.lifts[state.lifts.indexOf(lift) + 1];
+    // 세트 끝 물음에서 기다린 시간 — 휴식은 세트가 끝난 순간부터 센다
+    var headStart = Math.min(state.restHeadStart || 0, Math.max(0, seconds * 1000 - 5000));
+    state.restHeadStart = 0;
     state.rest = {
       exerciseId: lift.exercise.id,
       exerciseName: lift.exercise.name,
@@ -1771,7 +1775,7 @@
       // 쉬고 나서 무엇을 하는지. 휴식 막대에 "쉬고 → 3세트"로 보인다.
       next: !isLast ? (setIndex + 2) + '세트' : (nextLift ? nextLift.exercise.name : '마무리'),
       total: seconds,
-      endsAt: Date.now() + seconds * 1000,
+      endsAt: Date.now() + seconds * 1000 - headStart,
       reason: reason,
     };
 
@@ -5743,9 +5747,12 @@
       // 트레이너는 세트가 끝나면 묻는다. 버튼을 찾게 두지 않는다.
       asked = Boolean(ptOn() && !silent && set && !set.done);
       if (asked) {
-        // 집중 화면이 "무게 어땠어요?" 버튼을 띄우는 신호
+        // 집중 화면이 "무게 어땠어요?" 버튼을 띄우는 신호. 묻는 말은 하지 않는다 —
+        // 숨 고르는 사람에게 매 세트 질문하면 귀찮다. 10초 안 누르면 알아서 적는다.
         state.askFor = run.liftIndex + ':' + run.setIndex;
-        coachSay([E.askFeelLine(state.coach.style, run.liftIndex + run.setIndex)]);
+        state.askDefault = set.reps < set.targetReps.min ? 'heavy' : 'right';
+        state.askStartedAt = Date.now();
+        startAskWindow();
       }
     }
     render();
@@ -6925,6 +6932,7 @@
     if (!pt || pt.paused) return;
     pt.paused = true;
     pt.pausedWhy = why || null;
+    clearAskWindow();
     // 어디까지 했는지 적어 둔다 — 돌아오면 거기서부터.
     pt.resume = null;
     if (state.counting) {
@@ -6951,6 +6959,8 @@
     state.autoCountedFor = null;
     var at = pt.resume;
     pt.resume = null;
+    // 세트 끝 물음에서 멈췄으면 10초를 다시 준다
+    if (state.askFor && !state.counting) startAskWindow();
     // 스트레칭 중에 멈췄으면 하던 스트레칭을 다시 한다.
     if (pt.cool) { speak(state.coach.style === 'fired' ? '다시 갑니다!' : '다시 할게요.'); cooldownStep(pt.cool, Math.max(0, pt.cool.index)); return; }
     var lift = at && state.lifts[at.liftIndex];
@@ -6983,6 +6993,64 @@
    *
    * PT 모드에서만 뜬다. 혼자 하는 사람은 지금 화면 그대로.
    */
+  /*
+   * 세트 끝 물음 — 10초 안에 안 누르면 기본값으로 적는다.
+   *
+   * 끝나고 한꺼번에 묻지 않는 이유: 이 답이 다음 세트 무게를 바로 바꾼다.
+   * 기본값은 "딱 좋았어요", 목표 개수를 못 채우고 멈췄으면 "무거웠어요".
+   */
+  var ASK_WINDOW_MS = 10000;
+
+  function clearAskWindow() {
+    if (state.askTimer) clearTimeout(state.askTimer);
+    state.askTimer = null;
+    state.askUntil = null;
+  }
+
+  function startAskWindow() {
+    clearAskWindow();
+    // "자세히 보기"로 간 사람은 손으로 적으려는 것이다 — 저절로 적지 않는다
+    if (state.focusHidden) return;
+    state.askUntil = Date.now() + ASK_WINDOW_MS;
+    state.askTimer = setTimeout(function () {
+      state.askTimer = null;
+      var key = state.askFor;
+      if (!key || !ptOn() || (state.ptRun && state.ptRun.paused)) return;
+      var parts = key.split(':');
+      answerFeel(Number(parts[0]), Number(parts[1]), state.askDefault || 'right');
+    }, ASK_WINDOW_MS);
+  }
+
+  /** 세트 끝 답(눌렀든 저절로든). 기다린 시간은 휴식에서 뺀다 — 휴식은 세트가 끝난 때부터다. */
+  function answerFeel(liftIndex, setIndex, feel) {
+    var waited = state.askStartedAt ? Date.now() - state.askStartedAt : 0;
+    clearAskWindow();
+    state.askStartedAt = null;
+    var set = state.lifts[liftIndex] && state.lifts[liftIndex].sets[setIndex];
+    if (!set || set.done) return;
+    // 휴식이 시작될 때 기다린 만큼 빼고 시작한다 — 그래야 "1분 쉬고"라는 말과 숫자가 맞는다.
+    state.restHeadStart = waited;
+    finishByFeel(liftIndex, setIndex, feel);
+    state.restHeadStart = 0;
+  }
+
+  /** 다음에 할 것 한 줄 — "다음 · 2세트 47.5kg × 6–10회". */
+  function nextUpLine(liftIndex, setIndex) {
+    var lift = state.lifts[liftIndex];
+    if (!lift) return '';
+    var after = lift.sets.findIndex(function (set, at) { return at > setIndex && !set.done; });
+    if (after >= 0) {
+      var set = lift.sets[after];
+      return '다음 · ' + (after + 1) + '세트 ' + loadText(lift, set.weightKg) + ' × ' + repsText(set.targetReps);
+    }
+    for (var i = liftIndex + 1; i < state.lifts.length; i += 1) {
+      var other = state.lifts[i];
+      var open = other.sets.findIndex(function (one) { return !one.done; });
+      if (open >= 0) return '다음 · ' + other.exercise.name + ' ' + loadText(other, other.sets[open].weightKg) + ' × ' + repsText(other.sets[open].targetReps);
+    }
+    return '오늘 마지막 세트';
+  }
+
   function focusPhase() {
     if (!ptOn() || !state.started || state.tab !== 'today') return null;
     if (state.onboarding.active || state.authOpen || state.focusHidden) return null;
@@ -7073,6 +7141,11 @@
       var warmLeft = document.getElementById('focus-warm-left');
       if (warmLeft && pt.warm.endsAt) warmLeft.textContent = '다음 워밍업까지 ' + Math.max(0, Math.ceil((pt.warm.endsAt - Date.now()) / 1000)) + '초';
     }
+    var askLeft = document.getElementById('focus-ask-left');
+    if (askLeft && state.askUntil) {
+      var fallback = (E.FEELS.filter(function (feel) { return feel.id === (state.askDefault || 'right'); })[0] || {}).label || '딱 좋았어요';
+      askLeft.textContent = Math.max(0, Math.ceil((state.askUntil - Date.now()) / 1000)) + '초 뒤 "' + fallback + '"로 적어요';
+    }
     var restTime = document.getElementById('focus-rest-time');
     if (state.rest && restTime) {
       var remaining = restRemaining();
@@ -7106,7 +7179,7 @@
     focusHost.appendChild(el('div', { class: 'focus-top' }, [
       el('button', { type: 'button', class: 'focus-more', text: '자세히 보기',
         title: '무게 · 횟수 칸과 오늘 목록이 있는 화면',
-        onclick: function () { state.focusHidden = true; render(); } }),
+        onclick: function () { clearAskWindow(); state.focusHidden = true; render(); } }),
       el('span', { class: 'focus-elapsed', id: 'focus-elapsed', text: elapsedText() }),
       el('button', { type: 'button', class: 'end-workout', text: '운동 끝내기', onclick: endWorkout }),
     ]));
@@ -7130,6 +7203,7 @@
         el('b', { text: (ref.setIndex + 1) + '세트' }),
         el('span', { text: ' / ' + ref.lift.sets.length + ' · ' + loadText(ref.lift, ref.set.weightKg) + ' × ' + repsText(ref.set.targetReps) }),
       ]));
+      middle.appendChild(el('div', { class: 'focus-next', text: nextUpLine(ref.liftIndex, ref.setIndex) }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn pt-pause', text: 'Ⅱ 일시정지',
         onclick: function () { pausePt(null); render(); } }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '여기까지',
@@ -7168,25 +7242,39 @@
         el('span', { text: ' · ' + loadText(lift, step.weightKg) + ' × ' + step.reps + '회' }),
       ]));
       if (resting) middle.appendChild(el('div', { class: 'focus-setting', id: 'focus-warm-left', text: '' }));
+      var nextWarm = warm.index + 1 < (warm.total || 1);
+      var first = lift ? lift.sets.findIndex(function (one) { return !one.done; }) : -1;
+      middle.appendChild(el('div', { class: 'focus-next', text: nextWarm
+        ? '다음 · 워밍업 ' + (warm.index + 2)
+        : (first >= 0 ? '다음 · 본세트 ' + (first + 1) + '세트 ' + loadText(lift, lift.sets[first].weightKg) + ' × ' + repsText(lift.sets[first].targetReps) : '') }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn pt-pause', text: 'Ⅱ 일시정지',
         onclick: function () { pausePt(null); render(); } }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '워밍업 건너뛰기',
         onclick: function () { try { window.speechSynthesis.cancel(); } catch (err) { void err; } skipWarmup(warm.liftIndex); } }));
     } else if (phase === 'ask' && ref) {
+      var fallback = state.askDefault || 'right';
+      var fallbackLabel = (E.FEELS.filter(function (feel) { return feel.id === fallback; })[0] || {}).label || '딱 좋았어요';
+      var left = state.askUntil ? Math.max(0, Math.ceil((state.askUntil - Date.now()) / 1000)) : 10;
       middle.appendChild(el('div', { class: 'focus-ask' }, [
-        el('b', { text: (ref.setIndex + 1) + '세트 · ' + ref.set.reps + '회' }),
+        el('b', { text: (ref.setIndex + 1) + '세트 · ' + ref.set.reps + '회 끝' }),
         el('span', { text: loadText(ref.lift, ref.set.weightKg) + ' — 무게는 어땠어요?' }),
+        el('span', { class: 'focus-ask-left', id: 'focus-ask-left',
+          text: state.askUntil ? left + '초 뒤 "' + fallbackLabel + '"로 적어요' : '골라 주세요' }),
       ]));
       var feels = el('div', { class: 'focus-feels' }, E.FEELS.map(function (feel) {
         return el('button', {
-          type: 'button', class: 'feel' + (feel.id === 'hurt' ? ' hurt' : ''), text: feel.label,
-          onclick: function () { finishByFeel(ref.liftIndex, ref.setIndex, feel.id); },
+          type: 'button',
+          class: 'feel' + (feel.id === 'hurt' ? ' hurt' : '') + (feel.id === fallback ? ' default' : ''),
+          text: feel.label,
+          onclick: function () { answerFeel(ref.liftIndex, ref.setIndex, feel.id); },
         });
       }));
       middle.appendChild(feels);
+      middle.appendChild(el('div', { class: 'focus-next', text: nextUpLine(ref.liftIndex, ref.setIndex) }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn quiet', text: '횟수 · 무게 고치기',
         title: '숫자칸이 있는 화면에서 고친 뒤 기록합니다',
-        onclick: function () { state.focusHidden = true; render(); } }));
+        // 고치러 가면 저절로 적지 않는다 — 고치는 중에 적혀 버리면 안 된다
+        onclick: function () { clearAskWindow(); state.focusHidden = true; render(); } }));
     } else if (phase === 'paused') {
       middle.appendChild(focusRing(0, 'focus-ring-bar', [
         el('b', { class: 'focus-num wide', text: 'Ⅱ' }),
@@ -7201,8 +7289,6 @@
     }
 
     focusHost.appendChild(middle);
-    // 트레이너가 방금 한 말 — 소리가 안 들려도 읽힌다
-    focusHost.appendChild(el('p', { class: 'focus-say', id: 'focus-say', 'aria-live': 'polite', text: state.coachLine || '' }));
     focusHost.appendChild(actions);
     if (phase === 'rest' && ref) {
       focusHost.appendChild(el('button', { type: 'button', class: 'focus-hurt', text: '아픈 데 있어요',
