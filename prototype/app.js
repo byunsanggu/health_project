@@ -2577,6 +2577,13 @@
       ]),
     ]));
 
+    // 오늘 쓴 부위 — 세트를 많이 채운 곳일수록 진하게
+    var todayMap = todayMuscleMap(summary.byMuscle);
+    if (todayMap) body.push(todayMap);
+    // 주마다 몇 세트 — 이번 주가 지난주보다 늘었나
+    var trend = weeklyTrendChart();
+    if (trend) body.push(trend);
+
     var best = E.bestEffort(state.todaySets, rirOptions().rirOffset || 0);
     if (best) {
       var bestExercise = index.get(best.set.exerciseId);
@@ -2665,20 +2672,22 @@
     }
 
     if (summary.byMuscle.length > 0) {
-      body.push(el('div', { class: 'list-label', text: '부위별 · 오늘 / 이번 주' }));
-      body.push(el('div', { class: 'summary-list' }, summary.byMuscle.map(function (row) {
-        return el('div', { class: 'summary-row' }, [
-          el('span', { class: 'muscle', text: row.label }),
-          el('span', {
-            class: 'nums',
-            text: fmt(row.today) + ' / ' + fmt(row.week) + '세트 · MEV ' + row.landmark.mev + ' MRV ' + row.landmark.mrv,
-          }),
-          el('span', {
-            class: 'zone ' + zoneClass(E.zoneOf(row.week, row.landmark)),
-            text: row.zone,
-          }),
-        ]);
-      })));
+      body.push(el('div', { class: 'list-label', text: '이번 주 부위별 세트' }));
+      body.push(muscleWeekChart(summary.byMuscle));
+      // 그래프를 못 보는 사람·숫자가 필요한 사람을 위한 표
+      body.push(el('details', { class: 'chart-table' }, [
+        el('summary', { text: '숫자로 보기' }),
+        el('div', { class: 'summary-list' }, summary.byMuscle.map(function (row) {
+          return el('div', { class: 'summary-row' }, [
+            el('span', { class: 'muscle', text: row.label }),
+            el('span', {
+              class: 'nums',
+              text: '오늘 ' + fmt(row.today) + ' · 이번 주 ' + fmt(row.week) + '세트 · 목표 ' + row.landmark.mev + '–' + row.landmark.mrv,
+            }),
+            el('span', { class: 'zone ' + zoneClass(E.zoneOf(row.week, row.landmark)), text: row.zone }),
+          ]);
+        })),
+      ]));
     }
 
     if (summary.notes.length > 0 || summary.nextWeek) {
@@ -2705,6 +2714,153 @@
     pushLog('세션 요약', '<b>' + summary.setsCompleted + '세트</b> · ' + summary.totalReps + '회 · ' +
       fmt(summary.tonnageKg / 1000) + '톤' +
       (summary.records.length > 0 ? ' · 개인 기록 ' + summary.records.length + '건' : ''));
+  }
+
+
+  /* ── 운동 끝 요약 그래프 ───────────────────────── */
+
+  /*
+   * 끝나고 보는 화면은 글보다 그림이 먼저 읽힌다. "둔근 4 / 10.3세트 · MEV 4
+   * MRV 15"는 트레이너 말이다. 회원이 알고 싶은 건 오늘 어디를 했는지,
+   * 이번 주에 충분한지, 지난주보다 늘었는지 — 그림 세 개로 보인다.
+   * 숫자는 "숫자로 보기"와 손가락을 올렸을 때 그대로 나온다.
+   */
+  function todayMuscleMap(rows) {
+    var map = window.FitBodyMap;
+    var worked = rows.filter(function (row) { return row.today > 0; });
+    if (!map || worked.length === 0) return null;
+    var most = Math.max.apply(null, worked.map(function (row) { return row.today; }));
+    var weights = {};
+    worked.forEach(function (row) { weights[row.muscle] = row.today / most; });
+    var top = worked.slice().sort(function (a, b) { return b.today - a.today; }).slice(0, 3);
+    return el('div', { class: 'summary-body' }, [
+      el('div', { class: 'list-label', text: '오늘 쓴 부위' }),
+      el('div', { class: 'summary-body-row' }, [
+        el('div', { class: 'summary-body-map' }, [map.render(weights, '오늘 쓴 부위')]),
+        el('div', { class: 'summary-body-top' }, top.map(function (row) {
+          return el('div', {}, [el('b', { text: row.label }), el('span', { text: fmt(row.today) + '세트' })]);
+        })),
+      ]),
+    ]);
+  }
+
+  /** 그래프 위에 뜨는 말풍선 하나. 손가락·마우스·키보드 포커스 모두. */
+  function chartTip(host) {
+    var tip = el('div', { class: 'chart-tip', role: 'status', hidden: '' }, []);
+    host.appendChild(tip);
+    return function bind(target, lines) {
+      var show = function () {
+        tip.textContent = '';
+        tip.appendChild(el('b', { text: lines[0] }));
+        lines.slice(1).forEach(function (line) { tip.appendChild(el('span', { text: line })); });
+        tip.hidden = false;
+        var box = host.getBoundingClientRect();
+        var mark = target.getBoundingClientRect();
+        var x = Math.min(Math.max(8, mark.left - box.left + mark.width / 2 - tip.offsetWidth / 2), box.width - tip.offsetWidth - 8);
+        tip.style.left = x + 'px';
+        tip.style.top = Math.max(0, mark.top - box.top - tip.offsetHeight - 6) + 'px';
+        target.classList.add('hot');
+      };
+      var hide = function () { tip.hidden = true; target.classList.remove('hot'); };
+      target.setAttribute('tabindex', '0');
+      target.setAttribute('aria-label', lines.join(' · '));
+      target.addEventListener('pointerenter', show);
+      target.addEventListener('pointerleave', hide);
+      target.addEventListener('focus', show);
+      target.addEventListener('blur', hide);
+      target.addEventListener('click', show);
+    };
+  }
+
+  /**
+   * 이번 주 부위별 세트 — 가로 막대 하나에 "이번 주 앞서"와 "오늘"을 이어 붙이고,
+   * 뒤에 목표 범위를 옅게 깐다. 막대 끝이 범위 안이면 적정이다.
+   */
+  function muscleWeekChart(rows) {
+    var scale = Math.max.apply(null, rows.map(function (row) { return Math.max(row.week, row.landmark.mrv); })) || 1;
+    var pct = function (value) { return Math.max(0, Math.min(100, (value / scale) * 100)); };
+    var host = el('div', { class: 'chart week-muscles' }, []);
+    host.appendChild(el('div', { class: 'chart-legend' }, [
+      el('span', {}, [el('i', { class: 'key now' }), el('span', { text: '오늘' })]),
+      el('span', {}, [el('i', { class: 'key before' }), el('span', { text: '이번 주 앞서' })]),
+      el('span', {}, [el('i', { class: 'key band' }), el('span', { text: '목표 범위' })]),
+    ]));
+    var bind = chartTip(host);
+    rows.forEach(function (row) {
+      var before = Math.max(0, row.week - row.today);
+      var track = el('div', { class: 'wm-track' }, [
+        el('i', { class: 'wm-band', style: 'left:' + pct(row.landmark.mev) + '%;width:' + (pct(row.landmark.mrv) - pct(row.landmark.mev)) + '%' }),
+        el('span', { class: 'wm-bar', style: 'width:' + pct(row.week) + '%' }, [
+          before > 0 ? el('i', { class: 'wm-before', style: 'flex:' + before }) : null,
+          row.today > 0 ? el('i', { class: 'wm-now', style: 'flex:' + row.today }) : null,
+        ]),
+      ]);
+      var line = el('div', { class: 'wm-row' }, [
+        el('span', { class: 'wm-name', text: row.label }),
+        track,
+        el('span', { class: 'wm-value', text: fmt(row.week) }),
+        el('span', { class: 'wm-zone zone ' + zoneClass(E.zoneOf(row.week, row.landmark)), text: row.zone }),
+      ]);
+      host.appendChild(line);
+      bind(line, [
+        row.label + ' · 이번 주 ' + fmt(row.week) + '세트',
+        '오늘 ' + fmt(row.today) + '세트 · 앞서 ' + fmt(before) + '세트',
+        '목표 범위 ' + row.landmark.mev + '–' + row.landmark.mrv + '세트 · ' + row.zone,
+      ]);
+    });
+    return host;
+  }
+
+  /** 지난 6주 주마다 한 세트 수(워밍업 제외). 이번 주는 오늘까지. */
+  function weeklySetCounts(weeks) {
+    var counts = {};
+    var add = function (date, sets) {
+      var key = E.weekStart(date);
+      counts[key] = (counts[key] || 0) + (sets || []).filter(function (set) { return !set.warmup && set.reps > 0; }).length;
+    };
+    state.history.forEach(function (session) { if (session.date !== state.todayDate) add(session.date, session.sets); });
+    add(state.todayDate, state.todaySets);
+    var out = [];
+    var start = E.weekStart(state.todayDate);
+    for (var i = weeks - 1; i >= 0; i -= 1) {
+      var key = E.addDays(start, -7 * i);
+      out.push({ week: key, sets: counts[key] || 0, current: i === 0 });
+    }
+    return out;
+  }
+
+  function weeklyTrendChart() {
+    var data = weeklySetCounts(6);
+    var past = data.filter(function (item) { return !item.current && item.sets > 0; });
+    if (past.length === 0) return null;
+    var now = data[data.length - 1];
+    var last = data[data.length - 2];
+    var diff = now.sets - last.sets;
+    var host = el('div', { class: 'chart week-trend' }, []);
+    host.appendChild(el('div', { class: 'list-label', text: '주마다 한 세트' }));
+    host.appendChild(el('p', { class: 'trend-head' }, [
+      el('b', { text: '이번 주 ' + now.sets + '세트' }),
+      el('span', { text: last.sets > 0 ? ' · 지난주보다 ' + (diff >= 0 ? '+' : '') + diff + '세트' + (diff < 0 ? ' (아직 이번 주가 남았어요)' : '') : '' }),
+    ]));
+    var most = Math.max.apply(null, data.map(function (item) { return item.sets; })) || 1;
+    var cols = el('div', { class: 'wt-cols' }, []);
+    var bind = chartTip(host);
+    data.forEach(function (item, i) {
+      var label = Number(item.week.slice(5, 7)) + '/' + Number(item.week.slice(8, 10));
+      var col = el('div', { class: 'wt-col' + (item.current ? ' current' : '') }, [
+        // 이번 주와 지난주만 숫자를 단다 — 나머지는 손가락을 올리면
+        // 막대 칸은 높이가 정해진 상자 — 숫자 · 날짜는 그 바깥이라 막대가 잘리지 않는다
+        el('span', { class: 'wt-plot' }, [
+          el('span', { class: 'wt-value', text: (item.current || i === data.length - 2) && item.sets > 0 ? String(item.sets) : '' }),
+          el('i', { class: 'wt-bar', style: 'height:' + Math.max(item.sets > 0 ? 3 : 0, Math.round((item.sets / most) * 90)) + 'px' }),
+        ]),
+        el('span', { class: 'wt-label', text: item.current ? '이번 주' : label }),
+      ]);
+      cols.appendChild(col);
+      bind(col, [item.sets + '세트', (item.current ? '이번 주 (오늘까지)' : label + ' 주')]);
+    });
+    host.appendChild(cols);
+    return host;
   }
 
   /* ── 기구 점유 ─────────────────────────────────── */
@@ -3549,12 +3705,28 @@
     bodyweight: 'floor',
   };
 
+  /*
+   * 종목 썸네일 — 어디를 쓰는지(근육 지도) + 무슨 기구인지(모서리 작은 그림).
+   *
+   * 기구 그림만 있을 때는 데드리프트와 스쿼트가 똑같은 바벨 그림이었다.
+   * 목록을 훑을 때 알고 싶은 건 "오늘 어디 하는 날인가"다. 몸 그림은 칠할
+   * 게 많은 쪽(앞/뒤) 하나만 그린다 — 46px에 둘을 넣으면 안 읽힌다.
+   */
   function liftThumb(exercise) {
+    var box = el('span', { class: 'lift-thumb', 'aria-hidden': 'true' }, []);
+    var map = window.FitBodyMap;
+    if (map && exercise.contribution) {
+      var body = map.render(exercise.contribution, '', { side: 'auto' });
+      body.setAttribute('class', 'thumb-art thumb-body');
+      box.appendChild(body);
+    }
     var art = window.FitEquipmentArt;
     var id = EQUIPMENT_ART_FOR[exercise.equipment];
     var svg = art && id && art.has(id) ? art.render(id, '') : null;
-    var box = el('span', { class: 'lift-thumb', 'aria-hidden': 'true' }, []);
-    if (svg) { svg.setAttribute('class', 'thumb-art'); box.appendChild(svg); }
+    if (svg) {
+      svg.setAttribute('class', map && exercise.contribution ? 'thumb-equip' : 'thumb-art');
+      box.appendChild(svg);
+    }
     return box;
   }
 

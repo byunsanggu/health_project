@@ -93,9 +93,23 @@
      * contribution은 { glutes: 1, hamstrings: 0.9, ... } 형태 —
      * 엔진의 Exercise.contribution을 그대로 넣으면 된다.
      */
-    render: function (contribution, label) {
+    render: function (contribution, label, options) {
+      /*
+       * side: 'front' | 'back' | 'auto' — 한쪽만 그린다. 목록 썸네일처럼 좁은
+       * 자리에서는 둘을 나란히 두면 너무 작아서 안 읽힌다. 'auto'는 칠할 게
+       * 더 많은 쪽(스쿼트는 앞, 데드리프트는 뒤).
+       */
+      var side = options && options.side;
+      if (side === 'auto') {
+        var front = 0, back = 0;
+        for (var m in MUSCLES) {
+          var w = (contribution && contribution[m]) || 0;
+          if (MUSCLES[m].side === 'front') front += w; else back += w;
+        }
+        side = back > front ? 'back' : 'front';
+      }
       var svg = node('svg', {
-        viewBox: '0 0 120 100',
+        viewBox: side === 'front' ? '6 3 48 94' : side === 'back' ? '66 3 48 94' : '0 0 120 100',
         class: 'body-map',
         role: 'img',
         'aria-label': label || '사용하는 근육',
@@ -122,8 +136,8 @@
       }
       svg.appendChild(worked);
 
-      // 정면/후면 표시 — 없으면 왜 두 개인지 알 수 없다.
-      svg.appendChild(node('g', {
+      // 정면/후면 표시 — 없으면 왜 두 개인지 알 수 없다. 한쪽만 그릴 때는 필요 없다.
+      if (!side) svg.appendChild(node('g', {
         class: 'body-side-label',
         fill: 'currentColor',
         'fill-opacity': '0.55',

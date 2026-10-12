@@ -1375,7 +1375,14 @@ input[type="search"] {
   color: var(--muted);
   flex: none;
 }
+.lift-thumb { position: relative; }
 .lift-thumb .thumb-art { width: 34px; height: 26px; }
+/* 몸 그림이 칸을 채우고, 기구는 모서리에 작게 */
+.lift-thumb .thumb-body { width: 22px; height: 43px; overflow: hidden; color: var(--accent); }
+.lift-thumb .thumb-equip {
+  position: absolute; right: -4px; bottom: -4px; width: 22px; height: 17px; padding: 1px 2px;
+  border-radius: 6px; background: var(--surface); border: 1px solid var(--line-soft); color: var(--muted);
+}
 .lift-thumb.warm { font-size: 17px; color: var(--accent); }
 
 .row-menu {
@@ -2342,6 +2349,48 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 
 /* ── PT 세션 ───────────────────────────────────── */
 /* ── PT 집중 화면 — 세트 중에는 지금 할 것만 크게 ── */
+/* ── 요약 그래프 — 막대 색은 검사기로 고른 두 단계(오늘 / 이번 주 앞서) ── */
+:root { --chart-now: #4540c9; --chart-before: #8683dc; --chart-band: #e8eaef; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --chart-now: #827ef5; --chart-before: #5552b4; --chart-band: #262a32; } }
+:root[data-theme="dark"] { --chart-now: #827ef5; --chart-before: #5552b4; --chart-band: #262a32; }
+.chart { position: relative; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.chart-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend .key { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+.chart-legend .key.now { background: var(--chart-now); }
+.chart-legend .key.before { background: var(--chart-before); }
+.chart-legend .key.band { background: var(--chart-band); border: 1px solid var(--line); }
+.wm-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 34px 44px; align-items: center; gap: 8px; padding: 5px 2px; border-radius: 6px; outline: none; }
+.wm-row.hot, .wm-row:focus-visible { background: var(--surface-2); }
+.wm-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wm-track { position: relative; height: 14px; }
+.wm-band { position: absolute; top: 0; bottom: 0; background: var(--chart-band); border-radius: 2px; }
+.wm-bar { position: absolute; left: 0; top: 2px; bottom: 2px; display: flex; gap: 2px; }
+.wm-bar i { display: block; height: 100%; min-width: 2px; }
+.wm-before { background: var(--chart-before); }
+.wm-now { background: var(--chart-now); }
+.wm-bar i:last-child { border-radius: 0 4px 4px 0; }
+.wm-value { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.wm-zone { font-size: 11px; text-align: right; }
+.chart-tip { position: absolute; z-index: 5; display: grid; gap: 2px; padding: 7px 9px; border-radius: 8px; background: var(--ink); color: var(--surface); font-size: 12px; pointer-events: none; max-width: 240px; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.chart-tip b { font-size: 13px; }
+.chart-table summary { cursor: pointer; font-size: 12px; color: var(--muted); margin: 6px 0; }
+.summary-body-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 12px; align-items: center; }
+.summary-body-map svg { width: 100%; height: auto; color: var(--chart-now); }
+.summary-body-top { display: grid; gap: 8px; }
+.summary-body-top div { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.summary-body-top span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.trend-head { margin: 2px 0 10px; font-size: 14px; }
+.trend-head span { color: var(--muted); }
+.wt-cols { display: grid; grid-template-columns: repeat(6, 1fr); }
+.wt-col { display: grid; justify-items: center; gap: 6px; outline: none; border-radius: 6px; padding: 4px 0; }
+.wt-col.hot, .wt-col:focus-visible { background: var(--surface-2); }
+/* 막대 칸: 위 18px는 숫자 자리, 나머지 90px가 막대 — 100%가 가장 많은 주 */
+.wt-plot { position: relative; height: 108px; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; border-bottom: 1px solid var(--line-soft); }
+.wt-plot .wt-bar { display: block; width: 22px; background: var(--chart-before); border-radius: 4px 4px 0 0; }
+.wt-col.current .wt-bar { background: var(--chart-now); }
+.wt-value { font-size: 12px; color: var(--ink); min-height: 15px; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+.wt-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .focus { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; overflow-y: auto; background: var(--surface); }
 .focus-top { display: flex; align-items: center; gap: 8px; }
 .focus-more { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
