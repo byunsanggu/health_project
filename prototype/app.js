@@ -7232,6 +7232,8 @@
       num.textContent = state.counting.rep > 0 ? String(state.counting.rep) : (live ? live.textContent : '준비');
       num.classList.toggle('wide', !/^\d+$/.test(num.textContent));
       setRingFraction('focus-ring-bar', state.counting.rep / max);
+      // 첫 개수가 나오면 "바로 시작"을 "여기까지"로 바꾼다
+      if (state.counting.rep > 0 && document.querySelector('.focus-go-now')) { renderFocus(); return; }
     } else if (pt && pt.warm && num) {
       num.textContent = pt.warm.phase === 'rest' ? '휴식' : (pt.warm.rep > 0 ? String(pt.warm.rep) : '준비');
       num.classList.toggle('wide', !/^\d+$/.test(num.textContent));
@@ -7280,7 +7282,10 @@
 
     var ref = focusSetRef();
     var lift = ref ? ref.lift : state.lifts[state.liftCursor];
+    var liftPos = ref ? ref.liftIndex : state.liftCursor;
     var total = state.lifts.length;
+    // 종목을 넘어가는 휴식 — 다음 종목을 크게 보여 준다
+    var switching = phase === 'rest' && lift && lift.exercise.id !== state.rest.exerciseId;
 
     focusHost.appendChild(el('div', { class: 'focus-top' }, [
       el('button', { type: 'button', class: 'focus-more', text: '자세히 보기',
@@ -7293,7 +7298,7 @@
       el('span', { class: 'focus-pos', text: '운동 전' }),
       el('b', { text: '몸 풀기 ' + E.mobilityMinutes(state.ptRun && state.ptRun.prep ? state.ptRun.prep.steps : []) + '분' }),
     ] : [
-      el('span', { class: 'focus-pos', text: '종목 ' + (state.liftCursor + 1) + ' / ' + total }),
+      el('span', { class: 'focus-pos', text: (switching ? '다음 종목 · ' : '종목 ') + (liftPos + 1) + ' / ' + total }),
       el('b', { text: lift ? lift.exercise.name : '' }),
     ]));
 
@@ -7315,8 +7320,50 @@
       middle.appendChild(el('div', { class: 'focus-next', text: nextUpLine(ref.liftIndex, ref.setIndex) }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn pt-pause', text: 'Ⅱ 일시정지',
         onclick: function () { pausePt(null); render(); } }));
-      actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '여기까지',
-        title: '세트를 여기서 끝내고 기록합니다', onclick: function () { stopCounting(true); } }));
+      if (rep > 0) {
+        actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '여기까지',
+          title: '세트를 여기서 끝내고 기록합니다', onclick: function () { stopCounting(true); } }));
+      } else {
+        // 준비 중에는 끝낼 세트가 없다 — 이미 바 앞에 섰으면 기다리지 않고 바로 센다
+        actions.appendChild(el('button', { type: 'button', class: 'focus-btn focus-go-now', text: '바로 시작',
+          onclick: function () {
+            try { window.speechSynthesis.cancel(); } catch (err) { void err; }
+            startCounting(ref.liftIndex, ref.setIndex, 1);
+          } }));
+      }
+    } else if (phase === 'rest' && switching && ref) {
+      /*
+       * 다음 종목 카드. 기구로 걸어가는 동안 볼 것 — 어디를 쓰는지(근육 지도),
+       * 몇 세트 몇 kg인지, 지난번 세팅. 처음 하는 종목이면 사용법을 바로 연다.
+       */
+      var restLeft = restRemaining();
+      var card = el('div', { class: 'focus-next-card' }, []);
+      var map = window.FitBodyMap;
+      if (map) card.appendChild(el('div', { class: 'focus-map' }, [map.render(ref.lift.exercise.contribution || {}, ref.lift.exercise.name + '에서 쓰는 근육')]));
+      var info = el('div', { class: 'focus-next-info' }, [
+        el('b', { text: ref.lift.sets.filter(function (one) { return !one.done; }).length + '세트' }),
+        el('span', { text: loadText(ref.lift, ref.set.weightKg) + ' × ' + repsText(ref.set.targetReps) }),
+      ]);
+      var mainMuscles = Object.keys(ref.lift.exercise.contribution || {})
+        .filter(function (muscle) { return ref.lift.exercise.contribution[muscle] >= 0.7; })
+        .map(function (muscle) { return E.MUSCLE_LABELS_KO[muscle] || muscle; });
+      if (mainMuscles.length) info.appendChild(el('span', { class: 'focus-muscles', text: mainMuscles.join(' · ') }));
+      var saved = state.machineSettings[settingKeyFor(ref.lift)];
+      if (saved) info.appendChild(el('span', { class: 'focus-setting', text: '세팅 · ' + saved }));
+      else if (!triedBefore(ref.lift.exercise)) info.appendChild(el('span', { class: 'focus-setting', text: '처음 하는 종목이에요' }));
+      info.appendChild(el('button', { type: 'button', class: 'focus-demo', text: '▶ 사용법 보기',
+        onclick: function () { openDemo(ref.lift.exercise); } }));
+      card.appendChild(info);
+      middle.appendChild(card);
+      middle.appendChild(el('div', { class: 'focus-switch-time' }, [
+        el('span', { text: '이동 · 쉬는 시간' }),
+        el('b', { class: 'focus-num rest small', id: 'focus-rest-time', text: E.formatDuration(restLeft) }),
+      ]));
+      middle.appendChild(el('div', { class: 'focus-soon', text: restSoon() ? '곧 시작해요 · 더 쉬려면 +30초' : '' }));
+      actions.classList.add('three');
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '−30초', onclick: function () { extendRest(-30); } }));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn primary rest-more', text: '+30초', onclick: function () { extendRest(30); } }));
+      actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '바로 시작', onclick: stopRest }));
     } else if (phase === 'rest') {
       var remaining = restRemaining();
       var nextLift = ref ? ref.lift : null;
