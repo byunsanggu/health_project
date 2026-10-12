@@ -46,6 +46,7 @@ export * from './protein.ts';
 export * from './meals.ts';
 export * from './coach.ts';
 export * from './ptSession.ts';
+export * from './voices.ts';
 export * from './mistakes.ts';
 export * from './setupGuide.ts';
 export * from './nudge.ts';

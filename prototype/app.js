@@ -5175,10 +5175,14 @@
     if (!('speechSynthesis' in window)) return null;
     if (voiceCache !== null) return voiceCache;
     var voices = window.speechSynthesis.getVoices() || [];
-    voiceCache = voices.filter(function (voice) {
-      return /^ko/i.test(voice.lang || '');
-    })[0] || null;
+    // 목록 맨 앞이 아니라 제일 자연스러운 목소리(Natural · 향상됨 · 구글 온라인)
+    voiceCache = E.pickKoreanVoice(voices);
     return voiceCache;
+  }
+
+  // 목소리 목록은 늦게 온다(크롬 · 안드로이드). 오면 다시 고른다.
+  if ('speechSynthesis' in window && window.speechSynthesis.addEventListener) {
+    try { window.speechSynthesis.addEventListener('voiceschanged', function () { voiceCache = null; }); } catch (err) { void err; }
   }
 
   function speak(text) {
