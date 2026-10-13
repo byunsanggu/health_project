@@ -2391,6 +2391,17 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .wt-col.current .wt-bar { background: var(--chart-now); }
 .wt-value { font-size: 12px; color: var(--ink); min-height: 15px; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
 .wt-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.coach-line { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; }
+.coach-line-key { font-size: 12px; color: var(--muted); }
+.coach-line b { flex: 1; font-size: 15px; }
+.coach-line-go { font-size: 13px; font-weight: 600; color: var(--accent); }
+.coach-controls { display: grid; gap: 10px; }
+.alert-controls { display: grid; gap: 8px; }
+.alert-controls .nudge-row, .coach-settings .nudge-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; border-style: solid; padding: 12px 14px; border-radius: 12px; font-size: 14px; color: var(--ink); background: var(--surface); }
+.alert-controls .nudge-row > span:first-child, .coach-settings .nudge-row > span:first-child { display: grid; gap: 2px; }
+.alert-controls .nudge-row .hint-line, .coach-settings .nudge-row .hint-line { margin: 0; font-size: 12px; }
+.alert-controls .nudge-row[aria-pressed="true"] .count-tempo { color: var(--accent); font-weight: 600; }
+.alert-controls .count-tempo, .coach-settings .nudge-row .count-tempo { white-space: nowrap; flex: none; }
 .focus { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; overflow-y: auto; background: var(--surface); }
 .focus-top { display: flex; align-items: center; gap: 8px; }
 .focus-more { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }

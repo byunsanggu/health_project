@@ -2391,6 +2391,17 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .wt-col.current .wt-bar { background: var(--chart-now); }
 .wt-value { font-size: 12px; color: var(--ink); min-height: 15px; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
 .wt-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.coach-line { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; }
+.coach-line-key { font-size: 12px; color: var(--muted); }
+.coach-line b { flex: 1; font-size: 15px; }
+.coach-line-go { font-size: 13px; font-weight: 600; color: var(--accent); }
+.coach-controls { display: grid; gap: 10px; }
+.alert-controls { display: grid; gap: 8px; }
+.alert-controls .nudge-row, .coach-settings .nudge-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; border-style: solid; padding: 12px 14px; border-radius: 12px; font-size: 14px; color: var(--ink); background: var(--surface); }
+.alert-controls .nudge-row > span:first-child, .coach-settings .nudge-row > span:first-child { display: grid; gap: 2px; }
+.alert-controls .nudge-row .hint-line, .coach-settings .nudge-row .hint-line { margin: 0; font-size: 12px; }
+.alert-controls .nudge-row[aria-pressed="true"] .count-tempo { color: var(--accent); font-weight: 600; }
+.alert-controls .count-tempo, .coach-settings .nudge-row .count-tempo { white-space: nowrap; flex: none; }
 .focus { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; overflow-y: auto; background: var(--surface); }
 .focus-top { display: flex; align-items: center; gap: 8px; }
 .focus-more { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -5171,6 +5182,7 @@ var GymSearch = (function () {
         tempoByExercise: state.tempoByExercise,
         autoCount: state.autoCount,
         nudgeOn: state.nudgeOn,
+        restAlerts: state.restAlerts,
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
@@ -5241,6 +5253,7 @@ var GymSearch = (function () {
       migrateTempos();
       state.autoCount = Boolean(settings.autoCount);
       state.nudgeOn = Boolean(settings.nudgeOn);
+      state.restAlerts = settings.restAlerts !== false;
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
       state.voiceRate = settings.voiceRate || 1;
@@ -5586,6 +5599,8 @@ var GymSearch = (function () {
     tempo: null,
     autoCount: false,
     nudgeOn: false,
+    // 휴식 끝 알림 — 처음 설문에서 정하고 내 정보에서 바꾼다
+    restAlerts: true,
     friendName: null,
     friendCode: null,
     friends: [],
@@ -6722,7 +6737,7 @@ var GymSearch = (function () {
 
     // 화면은 켜두고, 알림은 워커에 맡긴다 — 주머니에 넣어도 손목까지 간다.
     acquireWakeLock();
-    notifyWorker({
+    if (state.restAlerts !== false) notifyWorker({
       type: 'rest:start',
       endsAt: state.rest.endsAt,
       body: lift.exercise.name + ' ' + (setIndex + 2 <= lift.sets.length
@@ -6954,15 +6969,7 @@ var GymSearch = (function () {
       ]));
     }
 
-    // 알림 권한은 여기서 묻는다 — 필요한 순간에 물어야 의미가 전달된다.
-    if (notificationState() === 'default') {
-      host.appendChild(el('button', {
-        type: 'button',
-        class: 'rest-ask',
-        text: '알림을 켜면 폰을 넣어둬도 손목에서 끝나는 걸 알려줍니다 — 켜기',
-        onclick: askNotificationPermission,
-      }));
-    }
+    // 알림은 처음 설문(코치 · 알림)과 내 정보에서 켠다. 쉬는 중에 묻지 않는다.
   }
 
   /* ── 같은 헬스장, 다른 기계 ──────────────────────
@@ -9380,7 +9387,7 @@ var GymSearch = (function () {
     renderConditioning();
 
     var doneSets = state.todaySets.length;
-    screen.appendChild(coachPicker());
+    screen.appendChild(coachLine());
     screen.appendChild(el('button', {
       type: 'button', class: 'finish start-cta',
       text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : '시작하기',
@@ -10631,73 +10638,138 @@ var GymSearch = (function () {
     }
   }
 
-  /**
-   * 오늘 어떻게 할까요 — 혼자 / PT.
+  /*
+   * 운동 방식 — 혼자 / PT, PT면 말투.
    *
-   * 시작 버튼 바로 위에 둔다. 설정 화면에 넣으면 아무도 모른다(소리
-   * 스위치가 그랬다). 말투를 누르면 그 말투로 한마디 들려준다 — 고르는
-   * 데 그게 제일 빠르고, iOS는 손으로 누른 순간에 한 번 소리를 내야
-   * 그 뒤에도 말할 수 있다.
+   * 처음 설문(코치 · 알림)에서 한 번 고르고, 나중에는 내 정보나 오늘 화면의
+   * "바꾸기"에서 바꾼다. 매번 시작 버튼 위에서 고르게 하던 큰 칸은 없앴다 —
+   * 대부분은 한 번 정하면 그대로 쓴다. 말투를 누르면 그 말투로 한마디 들려준다.
    */
-  function coachPicker() {
+  function coachModeControls(onChange) {
     var pt = ptOn();
-    var box = el('div', { class: 'sheet coach-pick' }, []);
-    box.appendChild(el('div', { class: 'sheet-head' }, [
-      el('h3', { text: '오늘 어떻게 할까요?' }),
-    ]));
-    var body = el('div', { class: 'sheet-body' }, []);
-    var modes = el('div', { class: 'coach-modes', role: 'group', 'aria-label': '운동 방식' }, [
+    var box = el('div', { class: 'coach-controls' }, []);
+    box.appendChild(el('div', { class: 'coach-modes', role: 'group', 'aria-label': '운동 방식' }, [
       el('button', {
         type: 'button', class: 'coach-mode', 'aria-pressed': String(!pt),
         onclick: function () {
           state.coach = { mode: 'solo', style: state.coach.style };
           releaseWakeLock();
           persist();
-          render();
+          onChange();
         },
-      }, [
-        el('b', { text: '혼자' }),
-        el('span', { text: '처방과 기록만, 조용히' }),
-      ]),
+      }, [el('b', { text: '혼자' }), el('span', { text: '처방과 기록만, 조용히' })]),
       el('button', {
         type: 'button', class: 'coach-mode', 'aria-pressed': String(pt),
         onclick: function () {
           state.coach = { mode: 'pt', style: state.coach.style || 'calm' };
           persist();
           speak(E.forSpeech(E.coachStyleInfo(state.coach.style).sample));
-          render();
+          onChange();
         },
-      }, [
-        el('b', { text: 'PT' }),
-        el('span', { text: '옆에서 세어 주고 말해 줍니다' }),
-      ]),
-    ]);
-    body.appendChild(modes);
-
+      }, [el('b', { text: 'PT' }), el('span', { text: '몸 풀기부터 스트레칭까지 옆에서 이끕니다' })]),
+    ]));
     if (pt) {
+      box.appendChild(el('div', { class: 'list-label', text: '코치 말투' }));
       var styles = el('div', { class: 'coach-styles' }, []);
       E.COACH_STYLES.forEach(function (item) {
-        var on = state.coach.style === item.id;
         styles.appendChild(el('button', {
-          type: 'button', class: 'coach-style', 'aria-pressed': String(on),
+          type: 'button', class: 'coach-style', 'aria-pressed': String(state.coach.style === item.id),
           onclick: function () {
             state.coach = { mode: 'pt', style: item.id };
             persist();
             speak(E.forSpeech(item.sample));
-            render();
+            onChange();
           },
-        }, [
-          el('b', { text: item.label }),
-          el('span', { text: item.hint }),
-        ]));
+        }, [el('b', { text: item.label }), el('span', { text: item.hint })]));
       });
-      body.appendChild(styles);
-      body.appendChild(el('p', { class: 'hint-line', text:
-        '시작만 누르면 끝까지 이끕니다 — 워밍업, 세트마다 세기, 무게 묻기, 다음 기구로 이동, ' +
-        '시간이 밀리면 뒤를 줄이고, 마무리 스트레칭까지. 위의 운동 시간에 맞춥니다. 운동하는 동안 화면은 켜 둡니다.' }));
+      box.appendChild(styles);
     }
-    box.appendChild(body);
     return box;
+  }
+
+  /** 알림 두 가지 — 휴식 끝, 빠진 주에 불러 주기. 켜는 순간에 권한을 묻는다. */
+  function alertControls(onChange) {
+    var box = el('div', { class: 'alert-controls' }, []);
+    var denied = notificationState() === 'denied';
+    var unsupported = notificationState() === 'unsupported';
+    var restOn = state.restAlerts !== false && !denied && !unsupported;
+    box.appendChild(el('button', {
+      type: 'button', class: 'nudge-row', 'aria-pressed': String(restOn),
+      disabled: denied || unsupported ? '' : null,
+      onclick: function () {
+        state.restAlerts = !restOn;
+        persist();
+        if (state.restAlerts && notificationState() === 'default') {
+          Notification.requestPermission().then(function () { onChange(); });
+        }
+        onChange();
+      },
+    }, [
+      el('span', {}, [el('b', { text: '휴식 끝 알림' }), el('span', { class: 'hint-line', text: '폰을 넣어 둬도 진동으로 — 시계가 있으면 손목까지' })]),
+      el('span', { class: 'count-tempo', text: restOn ? '켜짐' : '꺼짐' }),
+    ]));
+    if (denied) box.appendChild(el('p', { class: 'hint-line', text: '알림이 막혀 있습니다. 브라우저 설정에서 이 사이트의 알림을 허용해 주세요.' }));
+    var why = nudgeAvailability();
+    box.appendChild(el('button', {
+      type: 'button', class: 'nudge-row', 'aria-pressed': String(Boolean(state.nudgeOn)),
+      disabled: why && !state.nudgeOn ? '' : null,
+      onclick: function () { setNudge(!state.nudgeOn).then(onChange); },
+    }, [
+      el('span', {}, [el('b', { text: '운동 빠진 주에 한 번 불러 주기' }), el('span', { class: 'hint-line', text: why || '아프다고 적은 날은 부르지 않습니다' })]),
+      el('span', { class: 'count-tempo', text: state.nudgeOn ? '켜짐' : '꺼짐' }),
+    ]));
+    return box;
+  }
+
+  /** 오늘 화면 — 지금 방식 한 줄과 바꾸기. */
+  function coachLine() {
+    var info = ptOn() ? E.coachStyleInfo(state.coach.style) : null;
+    return el('button', {
+      type: 'button', class: 'coach-line',
+      onclick: openCoachModal,
+    }, [
+      el('span', { class: 'coach-line-key', text: '운동 방식' }),
+      el('b', { text: ptOn() ? 'PT · ' + (info ? info.label : '') : '혼자' }),
+      el('span', { class: 'coach-line-go', text: '바꾸기' }),
+    ]);
+  }
+
+  function openCoachModal() {
+    openModal('운동 방식', null, [
+      coachModeControls(function () { openCoachModal(); render(); }),
+      el('p', { class: 'hint-line', text: '알림은 내 정보 › 코치 · 알림에서 바꿉니다.' }),
+    ]);
+  }
+
+  /** 처음 설문 — 코치 · 알림. */
+  function stepCoach() {
+    screen.appendChild(el('p', { class: 'asset-note', text:
+      '운동할 때 어떻게 도와드릴까요? 나중에 내 정보에서 언제든 바꿀 수 있습니다.' }));
+    screen.appendChild(coachModeControls(render));
+    screen.appendChild(el('div', { class: 'list-label', text: '알림' }));
+    screen.appendChild(alertControls(render));
+  }
+
+  /** 내 정보 — 코치 · 알림 · 친구. */
+  function coachSettingsCard() {
+    var body = el('div', { class: 'sheet-body' }, [
+      coachModeControls(render),
+      el('div', { class: 'list-label', text: '알림' }),
+      alertControls(render),
+    ]);
+    if (Remote.configured() && Remote.signedIn()) {
+      body.appendChild(el('div', { class: 'list-label', text: '친구' }));
+      body.appendChild(state.friendName
+        ? el('p', { class: 'hint-line', text: '친구 기능을 쓰는 중입니다 — ' + state.friendName + ' · 오늘 화면의 "함께" 카드' })
+        : el('button', { type: 'button', class: 'nudge-row', onclick: openFriendName }, [
+            el('span', {}, [el('b', { text: '친구 기능 켜기' }), el('span', { class: 'hint-line', text: '서로 이번 주에 몇 번 나왔는지만 봅니다. 무게도 종목도 아픈 곳도 보이지 않습니다.' })]),
+            el('span', { class: 'count-tempo', text: '꺼짐' }),
+          ]));
+    }
+    return el('div', { class: 'sheet coach-settings' }, [
+      el('div', { class: 'sheet-head' }, [el('h3', { text: '코치 · 알림' })]),
+      body,
+    ]);
   }
 
   /**
@@ -15351,19 +15423,8 @@ var GymSearch = (function () {
      * 이름부터 정한다. 본명이 아니라 헬스장에서 쓰는 별명이면 된다 —
      * 본명을 받아 두면 언젠가 그게 새는 사고가 난다.
      */
-    if (!state.friendName) {
-      body.appendChild(el('p', { class: 'hint-line', text:
-        '친구와 서로 이번 주에 몇 번 나왔는지만 봅니다. ' +
-        '무게도 종목도 아픈 곳도 보이지 않습니다.' }));
-      body.appendChild(el('button', {
-        type: 'button', class: 'finish', text: '친구 기능 켜기',
-        onclick: openFriendName,
-      }));
-      return el('div', { class: 'sheet friends-card' }, [
-        el('div', { class: 'sheet-head' }, [el('h3', { text: '함께' })]),
-        body,
-      ]);
-    }
+    // 켜기는 내 정보에서 — 오늘 화면에 "켜세요" 카드를 세워 두지 않는다
+    if (!state.friendName) return null;
 
     var streak = currentStreak();
     var rows = (state.friends || []).map(function (row) {
@@ -15911,7 +15972,6 @@ var GymSearch = (function () {
       streak.freezeAvailable
         ? el('p', { class: 'hint-line', text: '쉼표 1개 — 한 주 쉬어도 연속이 이어집니다.' })
         : null,
-      nudgeRow(),
     ]);
   }
 
@@ -15924,63 +15984,38 @@ var GymSearch = (function () {
    * 권한은 누른 그 순간에 묻는다. 앱을 켜자마자 뜨는 브라우저 창은 대개
    * 거절당하고, 한 번 거절되면 다시 못 묻는다.
    */
-  function nudgeRow() {
-    if (typeof FitPush === 'undefined' || !FitPush.configured()) return null;
-    if (!Remote.configured() || !Remote.signedIn()) return null;
+  /** 운동 빠진 주에 불러 주기 — 서버 푸시가 되는 곳에서만. 못 하면 이유. */
+  function nudgeAvailability() {
+    if (typeof FitPush === 'undefined' || !FitPush.configured()) return '이 빌드에서는 서버 알림을 쓸 수 없습니다.';
+    if (!Remote.configured() || !Remote.signedIn()) return '로그인하면 쓸 수 있습니다.';
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !state.standalone) return '아이폰은 홈 화면에 설치한 앱에만 알림이 옵니다.';
+    if (FitPush.permission() === 'denied') return '알림이 막혀 있습니다. 브라우저 설정에서 이 사이트의 알림을 허용해 주세요.';
+    return null;
+  }
 
-    /*
-     * iOS는 홈 화면에 설치한 PWA만 알림을 받는다. 사파리 탭에서는 권한
-     * 창조차 안 뜬다 — 눌러도 아무 일이 없는 버튼 대신 왜 안 되는지 적는다.
-     */
-    var iosTab = /iphone|ipad|ipod/i.test(navigator.userAgent) && !state.standalone;
-    if (iosTab) {
-      return el('p', { class: 'hint-line', text:
-        '다시 불러 드리려면 홈 화면에 설치하셔야 합니다 — 아이폰은 설치한 앱에만 알림이 옵니다.' });
+  function setNudge(on) {
+    if (!on) {
+      state.nudgeOn = false;
+      persist();
+      if (typeof FitPush !== 'undefined') FitPush.disable();
+      Remote.cancelNudge();
+      pushLog('알림', '다시 부르기를 껐습니다.');
+      render();
+      return Promise.resolve();
     }
-
-    if (FitPush.permission() === 'denied') {
-      return el('p', { class: 'hint-line', text:
-        '알림이 막혀 있습니다. 브라우저 설정에서 이 사이트의 알림을 허용해 주세요.' });
-    }
-
-    if (state.nudgeOn) {
-      return el('button', {
-        type: 'button', class: 'nudge-row', 'aria-pressed': 'true',
-        onclick: function () {
-          state.nudgeOn = false;
-          persist();
-          FitPush.disable();
-          Remote.cancelNudge();
-          pushLog('알림', '다시 부르기를 껐습니다.');
-          render();
-        },
-      }, [
-        el('span', { text: '이번 주가 빡빡하면 한 번 불러 드립니다' }),
-        el('span', { class: 'count-tempo', text: '켜짐' }),
-      ]);
-    }
-
-    return el('button', {
-      type: 'button', class: 'nudge-row', 'aria-pressed': 'false',
-      onclick: function () {
-        FitPush.enable().then(function (result) {
-          if (!result.ok) {
-            pushLog('알림', result.reason === 'denied'
-              ? '알림이 거절됐습니다. 브라우저 설정에서 허용하시면 켤 수 있습니다.'
-              : '알림을 켜지 못했습니다.');
-            return render();
-          }
-          state.nudgeOn = true;
-          persist();
-          pushLog('알림', '이번 주가 빡빡하면 한 번 불러 드립니다. ' +
-            '<b>아프다고 적으신 날은 부르지 않습니다.</b>');
-          return scheduleNudge().then(render, render);
-        });
-      },
-    }, [
-      el('span', { text: '이번 주가 빡빡하면 불러 드릴까요?' }),
-      el('span', { class: 'count-tempo', text: '꺼짐' }),
-    ]);
+    if (nudgeAvailability()) return Promise.resolve();
+    return FitPush.enable().then(function (result) {
+      if (!result.ok) {
+        pushLog('알림', result.reason === 'denied'
+          ? '알림이 거절됐습니다. 브라우저 설정에서 허용하시면 켤 수 있습니다.'
+          : '알림을 켜지 못했습니다.');
+        return render();
+      }
+      state.nudgeOn = true;
+      persist();
+      pushLog('알림', '이번 주가 빡빡하면 한 번 불러 드립니다. <b>아프다고 적으신 날은 부르지 않습니다.</b>');
+      return scheduleNudge().then(render, render);
+    });
   }
 
   /* ── 주간 리포트 한 장 ─────────────────────────── */
@@ -17485,6 +17520,7 @@ var GymSearch = (function () {
     var account = accountCard();
     if (account) screen.appendChild(account);
     screen.appendChild(programCard());
+    screen.appendChild(coachSettingsCard());
     renderAppStatus();
     renderPrivacy();
     /*
@@ -19384,6 +19420,7 @@ var GymSearch = (function () {
     { id: 'profile', title: '내 정보', render: stepProfile },
     { id: 'gym', title: '헬스장 기구', render: stepGym },
     { id: 'measure', title: '실측', render: stepMeasure },
+    { id: 'coach', title: '코치 · 알림', render: stepCoach },
     { id: 'result', title: '프로그램', render: stepResult },
   ];
 
@@ -19707,6 +19744,10 @@ var GymSearch = (function () {
         text: (step.id === 'result' || isLast) ? '이 프로그램으로 시작' : '다음',
         onclick: function () {
           if (blocked) return;
+          // 코치 · 알림 단계: 휴식 끝 알림을 켜 뒀으면 지금(누른 순간) 권한을 묻는다
+          if (step.id === 'coach' && state.restAlerts !== false && notificationState() === 'default') {
+            try { Notification.requestPermission().then(function () { render(); }); } catch (err) { void err; }
+          }
           if (isLast) completeOnboarding();
           else { state.onboarding.step += 1; render(); }
         },
@@ -20145,7 +20186,7 @@ var GymSearch = (function () {
            * 몇 kg인가요"를 묻는 건 더 모르는 걸 묻는 것이다. 기본값(20kg·5kg)이
            * 한국 헬스장의 대부분이고, 틀리면 헬스장 탭에서 고치면 된다.
            */
-          state.onboarding.step = stepIndex('result');
+          state.onboarding.step = stepIndex('coach'); // 코치 · 알림은 건너뛰지 않는다
           render();
         },
       }),
@@ -20210,7 +20251,7 @@ var GymSearch = (function () {
         onclick: function () {
           state.answers.gym.measurements = {};
           pushLog('실측', '기본값(빈 바 20kg · 스택 5kg)으로 시작합니다. 헬스장 탭에서 고칠 수 있습니다.');
-          state.onboarding.step = stepIndex('result');
+          state.onboarding.step = stepIndex('coach'); // 코치 · 알림은 건너뛰지 않는다
           render();
         },
       }),
