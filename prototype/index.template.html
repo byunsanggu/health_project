@@ -2391,6 +2391,12 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .wt-col.current .wt-bar { background: var(--chart-now); }
 .wt-value { font-size: 12px; color: var(--ink); min-height: 15px; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
 .wt-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.short-note { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); font-size: 13px; }
+.short-note b { color: var(--accent); }
+.extras-toggle { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; background: none; font-size: 14px; color: var(--muted); }
+.extras-caret { font-size: 12px; color: var(--accent); }
+.streak-chip { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; }
+.list-edit { margin-left: auto; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--accent); }
 .coach-line { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; }
 .coach-line-key { font-size: 12px; color: var(--muted); }
 .coach-line b { flex: 1; font-size: 15px; }

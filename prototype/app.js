@@ -3474,11 +3474,15 @@
           ]),
           phaseBadge,
         ]),
-        el('p', {
-          class: 'meta',
-          text: state.session.date + ' · 목표 RIR ' + state.plan.targetRir + ' · ' +
-            state.lifts.length + '개 종목 · 약 ' + estimate.totalMinutes + '분',
-        }),
+        el('p', { class: 'meta' }, [
+          el('span', { text: Number(state.session.date.slice(5, 7)) + '월 ' + Number(state.session.date.slice(8, 10)) + '일 · ' +
+            state.lifts.length + '개 종목 · 약 ' + estimate.totalMinutes + '분' }),
+          // 연속 기록은 주간 탭에 카드로 — 여기서는 한 단어만
+          (function () {
+            var streak = currentStreak();
+            return streak && streak.current > 0 ? el('span', { class: 'streak-chip', text: streak.current + '주 연속' }) : null;
+          })(),
+        ]),
       ]),
     };
   }
@@ -4230,6 +4234,24 @@
    * 종목 목록보다 **위**에 둔다. 아래에 두면 이미 긴 목록을 보고 닫은
    * 뒤라서 아무도 못 본다.
    */
+  /** 짧은 날 한 줄 — 무엇을 남겼는지와 되돌리기. */
+  function shortDayNote() {
+    var minutes = shortBudget();
+    if (!minutes) return null;
+    return el('div', { class: 'short-note' }, [
+      el('span', {}, [
+        el('b', { text: '짧은 날 · ' + minutes + '분' }),
+        el('span', { text: ' — 큰 복합 운동만 남겼어요. 짧게 해도 이번 주 나온 날로 셉니다.' }),
+      ]),
+      el('button', { type: 'button', class: 'pick', text: '원래대로', onclick: function () {
+        state.shortDay = null;
+        rebuildSession();
+        persist();
+        render();
+      } }),
+    ]);
+  }
+
   function shortDayCard() {
     var minutes = shortBudget();
 
@@ -4308,7 +4330,7 @@
 
     screen.appendChild(el('div', { class: 'stat-row' }, [
       statCard('time', '운동 시간',
-        String(state.timeBudget || estimate.totalMinutes), '분',
+        String(shortBudget() || state.timeBudget || estimate.totalMinutes), '분',
         function () { return timeBudgetControls(estimate); }),
       statCard('condition', '컨디션', String(condition), '%',
         function () { return conditionDetail(); }),
@@ -4329,11 +4351,12 @@
     var back = comebackCard();
     if (back) screen.appendChild(back);
 
-    var short = shortDayCard();
-    if (short) screen.appendChild(short);
-
-    var cheers = cheersBanner();
-    if (cheers) screen.appendChild(cheers);
+    /*
+     * 짧은 날 — 운동 시간을 25분 밑으로 정하면 그날만 큰 복합 운동만 남긴다.
+     * 따로 "시간이 없는 날" 카드를 두지 않는다. 오늘 화면은 단순해야 한다.
+     */
+    var shortNote = shortDayNote();
+    if (shortNote) screen.appendChild(shortNote);
 
     var rows = [];
 
@@ -4350,8 +4373,7 @@
       el('span', { class: 'lift-thumb warm', 'aria-hidden': 'true', text: '↗' }),
       el('span', { class: 'plan-main' }, [
         el('span', { class: 'name' }, [el('span', { text: '몸 풀기 ' + E.mobilityMinutes(moves) + '분' })]),
-        el('span', { class: 'plan-sets', text: moves.slice(0, 3).map(function (move) { return move.name; }).join(' · ') +
-          (warmupSets > 0 ? ' — 워밍업 세트는 필요한 종목만 ' + warmupSets + '세트' : '') }),
+        el('span', { class: 'plan-sets', text: moves.slice(0, 3).map(function (move) { return move.name; }).join(' · ') }),
       ]),
     ]));
 
@@ -4384,13 +4406,7 @@
      * 지킨 주를 목록 바로 위에 둔다. "오늘 나왔다"가 곧 "이번 주를 지켰다"로
      * 이어지는 게 보여야 나올 이유가 생긴다.
      */
-    var promise = promiseCard();
-    if (promise) screen.appendChild(promise);
-    screen.appendChild(streakCard(currentStreak()));
-    var friends = friendsCard();
-    if (friends) screen.appendChild(friends);
-    var nudge = reportNudge();
-    if (nudge) screen.appendChild(nudge);
+    // 연속 · 약속 · 친구 · 리포트는 주간 탭으로 — 오늘 화면은 오늘 할 것만
     /*
      * 뺀 지 4주가 된 종목을 여기서 묻는다. 오늘 할 것을 보는 순간이라
      * "이거 다시 해볼래요?"가 자연스럽게 읽힌다.
@@ -4407,8 +4423,17 @@
         el('div', { class: 'head-title' }, [
           el('h3', { text: '오늘 할 것' }),
           el('span', { class: 'meta', text: '총 ' + state.lifts.length + '개' }),
+          /*
+           * 다른 운동 · 세어주기 · 휴식 · 순서 · 묶기는 "편집" 하나로 접는다.
+           * 매일 쓰는 버튼이 아니다 — 늘 펼쳐 두면 목록보다 버튼이 먼저 읽힌다.
+           */
+          el('button', {
+            type: 'button', class: 'list-edit', 'aria-expanded': String(Boolean(state.listToolsOpen)),
+            text: state.listToolsOpen ? '닫기' : '편집',
+            onclick: function () { state.listToolsOpen = !state.listToolsOpen; render(); },
+          }),
         ]),
-        el('span', { class: 'head-actions' }, [
+        !state.listToolsOpen ? null : el('span', { class: 'head-actions' }, [
           el('button', {
             type: 'button', class: 'demo-open', text: '다른 운동',
             title: '프로그램에 없는 종목을 오늘만 끼워 넣습니다',
@@ -4439,8 +4464,20 @@
     ]));
 
     renderMaxTest();
-    renderCardio();
-    renderConditioning();
+    // 유산소 · 컨디셔닝은 한 줄로 접어 둔다 — 고른 게 있으면 펼친 채로
+    var extrasPicked = (state.cardioToday && state.cardioToday.length > 0) || Boolean(state.cardioDraft) || Boolean(state.conditioning);
+    var extrasOpen = state.extrasOpen || extrasPicked;
+    screen.appendChild(el('button', {
+      type: 'button', class: 'extras-toggle', 'aria-expanded': String(extrasOpen),
+      onclick: function () { state.extrasOpen = !extrasOpen; render(); },
+    }, [
+      el('span', { text: '＋ 유산소 · 컨디셔닝 추가' }),
+      el('span', { class: 'extras-caret', text: extrasOpen ? '접기' : '열기' }),
+    ]));
+    if (extrasOpen) {
+      renderCardio();
+      renderConditioning();
+    }
 
     var doneSets = state.todaySets.length;
     screen.appendChild(coachLine());
@@ -8960,10 +8997,26 @@
     ]));
   }
 
-  var TIME_BUDGETS = [30, 45, 60, 90];
+  var TIME_BUDGETS = [20, 30, 45, 60, 90];
 
   /** 오늘 운동 할 수 있는 시간. 현실에서 가장 흔한 제약인데 대부분의 앱이 안 받아준다. */
+  /** 이보다 짧으면 "시간이 없는 날" — 그날만, 큰 복합 운동 위주로. */
+  var SHORT_DAY_MINUTES = 25;
+
   function applyTimeBudget(minutes) {
+    if (minutes && minutes < SHORT_DAY_MINUTES) {
+      /*
+       * 짧은 날은 오늘만이다. 운동 시간(평소 값)을 20분으로 바꿔 두면 내일도
+       * 20분짜리가 나온다 — 시간이 없는 건 오늘이지 매일이 아니다.
+       */
+      state.shortDay = { date: state.todayDate, minutes: minutes };
+      rebuildSession();
+      pushLog('오늘', '<b>' + minutes + '분</b> — 짧은 날로 큰 복합 운동만 남겼습니다: ' + E.keptLine(state.session));
+      persist();
+      render();
+      return;
+    }
+    state.shortDay = null;
     state.timeBudget = minutes;
     rebuildSession();
     if (minutes && state.timeFit && state.timeFit.adjustments.length > 0) {
@@ -8987,7 +9040,7 @@
     TIME_BUDGETS.forEach(function (minutes) {
       chips.appendChild(el('button', {
         type: 'button', class: 'pick',
-        'aria-pressed': String(state.timeBudget === minutes),
+        'aria-pressed': String((shortBudget() || state.timeBudget) === minutes),
         text: minutes + '분',
         onclick: function () { applyTimeBudget(minutes); },
       }));
@@ -8995,7 +9048,7 @@
 
     var input = el('input', {
       type: 'number', min: '10', max: '300', step: '1', inputmode: 'numeric',
-      value: state.timeBudget == null ? '' : String(state.timeBudget),
+      value: (shortBudget() || state.timeBudget) == null ? '' : String(shortBudget() || state.timeBudget),
       // 빈칸에 오늘 예상 시간을 흐리게 띄운다 — 몇 자리를 적는 칸인지 바로 안다
       placeholder: String(estimate.totalMinutes),
       'aria-label': '오늘 운동 할 수 있는 시간 (분)',
@@ -11487,6 +11540,13 @@
      * 이것이고, 그래서 주간 탭 맨 위에 둔다.
      */
     screen.appendChild(streakCard(currentStreak()));
+    // 운동 가는 시각 · 친구 · 받은 응원 — 오늘 화면에서 옮겨 왔다
+    var promise = promiseCard();
+    if (promise) screen.appendChild(promise);
+    var cheers = cheersBanner();
+    if (cheers) screen.appendChild(cheers);
+    var friends = friendsCard();
+    if (friends) screen.appendChild(friends);
     screen.appendChild(tierCard(currentTier()));
     var nudge = reportNudge();
     if (nudge) screen.appendChild(nudge);
