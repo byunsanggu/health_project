@@ -64,3 +64,20 @@ describe('기호로 끝나는 이름', () => {
     assert.equal(particle('(((', '은/는'), '는');
   });
 });
+
+describe('숫자로 끝나는 말', () => {
+  it('읽는 소리로 받침을 본다 — 삼 · 육 · 칠은 있고 이 · 사 · 구는 없다', () => {
+    assert.equal(withParticle('등받이 3', '이/가'), '등받이 3이');
+    assert.equal(withParticle('시트 4', '이/가'), '시트 4가');
+    assert.equal(withParticle('10', '은/는'), '10은');
+    assert.equal(particle('2', '을/를'), '를');
+    assert.equal(particle('6', '과/와'), '과');
+  });
+
+  it('일 · 칠 · 팔은 ㄹ 받침이라 로', () => {
+    assert.equal(particle('1', '으로/로'), '로');
+    assert.equal(particle('8', '으로/로'), '로');
+    assert.equal(particle('3', '으로/로'), '으로');
+    assert.equal(particle('9', '으로/로'), '로');
+  });
+});

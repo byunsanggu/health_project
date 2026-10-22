@@ -91,13 +91,15 @@ export function restSpoken(seconds: number): string {
  */
 export function restAnnounceLine(
   style: CoachStyle,
-  input: { seconds: number; nextSet: number; firstTime?: boolean },
+  input: { seconds: number; nextSet: number; firstTime?: boolean; nextName?: string },
 ): string {
   const time = restSpoken(input.seconds);
+  // 슈퍼세트면 다음이 짝 종목이다 — "2세트"만 말하면 같은 종목을 또 하는 줄 안다
+  const what = input.nextName ? `${input.nextName} ${input.nextSet}세트` : `${input.nextSet}세트`;
   let line: string;
-  if (style === 'data') line = `휴식 ${time}. 다음 ${input.nextSet}세트.`;
-  else if (style === 'fired') line = `${time} 쉬고 ${input.nextSet}세트 올립니다!`;
-  else line = `${time} 쉬고 ${input.nextSet}세트 갈게요.`;
+  if (style === 'data') line = `휴식 ${time}. 다음 ${what}.`;
+  else if (style === 'fired') line = `${time} 쉬고 ${what} 올립니다!`;
+  else line = `${time} 쉬고 ${what} 갈게요.`;
   if (!input.firstTime) return line;
   if (style === 'data') return `${line} 연장은 +30초.`;
   return `${line} 더 쉬고 싶으면 화면에서 +30초 누르세요.`;

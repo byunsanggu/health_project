@@ -37,6 +37,10 @@ describe('종목 이동', () => {
   it('받침에 맞게 말한다', () => {
     assert.match(transitionLines('calm', { nextName: '랫 풀다운', seconds: 75 }).join(' '), /랫 풀다운이에요/);
   });
+  it('숫자로 끝나는 세팅도 읽는 소리대로 — 등받이 3(삼)이었어요, 시트 4(사)였어요', () => {
+    assert.match(transitionLines('calm', { nextName: '체스트 프레스', machineSetting: '시트 4 · 등받이 3', seconds: 60 }).join(' '), /등받이 3이었어요/);
+    assert.match(transitionLines('calm', { nextName: '체스트 프레스', machineSetting: '시트 4', seconds: 60 }).join(' '), /시트 4였어요/);
+  });
   it('처음 하는 기구면 세팅부터 보자고 한다', () => {
     assert.match(transitionLines('calm', { nextName: '핵 스쿼트', firstTime: true, seconds: 75 }).join(' '), /세팅부터/);
   });
@@ -139,6 +143,8 @@ describe('세트 사이 휴식 안내', () => {
 
   it('빡센 말투도 존댓말이다', () => {
     assert.match(restAnnounceLine('fired', { seconds: 60, nextSet: 2 }), /니다/);
+    // 슈퍼세트 — 다음은 짝 종목
+    assert.match(restAnnounceLine('calm', { seconds: 20, nextSet: 1, nextName: '레그 컬' }), /20초 쉬고 레그 컬 1세트 갈게요/);
   });
 });
 

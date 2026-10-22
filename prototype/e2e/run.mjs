@@ -12,13 +12,13 @@ import { readdir, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FAKE_SPEECH, chromium, serve } from './lib.mjs';
+import { DIST, FAKE_SPEECH, chromium, serve } from './lib.mjs';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const OUT = process.env.E2E_OUT || join(tmpdir(), 'volume-coach-e2e');
 const filters = process.argv.slice(2);
 
-const html = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
+const html = await readFile(join(DIST, 'index.html'), 'utf8');
 if (/__VOLUME_COACH_SERVER__=\{/.test(html)) {
   console.error('dist에 서버 주소가 들어 있습니다. 서버 없이 다시 빌드하세요: node prototype/build.mjs');
   process.exit(2);

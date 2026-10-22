@@ -12,7 +12,8 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DIST = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
+// E2E_DIST로 다른 빌드를 띄울 수 있다 — 고치기 전 빌드에서 테스트가 실제로 실패하는지 볼 때
+export const DIST = resolve(process.env.E2E_DIST || fileURLToPath(new URL('../dist/', import.meta.url)));
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -119,4 +120,52 @@ export async function tab(page, label) {
 /** 조건이 참이 될 때까지. 실패하면 무엇을 기다렸는지 말한다. */
 export function check(ok, message) {
   if (!ok) throw new Error(message);
+}
+
+/** 화면을 끈 것처럼(다른 앱으로 간 것처럼) — PT는 여기서 멈춘다. */
+export async function setVisible(page, visible) {
+  await page.evaluate((on) => {
+    Object.defineProperty(document, 'visibilityState', { value: on ? 'visible' : 'hidden', configurable: true });
+    Object.defineProperty(document, 'hidden', { value: !on, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, visible);
+}
+
+/** 오늘 화면의 "운동 방식"에서 PT를 고른다. */
+export async function choosePt(page) {
+  await page.locator('.coach-line').click();
+  await page.locator('dialog .coach-mode', { hasText: 'PT' }).click();
+  await page.locator('dialog .modal-close').click();
+}
+
+/**
+ * PT 집중 화면이 지금 무엇을 보여 주는가 — 앱 안의 상태는 밖에서 못 보므로
+ * 화면에 뜬 것으로 읽는다.
+ */
+export async function focusPhase(page) {
+  return page.evaluate(() => {
+    const host = document.getElementById('focus');
+    if (!host || host.hidden) {
+      // 마무리 스트레칭은 집중 화면이 아니라 보통 화면에 뜬다
+      return document.querySelector('.session-head h2')?.textContent === '마무리 스트레칭' ? 'cool' : null;
+    }
+    if (host.querySelector('.focus-feels')) return 'ask';
+    if (/PT 일시정지/.test(host.textContent)) return 'paused';
+    if (host.querySelector('#focus-prep-left')) return 'prep';
+    if (host.querySelector('#focus-rest-time')) return 'rest';
+    if (/워밍업 \d/.test(host.querySelector('.focus-what')?.textContent || '')) return 'warm';
+    if (host.querySelector('#focus-num')) return 'count';
+    return 'other';
+  });
+}
+
+/** 가짜 시계를 조금씩 돌리며 집중 화면이 그 단계가 될 때까지. */
+export async function runUntil(page, phases, { stepMs = 1000, maxMs = 300000 } = {}) {
+  const want = [].concat(phases);
+  for (let spent = 0; spent <= maxMs; spent += stepMs) {
+    const now = await focusPhase(page);
+    if (want.includes(now)) return now;
+    await page.clock.runFor(stepMs);
+  }
+  throw new Error(`${maxMs / 1000}초를 돌려도 ${want.join('/')} 단계가 안 나왔습니다 (지금 ${await focusPhase(page)})`);
 }

@@ -238,6 +238,7 @@
         voiceOn: state.voiceOn,
         tempo: state.tempo,
         tempoByExercise: state.tempoByExercise,
+        tempoVersion: state.tempoVersion,
         autoCount: state.autoCount,
         nudgeOn: state.nudgeOn,
         restAlerts: state.restAlerts,
@@ -309,6 +310,7 @@
       state.voiceOn = Boolean(settings.voiceOn);
       state.tempo = settings.tempo || null;
       state.tempoByExercise = settings.tempoByExercise || {};
+      state.tempoVersion = settings.tempoVersion || null;
       migrateTempos();
       state.autoCount = Boolean(settings.autoCount);
       state.nudgeOn = Boolean(settings.nudgeOn);
@@ -569,6 +571,15 @@
     { id: 'gym', label: '헬스장', icon: 'M4 9v6M8 7v10M16 7v10M20 9v6M8 12h8' },
   ];
 
+  /*
+   * 박자 저장 형식의 판.
+   *
+   * 지금의 '빠르게'(2-0-1-0)는 예전의 '보통'과 숫자가 같다. 그래서 예전 값
+   * 옮기기를 켤 때마다 하면, 빠르게를 고른 사람이 앱을 켤 때마다 보통으로
+   * 돌아간다. 옮기기는 판이 바뀔 때 한 번만 한다.
+   */
+  var TEMPO_VERSION = 2;
+
   var state = {
     gym: JSON.parse(JSON.stringify(E.DEFAULT_GYM)),
     lifter: { bodyweightKg: 78, level: 'intermediate', sex: 'male' },
@@ -657,6 +668,7 @@
      */
     voiceOn: false,
     tempo: null,
+    tempoVersion: TEMPO_VERSION,
     autoCount: false,
     nudgeOn: false,
     // 먹은 것 기록 · 적는 중인 줄
@@ -1598,7 +1610,7 @@
     maybeAskMachine(lift, set, logged);
 
     var pairState = supersetTurn(lift, liftIndex);
-    startRest(lift, setIndex, pairState ? pairState.rest : null);
+    startRest(lift, setIndex, pairState ? Object.assign({ nextIndex: pairState.nextIndex }, pairState.rest) : null);
     if (pairState && pairState.nextIndex >= 0) state.liftCursor = pairState.nextIndex;
 
     /*
@@ -1612,7 +1624,12 @@
      * 계산한 것인데 화면을 넘겨버리면 물어볼 기회가 사라진다.
      */
     var remaining = lift.sets.filter(function (item) { return !item.done; }).length;
-    var wantsMore = lift.decision && lift.decision.verdict === 'continue';
+    /*
+     * PT는 붙잡지 않는다. 트레이너가 이끄는 중에 화면만 멈춰 서면 다음 걸음이
+     * 안 나온다 — 계획한 세트를 마치면 다음으로 가고, 한 세트 더는 "자세히
+     * 보기"의 판단 줄에서 고른다.
+     */
+    var wantsMore = lift.decision && lift.decision.verdict === 'continue' && !ptOn();
     // 짝이 아직 남았으면 위에서 이미 그쪽으로 옮겼다. 여기서 또 건드리지 않는다.
     if (!pairState && state.started && remaining === 0 && !wantsMore && liftIndex < state.lifts.length - 1) {
       state.liftCursor = liftIndex + 1;
@@ -1783,6 +1800,12 @@
     var reason = override ? override.reason : prescription.reason;
 
     var nextLift = state.lifts[state.lifts.indexOf(lift) + 1];
+    // 슈퍼세트면 쉬고 나서 하는 것은 짝 종목의 세트다
+    var partner = override && typeof override.nextIndex === 'number' ? state.lifts[override.nextIndex] : null;
+    var partnerSet = partner && partner !== lift ? partner.sets.findIndex(function (one) { return !one.done; }) : -1;
+    var nextText = partnerSet >= 0
+      ? partner.exercise.name + ' ' + (partnerSet + 1) + '세트'
+      : !isLast ? (setIndex + 2) + '세트' : (nextLift ? nextLift.exercise.name : '마무리');
     // 세트 끝 물음에서 기다린 시간 — 휴식은 세트가 끝난 순간부터 센다
     var headStart = Math.min(state.restHeadStart || 0, Math.max(0, seconds * 1000 - 5000));
     state.restHeadStart = 0;
@@ -1791,7 +1814,7 @@
       exerciseName: lift.exercise.name,
       setNumber: setIndex + 1,
       // 쉬고 나서 무엇을 하는지. 휴식 막대에 "쉬고 → 3세트"로 보인다.
-      next: !isLast ? (setIndex + 2) + '세트' : (nextLift ? nextLift.exercise.name : '마무리'),
+      next: nextText,
       total: seconds,
       endsAt: Date.now() + seconds * 1000 - headStart,
       reason: reason,
@@ -1806,9 +1829,11 @@
     if (state.restAlerts !== false) notifyWorker({
       type: 'rest:start',
       endsAt: state.rest.endsAt,
-      body: lift.exercise.name + ' ' + (setIndex + 2 <= lift.sets.length
-        ? (setIndex + 2) + '세트를 시작하세요.'
-        : '다음 종목으로 넘어가세요.') + (ptOn() ? ' 앱을 열면 세어 드려요.' : ''),
+      body: (partnerSet >= 0
+        ? nextText + '를 시작하세요.'
+        : lift.exercise.name + ' ' + (setIndex + 2 <= lift.sets.length
+          ? (setIndex + 2) + '세트를 시작하세요.'
+          : '다음 종목으로 넘어가세요.')) + (ptOn() ? ' 앱을 열고 ▶ 계속을 누르면 세어 드려요.' : ''),
     });
     renderRest();
   }
@@ -1828,7 +1853,8 @@
     state.rest.endsAt += seconds * 1000;
     // 진행 막대가 100%를 넘지 않게 총량도 같이 줄인다.
     state.rest.total = Math.max(restRemaining(), state.rest.total + seconds);
-    notifyWorker({
+    // 알림을 끈 사람에게는 늘린 휴식 알림도 보내지 않는다
+    if (state.restAlerts !== false) notifyWorker({
       type: 'rest:start',
       endsAt: state.rest.endsAt,
       body: seconds > 0 ? '연장한 휴식이 끝났습니다.' : '휴식이 끝났습니다.',
@@ -4496,7 +4522,10 @@
       text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : '시작하기',
       onclick: function () {
         state.started = true;
-        if (ptOn()) {
+        state.focusHidden = false;
+        // 목록에 다녀온 것이면 멈춘 자리(몸 풀기 · 워밍업 · 세던 개수)에서 잇는다
+        var resuming = Boolean(ptOn() && state.ptRun && state.ptRun.paused);
+        if (ptOn() && !resuming) {
           /*
            * 손으로 누른 이 순간에 한 번 말해야 iOS가 뒤에 오는 말을 막지
            * 않는다. 그리고 화면을 켜 둔다 — 운동 중에 화면이 꺼지면 말도
@@ -4515,6 +4544,10 @@
           return lift.sets.some(function (set) { return !set.done; });
         });
         state.liftCursor = next >= 0 ? next : 0;
+        if (resuming) {
+          acquireWakeLock();
+          resumePt();
+        }
         render();
       },
     }));
@@ -5581,12 +5614,16 @@
     var remaining = lift.sets.filter(function (item) { return !item.done; }).length;
     var decision = lift.decision;
     var stopEarly = decision && decision.verdict === 'stop' && remaining > 0;
-    var more = decision && decision.verdict === 'continue';
 
+    /*
+     * 계획한 세트를 다 했으면 그 종목은 끝이다. 엔진이 "한 세트 더"를 냈어도
+     * PT는 세트를 저절로 늘리지 않으므로 "한 번 더 가요"라고 하면 안 된다 —
+     * 말해 놓고 아무 일도 안 일어난다.
+     */
     var lines = E.afterSetLines({
       style: state.coach.style,
       feel: feel || 'right',
-      lastOfLift: remaining === 0 && !more,
+      lastOfLift: remaining === 0,
       nextWeightKg: next ? next.weightKg : undefined,
       deltaKg: next && next.adjustment ? next.adjustment.deltaKg : 0,
       pounds: inPounds(lift.exercise.id),
@@ -5604,7 +5641,7 @@
       startCooldown(Math.ceil(E.speechSeconds(lines.join(' '))) * 1000 + 1500);
       return;
     }
-    lines = lines.concat(ptBetweenLines(liftIndex, remaining === 0 && !more));
+    lines = lines.concat(ptBetweenLines(liftIndex, remaining === 0));
     coachSay(lines);
   }
 
@@ -5790,17 +5827,25 @@
     return box;
   }
 
-  /** 알림 두 가지 — 휴식 끝, 빠진 주에 불러 주기. 켜는 순간에 권한을 묻는다. */
-  function alertControls(onChange) {
+  /**
+   * 알림 두 가지 — 휴식 끝, 빠진 주에 불러 주기. 켜는 순간에 권한을 묻는다.
+   *
+   * asking은 처음 설문이다. 거기서는 "다음"을 누를 때 권한을 묻기 때문에 켜 둔
+   * 뜻만 보여 준다. 설정에서는 권한이 실제로 있어야 "켜짐"이다 — 권한을 받은
+   * 적 없는 사람에게 켜짐을 보여 주면, 알림은 안 오는데 누르면 꺼진다.
+   */
+  function alertControls(onChange, asking) {
     var box = el('div', { class: 'alert-controls' }, []);
-    var denied = notificationState() === 'denied';
-    var unsupported = notificationState() === 'unsupported';
-    var restOn = state.restAlerts !== false && !denied && !unsupported;
+    var permission = notificationState();
+    var denied = permission === 'denied';
+    var unsupported = permission === 'unsupported';
+    var unasked = !asking && permission === 'default';
+    var restOn = state.restAlerts !== false && !denied && !unsupported && !unasked;
     box.appendChild(el('button', {
       type: 'button', class: 'nudge-row', 'aria-pressed': String(restOn),
       disabled: denied || unsupported ? '' : null,
       onclick: function () {
-        state.restAlerts = !restOn;
+        state.restAlerts = unasked ? true : !restOn;
         persist();
         if (state.restAlerts && notificationState() === 'default') {
           Notification.requestPermission().then(function () { onChange(); });
@@ -5809,7 +5854,7 @@
       },
     }, [
       el('span', {}, [el('b', { text: '휴식 끝 알림' }), el('span', { class: 'hint-line', text: '폰을 넣어 둬도 진동으로 — 시계가 있으면 손목까지' })]),
-      el('span', { class: 'count-tempo', text: restOn ? '켜짐' : '꺼짐' }),
+      el('span', { class: 'count-tempo', text: restOn ? '켜짐' : unasked ? '켜기' : '꺼짐' }),
     ]));
     if (denied) box.appendChild(el('p', { class: 'hint-line', text: '알림이 막혀 있습니다. 브라우저 설정에서 이 사이트의 알림을 허용해 주세요.' }));
     var why = nudgeAvailability();
@@ -5850,7 +5895,7 @@
       '운동할 때 어떻게 도와드릴까요? 나중에 내 정보에서 언제든 바꿀 수 있습니다.' }));
     screen.appendChild(coachModeControls(render));
     screen.appendChild(el('div', { class: 'list-label', text: '알림' }));
-    screen.appendChild(alertControls(render));
+    screen.appendChild(alertControls(render, true));
   }
 
   /** 내 정보 — 코치 · 알림 · 친구. */
@@ -5863,7 +5908,7 @@
     if (Remote.configured() && Remote.signedIn()) {
       body.appendChild(el('div', { class: 'list-label', text: '친구' }));
       body.appendChild(state.friendName
-        ? el('p', { class: 'hint-line', text: '친구 기능을 쓰는 중입니다 — ' + state.friendName + ' · 오늘 화면의 "함께" 카드' })
+        ? el('p', { class: 'hint-line', text: '친구 기능을 쓰는 중입니다 — ' + state.friendName + ' · 주간 탭의 "함께" 카드' })
         : el('button', { type: 'button', class: 'nudge-row', onclick: openFriendName }, [
             el('span', {}, [el('b', { text: '친구 기능 켜기' }), el('span', { class: 'hint-line', text: '서로 이번 주에 몇 번 나왔는지만 봅니다. 무게도 종목도 아픈 곳도 보이지 않습니다.' })]),
             el('span', { class: 'count-tempo', text: '꺼짐' }),
@@ -5890,13 +5935,19 @@
    * 예전 '보통'은 지금의 보통(4초)으로 — 그 사람은 3초가 아니라 보통을 골랐다.
    */
   function migrateTempos() {
+    if (state.tempoVersion === TEMPO_VERSION) return;
     state.tempo = E.migrateTempo(state.tempo) || null;
+    state.tempoByExercise = migrateTempoMap(state.tempoByExercise);
+    state.tempoVersion = TEMPO_VERSION;
+  }
+
+  function migrateTempoMap(map) {
     var moved = {};
-    Object.keys(state.tempoByExercise || {}).forEach(function (id) {
-      var tempo = E.migrateTempo(state.tempoByExercise[id]);
+    Object.keys(map || {}).forEach(function (id) {
+      var tempo = E.migrateTempo(map[id]);
       if (tempo) moved[id] = tempo;
     });
-    state.tempoByExercise = moved;
+    return moved;
   }
 
   function setExerciseTempo(exercise, tempo) {
@@ -6095,6 +6146,11 @@
 
   function startCounting(liftIndex, setIndex, leadSeconds, fromRep) {
     stopCounting(false);
+    // 물어보던 세트를 다시 센다면 그 물음은 끝났다 — 10초 뒤에 저절로 적히면 안 된다
+    if (state.askFor === liftIndex + ':' + setIndex) {
+      state.askFor = null;
+      clearAskWindow();
+    }
     var lift = state.lifts[liftIndex];
     var set = lift && lift.sets[setIndex];
     if (!set) return;
@@ -6580,7 +6636,7 @@
       body.push(el('p', { class: 'hint-line', text:
         '지금 설정으로 오늘 ' + state.lifts.length + '종목 · 약 ' +
         Math.round(estimate.totalSeconds / 60) + '분' +
-        (state.timeBudget ? ' (예산 ' + state.timeBudget + '분)' : '') }));
+        ((shortBudget() || state.timeBudget) ? ' (예산 ' + (shortBudget() || state.timeBudget) + '분)' : '') }));
 
       if (state.restBand || Object.keys(state.restOverrides).length > 0) {
         body.push(el('button', {
@@ -6640,7 +6696,16 @@
         el('button', {
           type: 'button', class: 'demo-open', text: '목록',
           'aria-label': '오늘 할 것 목록으로',
-          onclick: function () { state.started = false; render(); },
+          onclick: function () {
+            /*
+             * PT는 멈춰 두고 간다. 몸 풀기 · 워밍업 · 세기가 목록 뒤에서 반쯤
+             * 살아 있으면, 돌아와 "시작하기"를 눌러도 다음 걸음이 안 나온다.
+             */
+            if (ptOn() && state.ptRun && !state.ptRun.cooled) pausePt(null);
+            state.focusHidden = false;
+            state.started = false;
+            render();
+          },
         }),
         el('span', { class: 'progress-count' }, [
           el('i', { text: '종목' }),
@@ -6922,7 +6987,8 @@
 
   /** 오늘 계획한 시간(초). "운동 시간"으로 정한 값, 없으면 예상 시간. */
   function ptPlannedSeconds() {
-    var minutes = state.timeBudget;
+    // 짧은 날이면 오늘 정한 시간으로 — 평소 60분으로 "반 지났어요"를 말하면 안 맞는다
+    var minutes = shortBudget() || state.timeBudget;
     if (!minutes) {
       try {
         var estimate = E.estimateSessionTime(state.session, {
@@ -7009,12 +7075,22 @@
     var line = spoken ? E.warmupDoneLine(state.coach.style) : '';
     if (line) coachSay([line]);
     var wait = line ? Math.ceil(E.speechSeconds(line)) * 1000 + 500 : 0;
-    setTimeout(function () {
-      if (!state.started || !ptOn() || state.counting || state.rest) return;
-      state.autoCountedFor = liftIndex + ':0';
-      beginSet(liftIndex, 0);
-      render();
-    }, wait);
+    /*
+     * 말이 끝나면 첫 본세트. 그 사이에 멈추거나 끝내면 시작하지 않는다 —
+     * 일시정지 화면 뒤에서 "하나"가 나오면 안 된다. 멈춤이 이 타이머를
+     * 지우고, 다시 이으면 이어 하기가 세트를 시작한다.
+     */
+    if (pt) {
+      if (pt.startTimer) clearTimeout(pt.startTimer);
+      pt.startTimer = setTimeout(function () {
+        pt.startTimer = null;
+        if (!state.started || !ptOn() || state.counting || state.rest || state.ptRun !== pt) return;
+        if (pt.paused || pt.warm || pt.cool || pt.prep) return;
+        state.autoCountedFor = liftIndex + ':0';
+        beginSet(liftIndex, 0);
+        render();
+      }, wait);
+    }
     render();
   }
 
@@ -7032,7 +7108,8 @@
     return el('div', { class: 'pt-warm' }, [
       el('div', { class: 'pt-warm-head' }, [
         el('b', { text: '워밍업 ' + (warm.index + 1) + ' / ' + lift.warmup.sets.length }),
-        el('span', { text: (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회' }),
+        // 파운드 기계면 파운드로 — 기계에 적힌 숫자와 달라야 할 이유가 없다
+        el('span', { text: loadText(lift, set.weightKg) + ' × ' + set.reps + '회' }),
       ]),
       left !== null ? el('span', { class: 'pt-warm-rest', id: 'pt-warm-left', text: '다음까지 ' + left + '초' }) : null,
       el('button', { type: 'button', class: 'pick', text: '워밍업 건너뛰기',
@@ -7048,7 +7125,21 @@
     var pt = ensurePtRun();
     var lines = [];
     var next = state.lifts[liftIndex + 1];
-    if (lastOfLift && next) {
+    /*
+     * 슈퍼세트 — 쉬는 동안 화면은 이미 짝 종목에 가 있다. 다음은 같은 종목의
+     * 다음 세트가 아니라 짝의 세트이고, 휴식은 옮기는 시간뿐이다. 종목 이동처럼
+     * 75초로 늘리면 슈퍼세트를 하는 이유가 없어진다.
+     */
+    var partner = state.liftCursor !== liftIndex ? state.lifts[state.liftCursor] : null;
+    var group = partner ? E.groupOf(state.supersets, state.lifts[liftIndex].exercise.id) : null;
+    var partnerSet = partner && group && group.indexOf(partner.exercise.id) >= 0
+      ? partner.sets.findIndex(function (set) { return !set.done; })
+      : -1;
+    if (partnerSet >= 0 && state.rest) {
+      lines.push(E.restAnnounceLine(state.coach.style, {
+        seconds: restRemaining(), nextSet: partnerSet + 1, nextName: partner.exercise.name,
+      }));
+    } else if (lastOfLift && next) {
       var seconds = E.TRANSITION_REST_SECONDS;
       if (state.rest) {
         if (restRemaining() < seconds) extendRest(seconds - restRemaining());
@@ -7205,17 +7296,24 @@
     render();
   }
 
+  /**
+   * 마지막 세트 뒤 휴식 타이머가 아직 돌고 있으면 끈다 — 이제 쉬는 게 아니라
+   * 스트레칭(또는 끝)이다. 그대로 두면 스트레칭 중에 "휴식 끝" 알림이 울리고,
+   * 스트레칭을 일찍 끝내면 "쉬고 → 마무리"가 다시 뜬다.
+   */
+  function clearLastRest() {
+    if (!state.rest) return;
+    if (state.restTicker) clearInterval(state.restTicker);
+    state.restTicker = null;
+    state.rest = null;
+    notifyWorker({ type: 'rest:stop' });
+    renderRest();
+  }
+
   function cooldownStep(run, i) {
     run.timers.forEach(function (id) { clearTimeout(id); });
     run.timers = [];
-    // 마지막 세트 뒤 휴식 타이머가 아직 돌고 있으면 끈다 — 이제 쉬는 게 아니라 스트레칭이다.
-    if (state.rest) {
-      if (state.restTicker) clearInterval(state.restTicker);
-      state.restTicker = null;
-      state.rest = null;
-      notifyWorker({ type: 'rest:stop' });
-      renderRest();
-    }
+    clearLastRest();
     if (i >= run.steps.length) return endCooldown(true);
     var later = function (fn, ms) { run.timers.push(setTimeout(function () { if (ptAlive(run, 'cool')) fn(); }, ms)); };
     run.index = i;
@@ -7236,6 +7334,11 @@
     pt.cool.timers.forEach(function (id) { clearTimeout(id); });
     pt.cool = null;
     pt.cooled = true;
+    // 멈춘 채로 끝냈으면 멈춤도 같이 푼다. 운동이 끝났는데 "일시정지" 화면이 남으면 안 된다.
+    pt.paused = false;
+    pt.pausedWhy = null;
+    pt.resume = null;
+    clearLastRest();
     if (spoken) coachSay([E.cooldownDoneLine(state.coach.style)]);
     else { try { window.speechSynthesis.cancel(); } catch (err) { void err; } }
     render();
@@ -7303,6 +7406,7 @@
     pt.paused = true;
     pt.pausedWhy = why || null;
     clearAskWindow();
+    if (pt.startTimer) { clearTimeout(pt.startTimer); pt.startTimer = null; }
     // 어디까지 했는지 적어 둔다 — 돌아오면 거기서부터.
     pt.resume = null;
     if (state.counting) {
@@ -7331,7 +7435,11 @@
     if (!pt) return;
     pt.paused = false;
     pt.pausedWhy = null;
-    state.autoCountedFor = null;
+    /*
+     * 세트 끝 물음에서 멈췄으면 그 세트는 이미 센 세트다. 표시를 지우면
+     * 화면을 그리는 순간 같은 세트를 처음부터 다시 센다.
+     */
+    state.autoCountedFor = state.askFor && !state.counting ? state.askFor : null;
     var at = pt.resume;
     pt.resume = null;
     // 세트 끝 물음에서 멈췄으면 10초를 다시 준다
@@ -7392,7 +7500,8 @@
     state.askTimer = setTimeout(function () {
       state.askTimer = null;
       var key = state.askFor;
-      if (!key || !ptOn() || (state.ptRun && state.ptRun.paused)) return;
+      // 세는 중에 지난 세트를 적으면 세던 세트가 엉뚱하게 끝난다
+      if (!key || !ptOn() || state.counting || (state.ptRun && state.ptRun.paused)) return;
       var parts = key.split(':');
       answerFeel(Number(parts[0]), Number(parts[1]), state.askDefault || 'right');
     }, ASK_WINDOW_MS);
@@ -7452,6 +7561,13 @@
     if (state.counting) {
       var counted = state.lifts[state.counting.liftIndex];
       return { liftIndex: state.counting.liftIndex, setIndex: state.counting.setIndex, lift: counted, set: counted.sets[state.counting.setIndex] };
+    }
+    // 워밍업 중이면 워밍업하는 종목 — 목록에서 다른 종목을 눌러 둔 채 이어 해도 이름이 맞아야 한다
+    var warm = state.ptRun && state.ptRun.warm;
+    if (warm && state.lifts[warm.liftIndex]) {
+      var warmed = state.lifts[warm.liftIndex];
+      var first = Math.max(0, warmed.sets.findIndex(function (set) { return !set.done; }));
+      return { liftIndex: warm.liftIndex, setIndex: first, lift: warmed, set: warmed.sets[first] };
     }
     // 지금 종목을 다 했으면(종목 넘어가는 휴식) 다음에 할 종목
     for (var i = state.liftCursor; i < state.lifts.length; i += 1) {
@@ -7827,6 +7943,20 @@
     var lift = state.lifts[liftIndex];
     var restingLift = !state.rest || state.rest.exerciseId === lift.exercise.id ? liftIndex
       : state.lifts.findIndex(function (item) { return item.exercise.id === state.rest.exerciseId; });
+    var open = function (one) { return !one.done; };
+    if (restingLift >= 0 && restingLift !== liftIndex && state.lifts[restingLift].sets.some(open)) {
+      /*
+       * 슈퍼세트 — A 한 세트 뒤 쉬는 동안 화면은 벌써 B에 가 있다. 아픈 건
+       * 방금 한 A이고 A에는 남은 세트가 있다. A만 멈추고 B는 그대로 둔다.
+       */
+      stopForPain(restingLift, null);
+      if (state.lifts[liftIndex].sets.some(open)) {
+        state.liftCursor = liftIndex;
+        state.autoCountedFor = liftIndex + ':' + state.lifts[liftIndex].sets.findIndex(open);
+        render();
+      }
+      return;
+    }
     if (restingLift >= 0 && restingLift !== liftIndex) {
       // 종목을 막 넘어온 휴식 — 아픈 건 방금 끝낸 종목이고, 그 종목은 이미 다 했다.
       if (state.rest) stopRest();
@@ -8383,6 +8513,7 @@
             // 잘못 눌렀을 수 있다. 되돌아가는 길을 막지 않는다.
             state.sessionClosed = false;
             state.started = true;
+            if (ptOn() && state.ptRun && state.ptRun.paused) resumePt();
             render();
           },
         }),
@@ -8424,6 +8555,8 @@
         } }),
         el('button', { type: 'button', class: 'finish quiet', text: '계속하기', onclick: function () {
           modal.close();
+          // 끝내기를 누를 때 멈춰 둔 PT를 그대로 잇는다 — "계속하기" 뒤에 ▶를 또 누르게 하지 않는다
+          if (ptOn() && state.ptRun && state.ptRun.paused) resumePt();
           render();
         } }),
       ]),
@@ -9069,7 +9202,9 @@
       },
     });
     var step = function (delta) {
-      var base = state.timeBudget == null ? Math.round(estimate.totalMinutes / 5) * 5 : state.timeBudget;
+      // 짧은 날이면 칸에 보이는 오늘 값(20분)에서 움직인다. 평소 값(60분)에서 빼면 55분이 된다.
+      var current = shortBudget() || state.timeBudget;
+      var base = current == null ? Math.round(estimate.totalMinutes / 5) * 5 : current;
       applyTimeBudget(Math.max(10, Math.min(300, base + delta)));
     };
     var field = el('div', { class: 'number-field' }, [
@@ -9087,7 +9222,7 @@
         field,
         el('button', {
           type: 'button', class: 'pick',
-          'aria-pressed': String(state.timeBudget == null),
+          'aria-pressed': String((shortBudget() || state.timeBudget) == null),
           text: '제한 없음',
           onclick: function () { applyTimeBudget(null); },
         }),
@@ -9394,7 +9529,7 @@
    */
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
-    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'voiceRate', 'autoCount',
+    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
     'mistakeFlags',
   ];
@@ -9426,7 +9561,15 @@
     });
     // 다른 폰에서 식단 기록 동의를 철회했으면 이 폰의 기록도 지운다. 동의 없이 남겨 두면 안 된다.
     if (!E.allows(state.consent, 'dietLog') && state.foodLog.length) purgeFor('dietLog');
-    migrateTempos();
+    /*
+     * 받은 박자가 예전 판(예전 앱이 올린 것)이면 받은 값만 옮긴다. 이 폰의
+     * 값은 이미 옮겼다 — 한 번 더 옮기면 '빠르게'가 '보통'이 된다.
+     */
+    if (body.tempoVersion !== TEMPO_VERSION) {
+      if (body.tempo !== undefined) state.tempo = E.migrateTempo(body.tempo) || null;
+      if (body.tempoByExercise !== undefined) state.tempoByExercise = migrateTempoMap(body.tempoByExercise);
+    }
+    state.tempoVersion = TEMPO_VERSION;
     state.settingsUpdatedAt = settings.updatedAt;
     state.lastSettingsBody = JSON.stringify(sharedSettings());
     rebuildSession();
