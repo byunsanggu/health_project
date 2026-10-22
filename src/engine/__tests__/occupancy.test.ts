@@ -95,6 +95,26 @@ describe('planAroundOccupied', () => {
     assert.notEqual(plan.now!.id, 'standing-calf-raise');
   });
 
+  it('초보에게는 아직 안 배운 바벨 기술 종목을 대체 후보 앞에 두지 않는다', () => {
+    const plan = planAroundOccupied({
+      exercises: plannedFrom(['goblet-squat', 'lying-leg-curl']),
+      exerciseId: 'goblet-squat',
+      completed: ['lying-leg-curl'],
+      gym: DEFAULT_GYM,
+      learning: [],
+    });
+    const first = plan.options[0]?.exercise.id;
+    assert.ok(first && !['back-squat', 'front-squat'].includes(first), `첫 후보가 ${first}`);
+    // 다 배운 사람에게는 그대로
+    const open = planAroundOccupied({
+      exercises: plannedFrom(['goblet-squat', 'lying-leg-curl']),
+      exerciseId: 'goblet-squat',
+      completed: ['lying-leg-curl'],
+      gym: DEFAULT_GYM,
+    });
+    assert.ok(open.options.length > 0);
+  });
+
   it('오늘 이미 하기로 한 종목은 대체 후보가 아니다 — 중복이 된다', () => {
     const planned = plannedFrom(LOWER);
     const plan = planAroundOccupied({

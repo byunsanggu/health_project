@@ -2941,6 +2941,8 @@
       gym: state.gym,
       pain: activePain(),
       busyEquipment: state.busyEquipment,
+      // 초보 블록에서 아직 안 배운 바벨 기술 종목은 대체 후보 뒤로
+      learning: state.block && state.block.technicalIntroduced !== undefined ? state.block.technicalIntroduced : null,
     });
 
     var ACTION = { reorder: '순서 바꾸기', substitute: '대체하기', wait: '기다리기' };

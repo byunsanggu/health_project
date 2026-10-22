@@ -336,7 +336,7 @@ const JOINT_LOAD_LIMIT = 1.2;
  * 중급으로 다시 짜면 이 종목들이 들어온다. 막지는 않는다 — 대안이 없는
  * 헬스장이면 초보에게도 이걸 준다.
  */
-const TECHNICAL_LIFTS: ReadonlySet<string> = new Set([
+export const TECHNICAL_LIFTS: ReadonlySet<string> = new Set([
   'back-squat', 'front-squat', 'conventional-deadlift', 'sumo-deadlift',
   'stiff-leg-deadlift', 'good-morning', 'barbell-row', 'pendlay-row', 't-bar-row',
   'barbell-overhead-press', 'kettlebell-swing',
@@ -864,7 +864,8 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
   const noBarbellBasics = program.templates.every((template) =>
     template.slots.every((slot) => !TECHNICAL_LIFTS.has(slot.exerciseId)));
   if (level.level === 'beginner' && noBarbellBasics) {
-    notes.push('처음에는 머신 · 덤벨로 자세를 먼저 만듭니다. 바벨 스쿼트 · 데드리프트는 중급으로 다시 짤 때 들어갑니다.');
+    notes.push('처음에는 머신 · 덤벨로 자세를 먼저 만듭니다. 바벨 백 스쿼트 · 컨벤셔널 데드리프트는 중급으로 다시 짤 때 들어갑니다. ' +
+      '루마니안 데드리프트는 가벼운 무게로 엉덩이 접는 법을 익히는 종목이라 처음부터 넣었습니다.');
   }
 
   if ((answers.pain ?? []).some((report) => report.score >= 3)) {

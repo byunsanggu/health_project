@@ -2,6 +2,7 @@ import { EXERCISES } from './exercises.ts';
 import { availableEquipmentOf, isAvailableAt, type GymProfile } from './gym.ts';
 import { withParticle } from './korean.ts';
 import { MUSCLE_LABELS_KO } from './muscles.ts';
+import { TECHNICAL_LIFTS } from './onboarding.ts';
 import { findSubstitutes, similarity } from './pain.ts';
 import { primaryMuscle, type PlannedExercise } from './session.ts';
 import { classifyRoles } from './timeBudget.ts';
@@ -62,6 +63,12 @@ export interface OccupancyInput {
   busyEquipment?: readonly Equipment[];
   /** 이만큼은 기다릴 수 있다 (분). 메인 복합 동작을 기다릴지 판단하는 기준 */
   patienceMinutes?: number;
+  /**
+   * 지금까지 배운 기술 종목(바벨 스쿼트 · 데드 …). null이면 다 배운 사람.
+   * 초보에게 고블릿 스쿼트 대신 백 스쿼트를 권하면, 프로그램이 일부러 미뤄 둔
+   * 종목을 "사람 있어요" 한 번으로 들이게 된다.
+   */
+  learning?: readonly string[] | null;
 }
 
 const DEFAULTS = {
@@ -204,8 +211,10 @@ function substituteOptions(
      * 앞세운다 — 사용자에게 보여주는 숫자를 손대지는 않는다.
      */
     .sort((a, b) => {
+      const unlearned = (entry: { candidate: Exercise }) =>
+        input.learning && TECHNICAL_LIFTS.has(entry.candidate.id) && !input.learning.includes(entry.candidate.id) ? 0.5 : 0;
       const bias = (entry: { candidate: Exercise }) =>
-        entry.candidate.pattern === blocked.pattern ? 0.08 : 0;
+        (entry.candidate.pattern === blocked.pattern ? 0.08 : 0) - unlearned(entry);
       return (b.overlap + bias(b)) - (a.overlap + bias(a));
     })
     .slice(0, 3)
