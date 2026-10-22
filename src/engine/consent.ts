@@ -20,6 +20,7 @@ export type ConsentId =
   | 'privacy'
   | 'healthData'
   | 'painData'
+  | 'dietLog'
   | 'location'
   | 'marketing';
 
@@ -97,6 +98,22 @@ export const CONSENT_ITEMS: readonly ConsentItem[] = [
     retention: '탈퇴 후 즉시 파기. 앱에서 언제든 직접 삭제할 수 있습니다.',
     ifDeclined:
       '통증에 따른 종목 대체가 동작하지 않습니다. 나머지 기능은 그대로 쓸 수 있습니다.',
+    basis: '개인정보보호법 제23조 (민감정보 — 별도 동의)',
+  },
+  {
+    /*
+     * 먹은 음식도 건강에 관한 정보로 본다. 체중과 같이 보면 그 사람의 몸을
+     * 짐작할 수 있다. 쓰는 사람만 따로 동의하게 둔다 — 적을 생각이 없는 사람에게
+     * 처음부터 물을 이유가 없다(처음 적으려는 순간에 묻는다).
+     */
+    id: 'dietLog',
+    label: '식단 기록 수집·이용 동의 (민감정보)',
+    required: false,
+    sensitive: true,
+    items: ['먹은 음식과 양, 끼니'],
+    purpose: '칼로리 · 단백질 · 지방 · 탄수화물 계산, 체중 변화와 함께 유지 칼로리 추정',
+    retention: '탈퇴 후 즉시 파기. 앱에서 언제든 직접 삭제할 수 있습니다.',
+    ifDeclined: '먹은 것을 적고 계산하는 기능만 꺼집니다. 나머지 기능은 그대로 쓸 수 있습니다.',
     basis: '개인정보보호법 제23조 (민감정보 — 별도 동의)',
   },
   {
@@ -178,7 +195,7 @@ export function needsReconsent(record: ConsentRecord | undefined): boolean {
   return record.version !== CONSENT_VERSION;
 }
 
-export type GatedFeature = 'painGate' | 'nearbyGyms' | 'autoSwitchGym' | 'marketing';
+export type GatedFeature = 'painGate' | 'dietLog' | 'nearbyGyms' | 'autoSwitchGym' | 'marketing';
 
 export interface FeatureGate {
   feature: GatedFeature;
@@ -189,6 +206,7 @@ export interface FeatureGate {
 
 const GATES: readonly FeatureGate[] = [
   { feature: 'painGate', label: '통증에 따른 종목 대체', needs: 'painData' },
+  { feature: 'dietLog', label: '먹은 것 적고 칼로리 계산', needs: 'dietLog' },
   { feature: 'nearbyGyms', label: '근처 헬스장 찾기', needs: 'location' },
   { feature: 'autoSwitchGym', label: '도착한 헬스장 자동 전환', needs: 'location' },
   { feature: 'marketing', label: '새 기능·이벤트 안내', needs: 'marketing' },

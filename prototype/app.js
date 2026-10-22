@@ -196,6 +196,8 @@
         blockHistory: state.blockHistory,
         timeBudget: state.timeBudget,
         shortDay: state.shortDay,
+        // 먹은 것 — 이 폰에만 둔다(서버 설정 묶음에 안 싣는다. 하루 수십 줄이라 금방 커진다)
+        foodLog: state.foodLog,
         promise: state.promise,
         /*
          * "같은 기계예요"라고 답한 종목. 날짜를 같이 적는다 — 하루짜리
@@ -291,6 +293,7 @@
       state.style = settings.style || 'hypertrophy';
       state.timeBudget = settings.timeBudget || null;
       state.shortDay = settings.shortDay || null;
+      state.foodLog = E.normalizeFoodLog(settings.foodLog);
       state.promise = settings.promise || null;
       state.comeback = settings.comeback || null;
       state.comebackDeclined = settings.comebackDeclined || null;
@@ -322,6 +325,7 @@
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
+      if (!E.allows(state.consent, 'dietLog')) state.foodLog = [];
       state.blockHistory = settings.blockHistory || ['hypertrophy'];
       state.block = settings.block || null;
       state.blockNews = settings.blockNews || null;
@@ -655,6 +659,12 @@
     tempo: null,
     autoCount: false,
     nudgeOn: false,
+    // 먹은 것 기록 · 적는 중인 줄
+    foodLog: [],
+    foodDraft: null,
+    foodText: '',
+    // 끼니 칩에서 고른 것. null이면 지금 시각으로 고른다
+    foodMeal: null,
     // 휴식 끝 알림 — 처음 설문에서 정하고 내 정보에서 바꾼다
     restAlerts: true,
     friendName: null,
@@ -9414,6 +9424,8 @@
     SHARED_SETTINGS.forEach(function (key) {
       if (body[key] !== undefined) state[key] = body[key];
     });
+    // 다른 폰에서 식단 기록 동의를 철회했으면 이 폰의 기록도 지운다. 동의 없이 남겨 두면 안 된다.
+    if (!E.allows(state.consent, 'dietLog') && state.foodLog.length) purgeFor('dietLog');
     migrateTempos();
     state.settingsUpdatedAt = settings.updatedAt;
     state.lastSettingsBody = JSON.stringify(sharedSettings());
@@ -12125,6 +12137,12 @@
       el('span', { class: 'protein-week', text: '이번 주 ' + week.hits + '일 채움' }),
     ]));
     body.appendChild(el('p', { class: 'hint-line', text: E.proteinHint(target) }));
+    var logged = dietLogAllowed() ? E.dayEntries(state.foodLog, today) : [];
+    if (logged.length) {
+      var eaten = Math.round(E.totalsFor(logged).protein);
+      body.appendChild(el('p', { class: 'hint-line', text: '먹은 것 기준 오늘 ' + eaten + 'g — ' +
+        (eaten >= target ? '채웠습니다.' : (target - eaten) + 'g 남았습니다.') }));
+    }
 
     body.appendChild(el('button', {
       type: 'button',
@@ -12204,19 +12222,23 @@
   /**
    * 식단 탭.
    *
-   * 식단표를 짜 주지 않는다. 칼로리를 정해 주는 건 영양사의 일이고,
-   * 끼니마다 적게 하는 앱은 3주를 못 간다. 여기서 하는 건 셋이다 —
-   * 체중 추세, 단백질 채웠나 한 번, 그리고 그 단백질을 **세 끼에 어떻게
-   * 담는지의 예시.**
+   * 식단표를 짜 주지 않는다. 여기서 하는 건 넷이다 — 먹은 것 적기(선택),
+   * 체중 추세, 단백질 채웠나, 그리고 그 단백질을 **세 끼에 어떻게 담는지의
+   * 예시.**
+   *
+   * 먹은 것 적기는 안 해도 나머지가 다 돈다. 끼니마다 적는 일은 누구에게나
+   * 맞지 않는다 — 적는 사람에게는 칼로리와 탄단지를, 안 적는 사람에게는
+   * 단백질 한 번만 묻는다.
    *
    * 통증은 여기 없다. 통증은 오늘 처방을 바꾸는 것이라 오늘 탭에 있다.
    */
   function renderDiet() {
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('h2', { text: '식단' }),
-      el('p', { class: 'meta', text: '체중 추세와 단백질만 봅니다. 칼로리는 정하지 않습니다.' }),
+      el('p', { class: 'meta', text: '먹은 것 · 체중 · 단백질' }),
     ]));
 
+    screen.appendChild(foodLogCard());
     var mind = bodyCard();
     if (mind) screen.appendChild(mind);
     var meals = mealCard();
@@ -12228,6 +12250,647 @@
         el('div', { text: '체중은 건강정보라 동의가 있어야 적을 수 있습니다. 위쪽 "내 정보"에서 확인하세요.' }),
       ]));
     }
+  }
+
+  /* ── 먹은 것 ──────────────────────────────────── */
+
+  /**
+   * 식단 기록은 따로 동의를 받는다.
+   *
+   * 무엇을 얼마나 먹는지는 건강에 관한 정보다(제23조). 체중 동의에 묶어
+   * 두면 체중만 적고 싶은 사람이 식단까지 동의해야 한다 — 동의는 쓰려는
+   * 기능만큼만 받는다.
+   */
+  function dietLogAllowed() {
+    return E.allows(state.consent, 'dietLog');
+  }
+
+  /** 먹은 날은 진짜 오늘이다. 운동 날(state.todayDate)은 이번 주 뒤쪽일 수 있다. */
+  function foodToday() {
+    return isoOf(new Date());
+  }
+
+  function newFoodId() {
+    return 'food-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
+  var MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+  /** 끼니 칩에서 고른 것. 안 골랐으면 지금 시각으로 — 점심 먹고 적는 사람에게 끼니를 묻지 않는다. */
+  function foodMeal() {
+    if (state.foodMeal) return state.foodMeal;
+    var now = new Date();
+    return E.mealForHour(now.getHours() + now.getMinutes() / 60);
+  }
+
+  /** 단백질 목표 — 몸 카드와 같은 체중으로 잡는다. 두 카드가 다른 숫자를 말하면 안 된다. */
+  function proteinGoalToday() {
+    var today = foodToday();
+    var mine = (state.checkIns || []).filter(function (item) { return item.date === today; })[0];
+    var trend = bodyTrend();
+    var weight = (mine && mine.bodyweightKg)
+      || (trend.latest && trend.latest.kg)
+      || (state.lifter && state.lifter.bodyweightKg)
+      || 70;
+    return E.proteinTargetG(weight, bodyGoal());
+  }
+
+  function addFoodEntries(entries) {
+    if (!entries.length) return;
+    state.foodLog = state.foodLog.concat(entries);
+    afterFoodChange();
+  }
+
+  /**
+   * 적은 것이 바뀐 뒤.
+   *
+   * 오늘 단백질이 목표를 넘으면 몸 카드의 "채웠나요"도 같이 켠다 — 이미
+   * 적은 것을 또 누르게 하지 않는다. 끄는 쪽은 하지 않는다. 기록 없이
+   * 직접 눌러 둔 사람의 답을 앱이 지우면 안 된다.
+   */
+  function afterFoodChange() {
+    var today = foodToday();
+    var protein = E.totalsFor(E.dayEntries(state.foodLog, today)).protein;
+    if ((state.consent || []).indexOf('healthData') >= 0 && protein >= proteinGoalToday()) {
+      var mine = (state.checkIns || []).filter(function (item) { return item.date === today; })[0];
+      if (!mine || !mine.proteinHit) saveBody({ proteinHit: true });
+    }
+    render();
+  }
+
+  /** "1공기 · 210g". 이미 g으로 적은 것은 한 번만. */
+  function foodAmountText(amount, grams, foodId) {
+    if (!grams || /(g|ml)$/.test(amount)) return amount;
+    var item = foodId ? E.foodById(foodId) : null;
+    return amount + ' · ' + Math.round(grams) + (item && item.category === 'drink' ? 'ml' : 'g');
+  }
+
+  /**
+   * 먹은 것 카드.
+   *
+   * 적는 일이 귀찮으면 3주를 못 간다. 그래서 —
+   *   · 말하듯 한 줄로 적는다("점심에 김치찌개 1인분이랑 공기밥"). 음식을
+   *     하나씩 골라 양을 넣는 화면을 세 번 넘기게 하지 않는다.
+   *   · 자주 먹는 것은 한 번 누르면 들어간다. 어제 같은 끼니를 그대로 넣는 줄도 있다.
+   *   · 읽은 것을 먼저 보여 주고, 확인을 받은 뒤에만 적는다. 말을 읽는 것은
+   *     틀릴 수 있다 — "밥"이 공기밥인지 볶음밥인지 앱은 모른다.
+   *
+   * 숫자는 어림이다. 같은 김치찌개도 가게마다 ±20%는 다르다. 대신 매일 같은
+   * 표로 재므로 "지난주보다 많이 먹었나"는 맞다. 유지 칼로리를 공식이 아니라
+   * 먹은 양과 저울로 내는 이유가 그것이다 — 표가 10% 짜게 재도 저울이 그만큼을
+   * 바로잡는다.
+   */
+  function foodLogCard() {
+    if (!dietLogAllowed()) return foodConsentCard();
+
+    var today = foodToday();
+    var entries = E.dayEntries(state.foodLog, today);
+    var body = el('div', { class: 'sheet-body' }, []);
+
+    if (entries.length) body.appendChild(foodTotals(entries, proteinGoalToday()));
+    body.appendChild(foodInput());
+    if (state.foodDraft) {
+      body.appendChild(foodPreview(state.foodDraft));
+    } else {
+      var quick = foodQuick(today);
+      if (quick) body.appendChild(quick);
+    }
+    if (entries.length) body.appendChild(foodMeals(entries));
+    var week = foodWeek(today);
+    if (week) body.appendChild(week);
+    body.appendChild(el('p', { class: 'hint-line', text:
+      '숫자는 흔한 1인분 기준 어림입니다(±10~20%). 한 끼를 정확히 재는 것보다 매일 비슷하게 적는 게 중요합니다. ' +
+      '식단 기록은 이 폰에만 저장됩니다.' }));
+
+    return el('div', { class: 'sheet food-log' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '먹은 것' }),
+        el('span', { class: 'meta', text: entries.length ? '오늘 ' + entries.length + '가지' : '말하듯 적기' }),
+      ]),
+      body,
+    ]);
+  }
+
+  /**
+   * 동의 전.
+   *
+   * 민감정보는 무엇을 · 왜 · 언제까지를 알리고 받아야 한다. 접어 두면
+   * 안 읽고 누른 동의가 된다 — 네 줄이라 그대로 펼쳐 둔다.
+   */
+  function foodConsentCard() {
+    var item = E.consentItem('dietLog');
+    return el('div', { class: 'sheet food-log' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '먹은 것' }),
+        el('span', { class: 'meta', text: '선택 · 동의 필요' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        el('p', { class: 'food-pitch', text:
+          '"점심에 김치찌개 1인분이랑 공기밥"처럼 말하듯 적으면 칼로리와 탄수화물 · 단백질 · 지방을 계산합니다. ' +
+          '2주쯤 모이면 체중 변화와 맞춰 내 유지 칼로리도 알려 드립니다.' }),
+        el('dl', { class: 'food-terms' }, [
+          el('dt', { text: '적는 것' }), el('dd', { text: item.items.join(', ') }),
+          el('dt', { text: '쓰는 곳' }), el('dd', { text: item.purpose }),
+          el('dt', { text: '보관' }), el('dd', { text: '이 폰에만 저장합니다. ' + item.retention }),
+          el('dt', { text: '안 하면' }), el('dd', { text: item.ifDeclined }),
+        ]),
+        el('button', {
+          type: 'button', class: 'finish', text: '동의하고 적기 시작',
+          onclick: function () { grantConsent('dietLog'); },
+        }),
+      ]),
+    ]);
+  }
+
+  var MACROS = [
+    { key: 'carbs', label: '탄수화물', short: '탄', kcalPerG: 4 },
+    { key: 'protein', label: '단백질', short: '단', kcalPerG: 4 },
+    { key: 'fat', label: '지방', short: '지', kcalPerG: 9 },
+  ];
+
+  /** 오늘 합계 — 칼로리 한 숫자, 탄단지 막대, 단백질 막대. */
+  function foodTotals(entries, target) {
+    var total = E.totalsFor(entries);
+    var wrap = el('div', { class: 'food-totals' }, [
+      el('div', { class: 'food-total' }, [
+        el('span', { class: 'food-total-label', text: '오늘' }),
+        el('span', { class: 'food-kcal', text: Math.round(total.kcal).toLocaleString('ko-KR') }),
+        el('span', { class: 'food-kcal-unit', text: 'kcal' }),
+      ]),
+    ]);
+    if (total.protein + total.fat + total.carbs > 0) wrap.appendChild(macroBar(total));
+    wrap.appendChild(proteinMeter(total.protein, target));
+    return wrap;
+  }
+
+  /**
+   * 탄단지 막대 — 칼로리가 어디서 왔나.
+   *
+   * 무게(g)로 나누면 지방이 작아 보인다. 1g이 9kcal라서다. 그래서 막대는
+   * 칼로리로 나누고, g은 아래에 글로 적는다. 색만으로 구분하지 않게 이름과
+   * 숫자를 늘 같이 쓴다.
+   */
+  function macroBar(total) {
+    var share = E.macroShare(total);
+    var host = el('div', { class: 'chart macro' }, []);
+    var bar = el('div', { class: 'macro-bar' }, []);
+    var legend = el('div', { class: 'macro-legend' }, []);
+    var bind = chartTip(host);
+    MACROS.forEach(function (macro) {
+      var grams = Math.round(total[macro.key]);
+      var pct = share[macro.key];
+      if (pct > 0) {
+        var part = el('i', { class: macro.key, style: 'flex:' + pct });
+        bar.appendChild(part);
+        bind(part, [macro.label + ' ' + pct + '%', grams + 'g · ' + Math.round(grams * macro.kcalPerG) + 'kcal']);
+      }
+      legend.appendChild(el('span', {}, [
+        el('i', { class: 'key ' + macro.key }),
+        el('span', { text: macro.short }),
+        el('b', { text: grams + 'g' }),
+        el('span', { text: pct + '%' }),
+      ]));
+    });
+    host.appendChild(bar);
+    host.appendChild(legend);
+    return host;
+  }
+
+  /** 단백질 — 목표에 대한 막대 하나. 넘으면 막대는 꽉 차고 글로 알린다. */
+  function proteinMeter(protein, target) {
+    var got = Math.round(protein);
+    var left = Math.max(0, target - got);
+    return el('div', { class: 'protein-meter' }, [
+      el('div', { class: 'protein-meter-head' }, [
+        el('span', { text: '단백질' }),
+        el('b', { text: got + ' / ' + target + 'g' }),
+        el('span', { class: 'protein-meter-left', text: left > 0 ? left + 'g 남음' : '채웠습니다 ✓' }),
+      ]),
+      el('div', {
+        class: 'protein-meter-track', role: 'progressbar',
+        'aria-label': '단백질 목표', 'aria-valuemin': '0', 'aria-valuemax': String(target), 'aria-valuenow': String(Math.min(got, target)),
+      }, [
+        el('i', { style: 'width:' + (target > 0 ? Math.min(100, (got / target) * 100) : 0) + '%' }),
+      ]),
+    ]);
+  }
+
+  /**
+   * 적는 칸.
+   *
+   * 끼니는 지금 시각으로 미리 골라 둔다. 글에 "아침에"라고 쓰면 그쪽이
+   * 이기고, 칩을 누르면 다시 칩이 이긴다 — 마지막에 한 것이 이긴다.
+   */
+  function foodInput() {
+    var meal = state.foodDraft ? state.foodDraft.meal : foodMeal();
+    var input = el('input', {
+      type: 'text', id: 'food-text', class: 'text-input food-text',
+      placeholder: '예: 김치찌개랑 공기밥, 계란 2개',
+      enterkeyhint: 'done', autocomplete: 'off', 'aria-label': '먹은 것',
+      oninput: function (event) { state.foodText = event.target.value; },
+      onkeydown: function (event) {
+        // 한글 조합 중의 Enter는 글자를 끝내는 것이지 계산하라는 것이 아니다
+        if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return;
+        event.preventDefault();
+        calcFoodText();
+      },
+    });
+    input.value = state.foodText || '';
+    return el('div', { class: 'food-input' }, [
+      el('div', { class: 'chip-row', role: 'group', 'aria-label': '끼니' }, MEAL_ORDER.map(function (id) {
+        return el('button', {
+          type: 'button', class: 'pick food-meal-pick', 'aria-pressed': String(meal === id), text: E.MEAL_LABELS[id],
+          onclick: function () {
+            state.foodMeal = id;
+            if (state.foodDraft) {
+              state.foodDraft.meal = id;
+              state.foodDraft.items.forEach(function (item) { item.meal = undefined; });
+            }
+            render();
+          },
+        });
+      })),
+      el('div', { class: 'food-input-row' }, [
+        input,
+        el('button', { type: 'button', class: 'food-calc', text: '계산', onclick: calcFoodText }),
+      ]),
+      el('button', {
+        type: 'button', class: 'food-browse', text: '목록에서 찾기 · 직접 넣기',
+        onclick: function () { openFoodPicker('', null); },
+      }),
+    ]);
+  }
+
+  /** 적은 글을 읽어 미리보기로. 아직 기록하지 않는다. */
+  function calcFoodText() {
+    var field = document.getElementById('food-text');
+    var text = ((field && field.value) || '').trim();
+    state.foodText = text;
+    if (!text) return;
+    var parsed = E.parseFoodText(text);
+    var said = parsed.items.filter(function (item) { return item.meal; })[0];
+    if (said) state.foodMeal = said.meal;
+    state.foodDraft = { items: parsed.items, unknown: parsed.unknown, meal: foodMeal() };
+    render();
+  }
+
+  /**
+   * 이렇게 읽었습니다 — 적기 전에 보여 준다.
+   *
+   * 틀린 줄은 ×로 빼고, 음식표에 없는 것은 목록에서 찾거나 직접 넣는다.
+   * 모르는 것을 조용히 버리면 그날 합계가 거짓말이 된다.
+   */
+  function foodPreview(draft) {
+    var wrap = el('div', { class: 'food-preview' }, [
+      el('p', { class: 'food-preview-title', text: draft.items.length || draft.unknown.length
+        ? '이렇게 읽었습니다' : '읽은 음식이 없습니다. 다르게 적거나 목록에서 찾아 주세요.' }),
+    ]);
+    draft.items.forEach(function (item, i) {
+      var other = item.meal && item.meal !== draft.meal ? E.MEAL_LABELS[item.meal] + ' · ' : '';
+      wrap.appendChild(el('div', { class: 'food-row' }, [
+        el('span', { class: 'food-name' }, [
+          el('b', { text: item.food.name }),
+          el('span', { class: 'food-amount', text: other + foodAmountText(item.amount, item.grams, item.food.id) +
+            (item.guessedUnit ? ' · 1인분으로 봤습니다' : '') }),
+        ]),
+        el('span', { class: 'food-kcal-cell', text: Math.round(item.nutrients.kcal) + 'kcal' }),
+        el('button', {
+          type: 'button', class: 'food-x', 'aria-label': item.food.name + ' 빼기', text: '×',
+          onclick: function () { draft.items.splice(i, 1); tidyFoodDraft(); render(); },
+        }),
+      ]));
+    });
+    draft.unknown.forEach(function (name, i) {
+      wrap.appendChild(el('div', { class: 'food-row unknown' }, [
+        el('span', { class: 'food-name' }, [
+          el('b', { text: name }),
+          el('span', { class: 'food-amount', text: '음식표에 없습니다' }),
+        ]),
+        el('button', {
+          type: 'button', class: 'pick', text: '찾기 · 직접',
+          onclick: function () { openFoodPicker(name, i); },
+        }),
+        el('button', {
+          type: 'button', class: 'food-x', 'aria-label': name + ' 빼기', text: '×',
+          onclick: function () { draft.unknown.splice(i, 1); tidyFoodDraft(); render(); },
+        }),
+      ]));
+    });
+
+    if (draft.items.length) {
+      var total = E.addNutrients(draft.items.map(function (item) { return item.nutrients; }));
+      wrap.appendChild(el('p', { class: 'food-preview-sum', text:
+        '합계 ' + Math.round(total.kcal).toLocaleString('ko-KR') + 'kcal · 탄 ' + Math.round(total.carbs) +
+        'g · 단 ' + Math.round(total.protein) + 'g · 지 ' + Math.round(total.fat) + 'g' }));
+    }
+    var mixed = draft.items.some(function (item) { return item.meal && item.meal !== draft.meal; });
+    wrap.appendChild(el('div', { class: 'food-preview-actions' }, [
+      el('button', {
+        type: 'button', class: 'finish food-commit',
+        text: mixed ? '이대로 적기' : withParticleJs(E.MEAL_LABELS[draft.meal], '으로/로') + ' 적기',
+        disabled: draft.items.length ? null : '',
+        onclick: commitFoodDraft,
+      }),
+      el('button', {
+        type: 'button', class: 'finish quiet', text: '취소',
+        onclick: function () { state.foodDraft = null; render(); },
+      }),
+    ]));
+    return wrap;
+  }
+
+  /** 미리보기에서 다 빼거나 다 처리했으면 닫는다. 빈 상자를 남기지 않는다. */
+  function tidyFoodDraft() {
+    var draft = state.foodDraft;
+    if (draft && !draft.items.length && !draft.unknown.length) {
+      state.foodDraft = null;
+      state.foodText = '';
+    }
+  }
+
+  function commitFoodDraft() {
+    var draft = state.foodDraft;
+    if (!draft || !draft.items.length) return;
+    var today = foodToday();
+    var entries = draft.items.map(function (item) {
+      return E.entryFromParsed(item, today, draft.meal, newFoodId());
+    });
+    state.foodDraft = null;
+    state.foodText = '';
+    state.foodMeal = null;
+    addFoodEntries(entries);
+  }
+
+  /**
+   * 한 번 누르면 들어가는 줄.
+   *
+   * 사람은 생각보다 같은 것을 먹는다. 닭가슴살 · 계란 · 프로틴을 매일 글로
+   * 다시 적게 하면 그날부터 안 적는다.
+   */
+  function foodQuick(today) {
+    var meal = foodMeal();
+    var wrap = el('div', { class: 'food-quick' }, []);
+    var yesterday = E.addDays(today, -1);
+    var now = state.foodLog.filter(function (entry) { return entry.date === today && entry.meal === meal; });
+    var before = state.foodLog.filter(function (entry) { return entry.date === yesterday && entry.meal === meal; });
+    if (now.length === 0 && before.length > 0) {
+      wrap.appendChild(el('button', {
+        type: 'button', class: 'food-copy',
+        onclick: function () {
+          addFoodEntries(before.map(function (entry) {
+            return Object.assign({}, entry, { id: newFoodId(), date: today });
+          }));
+        },
+      }, [
+        el('span', { text: '어제 ' + E.MEAL_LABELS[meal] + ' 그대로' }),
+        el('span', { class: 'food-copy-what', text:
+          before[0].name + (before.length > 1 ? ' 외 ' + (before.length - 1) + '가지' : '') +
+          ' · ' + Math.round(E.totalsFor(before).kcal).toLocaleString('ko-KR') + 'kcal' }),
+      ]));
+    }
+    var recent = E.recentFoods(state.foodLog, 8);
+    if (recent.length) {
+      wrap.appendChild(el('div', { class: 'food-quick-label', text: '자주 먹는 것 — 누르면 ' + E.MEAL_LABELS[meal] + '에 들어갑니다' }));
+      wrap.appendChild(el('div', { class: 'chip-row' }, recent.map(function (entry) {
+        return el('button', {
+          type: 'button', class: 'pick food-again', text: entry.name + ' ' + entry.amount,
+          onclick: function () {
+            addFoodEntries([Object.assign({}, entry, { id: newFoodId(), date: today, meal: meal })]);
+          },
+        });
+      })));
+    }
+    return wrap.childNodes.length ? wrap : null;
+  }
+
+  /** 끼니별 — 누르면 양을 바꾸거나 지운다. */
+  function foodMeals(entries) {
+    var wrap = el('div', { class: 'food-day' }, []);
+    E.byMeal(entries).forEach(function (group) {
+      if (!group.entries.length) return;
+      wrap.appendChild(el('div', { class: 'food-meal-head' }, [
+        el('span', { class: 'food-meal-name', text: E.MEAL_LABELS[group.meal] }),
+        el('span', { class: 'food-meal-sum', text:
+          Math.round(group.total.kcal).toLocaleString('ko-KR') + 'kcal · 단 ' + Math.round(group.total.protein) + 'g' }),
+      ]));
+      group.entries.forEach(function (entry) {
+        wrap.appendChild(el('button', {
+          type: 'button', class: 'food-row food-entry',
+          onclick: function () { openFoodEdit(entry.id); },
+        }, [
+          el('span', { class: 'food-name' }, [
+            el('b', { text: entry.name }),
+            el('span', { class: 'food-amount', text: foodAmountText(entry.amount, entry.grams, entry.foodId) }),
+          ]),
+          el('span', { class: 'food-kcal-cell', text: Math.round(entry.kcal) + 'kcal' }),
+          el('span', { class: 'food-go', 'aria-hidden': 'true', text: '›' }),
+        ]));
+      });
+    });
+    return wrap;
+  }
+
+  /** 한 줄 고치기 — 양 · 끼니 · 지우기. */
+  function openFoodEdit(id) {
+    var entry = state.foodLog.filter(function (item) { return item.id === id; })[0];
+    if (!entry) return;
+    var replace = function (next) {
+      state.foodLog = state.foodLog.map(function (item) { return item.id === id ? next : item; });
+      afterFoodChange();
+      openFoodEdit(id);
+    };
+    var body = [
+      el('p', { class: 'food-edit-now', text:
+        foodAmountText(entry.amount, entry.grams, entry.foodId) + ' — ' + Math.round(entry.kcal) + 'kcal · 탄 ' +
+        Math.round(entry.carbs) + 'g · 단 ' + Math.round(entry.protein) + 'g · 지 ' + Math.round(entry.fat) + 'g' }),
+      el('div', { class: 'food-edit-label', text: '양' }),
+      el('div', { class: 'chip-row' }, [[0.5, '반으로'], [1.5, '1.5배'], [2, '두 배']].map(function (pair) {
+        return el('button', {
+          type: 'button', class: 'pick food-scale', text: pair[1],
+          onclick: function () { replace(E.rescaleEntry(entry, pair[0])); },
+        });
+      })),
+    ];
+    if (entry.grams > 0) {
+      var item = entry.foodId ? E.foodById(entry.foodId) : null;
+      var grams = el('input', {
+        type: 'number', inputmode: 'numeric', min: '1', max: '5000', class: 'text-input food-grams',
+        value: String(Math.round(entry.grams)), 'aria-label': '먹은 무게',
+      });
+      body.push(el('div', { class: 'food-input-row' }, [
+        grams,
+        el('span', { class: 'food-unit', text: item && item.category === 'drink' ? 'ml' : 'g' }),
+        el('button', {
+          type: 'button', class: 'food-calc', text: '바꾸기',
+          onclick: function () {
+            var value = Number(grams.value);
+            if (value > 0) replace(E.rescaleEntry(entry, value / entry.grams));
+          },
+        }),
+      ]));
+    }
+    body.push(el('div', { class: 'food-edit-label', text: '끼니' }));
+    body.push(el('div', { class: 'chip-row' }, MEAL_ORDER.map(function (meal) {
+      return el('button', {
+        type: 'button', class: 'pick', 'aria-pressed': String(entry.meal === meal), text: E.MEAL_LABELS[meal],
+        onclick: function () { replace(Object.assign({}, entry, { meal: meal })); },
+      });
+    })));
+    body.push(el('button', {
+      type: 'button', class: 'finish quiet food-delete', text: '이 줄 지우기',
+      onclick: function () {
+        state.foodLog = state.foodLog.filter(function (item) { return item.id !== id; });
+        modal.close();
+        afterFoodChange();
+      },
+    }));
+    openModal(entry.name, E.MEAL_LABELS[entry.meal], body);
+  }
+
+  /**
+   * 목록에서 찾기 · 직접 넣기.
+   *
+   * 글로 적기 불편한 사람, 음식표에 없는 것을 먹은 사람의 길이다. 포장
+   * 음식은 뒷면 영양성분표 숫자를 그대로 넣으면 음식표보다 정확하다.
+   *
+   * 목록에서 고른 것은 미리보기에 얹는다(적기 전에 한 번 더 본다). 직접 넣은
+   * 것은 사람이 숫자를 이미 확인했으니 바로 적는다.
+   */
+  function openFoodPicker(query, unknownIndex) {
+    var meal = state.foodDraft ? state.foodDraft.meal : foodMeal();
+    var dropUnknown = function () {
+      if (unknownIndex !== null && state.foodDraft) state.foodDraft.unknown.splice(unknownIndex, 1);
+    };
+    var results = el('div', { class: 'search-results food-results' }, []);
+    var fill = function (text) {
+      results.textContent = '';
+      E.searchFoods(text).forEach(function (item) {
+        var usual = E.portion(item, null, null);
+        results.appendChild(el('button', {
+          type: 'button', class: 'search-row food-result',
+          onclick: function () {
+            dropUnknown();
+            var draft = state.foodDraft || { items: [], unknown: [], meal: meal };
+            draft.items.push(usual);
+            state.foodDraft = draft;
+            modal.close();
+            render();
+          },
+        }, [
+          el('span', { class: 'search-main' }, [
+            el('b', { text: item.name }),
+            el('span', { class: 'hint-line', text:
+              foodAmountText(usual.amount, usual.grams, item.id) + ' · ' + Math.round(usual.nutrients.kcal) +
+              'kcal · 단 ' + Math.round(usual.nutrients.protein) + 'g' }),
+          ]),
+          el('span', { class: 'pain-go', text: '넣기' }),
+        ]));
+      });
+      if (text.trim() && !results.childNodes.length) {
+        results.appendChild(el('p', { class: 'hint-line', text: '음식표에 없습니다. 아래에 직접 넣어 주세요.' }));
+      }
+    };
+    // "마라탕 1그릇"으로 남은 조각은 이름만 찾는다
+    var name = String(query || '').replace(/\s*[\d.\/]+.*$/, '').trim();
+    var search = el('input', {
+      type: 'search', placeholder: '음식 이름', 'aria-label': '음식 이름으로 찾기', value: name,
+      oninput: function () { fill(search.value); },
+    });
+    fill(name);
+
+    var field = function (label, attrs) {
+      var input = el('input', Object.assign({ class: 'text-input' }, attrs));
+      return { input: input, node: el('label', { class: 'food-field' }, [el('span', { text: label }), input]) };
+    };
+    var customName = field('이름', { type: 'text', value: name, maxlength: '40', placeholder: '예: 마라탕' });
+    var amount = field('양', { type: 'text', value: '1인분', maxlength: '20' });
+    var kcal = field('칼로리 (kcal)', { type: 'number', inputmode: 'numeric', min: '0', max: '5000' });
+    var protein = field('단백질 g', { type: 'number', inputmode: 'decimal', min: '0', max: '500' });
+    var fat = field('지방 g', { type: 'number', inputmode: 'decimal', min: '0', max: '500' });
+    var carbs = field('탄수 g', { type: 'number', inputmode: 'decimal', min: '0', max: '1000' });
+    var warn = el('p', { class: 'hint-line warn', role: 'status' }, []);
+    var grams = function (input) {
+      var value = Number(input.value);
+      return value > 0 ? Math.round(value * 10) / 10 : 0;
+    };
+
+    openModal('음식 찾기', E.MEAL_LABELS[meal], [
+      search,
+      results,
+      el('div', { class: 'food-custom' }, [
+        el('p', { class: 'food-edit-label', text: '직접 넣기 — 포장 음식은 영양성분표 숫자를 그대로' }),
+        el('div', { class: 'food-custom-pair' }, [customName.node, amount.node]),
+        kcal.node,
+        el('div', { class: 'food-custom-macros' }, [carbs.node, protein.node, fat.node]),
+        warn,
+        el('button', {
+          type: 'button', class: 'finish food-custom-save', text: E.MEAL_LABELS[meal] + '에 넣기',
+          onclick: function () {
+            var label = customName.input.value.trim();
+            var energy = Number(kcal.input.value);
+            if (!label || !(energy > 0)) {
+              warn.textContent = '이름과 칼로리는 꼭 넣어 주세요.';
+              return;
+            }
+            dropUnknown();
+            tidyFoodDraft();
+            modal.close();
+            addFoodEntries([{
+              id: newFoodId(), date: foodToday(), meal: meal, name: label.slice(0, 40), grams: 0,
+              amount: (amount.input.value.trim() || '1인분').slice(0, 20),
+              kcal: Math.round(Math.min(5000, energy)),
+              protein: grams(protein.input), fat: grams(fat.input), carbs: grams(carbs.input),
+            }]);
+          },
+        }),
+      ]),
+    ]);
+  }
+
+  /**
+   * 몇 주 모이면 — 평균과 유지 칼로리.
+   *
+   * 유지 칼로리를 키 · 나이 공식으로 내지 않는다. 공식은 사람마다 ±300kcal는
+   * 틀린다. 먹은 양과 체중이 같이 있으면 몸이 직접 답한다 — 3주 동안 하루
+   * 2,400kcal를 먹고 체중이 그대로면 그 사람의 유지량은 2,400이다.
+   */
+  function foodWeek(today) {
+    if (!state.foodLog.length) return null;
+    var wrap = el('div', { class: 'food-week' }, []);
+    var avg = E.intakeAverage(state.foodLog, today, 7);
+    if (avg) {
+      wrap.appendChild(el('div', { class: 'food-week-row' }, [
+        el('span', { text: '지난 7일 평균' }),
+        el('b', { text: avg.kcal.toLocaleString('ko-KR') + 'kcal · 단백질 ' + avg.protein + 'g' }),
+        el('span', { class: 'food-week-n', text: '다 적은 ' + avg.days + '일' }),
+      ]));
+    }
+    var weights = weighIns();
+    var est = E.maintenanceEstimate(state.foodLog, weights, today);
+    if (est) {
+      wrap.appendChild(el('div', { class: 'food-week-row main' }, [
+        el('span', { text: '내 유지 칼로리' }),
+        el('b', { text: '≈ ' + est.kcal.toLocaleString('ko-KR') + 'kcal' }),
+        el('span', { class: 'food-week-n', text:
+          '체중 주 ' + (est.weeklyKg > 0 ? '+' : '') + est.weeklyKg + 'kg · ' + est.days + '일' }),
+      ]));
+      wrap.appendChild(el('p', { class: 'hint-line', text: E.intakeGuide(est, bodyGoal()) }));
+      return wrap;
+    }
+    if ((state.consent || []).indexOf('healthData') < 0) {
+      wrap.appendChild(el('p', { class: 'hint-line', text:
+        '체중 기록(건강정보 동의)이 있으면 먹은 양과 맞춰 내 유지 칼로리를 계산합니다.' }));
+      return wrap;
+    }
+    var days = (E.intakeAverage(state.foodLog, today, 21) || { days: 0 }).days;
+    var weighed = weights.filter(function (point) {
+      return point.date <= today && point.date > E.addDays(today, -21);
+    }).length;
+    wrap.appendChild(el('p', { class: 'hint-line', text: days >= 10 && weighed >= 4
+      ? '체중을 잰 날이 열흘 넘게 걸쳐 있어야 유지 칼로리를 냅니다. 며칠 더 재 주세요.'
+      : '3주 안에 두 끼 이상 적은 날 10일, 체중 4번이 모이면 내 유지 칼로리를 계산합니다 — 지금 ' +
+        Math.min(days, 10) + '/10일 · ' + Math.min(weighed, 4) + '/4번.' }));
+    return wrap;
   }
 
   /**
@@ -12320,7 +12983,8 @@
   /**
    * 나에게 맞추기 — 못 먹는 것, 예산, 평일 점심.
    *
-   * 키·나이·활동량은 묻지 않는다. 칼로리를 계산하지 않으니 필요가 없다.
+   * 키·나이·활동량은 묻지 않는다. 칼로리 목표를 공식으로 내지 않으니 필요가
+   * 없다 — 유지 칼로리는 먹은 것과 저울로 낸다(foodWeek).
    * 누르면 바로 바뀌고 저장된다 — "저장" 버튼을 따로 두면 누르는 걸 잊는다.
    */
   function openDietSettings() {
@@ -12733,6 +13397,10 @@
 
   /** 철회한 항목의 기록을 실제로 지운다. 동의만 끄고 데이터를 남기면 안 된다. */
   function purgeFor(id) {
+    if (id === 'dietLog') {
+      state.foodLog = [];
+      state.foodDraft = null;
+    }
     if (id === 'painData') {
       state.pain = JOINTS.map(function (joint) { return { joint: joint, score: 0 }; });
       state.checkIns = state.checkIns.map(function (entry) {
@@ -12807,6 +13475,7 @@
           : [],
       ),
       체크인: state.checkIns,
+      식단기록: state.foodLog,
     };
 
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });

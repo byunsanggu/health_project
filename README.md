@@ -31,8 +31,9 @@
 
 ```bash
 npm install     # typescript, @types/node (런타임 의존성은 없습니다)
-npm test        # 516개 테스트
+npm test        # 엔진 테스트 (1,200개 남짓)
 npm run check   # 타입체크 + 테스트
+npm run e2e     # 앱을 브라우저로 눌러 보는 테스트 (playwright가 깔려 있어야 합니다)
 
 node src/demo.ts   # 6주 블록 시뮬레이션
 ```

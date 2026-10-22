@@ -2468,6 +2468,87 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .pt-cool-name { font-size: 18px; font-weight: 700; }
 .pt-cool-left { font-family: var(--mono); font-size: 40px; font-weight: 700; color: var(--accent); }
 .pt-cool-actions { display: flex; gap: 8px; justify-content: center; margin-top: 6px; }
+/* ── 먹은 것 ─────────────────────────────────────── */
+/*
+ * 탄 · 단 · 지 세 색. 단백질은 앱의 남색이다 — 이 앱에서 가장 자주 보는
+ * 숫자라 주인공 색을 준다. 셋은 색약 시뮬레이션에서도 이웃끼리 구분되는
+ * 조합으로 골랐다(밝은 화면 · 어두운 화면 각각). 지방의 청록은 밝은 화면에서
+ * 배경 대비가 3:1에 조금 못 미쳐서, 막대 아래에 이름과 숫자를 늘 글로 같이 쓴다.
+ */
+:root { --macro-carbs: #eb6834; --macro-protein: #4540c9; --macro-fat: #1baf7a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --macro-carbs: #d95926; --macro-protein: #827ef5; --macro-fat: #199e70; } }
+:root[data-theme="dark"] { --macro-carbs: #d95926; --macro-protein: #827ef5; --macro-fat: #199e70; }
+.food-pitch { margin: 0; font-size: 13.5px; line-height: 1.6; }
+.food-terms { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12px; line-height: 1.5; }
+.food-terms dt { color: var(--muted); white-space: nowrap; }
+.food-terms dd { margin: 0; }
+.food-totals { display: grid; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line-soft); }
+.food-total { display: flex; align-items: baseline; gap: 6px; }
+.food-total-label { font-size: 13px; color: var(--muted); }
+.food-kcal { font-size: 30px; font-weight: 600; line-height: 1.1; letter-spacing: -.01em; }
+.food-kcal-unit { font-size: 13px; color: var(--muted); }
+.macro-bar { display: flex; gap: 2px; height: 12px; }
+.macro-bar i { display: block; min-width: 3px; outline: none; }
+.macro-bar i:first-child { border-radius: 4px 0 0 4px; }
+.macro-bar i:last-child { border-radius: 0 4px 4px 0; }
+.macro-bar i:only-child { border-radius: 4px; }
+.macro-bar i.hot, .macro-bar i:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink); }
+.macro-bar .carbs, .macro-legend .key.carbs { background: var(--macro-carbs); }
+.macro-bar .protein, .macro-legend .key.protein { background: var(--macro-protein); }
+.macro-bar .fat, .macro-legend .key.fat { background: var(--macro-fat); }
+.macro-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.macro-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.macro-legend .key { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.macro-legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.protein-meter { display: grid; gap: 6px; }
+.protein-meter-head { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.protein-meter-head b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.protein-meter-left { margin-left: auto; }
+.protein-meter-track { height: 8px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; }
+.protein-meter-track i { display: block; height: 100%; border-radius: 4px; background: var(--macro-protein); }
+.food-input { display: grid; gap: 8px; }
+.food-input-row { display: flex; gap: 6px; align-items: stretch; }
+.food-input-row .text-input { flex: 1; min-width: 0; }
+/* 16px 밑이면 아이폰이 칸을 누를 때 화면을 확대한다 */
+.food-text, .food-grams, .food-custom .text-input { font-family: var(--sans); font-size: 16px; }
+.food-calc { flex: none; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); border-radius: 9px; padding: 0 16px; font-size: 14px; font-weight: 600; }
+.food-browse { justify-self: start; border: 0; background: none; padding: 2px 0; color: var(--accent); font-size: 12.5px; }
+.food-preview { display: grid; gap: 2px; padding: 10px 12px 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--surface); }
+.food-preview-title { margin: 0 0 4px; font-size: 12px; color: var(--muted); }
+.food-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; width: 100%; padding: 8px 0; border: 0; border-top: 1px solid var(--line-soft); background: none; color: inherit; font: inherit; font-size: 13.5px; text-align: left; }
+.food-preview .food-row:nth-child(2), .food-meal-head + .food-row { border-top: 0; }
+.food-name { display: grid; gap: 1px; min-width: 0; }
+.food-name b { font-weight: 600; }
+.food-amount { font-size: 11.5px; color: var(--muted); }
+.food-row.unknown .food-amount { color: var(--zone-hard); }
+.food-kcal-cell { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.food-x { width: 30px; height: 30px; border: 0; border-radius: 7px; background: none; color: var(--muted); font-size: 18px; line-height: 1; }
+.food-x:hover { background: var(--surface-2); color: var(--ink); }
+.food-go { color: var(--muted); }
+.food-preview-sum { margin: 6px 0 8px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.food-preview-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 6px; }
+.food-quick { display: grid; gap: 7px; }
+.food-quick-label { font-size: 11.5px; color: var(--muted); }
+.food-copy { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 10px; background: transparent; color: var(--accent); font-size: 13px; font-weight: 600; text-align: left; }
+.food-copy-what { margin-left: auto; font-size: 11.5px; font-weight: 400; color: var(--muted); text-align: right; }
+.food-day { display: grid; }
+.food-meal-head { display: flex; align-items: baseline; gap: 8px; padding: 12px 0 2px; border-top: 1px solid var(--line); }
+.food-meal-name { font-size: 13px; font-weight: 650; color: var(--accent); }
+.food-meal-sum { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.food-week { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+.food-week-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12.5px; color: var(--muted); }
+.food-week-row b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.food-week-row.main b { font-size: 16px; color: var(--accent); }
+.food-week-n { margin-left: auto; font-size: 11px; }
+.food-edit-now { margin: 0; font-size: 13px; line-height: 1.5; }
+.food-edit-label { margin: 4px 0 -4px; font-size: 11.5px; color: var(--muted); }
+.food-unit { align-self: center; font-size: 13px; color: var(--muted); }
+.food-results .search-row { width: 100%; text-align: left; color: inherit; font: inherit; }
+.food-custom { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.food-custom-pair { display: grid; grid-template-columns: 3fr 2fr; gap: 6px; }
+.food-custom-macros { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.food-field { display: grid; gap: 4px; font-size: 11.5px; color: var(--muted); }
+.food-field .text-input { padding: 9px 10px; }
 </style>
 
 <div class="wrap">
