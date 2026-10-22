@@ -66,6 +66,11 @@
     }
   }
 
+  /** 만드는 사람용 판인가 — 내 컴퓨터에서 열었거나 ?dev. 실제 사용자에게는 안 보일 것을 가린다. */
+  function devMode() {
+    return document.documentElement.hasAttribute('data-dev');
+  }
+
   function isIOS() {
     return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -252,6 +257,7 @@
         cardioLog: state.cardioLog,
         wodResults: state.wodResults,
         sessionStartedAt: state.sessionStartedAt,
+        sessionEndedAt: state.sessionEndedAt,
         gymBook: state.gymBook,
         consent: state.consent,
         consentRecord: state.consentRecord,
@@ -325,6 +331,7 @@
       state.cardioLog = settings.cardioLog || [];
       state.wodResults = settings.wodResults || [];
       state.sessionStartedAt = settings.sessionStartedAt || null;
+      state.sessionEndedAt = settings.sessionEndedAt || null;
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
       if (!E.allows(state.consent, 'dietLog')) state.foodLog = [];
@@ -608,6 +615,8 @@
     summary: null,
     demo: null,
     sessionStartedAt: null,
+    // 오늘을 마친 시각 — 마친 뒤에는 운동 시간이 더 늘지 않는다
+    sessionEndedAt: null,
     busyEquipment: [],
     occupied: {},
     homeGymId: null,
@@ -1872,7 +1881,9 @@
    */
   function elapsedSeconds() {
     if (!state.sessionStartedAt) return 0;
-    return Math.max(0, Math.round((Date.now() - state.sessionStartedAt) / 1000));
+    // 오늘을 마쳤으면 시계도 거기서 멈춘다 — 두 시간 뒤에 요약을 열면 "94분 동안"이 되면 안 된다
+    var end = state.sessionClosed && state.sessionEndedAt ? state.sessionEndedAt : Date.now();
+    return Math.max(0, Math.round((end - state.sessionStartedAt) / 1000));
   }
 
   function elapsedText() {
@@ -1881,7 +1892,8 @@
     var rest = total % 3600;
     var body = E.formatDuration(rest);
     // 한 시간을 넘기면 분만으로는 못 읽는다
-    return hours > 0 ? hours + ':' + body.padStart(4, '0') : body;
+    // "1:00:01" — 분 자리도 두 자리. 4로 채우면 "1:0:01"이 된다
+    return hours > 0 ? hours + ':' + body.padStart(5, '0') : body;
   }
 
   function tickElapsed() {
@@ -2530,8 +2542,12 @@
   }
 
   function renderStatus() {
-    var phase = state.plan.phase === 'deload' ? '디로드' : '축적 ' + state.plan.weekInBlock + '주차';
-    statusMeta.textContent = phase + ' · RIR ' + state.plan.targetRir;
+    /*
+     * 늘 보이는 줄이라 현장 용어(축적 · RIR)를 쓰지 않는다. "여유 3개"는 세트를
+     * 끝낼 때 몇 개를 더 할 수 있게 남기라는 뜻이다 — 버튼("3회 더")과 같은 말이다.
+     */
+    var phase = state.plan.phase === 'deload' ? '쉬어 가는 주' : state.plan.weekInBlock + '주차';
+    statusMeta.textContent = phase + ' · 여유 ' + state.plan.targetRir + '개';
   }
 
   function renderTabs() {
@@ -2587,9 +2603,7 @@
       index: index,
       landmarks: state.landmarks,
       plan: state.plan,
-      durationSeconds: state.sessionStartedAt
-        ? Math.round((Date.now() - state.sessionStartedAt) / 1000)
-        : undefined,
+      durationSeconds: state.sessionStartedAt ? elapsedSeconds() : undefined,
       volumeOptions: rirOptions(),
     });
     state.summary = summary;
@@ -3457,10 +3471,11 @@
       class: 'asset-note',
       text: filmed
         ? '직접 촬영한 영상입니다. 저작권이 이쪽에 있어 사용에 제약이 없습니다.'
-        : '이 시연은 관절 각도 키프레임으로 그린 예시입니다' +
-          (window.FitDemo3D.is3d() ? '' : ' (three.js를 받지 못해 평면으로 그렸습니다)') +
-          '. 촬영본이 들어오면 이 자리가 영상으로 바뀝니다 — 종목마다 따로 켤 수 있어서 ' +
-          '다 찍을 때까지 기다리지 않아도 됩니다.',
+        : '이 시연은 관절 각도로 그린 예시입니다' +
+          (window.FitDemo3D.is3d() ? '' : ' (입체 그림을 불러오지 못해 평면으로 그렸습니다)') + '.' +
+          // 촬영본 이야기는 만드는 사람에게만
+          (devMode() ? ' 촬영본이 들어오면 이 자리가 영상으로 바뀝니다 — 종목마다 따로 켤 수 있어서 ' +
+            '다 찍을 때까지 기다리지 않아도 됩니다.' : ''),
     }));
   }
 
@@ -6481,7 +6496,18 @@
       ]));
 
       body.push(el('div', { class: 'list-label', text: '템포 — 내리고 · 멈추고 · 올리고 · 멈추고' }));
-      body.push(el('div', { class: 'chip-row' }, E.TEMPO_PRESETS.map(function (preset) {
+      /*
+       * 박자가 같은 것은 하나만 보인다. "폭발적으로"는 기본과 초가 같고 마음가짐만
+       * 다르다 — 칩 둘이 같은 숫자로 같이 켜져 있으면 무엇을 고른 건지 모른다.
+       */
+      var seen = {};
+      var presets = E.TEMPO_PRESETS.filter(function (preset) {
+        var key = E.tempoLabel(preset.tempo);
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
+      body.push(el('div', { class: 'chip-row' }, presets.map(function (preset) {
         var on = E.tempoLabel(preset.tempo) === E.tempoLabel(tempo);
         return el('button', {
           type: 'button', class: 'pick', 'aria-pressed': String(on),
@@ -8516,9 +8542,7 @@
     var closedNudge = reportNudge();
     if (closedNudge) screen.appendChild(closedNudge);
 
-    var minutes = state.sessionStartedAt
-      ? Math.max(1, Math.round((Date.now() - state.sessionStartedAt) / 60000))
-      : null;
+    var minutes = state.sessionStartedAt ? Math.max(1, Math.round(elapsedSeconds() / 60)) : null;
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
@@ -8544,6 +8568,7 @@
           onclick: function () {
             // 잘못 눌렀을 수 있다. 되돌아가는 길을 막지 않는다.
             state.sessionClosed = false;
+            state.sessionEndedAt = null;
             state.started = true;
             if (ptOn() && state.ptRun && state.ptRun.paused) resumePt();
             render();
@@ -8611,6 +8636,7 @@
      * 다 쉬었다고 알림이 한 번 더 울린다.
      */
     state.sessionClosed = true;
+    state.sessionEndedAt = Date.now();
     state.started = false;
     stopRest();
     modal.close();
@@ -11283,7 +11309,7 @@
    */
   /** 운동 빠진 주에 불러 주기 — 서버 푸시가 되는 곳에서만. 못 하면 이유. */
   function nudgeAvailability() {
-    if (typeof FitPush === 'undefined' || !FitPush.configured()) return '이 빌드에서는 서버 알림을 쓸 수 없습니다.';
+    if (typeof FitPush === 'undefined' || !FitPush.configured()) return '서버에 연결된 버전에서만 쓸 수 있습니다.';
     if (!Remote.configured() || !Remote.signedIn()) return '로그인하면 쓸 수 있습니다.';
     if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !state.standalone) return '아이폰은 홈 화면에 설치한 앱에만 알림이 옵니다.';
     if (FitPush.permission() === 'denied') return '알림이 막혀 있습니다. 브라우저 설정에서 이 사이트의 알림을 허용해 주세요.';
@@ -11797,6 +11823,10 @@
         el('span', { class: 'num ' + cls, text: item.deltaSets === 0 ? '유지' : sign + fmt(item.deltaSets) }),
       ]));
     });
+    // 첫 주에는 비교할 지난주가 없다 — 빈 칸 대신 언제 생기는지 말한다
+    if (changed.length === 0) {
+      list.appendChild(el('p', { class: 'hint-line', text: '한 주를 마치면 그 주 기록을 보고 다음 주 부위별 세트 수를 여기서 정합니다.' }));
+    }
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
@@ -11850,8 +11880,10 @@
 
     // RIR 신뢰도 — 엔진 전체가 이 신고값 위에 서 있다
     var calibration = state.session.rirCalibration;
+    // 판단 전에는 막대를 그리지 않는다 — "아직 판단 전" 옆에 꽉 찬 100%가 있으면 서로 다른 말을 한다
+    var judged = calibration.confidence !== 'none';
     var calBody = el('div', { class: 'sheet-body' }, [
-      el('div', { class: 'reliability' }, [
+      !judged ? null : el('div', { class: 'reliability' }, [
         el('div', { class: 'reliability-track' }, [
           el('div', {
             class: 'reliability-fill' + (calibration.reliability >= 0.85 ? ' good' : ''),
@@ -13548,7 +13580,7 @@
         el('span', { class: 'status-key', text: item.required ? '필수' : '선택' }),
         el('span', {
           class: 'status-val ' + (on ? 'ok' : 'todo'),
-          text: item.label + (item.sensitive ? ' · 민감정보' : ''),
+          text: item.label + (item.sensitive && item.label.indexOf('민감정보') < 0 ? ' · 민감정보' : ''),
         }),
       ]);
 
@@ -13782,7 +13814,17 @@
      * 서버. 폰을 바꿔도 기록이 남게 하는 유일한 길이라서, "언젠가 하는 것"이
      * 아니라 설정 화면에서 바로 보이는 자리에 둔다.
      */
-    screen.appendChild(el('button', {
+    /*
+     * 서버 없이 만든 판에서는 연결 폼(서버 주소 · 열쇠)이 사용자에게 열리면 안 된다.
+     * 그건 만드는 사람이 쓰는 문이다. 사용자에게는 사실만 말한다.
+     */
+    if (!Remote.configured() && !devMode()) {
+      screen.appendChild(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: '기록은 이 폰에' }),
+        el('div', { text: '이 버전은 서버 없이 돌아서 기록이 이 폰에만 저장됩니다. ' +
+          '"내 데이터 내려받기"로 언제든 사본을 받아 둘 수 있습니다.' }),
+      ]));
+    } else screen.appendChild(el('button', {
       type: 'button', class: 'server-cta',
       // 연결은 됐는데 로그인만 안 됐으면 곧바로 로그인 화면으로 보낸다.
       onclick: function () {
@@ -13815,8 +13857,7 @@
       el('div', {
         text: '폰 화면을 끈 채로 오래 두면 브라우저가 타이머를 재우기 때문에, 알림이 몇 초 늦거나 ' +
           '뜨지 않을 수 있습니다. 앱으로 돌아오면 남은 시간은 항상 정확합니다 — 시간을 세는 게 아니라 ' +
-          '끝나는 시각을 기억하기 때문입니다. 손목 알림을 100% 보장하려면 서버에서 예약 푸시를 ' +
-          '보내야 하고, 받는 쪽 준비는 이미 돼 있습니다.',
+          '끝나는 시각을 기억하기 때문입니다.',
       }),
     ]));
   }
@@ -14167,10 +14208,13 @@
         '다니는 헬스장을 직접 등록하세요. 이름과 있는 기구만 넣으면 됩니다 — ' +
         '아파트·회사 헬스장도 됩니다.' }));
       body.push(registerButton());
+    }
+    if (!live && devMode()) {
       /*
-       * 열쇠 넣는 문은 작게 둔다. 이건 만든 사람이 서버 없이 시험해 보는
-       * 길이지 사용자가 할 일이 아니다. 크게 띄워 두면 앱을 받은 사람이
-       * "나도 카카오 계정을 만들어야 하나" 하고 거기서 멈춘다.
+       * 열쇠 넣는 문과 예시 헬스장은 만드는 사람용 판에서만 보인다. 서버 없이
+       * 시험해 보는 길이지 사용자가 할 일이 아니다 — 사용자 화면에 띄우면
+       * "나도 카카오 계정을 만들어야 하나" 하고 거기서 멈추고, 가상의 헬스장을
+       * 진짜인 줄 알고 추가한다.
        */
       body.push(el('button', {
         type: 'button', class: 'ghost search-setup',
@@ -15779,7 +15823,12 @@
       }));
     }
     // 필수 동의 전에는 아무것도 묻지 않는다. 동의가 수집보다 먼저다.
-    var blocked = step.id === 'consent' && !E.canUseService(state.consent);
+    var picked = onboardingPicked();
+    var needs = step.id === 'level' && !picked.level ? '단계를 골라 주세요.'
+      : step.id === 'profile' && !picked.sex ? '성별을 골라 주세요 — 첫 무게를 정하는 데 씁니다.'
+      : null;
+    var blocked = (step.id === 'consent' && !E.canUseService(state.consent)) || Boolean(needs);
+    if (needs) screen.appendChild(el('p', { class: 'hint-line warn wizard-needs', text: needs }));
 
     /*
      * 가입 단계의 주 버튼은 그 화면 안에 있다(계정 만들기 · 로그인).
@@ -15896,8 +15945,8 @@
     }
 
     screen.appendChild(el('p', { class: 'asset-note', text:
-      '동의는 언제든 철회할 수 있습니다(위쪽 "내 정보"). 철회하면 해당 기록을 바로 지웁니다. ' +
-      '이 문구는 프로토타입용이며, 실제 출시 전에는 법률 검토가 필요합니다.' }));
+      '동의는 언제든 철회할 수 있습니다(위쪽 "내 정보"). 철회하면 해당 기록을 바로 지웁니다.' +
+      (devMode() ? ' 이 문구는 프로토타입용이며, 실제 출시 전에는 법률 검토가 필요합니다.' : '') }));
   }
 
   function consentRow(label, value) {
@@ -15907,15 +15956,39 @@
     ]);
   }
 
+  /*
+   * 처음 설문에서 사람이 직접 고른 것.
+   *
+   * 전에는 중급 · 18개월 · 남성 78kg이 미리 골라져 있었다. 처음 온 사람이 "다음"만
+   * 누르면 바벨 스쿼트 · 데드리프트가 든 중급 프로그램을 받았다. 단계와 성별은
+   * 본인이 고르기 전에는 넘어가지 않는다. 다시 설정할 때는 지금 답이 이미 고른 것이다.
+   */
+  function onboardingPicked() {
+    var ob = state.onboarding;
+    if (!ob.picked) ob.picked = ob.redo ? { level: true, sex: true, months: true, weight: true } : {};
+    return ob.picked;
+  }
+
+  // 단계를 고르면 기간 칸도 그 단계에 흔한 값으로 — 직접 고친 뒤에는 건드리지 않는다
+  var TYPICAL_MONTHS = { beginner: 3, intermediate: 12, advanced: 36, expert: 72 };
+
   function stepLevel() {
+    var picked = onboardingPicked();
+    // 처음 온 사람의 기간 칸은 0에서 — 미리 적힌 18개월은 중급이라고 말하는 셈이다
+    if (!picked.level && !picked.months) state.answers.monthsTraining = 0;
     var body = el('div', { class: 'sheet-body' }, []);
     E.TRAINING_LEVELS.forEach(function (level) {
       var profile = E.levelProfile(level);
       body.appendChild(el('button', {
         type: 'button',
         class: 'choice',
-        'aria-pressed': String(state.answers.selfReportedLevel === level),
-        onclick: function () { state.answers.selfReportedLevel = level; render(); },
+        'aria-pressed': String(Boolean(picked.level) && state.answers.selfReportedLevel === level),
+        onclick: function () {
+          state.answers.selfReportedLevel = level;
+          picked.level = true;
+          if (!picked.months) state.answers.monthsTraining = TYPICAL_MONTHS[level];
+          render();
+        },
       }, [
         el('span', { class: 'choice-title', text: profile.label }),
         el('span', { class: 'choice-hint', text: profile.description }),
@@ -15937,7 +16010,11 @@
           name: '꾸준히 훈련한 기간', value: state.answers.monthsTraining,
           min: 0, max: 360, unit: '개월', id: 'months',
           hint: '고른 단계가 실제와 맞는지 대조합니다.',
-          onInput: function (value) { state.answers.monthsTraining = value; renderPreviewNote(); },
+          onInput: function (value) {
+            state.answers.monthsTraining = value;
+            onboardingPicked().months = true;
+            renderPreviewNote();
+          },
         }),
         el('p', { class: 'hint-line', id: 'level-preview', text: levelPreview() }),
       ]),
@@ -15945,6 +16022,7 @@
   }
 
   function levelPreview() {
+    if (state.onboarding.active && !onboardingPicked().level) return '단계를 고르면 어느 기준으로 시작할지 알려 드립니다.';
     var check = E.assessLevel({
       selfReported: state.answers.selfReportedLevel,
       monthsTraining: state.answers.monthsTraining,
@@ -15966,16 +16044,26 @@
         el('span', { class: 'meta', text: '첫 중량 추정용' }),
       ]),
       el('div', { class: 'sheet-body' }, [
+        segmented(['male', 'female'].map(function (sex) {
+          return {
+            label: sex === 'male' ? '남성' : '여성',
+            active: Boolean(onboardingPicked().sex) && state.answers.sex === sex,
+            onSelect: function () {
+              var picked = onboardingPicked();
+              state.answers.sex = sex;
+              picked.sex = true;
+              // 체중을 아직 안 고쳤으면 그 성별에 흔한 값에서 시작한다 — 78kg에서 시작하면 첫 무게가 무겁다
+              if (!picked.weight) state.answers.bodyweightKg = sex === 'female' ? 58 : 74;
+              render();
+            },
+          };
+        })),
         numberRow({
           name: '체중', value: state.answers.bodyweightKg, min: 30, max: 200,
           step: 0.5, unit: 'kg', id: 'bw',
           hint: '첫 종목의 시작 중량을 여기서 환산합니다.',
-          onInput: function (value) { state.answers.bodyweightKg = value; },
+          onInput: function (value) { state.answers.bodyweightKg = value; onboardingPicked().weight = true; },
         }),
-        segmented([
-          { label: '남성', active: state.answers.sex === 'male', onSelect: function () { state.answers.sex = 'male'; render(); } },
-          { label: '여성', active: state.answers.sex === 'female', onSelect: function () { state.answers.sex = 'female'; render(); } },
-        ]),
       ]),
     ]));
 

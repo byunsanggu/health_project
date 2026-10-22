@@ -90,9 +90,9 @@ export const FAKE_SPEECH = () => {
  * 처음 설정을 끝까지 넘긴다.
  *
  * consent: 'required'면 필수만, 'all'이면 선택까지 전부 동의한다.
- * 나머지 단계는 기본값 그대로 "다음"을 누른다.
+ * 단계 · 성별은 직접 골라야 넘어가므로 level · sex로 고른다. 나머지는 기본값 그대로.
  */
-export async function onboard(page, { consent = 'required' } = {}) {
+export async function onboard(page, { consent = 'required', level = '중급', sex = '남성' } = {}) {
   await page.waitForSelector('.consent-card');
   const cards = page.locator('.consent-card');
   for (let i = 0; i < await cards.count(); i += 1) {
@@ -103,7 +103,17 @@ export async function onboard(page, { consent = 'required' } = {}) {
       if (await toggle.getAttribute('aria-pressed') !== 'true') await toggle.click();
     }
   }
-  for (let i = 0; i < 12; i += 1) {
+  await finishWizard(page, { level, sex });
+}
+
+/** 설문 나머지를 "다음"으로 넘긴다. 고르라고 막혀 있으면 고른다. */
+export async function finishWizard(page, { level = '중급', sex = '남성' } = {}) {
+  for (let i = 0; i < 14; i += 1) {
+    const step = (await page.locator('.session-head h2').textContent()).trim();
+    if (await page.locator('.wizard-needs').count()) {
+      if (step === '경력') await page.locator('.choice', { hasText: level }).first().click();
+      else if (step === '내 정보') await page.locator('.segmented button', { hasText: sex }).click();
+    }
     const next = page.locator('.wizard-nav .primary');
     const text = (await next.textContent()).trim();
     await next.click();

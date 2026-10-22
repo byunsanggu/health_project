@@ -30,4 +30,14 @@ export default async function ({ page, url, shot }) {
   await page.locator('dialog').waitFor();
   check((await page.locator('dialog').textContent()).length > 50, '요약이 비어 있습니다');
   await shot('2-summary');
+
+  // 오늘을 마치면 운동 시간이 거기서 멈춘다 — 90분 뒤에 봐도 같은 시간
+  await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();
+  const minutes = async () => (await page.locator('#screen').textContent()).match(/(\d+)분 동안/)?.[1];
+  const before = await minutes();
+  check(before, '마친 화면에 운동 시간이 없습니다');
+  await page.clock.fastForward(90 * 60 * 1000);
+  await page.locator('.tabbar [role="tab"]', { hasText: '주간' }).click();
+  await page.locator('.tabbar [role="tab"]', { hasText: '오늘' }).click();
+  check(await minutes() === before, `마친 뒤 시간이 ${before}분 → ${await minutes()}분으로 늘었습니다`);
 }

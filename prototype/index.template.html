@@ -33,7 +33,9 @@
   --bezel: #c9cdd6;
   --shadow: 0 1px 2px rgba(20, 22, 27, .06), 0 12px 32px rgba(20, 22, 27, .10);
   --sans: "IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* 한글은 고정폭 글꼴에 없다. 기본 고정폭 한글(칸이 넓다)로 떨어지면 "말  속  도"처럼 벌어지므로
+     한글만 본문 글꼴에서 가져온다 */
+  --mono: "IBM Plex Mono", "IBM Plex Sans KR", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -84,6 +86,10 @@ body {
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  /* 한국어는 어절 단위로 줄을 바꾼다 — "늘어/납니다"처럼 단어 가운데서 끊기지 않게.
+     칸보다 긴 한 덩어리(주소 · 숫자)만 어쩔 수 없을 때 끊는다 */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -1412,7 +1418,8 @@ input[type="search"] {
 /* ── 묶기 — 슈퍼세트 · 크로스핏 세트 ─────────────── */
 .pair-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  /* 표시가 "켜짐"처럼 두 글자여도 한 줄로 — 22px에 가두면 한 글자씩 세로로 쌓인다 */
+  grid-template-columns: minmax(22px, auto) minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   width: 100%;
@@ -1432,7 +1439,7 @@ input[type="search"] {
 /* 묶을 수 없는 조합 — 이유는 줄 안에 적힌다 */
 .pair-row.blocked { opacity: .55; cursor: default; }
 .pair-row.blocked .plan-sets { color: var(--zone-over); }
-.pair-mark { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent); }
+.pair-mark { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; }
 /* 담은 것 비우기 — 되돌리는 길은 있되 조용히 둔다 */
 .demo-open.wide { display: block; width: 100%; margin-top: 8px; text-align: center; }
 .pair-row .detail { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
@@ -2085,7 +2092,9 @@ input[type="search"] {
  */
 .progress-head {
   position: sticky;
-  top: 0;
+  /* 화면(#screen)의 위 여백 16px만큼 올려 붙인다 — top: 0이면 여백 아래에 붙어서
+     그 틈으로 밑에 깔린 글자가 비친다 */
+  top: -16px;
   z-index: 3;
   margin: -16px -16px 0;
   padding: 10px 16px;

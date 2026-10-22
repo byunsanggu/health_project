@@ -1,6 +1,6 @@
 // 헬스장 › 초기 설정 다시 하기 — 확인을 받고, 그만둘 수 있고, 다시 짜도 운동 기록이 남는다
 // (전에는 확인 없이 저장소를 통째로 지웠다)
-import { check, onboard, tab } from './lib.mjs';
+import { check, finishWizard, onboard, tab } from './lib.mjs';
 
 async function weekSets(page) {
   await tab(page, '볼륨');
@@ -45,13 +45,9 @@ export default async function ({ page, url, shot }) {
   await tab(page, '헬스장');
   await page.getByRole('button', { name: '초기 설정 다시 하기' }).click();
   await page.locator('dialog .redo-go').click();
-  for (let i = 0; i < 12; i += 1) {
-    const next = page.locator('.wizard-nav .primary');
-    const text = (await next.textContent()).trim();
-    await next.click();
-    if (text === '이 프로그램으로 시작') break;
-  }
-  await page.waitForSelector('.tabbar [role="tab"]');
+  // 지금 답이 이미 골라져 있으니 그대로 넘어간다
+  check(await page.locator('.choice[aria-pressed="true"]').count() === 1, '지금 단계가 골라져 있지 않습니다');
+  await finishWizard(page);
   check(await weekSets(page) === before, '다시 설정했더니 이번 주 기록이 사라졌습니다');
   await page.reload();
   await page.waitForSelector('.tabbar [role="tab"]');
