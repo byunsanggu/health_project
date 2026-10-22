@@ -30,6 +30,69 @@ export const MUSCLE_LABELS_KO: Record<MuscleGroup, string> = {
 };
 
 /**
+ * 사람이 부르는 부위 — 가슴 · 등 · 어깨 · 팔 · 하체 · 코어.
+ *
+ * 근육 열네 개를 그대로 늘어놓으면 종목을 찾을 때 "측면 삼각근"과 "후면 삼각근"이
+ * 따로 놀고, 가슴 종목 사이에 어깨 종목이 끼어든다. 고를 때는 이 여섯으로 묶는다.
+ */
+export type BodyRegion = 'chest' | 'back' | 'shoulders' | 'arms' | 'legs' | 'core';
+
+export const BODY_REGIONS: readonly { id: BodyRegion; label: string; muscles: readonly MuscleGroup[] }[] = [
+  { id: 'chest', label: '가슴', muscles: ['chest'] },
+  { id: 'back', label: '등', muscles: ['back', 'traps'] },
+  { id: 'shoulders', label: '어깨', muscles: ['frontDelt', 'sideDelt', 'rearDelt'] },
+  { id: 'arms', label: '팔', muscles: ['biceps', 'triceps', 'forearms'] },
+  { id: 'legs', label: '하체', muscles: ['quads', 'hamstrings', 'glutes', 'calves'] },
+  { id: 'core', label: '코어', muscles: ['abs'] },
+];
+
+export function regionOf(muscle: MuscleGroup | undefined): BodyRegion | null {
+  if (!muscle) return null;
+  return BODY_REGIONS.find((region) => region.muscles.includes(muscle))?.id ?? null;
+}
+
+export interface RegionGroup<T> {
+  /** 묶을 부위가 없는 것(유산소 등)은 null — 맨 뒤에 둔다 */
+  region: BodyRegion | null;
+  label: string;
+  items: T[];
+}
+
+/**
+ * 부위별로 묶는다. 오늘 쓰는 부위(first)를 앞에 두고 나머지는 정해 둔 차례대로.
+ * 묶음 안에서는 들어온 차례를 지킨다 — 부르는 쪽이 이미 정렬해 둔 순서다.
+ */
+export function groupByRegion<T>(
+  items: readonly T[],
+  muscleOf: (item: T) => MuscleGroup | undefined,
+  first: readonly MuscleGroup[] = [],
+): RegionGroup<T>[] {
+  const firstRegions: BodyRegion[] = [];
+  for (const muscle of first) {
+    const region = regionOf(muscle);
+    if (region && !firstRegions.includes(region)) firstRegions.push(region);
+  }
+  const order = [...firstRegions, ...BODY_REGIONS.map((region) => region.id).filter((id) => !firstRegions.includes(id))];
+
+  const buckets = new Map<BodyRegion | null, T[]>();
+  for (const item of items) {
+    const region = regionOf(muscleOf(item));
+    const bucket = buckets.get(region) ?? [];
+    bucket.push(item);
+    buckets.set(region, bucket);
+  }
+
+  const groups: RegionGroup<T>[] = [];
+  for (const id of order) {
+    const bucket = buckets.get(id);
+    if (bucket?.length) groups.push({ region: id, label: BODY_REGIONS.find((region) => region.id === id)!.label, items: bucket });
+  }
+  const rest = buckets.get(null);
+  if (rest?.length) groups.push({ region: null, label: '기타', items: rest });
+  return groups;
+}
+
+/**
  * 중급자 기준 주간 볼륨 랜드마크 (유효 세트 수).
  *
  * 문헌에서 반복 보고된 범위를 현장 감각으로 정리한 기본값이다.

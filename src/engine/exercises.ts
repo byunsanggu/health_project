@@ -11,6 +11,17 @@ import type { Exercise, Joint, MovementPattern, MuscleGroup } from './types.ts';
  *   0.6~0.8  = 통증 3점 이상이면 대체 권장
  *   0.3 이하 = 경미한 통증에서는 대체로 수행 가능
  */
+/** 목록에서 종목을 고를 때 붙이는 기구 이름. */
+export const EQUIPMENT_LABELS_KO: Record<Exercise['equipment'], string> = {
+  barbell: '바벨',
+  dumbbell: '덤벨',
+  machine: '머신',
+  cable: '케이블',
+  smith: '스미스',
+  bodyweight: '맨몸',
+  band: '밴드',
+};
+
 export const EXERCISES: readonly Exercise[] = [
   // ── 수평 푸시 ───────────────────────────────────────────────
   {

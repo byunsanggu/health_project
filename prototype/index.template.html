@@ -826,6 +826,14 @@ input[type="search"] {
 .cue-list li::before { content: "·"; color: var(--zone-ok); font-weight: 700; text-align: center; }
 .cue-list.mistakes li::before { content: "×"; color: var(--zone-over); font-weight: 600; font-size: 11px; }
 .list-label { font-family: var(--mono); font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+/* 종목 추가 — 부위 묶음. 머리줄은 목록 이름이라 작은 회색 꼬리표보다 진하게 */
+.add-lift-group {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-top: 2px; font-family: inherit; font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0; text-transform: none; color: var(--ink);
+}
+.add-lift-group .meta { font-weight: 400; }
+.add-lift-results { display: grid; gap: 10px; }
 .asset-note { font-size: 11.5px; color: var(--muted); line-height: 1.55; }
 
 /* ── 개인 랜드마크 ──────────────────────────────── */

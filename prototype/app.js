@@ -2437,6 +2437,11 @@
   }
 
   modal.addEventListener('close', function () {
+    /*
+     * 닫힘 이벤트는 close() 뒤에 늦게 온다. 그 사이에 다른 창을 열었으면(openModal)
+     * 지금 열려 있는 것은 새 창이다 — 지우면 빈 창만 남는다.
+     */
+    if (modal.open) return;
     disposeDemo();
     modal.textContent = '';
     /*
@@ -5010,22 +5015,30 @@
    * 그리고 오늘 아픈 데에 부담이 큰 것은 뒤로 민다.
    */
   function openAddLift() {
+    /*
+     * 검색칸은 한 번만 만든다. 전에는 글자를 칠 때마다 창을 통째로 다시 그려서
+     * 칸이 새것으로 바뀌었다 — 커서가 사라져 "레그"를 치면 "레"만 남았고, 한글
+     * 조합도 깨졌다. 치는 동안에는 아래 결과만 다시 그린다.
+     */
+    var results = el('div', { class: 'add-lift-results' }, []);
+    var search = el('input', {
+      type: 'search', class: 'text-input', value: state.addLiftQuery || '',
+      placeholder: '종목 이름 (예: 컬, 레그)',
+      'aria-label': '종목 찾기',
+      oninput: function (event) { state.addLiftQuery = event.target.value; draw(); },
+    });
+    openModal('종목 추가', state.extraLifts.length > 0 ? state.extraLifts.length + '개 추가됨' : '오늘만', [
+      el('p', { class: 'asset-note', text:
+        '프로그램에 없는 종목을 오늘만 끼워 넣습니다. 기록은 똑같이 남고 볼륨에도 들어갑니다 — ' +
+        '앱 밖에서 하면 그 세트는 어디에도 안 남습니다.' }),
+      search,
+      results,
+    ]);
+
     var draw = function () {
       var entry = currentGymEntry();
       var query = (state.addLiftQuery || '').trim();
       var body = [];
-
-      body.push(el('p', { class: 'asset-note', text:
-        '프로그램에 없는 종목을 오늘만 끼워 넣습니다. 기록은 똑같이 남고 볼륨에도 들어갑니다 — ' +
-        '앱 밖에서 하면 그 세트는 어디에도 안 남습니다.' }));
-
-      var search = el('input', {
-        type: 'search', class: 'text-input', value: state.addLiftQuery || '',
-        placeholder: '종목 이름 (예: 컬, 레그)',
-        'aria-label': '종목 찾기',
-        oninput: function (event) { state.addLiftQuery = event.target.value; draw(); },
-      });
-      body.push(search);
 
       var already = {};
       state.lifts.forEach(function (lift) { already[lift.exercise.id] = true; });
@@ -5073,38 +5086,68 @@
         }) ? 4 : 0;
         return offToday + missing + hurts;
       };
-      candidates = candidates.slice().sort(function (a, b) { return rank(a) - rank(b); }).slice(0, 40);
+      candidates = candidates.slice().sort(function (a, b) { return rank(a) - rank(b); });
+
+      /*
+       * 부위로 묶는다 — 가슴은 가슴끼리, 등은 등끼리. 섞어 늘어놓으면 가슴 종목 사이에
+       * 어깨 종목이 끼어들어 찾던 것을 지나친다. 오늘 쓰는 부위 묶음이 앞에 온다.
+       * 위의 부위 칩을 누르면 그 부위만 본다.
+       */
+      var groups = E.groupByRegion(candidates, E.primaryMuscle, todayMuscles);
+      var picked = state.addLiftRegion || 'all';
+      if (picked !== 'all' && !groups.some(function (group) { return group.region === picked; })) picked = 'all';
+      body.push(el('div', { class: 'chip-row add-lift-regions', role: 'group', 'aria-label': '부위' },
+        [{ region: 'all', label: '전체' }].concat(groups).map(function (group) {
+          return el('button', {
+            type: 'button', class: 'chip', 'aria-pressed': String(picked === group.region),
+            text: group.label,
+            onclick: function () { state.addLiftRegion = group.region; draw(); },
+          });
+        })));
 
       if (candidates.length === 0) {
         body.push(el('p', { class: 'hint-line', text: '그 이름으로는 없습니다. 다르게 쳐 보세요.' }));
       }
 
-      body.push(el('div', { class: 'summary-list' }, candidates.map(function (exercise) {
-        var missing = entry ? missingFor(exercise) : [];
-        var hurts = painful.filter(function (report) {
-          return report.score >= 3 && (exercise.jointStress[report.joint] || 0) >= 0.5;
-        })[0];
+      groups.filter(function (group) { return picked === 'all' || group.region === picked; }).forEach(function (group) {
+        body.push(el('div', { class: 'list-label add-lift-group' }, [
+          el('span', { text: group.label }),
+          el('span', { class: 'meta', text: group.items.length + '개' }),
+        ]));
+        body.push(el('div', { class: 'summary-list' }, group.items.map(function (exercise) {
+          var missing = entry ? missingFor(exercise) : [];
+          var hurts = painful.filter(function (report) {
+            return report.score >= 3 && (exercise.jointStress[report.joint] || 0) >= 0.5;
+          })[0];
 
-        return el('button', {
-          type: 'button', class: 'add-lift-row',
-          onclick: function () { addExtraLift(exercise); },
-        }, [
-          el('span', { class: 'plan-main' }, [
-            el('span', { class: 'name', text: exercise.name }),
-            el('span', { class: 'plan-sets', text:
-              hurts ? '⚠ ' + E.JOINT_LABELS_KO[hurts.joint] + '에 부담이 큽니다'
-                : missing.length > 0
-                  ? '이 헬스장에 ' + withParticleJs(missing[0], '이/가') + ' 없습니다'
-                : E.MUSCLE_LABELS_KO[E.primaryMuscle(exercise)] || exercise.pattern }),
-          ]),
-          el('span', { class: 'detail', text: '＋' }),
-        ]);
-      })));
+          return el('button', {
+            type: 'button', class: 'add-lift-row',
+            onclick: function () { addExtraLift(exercise); },
+          }, [
+            el('span', { class: 'plan-main' }, [
+              el('span', { class: 'name', text: exercise.name }),
+              el('span', { class: 'plan-sets', text:
+                hurts ? '⚠ ' + E.JOINT_LABELS_KO[hurts.joint] + '에 부담이 큽니다'
+                  : missing.length > 0
+                    ? '이 헬스장에 ' + withParticleJs(missing[0], '이/가') + ' 없습니다'
+                  : rowDetail(exercise, group.label) }),
+            ]),
+            el('span', { class: 'detail', text: '＋' }),
+          ]);
+        })));
+      });
 
-      openModal('종목 추가', state.extraLifts.length > 0
-        ? state.extraLifts.length + '개 추가됨' : '오늘만', body);
+      results.textContent = '';
+      body.forEach(function (node) { results.appendChild(node); });
     };
     draw();
+  }
+
+  /** "덤벨 · 측면 삼각근" — 묶음 이름(가슴)과 같은 근육 이름은 다시 적지 않는다. */
+  function rowDetail(exercise, groupLabel) {
+    var muscle = E.MUSCLE_LABELS_KO[E.primaryMuscle(exercise)];
+    return [E.EQUIPMENT_LABELS_KO[exercise.equipment], muscle && muscle !== groupLabel ? muscle : null]
+      .filter(Boolean).join(' · ') || exercise.pattern;
   }
 
   function addExtraLift(exercise) {
@@ -5413,7 +5456,10 @@
     state.exclusions = E.addExclusion(state.exclusions, {
       exerciseId: exercise.id, reason: 'unsure', today: state.todayDate,
     });
-    modal.close();
+    /*
+     * 창을 닫지 않고 그 자리에 시연을 띄운다. 전에는 닫자마자 시연을 열었는데,
+     * 닫힘 이벤트가 늦게 와서 방금 띄운 시연을 지웠다 — 화면만 어두워지고 빈 창이 남았다.
+     */
     rebuildSession();
     pushLog('배우는 중', '<b>' + exercise.name + '</b>' +
       particleOf(exercise.name, '은/는') + ' 빼지 않습니다. ' +
