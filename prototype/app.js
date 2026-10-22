@@ -677,6 +677,8 @@
     foodText: '',
     // 끼니 칩에서 고른 것. null이면 지금 시각으로 고른다
     foodMeal: null,
+    // 1이면 어제 것을 적는 중 (저장하지 않는다 — 다시 열면 오늘)
+    foodBack: 0,
     // 휴식 끝 알림 — 처음 설문에서 정하고 내 정보에서 바꾼다
     restAlerts: true,
     friendName: null,
@@ -12414,6 +12416,16 @@
     return isoOf(new Date());
   }
 
+  /**
+   * 적는 날 — 오늘, 아니면 어제.
+   *
+   * 저녁을 깜빡하고 다음 날 아침에 적는 일이 흔하다. 그날을 못 채우면 "다 적은
+   * 날"에서 빠져서 유지 칼로리가 그만큼 늦게 나온다.
+   */
+  function foodDate() {
+    return state.foodBack ? E.addDays(foodToday(), -1) : foodToday();
+  }
+
   function newFoodId() {
     return 'food-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   }
@@ -12423,6 +12435,8 @@
   /** 끼니 칩에서 고른 것. 안 골랐으면 지금 시각으로 — 점심 먹고 적는 사람에게 끼니를 묻지 않는다. */
   function foodMeal() {
     if (state.foodMeal) return state.foodMeal;
+    // 어제 것을 적는 사람은 대개 저녁을 빠뜨린 사람이다
+    if (state.foodBack) return 'dinner';
     var now = new Date();
     return E.mealForHour(now.getHours() + now.getMinutes() / 60);
   }
@@ -12487,20 +12501,27 @@
   function foodLogCard() {
     if (!dietLogAllowed()) return foodConsentCard();
 
-    var today = foodToday();
-    var entries = E.dayEntries(state.foodLog, today);
+    var day = foodDate();
+    var dayName = state.foodBack ? '어제' : '오늘';
+    var entries = E.dayEntries(state.foodLog, day);
     var body = el('div', { class: 'sheet-body' }, []);
 
-    if (entries.length) body.appendChild(foodTotals(entries, proteinGoalToday()));
+    if (state.foodBack) {
+      body.appendChild(el('div', { class: 'food-back' }, [
+        el('span', { text: '어제(' + day.slice(5).replace('-', '/') + ') 것을 적는 중' }),
+        el('button', { type: 'button', class: 'pick', text: '오늘로', onclick: function () { switchFoodDay(0); } }),
+      ]));
+    }
+    if (entries.length) body.appendChild(foodTotals(entries, proteinGoalToday(), dayName));
     body.appendChild(foodInput());
     if (state.foodDraft) {
       body.appendChild(foodPreview(state.foodDraft));
     } else {
-      var quick = foodQuick(today);
+      var quick = foodQuick(day);
       if (quick) body.appendChild(quick);
     }
     if (entries.length) body.appendChild(foodMeals(entries));
-    var week = foodWeek(today);
+    var week = foodWeek(foodToday());
     if (week) body.appendChild(week);
     body.appendChild(el('p', { class: 'hint-line', text:
       '숫자는 흔한 1인분 기준 어림입니다(±10~20%). 한 끼를 정확히 재는 것보다 매일 비슷하게 적는 게 중요합니다. ' +
@@ -12509,7 +12530,7 @@
     return el('div', { class: 'sheet food-log' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '먹은 것' }),
-        el('span', { class: 'meta', text: entries.length ? '오늘 ' + entries.length + '가지' : '말하듯 적기' }),
+        el('span', { class: 'meta', text: entries.length ? dayName + ' ' + entries.length + '가지' : '말하듯 적기' }),
       ]),
       body,
     ]);
@@ -12552,12 +12573,12 @@
     { key: 'fat', label: '지방', short: '지', kcalPerG: 9 },
   ];
 
-  /** 오늘 합계 — 칼로리 한 숫자, 탄단지 막대, 단백질 막대. */
-  function foodTotals(entries, target) {
+  /** 그날 합계 — 칼로리 한 숫자, 탄단지 막대, 단백질 막대. */
+  function foodTotals(entries, target, dayName) {
     var total = E.totalsFor(entries);
     var wrap = el('div', { class: 'food-totals' }, [
       el('div', { class: 'food-total' }, [
-        el('span', { class: 'food-total-label', text: '오늘' }),
+        el('span', { class: 'food-total-label', text: dayName }),
         el('span', { class: 'food-kcal', text: Math.round(total.kcal).toLocaleString('ko-KR') }),
         el('span', { class: 'food-kcal-unit', text: 'kcal' }),
       ]),
@@ -12658,11 +12679,25 @@
         input,
         el('button', { type: 'button', class: 'food-calc', text: '계산', onclick: calcFoodText }),
       ]),
-      el('button', {
-        type: 'button', class: 'food-browse', text: '목록에서 찾기 · 직접 넣기',
-        onclick: function () { openFoodPicker('', null); },
-      }),
+      el('div', { class: 'food-links' }, [
+        el('button', {
+          type: 'button', class: 'food-browse', text: '목록에서 찾기 · 직접 넣기',
+          onclick: function () { openFoodPicker('', null); },
+        }),
+        state.foodBack ? null : el('button', {
+          type: 'button', class: 'food-browse food-yesterday', text: '어제 것 적기',
+          onclick: function () { switchFoodDay(1); },
+        }),
+      ]),
     ]);
+  }
+
+  /** 적는 날 바꾸기. 끼니는 다시 그날에 맞춰 고른다. */
+  function switchFoodDay(back) {
+    state.foodBack = back;
+    state.foodMeal = null;
+    if (state.foodDraft) state.foodDraft.meal = foodMeal();
+    render();
   }
 
   /** 적은 글을 읽어 미리보기로. 아직 기록하지 않는다. */
@@ -12755,9 +12790,9 @@
   function commitFoodDraft() {
     var draft = state.foodDraft;
     if (!draft || !draft.items.length) return;
-    var today = foodToday();
+    var day = foodDate();
     var entries = draft.items.map(function (item) {
-      return E.entryFromParsed(item, today, draft.meal, newFoodId());
+      return E.entryFromParsed(item, day, draft.meal, newFoodId());
     });
     state.foodDraft = null;
     state.foodText = '';
@@ -12771,22 +12806,22 @@
    * 사람은 생각보다 같은 것을 먹는다. 닭가슴살 · 계란 · 프로틴을 매일 글로
    * 다시 적게 하면 그날부터 안 적는다.
    */
-  function foodQuick(today) {
+  function foodQuick(day) {
     var meal = foodMeal();
     var wrap = el('div', { class: 'food-quick' }, []);
-    var yesterday = E.addDays(today, -1);
-    var now = state.foodLog.filter(function (entry) { return entry.date === today && entry.meal === meal; });
-    var before = state.foodLog.filter(function (entry) { return entry.date === yesterday && entry.meal === meal; });
+    var dayBefore = E.addDays(day, -1);
+    var now = state.foodLog.filter(function (entry) { return entry.date === day && entry.meal === meal; });
+    var before = state.foodLog.filter(function (entry) { return entry.date === dayBefore && entry.meal === meal; });
     if (now.length === 0 && before.length > 0) {
       wrap.appendChild(el('button', {
         type: 'button', class: 'food-copy',
         onclick: function () {
           addFoodEntries(before.map(function (entry) {
-            return Object.assign({}, entry, { id: newFoodId(), date: today });
+            return Object.assign({}, entry, { id: newFoodId(), date: day });
           }));
         },
       }, [
-        el('span', { text: '어제 ' + E.MEAL_LABELS[meal] + ' 그대로' }),
+        el('span', { text: (state.foodBack ? '그제 ' : '어제 ') + E.MEAL_LABELS[meal] + ' 그대로' }),
         el('span', { class: 'food-copy-what', text:
           before[0].name + (before.length > 1 ? ' 외 ' + (before.length - 1) + '가지' : '') +
           ' · ' + Math.round(E.totalsFor(before).kcal).toLocaleString('ko-KR') + 'kcal' }),
@@ -12799,7 +12834,7 @@
         return el('button', {
           type: 'button', class: 'pick food-again', text: entry.name + ' ' + entry.amount,
           onclick: function () {
-            addFoodEntries([Object.assign({}, entry, { id: newFoodId(), date: today, meal: meal })]);
+            addFoodEntries([Object.assign({}, entry, { id: newFoodId(), date: day, meal: meal })]);
           },
         });
       })));
@@ -12980,7 +13015,7 @@
             tidyFoodDraft();
             modal.close();
             addFoodEntries([{
-              id: newFoodId(), date: foodToday(), meal: meal, name: label.slice(0, 40), grams: 0,
+              id: newFoodId(), date: foodDate(), meal: meal, name: label.slice(0, 40), grams: 0,
               amount: (amount.input.value.trim() || '1인분').slice(0, 20),
               kcal: Math.round(Math.min(5000, energy)),
               protein: grams(protein.input), fat: grams(fat.input), carbs: grams(carbs.input),

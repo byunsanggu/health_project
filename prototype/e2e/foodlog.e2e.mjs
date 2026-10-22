@@ -81,15 +81,29 @@ export default async function ({ page, url, shot }) {
   check((await page.locator('.protein-meter-left').textContent()).includes('채웠습니다'), '단백질 막대가 채움을 말하지 않습니다');
   check(await page.locator('.food-week-row').count() >= 1, '지난 7일 평균이 없습니다');
 
+  // 어제 것 적기 — 깜빡한 저녁을 다음 날 적는다. 끼니는 저녁으로 미리 골라 둔다
+  await page.locator('.food-yesterday').click();
+  check(await page.locator('.food-back').count() === 1, '어제 적기 표시가 없습니다');
+  check(await entries.count() === 4, `어제는 4줄이어야 하는데 ${await entries.count()}줄`);
+  check(await page.locator('.food-meal-pick[aria-pressed="true"]').textContent() === '저녁', '어제 적기의 끼니가 저녁이 아닙니다');
+  await page.fill('#food-text', '바나나 1개');
+  await page.click('.food-calc');
+  await page.click('.food-commit');
+  check(await entries.count() === 5, '어제에 안 들어갔습니다');
+  await shot('4-yesterday');
+  await page.locator('.food-back .pick', { hasText: '오늘로' }).click();
+  check(await entries.count() === 5 && await page.locator('.food-back').count() === 0, '오늘로 돌아오지 않았습니다');
+  check(await entries.filter({ hasText: '바나나' }).count() === 0, '어제 적은 것이 오늘에 들어갔습니다');
+
   // 껐다 켜도 남는다
   await page.reload();
   await tab(page, '식단');
   check(await entries.count() === 5, `다시 연 뒤 ${await entries.count()}줄`);
-  await shot('4-day2');
+  await shot('5-day2');
   await page.locator('.food-week').scrollIntoViewIfNeeded();
-  await shot('4-day2-meals');
+  await shot('5-day2-meals');
   await page.emulateMedia({ colorScheme: 'dark' });
-  await shot('5-dark');
+  await shot('6-dark');
   await page.emulateMedia({ colorScheme: 'light' });
 
   // 동의를 철회하면 기록이 지워진다
