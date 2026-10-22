@@ -7428,6 +7428,71 @@ var GymSearch = (function () {
     state.demo = null;
   }
 
+  /* ── 뒤로가기 ──────────────────────────────────── */
+
+  /*
+   * 안드로이드 뒤로가기는 브라우저의 "이전 페이지"다. 앱이 한 장짜리라 그대로
+   * 두면 창을 연 채 뒤로가기를 눌러도 앱이 통째로 닫힌다.
+   *
+   * 화면에 닫을 층(창 · 자세히 보기 · 운동 화면 · 다른 탭 · 설정 단계)이 있는
+   * 동안에는 기록을 하나(가드) 쌓아 두고, 뒤로가기가 오면 맨 위 층 하나만 닫는다.
+   * 닫고 나서도 층이 남았으면 가드를 다시 쌓는다. 층이 하나도 없으면 가드를 거둬서,
+   * 오늘 화면에서 누르는 뒤로가기는 평소처럼 앱을 나간다.
+   */
+  var backGuard = { on: false, removing: false };
+
+  function backLayer() {
+    if (modal.open) return 'modal';
+    if (state.onboarding.active) return state.onboarding.step > 0 && !state.onboarding.redo ? 'wizard' : null;
+    if (state.authOpen) return null;
+    if (state.started && ptOn() && state.focusHidden) return 'detail';
+    if (state.started) return 'workout';
+    if (state.tab !== 'today') return 'tab';
+    return null;
+  }
+
+  function syncBackGuard() {
+    if (backGuard.removing) return; // 거두는 중 — 끝나면 다시 맞춘다
+    var want = Boolean(backLayer());
+    try {
+      if (want && !backGuard.on) {
+        history.pushState({ volumeCoachGuard: true }, '');
+        backGuard.on = true;
+      } else if (!want && backGuard.on) {
+        backGuard.on = false;
+        backGuard.removing = true;
+        history.back();
+      }
+    } catch (err) {
+      backGuard.removing = false;
+    }
+  }
+
+  window.addEventListener('popstate', function () {
+    if (backGuard.removing) {
+      backGuard.removing = false;
+      syncBackGuard();
+      return;
+    }
+    // 사용자가 뒤로가기를 눌렀다 — 가드는 이미 빠졌다. 맨 위 층 하나만 닫는다.
+    backGuard.on = false;
+    var layer = backLayer();
+    if (layer === 'modal') modal.close(); // 닫히면 그리기 → 남은 층이 있으면 가드를 다시 쌓는다
+    else if (layer === 'wizard') { state.onboarding.step -= 1; render(); }
+    else if (layer === 'detail') { state.focusHidden = false; render(); }
+    else if (layer === 'workout') leaveToList();
+    else if (layer === 'tab') { state.tab = 'today'; render(); }
+    else syncBackGuard();
+  });
+
+  /** 운동 화면에서 오늘 목록으로. PT는 멈춰 두고 간다 — 돌아와 "시작하기"를 누르면 잇는다. */
+  function leaveToList() {
+    if (ptOn() && state.ptRun && !state.ptRun.cooled) pausePt(null);
+    state.focusHidden = false;
+    state.started = false;
+    render();
+  }
+
   modal.addEventListener('close', function () {
     disposeDemo();
     modal.textContent = '';
@@ -7460,6 +7525,7 @@ var GymSearch = (function () {
     ]));
     modal.appendChild(el('div', { class: 'modal-body' }, body));
     if (!modal.open) modal.showModal();
+    syncBackGuard();
   }
 
   function el(tag, attrs, children) {
@@ -7589,6 +7655,17 @@ var GymSearch = (function () {
     var moved = key !== lastViewKey;
     lastViewKey = key;
 
+    /*
+     * 칸에 글을 치는 중에 화면을 다시 그리면(창이 닫히는 소리, 동기화, 휴식 끝)
+     * 칸이 새것으로 바뀌면서 커서가 사라지고 그 뒤로 친 글자가 어디에도 안 들어간다.
+     * 같은 이름의 칸이 다시 생기면 친 글과 커서 자리를 돌려준다.
+     */
+    var typing = document.activeElement;
+    var keep = typing && typing.id && screen.contains(typing) &&
+      (typing.tagName === 'TEXTAREA' || (typing.tagName === 'INPUT' && /^(text|search)$/.test(typing.type)))
+      ? { id: typing.id, value: typing.value, start: typing.selectionStart, end: typing.selectionEnd }
+      : null;
+
     screen.textContent = '';
     if (onboarding) {
       statusMeta.textContent = '초기 설정';
@@ -7600,6 +7677,14 @@ var GymSearch = (function () {
       renderTabs();
       renderStatus();
       renderScreen();
+    }
+    if (keep) {
+      var again = document.getElementById(keep.id);
+      if (again && again !== typing && screen.contains(again)) {
+        again.value = keep.value;
+        again.focus();
+        try { again.setSelectionRange(keep.start, keep.end); } catch (err) { void err; }
+      }
     }
     var nowKey = setKey();
     var setMoved = nowKey !== null && nowKey !== lastSetKey;
@@ -7618,6 +7703,7 @@ var GymSearch = (function () {
     renderLog();
     renderScenarios();
     persist();
+    syncBackGuard();
   }
 
   function renderStatus() {
@@ -11819,16 +11905,11 @@ var GymSearch = (function () {
         el('button', {
           type: 'button', class: 'demo-open', text: '목록',
           'aria-label': '오늘 할 것 목록으로',
-          onclick: function () {
-            /*
-             * PT는 멈춰 두고 간다. 몸 풀기 · 워밍업 · 세기가 목록 뒤에서 반쯤
-             * 살아 있으면, 돌아와 "시작하기"를 눌러도 다음 걸음이 안 나온다.
-             */
-            if (ptOn() && state.ptRun && !state.ptRun.cooled) pausePt(null);
-            state.focusHidden = false;
-            state.started = false;
-            render();
-          },
+          /*
+           * PT는 멈춰 두고 간다. 몸 풀기 · 워밍업 · 세기가 목록 뒤에서 반쯤
+           * 살아 있으면, 돌아와 "시작하기"를 눌러도 다음 걸음이 안 나온다.
+           */
+          onclick: leaveToList,
         }),
         el('span', { class: 'progress-count' }, [
           el('i', { text: '종목' }),
