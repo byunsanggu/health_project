@@ -5,7 +5,7 @@
  *   node prototype/e2e/run.mjs foodlog                              이름에 foodlog가 든 것만
  *
  * 각 테스트는 `이름.e2e.mjs`에서 `export default async function (t)`로
- * 만든다. t에는 page(폰 크기 · 한국어 · 가짜 음성), url, shot(이름)이 있다.
+ * 만든다. t에는 page(폰 크기 · 한국어 · 가짜 음성), url, shot(이름), out(파일을 둘 폴더)이 있다.
  * 찍은 화면은 E2E_OUT(없으면 임시 폴더)에 남는다.
  */
 import { readdir, readFile, mkdir } from 'node:fs/promises';
@@ -50,7 +50,7 @@ for (const name of files) {
   const errors = [];
   page.on('pageerror', (err) => errors.push(err.message));
   const t = {
-    page, context, url: appUrl,
+    page, context, url: appUrl, out: OUT,
     shot: (what) => page.screenshot({ path: join(OUT, `${label}-${what}.png`) }),
   };
   const started = Date.now();

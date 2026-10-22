@@ -2222,6 +2222,22 @@ input[type="search"] {
   letter-spacing: .07em;
   color: var(--muted);
 }
+/* 백업 불러오기 — 파일에 든 것을 동의 카드와 같은 줄 모양으로 */
+.backup-rows { display: grid; gap: 6px; margin: 4px 0 6px; }
+.backup-door {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 14px;
+  padding: 12px 13px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+.backup-door .asset-note { margin: 0; }
+.backup-ready { gap: 6px; margin-top: 14px; border-left-color: var(--accent); }
+.backup-report { display: grid; gap: 8px; }
+.backup-report p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink); }
+.backup-ready .backup-cancel { justify-self: start; }
 .consent-toggle {
   width: 100%;
   border: 0;

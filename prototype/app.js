@@ -172,6 +172,13 @@
   /** 헬스장 지하에는 신호가 없다. 로컬이 원본이고 서버는 나중에 붙는다. */
   var storage = E.createStore(browserAdapter(), { namespace: 'volume-coach.proto' });
 
+  /**
+   * 전부 지우고 다시 여는 중. 다시 열릴 때까지 저장 · 그리기 · 동기화를 멈춘다 —
+   * 그 사이에 화면이 들고 있던 옛 기록을 저장소에 다시 쓰면 지운 게 되살아난다.
+   */
+  var wiping = false;
+  var PULL_AFTER_WIPE = 'volume-coach.pull-after-wipe';
+
   function browserAdapter() {
     try {
       var probe = '__probe__';
@@ -185,6 +192,7 @@
   }
 
   function persist() {
+    if (wiping) return;
     // 화면 상태와 별개로, 오늘 기록은 저장소의 세션으로도 남겨야 서버에 간다.
     if (state.todayDate && state.lifts) recordTodaySession();
     if (state.todayDate && state.pain) recordTodayCheckIn();
@@ -413,40 +421,43 @@
           if (state.cardioToday.length === 0 && storedToday.cardio) state.cardioToday = storedToday.cardio.slice();
         }
       }
-      if (todaySets.length > 0) {
-        state.todaySets = todaySets;
-
-        // 오늘 어느 기계로 했는지는 세트에 적혀 있다. 거기서 거꾸로 읽는다.
-        state.machinePick = {};
-        todaySets.forEach(function (logged) {
-          if (logged.machine) state.machinePick[logged.exerciseId] = logged.machine;
-        });
-
-        // 값이 똑같은 세트가 여러 개일 수 있으므로 종목별 큐에서 순서대로 꺼낸다.
-        var queues = {};
-        todaySets.forEach(function (logged) {
-          (queues[logged.exerciseId] = queues[logged.exerciseId] || []).push(logged);
-        });
-
-        state.lifts.forEach(function (lift) {
-          var queue = queues[lift.exercise.id] || [];
-          lift.sets.forEach(function (set) {
-            var logged = queue.shift();
-            if (!logged) return;
-            set.done = true;
-            set.rir = logged.rir;
-            set.reps = logged.reps;
-            set.weightKg = logged.weightKg;
-          });
-        });
-        pushLog('복원', '저장된 기록에서 오늘 <b>' + todaySets.length + '세트</b>를 되살렸습니다.');
-      }
+      if (todaySets.length > 0) reviveTodaySets(todaySets);
       return true;
     } catch (err) {
       // 저장 형식이 바뀌었거나 깨졌으면 처음부터 시작한다.
       storage.reset();
       return false;
     }
+  }
+
+  /** 오늘 적은 세트를 오늘 종목에 다시 붙인다 — 앱을 껐다 켰을 때, 백업을 불러왔을 때. */
+  function reviveTodaySets(todaySets) {
+    state.todaySets = todaySets;
+
+    // 오늘 어느 기계로 했는지는 세트에 적혀 있다. 거기서 거꾸로 읽는다.
+    state.machinePick = {};
+    todaySets.forEach(function (logged) {
+      if (logged.machine) state.machinePick[logged.exerciseId] = logged.machine;
+    });
+
+    // 값이 똑같은 세트가 여러 개일 수 있으므로 종목별 큐에서 순서대로 꺼낸다.
+    var queues = {};
+    todaySets.forEach(function (logged) {
+      (queues[logged.exerciseId] = queues[logged.exerciseId] || []).push(logged);
+    });
+
+    state.lifts.forEach(function (lift) {
+      var queue = queues[lift.exercise.id] || [];
+      lift.sets.forEach(function (set) {
+        var logged = queue.shift();
+        if (!logged) return;
+        set.done = true;
+        set.rir = logged.rir;
+        set.reps = logged.reps;
+        set.weightKg = logged.weightKg;
+      });
+    });
+    pushLog('복원', '저장된 기록에서 오늘 <b>' + todaySets.length + '세트</b>를 되살렸습니다.');
   }
 
   /** 온보딩 전 기본값 — 완료되면 생성된 프로그램으로 교체된다. */
@@ -2547,6 +2558,7 @@
   }
 
   function render() {
+    if (wiping) return;
     var onboarding = state.onboarding.active;
     /*
      * 로그인은 화면 하나를 통째로 쓴다. 모달 안에 넣어 봤더니 주소·열쇠·
@@ -9891,11 +9903,11 @@
           state.askingSwitch = false;
           var me = Remote.userId();
           modal.close();
+          // 다시 열리면 기다리지 않고 바로 이 계정 기록을 받아온다
+          try { sessionStorage.setItem(PULL_AFTER_WIPE, '1'); } catch (err) { void err; }
           wipeEverything();
+          // 지우면서 주인을 비웠다 — 다시 열리기 전에 이 계정을 주인으로 적는다(로그인 칸은 남는다)
           Remote.claimData(me);
-          render();
-          pushLog('계정', '이 기기의 기록을 치우고 <b>' + mine + '</b> 기록을 받아옵니다.');
-          syncNow();
         },
       }),
       el('button', {
@@ -9952,7 +9964,7 @@
   }
 
   function syncNow(after) {
-    if (!Remote.configured() || !Remote.signedIn()) return Promise.resolve(null);
+    if (wiping || !Remote.configured() || !Remote.signedIn()) return Promise.resolve(null);
     if (state.syncing) return Promise.resolve(null);
 
     /*
@@ -12182,6 +12194,14 @@
     return (date.getMonth() + 1) + '월 ' + date.getDate() + '일 (' + '일월화수목금토'.charAt(date.getDay()) + ')';
   }
 
+  /** "10월 22일" — 올해가 아니면 연도를 붙인다. 2026-10-22를 그대로 화면에 내놓지 않는다. */
+  function dateText(iso) {
+    var parts = String(iso || '').split('-');
+    if (parts.length !== 3) return String(iso || '');
+    var text = Number(parts[1]) + '월 ' + Number(parts[2]) + '일';
+    return parts[0] === todayISO().slice(0, 4) ? text : parts[0] + '년 ' + text;
+  }
+
   /** 하루에 든 무게 합 — 1톤이 넘으면 톤으로. */
   function tonnageText(kg) {
     return kg >= 1000 ? (Math.round(kg / 100) / 10) + '톤' : Math.round(kg) + 'kg';
@@ -13951,6 +13971,10 @@
         onclick: exportMyData,
       }),
       el('button', {
+        type: 'button', class: 'pick backup-import', text: '백업 불러오기',
+        onclick: openBackupImport,
+      }),
+      el('button', {
         type: 'button', class: 'pick danger', text: '전부 삭제',
         onclick: function () { confirmWipe(); },
       }),
@@ -13966,7 +13990,7 @@
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '내 정보' }),
-        el('span', { class: 'meta', text: '동의 · 내려받기 · 삭제' }),
+        el('span', { class: 'meta', text: '동의 · 내려받기 · 불러오기 · 삭제' }),
       ]),
       rows,
     ]));
@@ -14016,20 +14040,22 @@
   }
 
   function wipeEverything() {
+    wiping = true;
     storage.reset();
     // 기록이 없어졌으니 주인도 없다.
     if (typeof Remote !== 'undefined') Remote.releaseData();
-    state.consent = [];
-    state.consentRecord = null;
-    state.myDirectory = [];
-    state.history = [];
-    state.checkIns = [];
-    state.todaySets = [];
-    state.machinePick = {};
-    state.machineSame = {};
-    state.machinePound = {};
-    state.log = [];
-    startOnboarding();
+    /*
+     * 화면이 들고 있던 것까지 지운다. 전에는 저장소를 비우고 칸 몇 개만 비운 뒤 설문으로
+     * 갔다 — 식단 기록 · 시작한 날 · 오늘 마친 운동 같은 나머지 칸이 다음 저장 때 그대로
+     * 다시 써졌다. "전부 삭제" 뒤에 식단(민감정보)이 남으면 안 된다. 탈퇴처럼 이 앱의
+     * 저장 칸을 다 지우고 다시 연다. 서버 주소 · 로그인(volume-coach.remote)만 남긴다.
+     */
+    try {
+      Object.keys(localStorage).forEach(function (key) {
+        if (/^volume-coach/.test(key) && key !== 'volume-coach.remote') localStorage.removeItem(key);
+      });
+    } catch (err) { void err; }
+    location.reload();
   }
 
   /**
@@ -14040,6 +14066,9 @@
    */
   function exportMyData() {
     var payload = {
+      앱: E.BACKUP_APP,
+      // 다시 불러올 때 이 칸들을 어떻게 읽을지 — 칸을 바꾸면 엔진의 BACKUP_FORMAT을 올린다
+      형식: E.BACKUP_FORMAT,
       내보낸시각: new Date().toISOString(),
       동의: state.consentRecord,
       설문: state.answers,
@@ -14053,17 +14082,318 @@
       ),
       체크인: state.checkIns,
       식단기록: state.foodLog,
+      // 블록 몇 주차인지 · 코치 말투 · 쉬는 시간 같은 것. 이게 없으면 불러온 날 블록을 처음부터 센다
+      설정: backupSettings(),
     };
 
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
-    var link = el('a', { href: url, download: '볼륨코치-내데이터.json' });
+    /*
+     * 날짜를 붙인다 — 여러 번 받으면 어느 게 최근 것인지 파일 이름으로 안다.
+     * 이름은 영문으로 둔다. 한글 이름은 브라우저 · 저장 앱에 따라 "download"로 바뀐다.
+     */
+    var link = el('a', { href: url, download: 'volume-coach-backup-' + todayISO() + '.json' });
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     pushLog('내 정보', '내 데이터를 JSON으로 내려받았습니다.');
     renderLog();
+  }
+
+  function backupSettings() {
+    var out = {};
+    E.BACKUP_SETTING_KEYS.forEach(function (key) {
+      if (state[key] !== undefined && state[key] !== null) out[key] = state[key];
+    });
+    return out;
+  }
+
+  /*
+   * 백업 불러오기.
+   *
+   * 내려받기만 있고 불러오기가 없으면, 서버 계정 없이 폰을 바꾼 사람은 그 파일을
+   * 들고도 기록을 못 되찾는다. 파일은 엔진(readBackup)이 하나씩 검사하고, 지금 이 폰에서
+   * 받은 동의만큼만 들인다 — 통증 · 식단은 그 항목에 동의해야 들어온다.
+   */
+  var BACKUP_MAX_BYTES = 20 * 1024 * 1024;
+  var backupInput = null;
+
+  function pickBackupFile(onText) {
+    if (!backupInput) {
+      backupInput = el('input', { type: 'file', accept: 'application/json,.json', class: 'backup-file', hidden: '' });
+      document.body.appendChild(backupInput);
+    }
+    backupInput.onchange = function () {
+      var file = backupInput.files && backupInput.files[0];
+      // 같은 파일을 다시 골라도 change가 오게 비운다
+      backupInput.value = '';
+      if (!file) return;
+      if (file.size > BACKUP_MAX_BYTES) {
+        showBackupError('파일이 너무 큽니다(20MB 넘음). "내 데이터 내려받기"로 받은 파일인지 확인해 주세요.');
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function () { onText(String(reader.result || '')); };
+      reader.onerror = function () { showBackupError('파일을 읽지 못했습니다. 다시 골라 주세요.'); };
+      reader.readAsText(file);
+    };
+    backupInput.click();
+  }
+
+  function readBackupText(text) {
+    var result = E.readBackup(text);
+    if (!result.ok) {
+      showBackupError(result.reason);
+      return null;
+    }
+    return result.backup;
+  }
+
+  function showBackupError(reason) {
+    openModal('백업 불러오기', '불러오지 못함', [
+      el('p', { class: 'asset-note backup-error', text: reason }),
+      el('p', { class: 'hint-line', text: '아무것도 바뀌지 않았습니다.' }),
+    ]);
+  }
+
+  /** 파일에 든 것 — 들이기 전에 보여 준다. */
+  function backupRows(backup) {
+    var summary = E.backupSummary(backup);
+    var span = summary.first
+      ? ' (' + dateText(summary.first) + (summary.last !== summary.first ? ' ~ ' + dateText(summary.last) : '') + ')'
+      : '';
+    var checks = [];
+    if (summary.weights) checks.push('체중 ' + summary.weights + '일');
+    if (summary.pains) checks.push('통증 ' + summary.pains + '일');
+    return el('div', { class: 'backup-rows' }, [
+      consentRow('운동 기록', summary.days ? summary.days + '일 · 본세트 ' + summary.sets + '개' + span : '없음'),
+      consentRow('체크인', summary.checkIns ? summary.checkIns + '일' + (checks.length ? ' (' + checks.join(' · ') + ')' : '') : '없음'),
+      consentRow('식단', summary.food ? summary.food + '줄' : '없음'),
+      consentRow('프로그램', summary.program ? '설문 답 · 프로그램 들어 있음' : '없음'),
+      summary.exportedAt ? consentRow('내려받음', dateText(summary.exportedAt)) : null,
+      summary.dropped ? consentRow('뺄 것', '모양이 틀린 기록 ' + summary.dropped + '개') : null,
+    ]);
+  }
+
+  function openBackupImport() {
+    if (state.started && !state.sessionClosed) {
+      openModal('백업 불러오기', null, [
+        el('p', { class: 'asset-note', text: '운동 중에는 불러올 수 없습니다. 오늘 운동을 끝낸 뒤에 다시 해 주세요.' }),
+      ]);
+      return;
+    }
+    pickBackupFile(function (text) {
+      var backup = readBackupText(text);
+      if (backup) confirmBackupImport(backup);
+    });
+  }
+
+  function confirmBackupImport(backup) {
+    var hasProgram = Boolean(backup.answers);
+    openModal('백업 불러오기', null, [
+      backupRows(backup),
+      el('button', {
+        type: 'button', class: 'finish backup-merge', text: '기록 합치기',
+        // 닫지 않고 그 자리에 결과를 띄운다 — close 이벤트가 늦게 와서 결과를 지운다(openModal)
+        onclick: function () { importBackup(backup, false); },
+      }),
+      el('p', { class: 'hint-line', text:
+        '이 폰에 없는 날만 채웁니다. 같은 날이 있으면 이 폰 기록을 둡니다. 프로그램과 설정은 그대로입니다.' }),
+      hasProgram ? el('button', {
+        type: 'button', class: 'finish quiet backup-replace', text: '백업 때로 되돌리기',
+        onclick: function () { importBackup(backup, true); },
+      }) : null,
+      hasProgram ? el('p', { class: 'hint-line', text:
+        '설문 · 프로그램 · 헬스장 · 블록 주차 · 코치 설정까지 백업 때 것으로 바꿉니다. 기록은 위처럼 합칩니다.' }) : null,
+    ]);
+  }
+
+  /**
+   * 백업을 들인다.
+   *
+   * 기록(운동 · 체크인 · 식단)은 언제나 합친다 — 같은 날이 이 폰에 있으면 이 폰 것을 둔다.
+   * replace면 설문 · 프로그램 · 헬스장 · 설정까지 백업 때로 되돌린다. 프로그램을 못 짜면
+   * 아무것도 쓰지 않는다(먼저 계산하고, 그다음에 쓴다).
+   */
+  function applyBackup(raw, replace) {
+    var consented = E.backupWithConsent(raw, state.consent);
+    var backup = consented.backup;
+    var saved = storage.load();
+    var merged = E.mergeBackup({
+      sessions: saved.sessions || [], checkIns: saved.checkIns || [], foodLog: state.foodLog,
+    }, backup, todayISO());
+    var takeSetup = Boolean(replace && backup.answers);
+    // 지금 앱에 없는 종목이 든 프로그램은 엔진이 버렸다 — 그때는 설문 답으로 다시 짠다
+    var rebuilt = takeSetup && (!backup.program || !backup.lifter) ? E.runOnboarding(backup.answers) : null;
+
+    merged.sessions.forEach(function (session) { storage.putSession(session); });
+    merged.checkIns.forEach(function (entry) { storage.putCheckIn(entry); });
+    if (merged.foodLog.length) {
+      state.foodLog = state.foodLog.concat(merged.foodLog).sort(function (a, b) {
+        return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+      });
+    }
+
+    if (takeSetup) {
+      var settings = backup.settings;
+      state.answers = backup.answers;
+      state.program = backup.program || rebuilt.program;
+      state.lifter = backup.lifter || rebuilt.lifter;
+      state.gym = E.gymFromCatalog(backup.answers.gym);
+      state.gymBook = backup.gymBook || E.createGymBook({
+        id: 'my-gym', name: '내 헬스장',
+        equipmentIds: backup.answers.gym.equipmentIds.slice(),
+        measurements: backup.answers.gym.measurements,
+      });
+      Object.keys(settings).forEach(function (key) { state[key] = settings[key]; });
+      if (settings.diet) state.diet = E.normalizeDiet(settings.diet);
+      // 예전 판 박자면 받은 값만 옮긴다 — 이 폰의 값은 이미 옮겼다(applyRemoteSettings와 같다)
+      if (settings.tempoVersion !== TEMPO_VERSION) {
+        if (settings.tempo !== undefined) state.tempo = E.migrateTempo(settings.tempo) || null;
+        if (settings.tempoByExercise !== undefined) state.tempoByExercise = migrateTempoMap(settings.tempoByExercise);
+      }
+      state.tempoVersion = TEMPO_VERSION;
+      // 블록이 안 실려 왔으면 오늘부터 센다
+      if (!settings.block) state.block = null;
+    }
+    var start = E.backupStartDate(backup);
+    if (start && (!state.startedOn || start < state.startedOn)) state.startedOn = start;
+
+    return {
+      replace: takeSetup,
+      rebuilt: Boolean(rebuilt && !backup.program),
+      merged: merged,
+      removed: consented.removed,
+      dropped: E.backupSummary(raw).dropped,
+    };
+  }
+
+  function importBackup(backup, replace) {
+    var done;
+    try {
+      done = applyBackup(backup, replace);
+    } catch (err) {
+      showBackupError('불러오지 못했습니다 — ' + (err && err.message ? err.message : '알 수 없는 오류'));
+      return;
+    }
+    rebuildAfterImport();
+    reviveTodayFromStorage();
+    persist();
+    render();
+    showBackupReport(done);
+  }
+
+  /** 불러온 것으로 오늘을 다시 짠다. 백업의 프로그램으로 못 짜면 설문 답으로 다시 짠다. */
+  function rebuildAfterImport() {
+    try {
+      loadScenario(state.scenario || 'normal', true);
+    } catch (err) {
+      state.program = E.runOnboarding(state.answers).program;
+      pushLog('백업', '백업의 프로그램으로 오늘을 짜지 못해 설문 답으로 다시 짰습니다.');
+      loadScenario(state.scenario || 'normal', true);
+    }
+  }
+
+  /** 불러온 백업에 오늘 한 운동이 있으면 오늘 종목에 붙인다 — 안 붙이면 다음 세트가 그 기록을 덮는다. */
+  function reviveTodayFromStorage() {
+    if (state.todaySets.length > 0) return;
+    var stored = storage.load().sessions.filter(function (item) {
+      return !item.deleted && item.date === state.todayDate;
+    })[0];
+    if (!stored) return;
+    if ((stored.sets || []).length > 0) reviveTodaySets(stored.sets.slice());
+    if (state.cardioToday.length === 0 && stored.cardio) state.cardioToday = stored.cardio.slice();
+  }
+
+  function backupReport(done) {
+    var merged = done.merged;
+    var got = [];
+    if (merged.sessions.length) got.push('운동 기록 ' + merged.sessions.length + '일');
+    if (merged.checkIns.length) got.push('체크인 ' + merged.checkIns.length + '일');
+    if (merged.foodLog.length) got.push('식단 ' + merged.foodLog.length + '줄');
+    var lines = [];
+    if (done.replace) lines.push('설문 · 프로그램 · 헬스장 · 설정을 백업 것으로 맞췄습니다.');
+    lines.push(got.length ? got.join(', ') + '을 들였습니다.' : '새로 들일 기록이 없었습니다 — 이 폰에 이미 다 있습니다.');
+    if (merged.kept.sessions) lines.push('이 폰에 이미 있던 ' + merged.kept.sessions + '일은 이 폰 기록을 그대로 두었습니다.');
+    if (done.removed.pains) lines.push('통증 점수 ' + done.removed.pains + '일 치는 통증 기록 동의가 없어 들이지 않았습니다.');
+    if (done.removed.food) {
+      lines.push('식단 ' + done.removed.food + '줄은 식단 기록 동의가 없어 들이지 않았습니다. 동의한 뒤 다시 불러오면 들어옵니다.');
+    }
+    if (done.dropped) lines.push('모양이 틀린 기록 ' + done.dropped + '개는 뺐습니다.');
+    if (done.rebuilt) lines.push('백업의 프로그램에 지금 앱에 없는 종목이 있어, 설문 답으로 프로그램을 다시 짰습니다.');
+    return lines;
+  }
+
+  function showBackupReport(done) {
+    var lines = backupReport(done);
+    pushLog('백업', lines.join(' '));
+    openModal('백업을 불러왔습니다', null, [
+      el('div', { class: 'backup-report' }, lines.map(function (line) {
+        return el('p', { text: line });
+      })),
+    ]);
+  }
+
+  /*
+   * 처음 설정에서 백업으로 이어 하기.
+   *
+   * 동의는 건너뛰지 않는다 — 파일 안의 동의는 예전에 다른 폰에서 한 것이다. 이 화면에서
+   * 필수 항목에 동의하면 설문 없이 이어 한다. 설문 답이 없거나 못 읽는 파일이면 설문을
+   * 새로 하고, 기록은 설문을 마칠 때 들어간다.
+   */
+  function restoreDoor() {
+    var pending = state.onboarding.restore;
+    if (!pending) {
+      return el('div', { class: 'backup-door' }, [
+        el('p', { class: 'asset-note', text:
+          '쓰던 기록이 있으신가요? "내 데이터 내려받기"로 받아 둔 파일이 있으면 이어서 쓸 수 있습니다.' }),
+        el('button', {
+          type: 'button', class: 'pick backup-pick', text: '백업 파일 불러오기',
+          onclick: function () {
+            pickBackupFile(function (text) {
+              var backup = readBackupText(text);
+              if (!backup) return;
+              state.onboarding.restore = backup;
+              render();
+            });
+          },
+        }),
+      ]);
+    }
+    return el('div', { class: 'notice backup-ready' }, [
+      el('div', { class: 'label', text: '백업을 불러왔습니다' }),
+      backupRows(pending),
+      el('div', { text: pending.answers
+        ? '필수 항목에 동의하면 설문 없이 바로 이어 합니다. 통증 · 식단 기록은 그 항목에 동의해야 들어갑니다.'
+        : '설문 답을 읽을 수 없어 설문은 새로 합니다. 기록은 설문을 마치면 들어갑니다.' }),
+      el('button', {
+        type: 'button', class: 'ghost backup-cancel', text: '불러오기 취소',
+        onclick: function () { state.onboarding.restore = null; render(); },
+      }),
+    ]);
+  }
+
+  function finishBackupOnboarding() {
+    var backup = state.onboarding.restore;
+    // 언제 · 어느 판 문구에 동의했는지 남긴다 — 이 폰에서 방금 한 동의다
+    state.consentRecord = E.recordConsent(state.consent, todayISO());
+    var done;
+    try {
+      done = applyBackup(backup, true);
+    } catch (err) {
+      showBackupError('불러오지 못했습니다 — ' + (err && err.message ? err.message : '알 수 없는 오류'));
+      return;
+    }
+    if (!state.startedOn) state.startedOn = todayISO();
+    state.onboarding = { active: false, step: 0 };
+    state.tab = 'today';
+    rebuildAfterImport();
+    reviveTodayFromStorage();
+    persist();
+    if (Remote.configured() && Remote.signedIn()) syncNow();
+    render();
+    showBackupReport(done);
   }
 
   /**
@@ -16113,9 +16443,12 @@
     // 새 설문이면 새 출발이다. 블록은 오늘부터 센다.
     state.block = null;
     state.blockNews = null;
+    // 설문 답 없는 백업으로 시작했으면 기록은 지금 들어간다
+    var restored = state.onboarding.restore ? applyBackup(state.onboarding.restore, false) : null;
     state.onboarding = { active: false, step: 0, result: result };
     state.tab = 'today';
     loadScenario('normal');
+    if (restored) reviveTodayFromStorage();
     result.notes.forEach(function (note) { pushLog('온보딩', note); });
     /*
      * 방금 만든 프로그램이 이 계정의 첫 내용이다. 여기서 안 올리면 폰을
@@ -16123,6 +16456,7 @@
      */
     if (Remote.configured() && Remote.signedIn()) syncNow();
     render();
+    if (restored) showBackupReport(restored);
   }
 
   function renderOnboarding() {
@@ -16185,13 +16519,16 @@
      * 가입 단계가 붙었다고 그 자리가 "다음"으로 바뀌면, 정작 고르는 순간에
      * 아무 말도 안 하는 버튼이 놓인다.
      */
+    // 백업으로 이어 하는 중이면 동의가 마지막 단계다
+    var resuming = step.id === 'consent' && state.onboarding.restore && state.onboarding.restore.answers;
     if (step.id !== 'account') {
       nav.appendChild(el('button', {
         type: 'button', class: 'primary',
         disabled: blocked ? '' : null,
-        text: (step.id === 'result' || isLast) ? '이 프로그램으로 시작' : '다음',
+        text: (step.id === 'result' || isLast) ? '이 프로그램으로 시작' : resuming ? '동의하고 이어 하기' : '다음',
         onclick: function () {
           if (blocked) return;
+          if (resuming) { finishBackupOnboarding(); return; }
           // 코치 · 알림 단계: 휴식 끝 알림을 켜 뒀으면 지금(누른 순간) 권한을 묻는다
           if (step.id === 'coach' && state.restAlerts !== false && notificationState() === 'default') {
             try { Notification.requestPermission().then(function () { render(); }); } catch (err) { void err; }
@@ -16283,6 +16620,9 @@
     screen.appendChild(el('p', { class: 'asset-note', text:
       '동의는 언제든 철회할 수 있습니다(위쪽 "내 정보"). 철회하면 해당 기록을 바로 지웁니다.' +
       (devMode() ? ' 이 문구는 프로토타입용이며, 실제 출시 전에는 법률 검토가 필요합니다.' : '') }));
+
+    // 다시 설정할 때는 동의 단계를 안 거친다 — 이 문은 처음 설정에만 뜬다
+    screen.appendChild(restoreDoor());
   }
 
   function consentRow(label, value) {
@@ -16850,6 +17190,13 @@
   setTimeout(scheduleNudge, 3000);
   // 지난번에 못 올린 것이 있을 수 있다. 첫 화면을 다 그린 뒤에 맞춘다.
   setTimeout(syncSoon, 2500);
+  // 다른 계정의 기록을 치우고 다시 열었으면 이 계정 기록을 바로 받아온다
+  try {
+    if (sessionStorage.getItem(PULL_AFTER_WIPE)) {
+      sessionStorage.removeItem(PULL_AFTER_WIPE);
+      setTimeout(function () { syncNow(render); }, 300);
+    }
+  } catch (err) { void err; }
   // 친구 목록과 받은 응원. 첫 화면이 늦어지면 안 되므로 뒤로 미룬다.
   setTimeout(function () { pushMyWeek(); loadFriends(); }, 1200);
 })();

@@ -45,6 +45,7 @@ export * from './bodyTrend.ts';
 export * from './protein.ts';
 export * from './meals.ts';
 export * from './foodLog.ts';
+export * from './backup.ts';
 export * from './coach.ts';
 export * from './ptSession.ts';
 export * from './voices.ts';
