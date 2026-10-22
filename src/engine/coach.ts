@@ -88,7 +88,12 @@ export const FEELS: readonly { id: Feel; label: string }[] = [
  */
 export function feelToRir(feel: Feel, targetRir: number): number {
   const target = Math.max(0, Math.min(4, Math.round(targetRir)));
-  if (feel === 'light') return Math.min(4, target + 2);
+  /*
+   * "가벼웠어요"는 목표보다 둘 더 남았다는 뜻이다. 4로 묶어 두면 목표가 3 · 4인
+   * 블록 초반(처음 무게를 일부러 가볍게 잡는 바로 그 주)에 "딱 좋았어요"와 같은
+   * 값이 되어 무게가 안 오른다. 5(다섯 개 넘게 남음)까지 둔다.
+   */
+  if (feel === 'light') return Math.min(5, target + 2);
   if (feel === 'heavy') return Math.max(0, target - 1);
   return target;
 }
@@ -640,7 +645,7 @@ export function afterSetLines(input: AfterSetInput): string[] {
   if (input.feel === 'hurt') {
     return [
       '알겠습니다. 이 종목은 여기서 멈출게요.',
-      '어디가 불편했는지 체크인에 적어 두시면 다음부터 맞는 종목으로 바꿔 드립니다.',
+      '어디가 불편했는지 적어 두시면 다음부터 맞는 종목으로 바꿔 드립니다.',
     ];
   }
 

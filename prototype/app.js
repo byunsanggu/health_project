@@ -5153,7 +5153,7 @@
 
     if (!result.ok) {
       pushLog('로그인', '로그인하지 못했습니다 — ' + result.message +
-        ' 체크인 탭에서 다시 해 보실 수 있습니다.');
+        ' 내 정보에서 다시 해 보실 수 있습니다.');
       openAuth('signin');
       return;
     }
@@ -5251,7 +5251,7 @@
             E.JOINT_LABELS_KO[joint] + '이 아파서. ' +
             (moved > 0
               ? '같은 관절에 부담이 큰 종목 ' + moved + '개도 같이 바꿨습니다.'
-              : '체크인에서 통증 정도를 더 정확히 적으실 수 있습니다.'));
+              : '오늘 화면의 "아픈 데 있나요?"에서 통증 정도를 더 정확히 적으실 수 있습니다.'));
           render();
         },
       }, [
@@ -5694,6 +5694,13 @@
     coachSay(E.afterSetLines({ style: state.coach.style, feel: 'hurt', lastOfLift: true }).concat(
       next >= 0 ? ['괜찮아지시면 다음 종목에서 시작을 눌러 주세요.'] : []));
     render();
+    /*
+     * 말없이 종목만 사라지면 사람은 앱이 고장 난 줄 안다. 무엇을 뺐는지 말하고,
+     * 어디가 아픈지 바로 묻는다 — 그래야 오늘 남은 종목 중 그 관절에 부담이
+     * 큰 것을 바꾸고, 다음 주 처방도 그걸 안다.
+     */
+    openPainCheck(lift.exercise.name + ' 남은 세트를 뺐습니다. 어디가 아픈지 적어 두면 ' +
+      '오늘 남은 종목 중 그 관절에 부담이 큰 것을 바꿉니다.');
   }
 
   /**
@@ -7488,6 +7495,17 @@
    */
   var ASK_WINDOW_MS = 10000;
 
+  /*
+   * 손을 한 번도 안 댄 채 저절로 적은 세트가 이만큼 이어지면 자리를 비운 것으로 본다.
+   *
+   * 10초 기본값은 땀난 손으로 매 세트 누르지 않게 하려는 것이지, 아무도 없는데
+   * 세트를 지어내려는 것이 아니다. 폰을 두고 가면 세트 열다섯 개가 "딱 좋았어요"로
+   * 적히고, 그 기록으로 다음 주 무게가 오른다. 한 번이라도 화면을 만지면 다시 센다.
+   */
+  var PT_AWAY_SETS = 3;
+  document.addEventListener('pointerdown', function () { state.ptUntouched = 0; }, true);
+  document.addEventListener('keydown', function () { state.ptUntouched = 0; }, true);
+
   function clearAskWindow() {
     if (state.askTimer) clearTimeout(state.askTimer);
     state.askTimer = null;
@@ -7505,7 +7523,15 @@
       // 세는 중에 지난 세트를 적으면 세던 세트가 엉뚱하게 끝난다
       if (!key || !ptOn() || state.counting || (state.ptRun && state.ptRun.paused)) return;
       var parts = key.split(':');
+      state.ptUntouched = (state.ptUntouched || 0) + 1;
       answerFeel(Number(parts[0]), Number(parts[1]), state.askDefault || 'right');
+      if (state.ptUntouched >= PT_AWAY_SETS && ptOn() && state.ptRun && !state.ptRun.paused && !state.ptRun.cool) {
+        pausePt('away');
+        speak(state.coach.style === 'data'
+          ? '입력 없음. 일시정지.'
+          : '자리를 비우신 것 같아 멈춰 둘게요. 돌아오시면 계속을 눌러 주세요.');
+        render();
+      }
     }, ASK_WINDOW_MS);
   }
 
@@ -7854,7 +7880,9 @@
       middle.appendChild(el('div', { class: 'focus-what' }, [
         el('span', { text: pt.pausedWhy === 'background'
           ? '다른 앱에 다녀오셔서 멈춰 뒀어요.'
-          : (pt.resume && pt.resume.rep > 0 ? pt.resume.rep + '개까지 했어요. 이어서 셀게요.' : '준비되면 계속을 눌러 주세요.') }),
+          : pt.pausedWhy === 'away'
+            ? '세 세트 동안 화면을 안 만지셔서 멈춰 뒀어요. 그동안 적힌 세트가 맞는지 "자세히 보기"에서 확인해 주세요.'
+            : (pt.resume && pt.resume.rep > 0 ? pt.resume.rep + '개까지 했어요. 이어서 셀게요.' : '준비되면 계속을 눌러 주세요.') }),
       ]));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn primary pt-pause', text: '▶ 계속', onclick: resumePt }));
     }
@@ -7967,6 +7995,8 @@
       coachSay(E.afterSetLines({ style: state.coach.style, feel: 'hurt', lastOfLift: true })
         .concat(['괜찮아지시면 다음 종목에서 시작을 눌러 주세요.']));
       render();
+      openPainCheck(state.lifts[restingLift].exercise.name + ' 뒤에 아프다고 하셨습니다. 어디가 아픈지 적어 두면 ' +
+        '오늘 남은 종목 중 그 관절에 부담이 큰 것을 바꿉니다.');
       return;
     }
     stopForPain(liftIndex, null);
@@ -13247,8 +13277,10 @@
     ]);
   }
 
-  function openPainCheck() {
+  /** note: 왜 지금 묻는지 — 세트 중 "아픈 데 있어요"로 왔으면 방금 무엇을 뺐는지 먼저 말한다. */
+  function openPainCheck(note) {
     var body = [];
+    if (typeof note === 'string' && note) body.push(el('p', { class: 'pain-note', text: note }));
     if (!E.allows(state.consent, 'painGate')) {
       body.push(el('div', { class: 'notice' }, [
         el('div', { class: 'label', text: '동의하지 않은 항목' }),
@@ -13257,7 +13289,7 @@
       ]));
       body.push(el('button', {
         type: 'button', class: 'finish', text: '통증 기록에 동의하기',
-        onclick: function () { grantConsent('painData'); openPainCheck(); },
+        onclick: function () { grantConsent('painData'); openPainCheck(note); },
       }));
       openModal('아픈 데 있나요?', '동의가 필요합니다', body);
       return;
@@ -15864,7 +15896,7 @@
     }
 
     screen.appendChild(el('p', { class: 'asset-note', text:
-      '동의는 언제든 철회할 수 있습니다(체크인 탭 → 내 정보). 철회하면 해당 기록을 바로 지웁니다. ' +
+      '동의는 언제든 철회할 수 있습니다(위쪽 "내 정보"). 철회하면 해당 기록을 바로 지웁니다. ' +
       '이 문구는 프로토타입용이며, 실제 출시 전에는 법률 검토가 필요합니다.' }));
   }
 

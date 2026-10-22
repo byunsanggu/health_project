@@ -170,8 +170,10 @@ describe('무게 체감', () => {
     assert.ok(feelToRir('heavy', 2) < feelToRir('right', 2));
   });
 
-  it('0~4 밖으로 나가지 않는다', () => {
-    assert.equal(feelToRir('light', 4), 4);
+  it('0~5 밖으로 나가지 않는다 — 목표가 3 · 4인 주에도 가벼우면 목표보다 많이 남았다', () => {
+    assert.equal(feelToRir('light', 4), 5);
+    assert.equal(feelToRir('light', 3), 5);
+    assert.ok(feelToRir('light', 4) > feelToRir('right', 4));
     assert.equal(feelToRir('heavy', 0), 0);
   });
 

@@ -127,6 +127,12 @@ describe('adjustWithinSession', () => {
     assert.ok(result.deltaKg > 0);
   });
 
+  it('목표가 RIR 4인 주에 "가벼웠어요"(5)면 올린다 — 첫 주 무게는 일부러 가볍다', () => {
+    const early = { ...rule, targetRir: 4 };
+    assert.ok(adjustWithinSession(bench, set({ reps: 12, rir: 5 }), early).deltaKg > 0);
+    assert.equal(adjustWithinSession(bench, set({ reps: 12, rir: 4 }), early).deltaKg, 0);
+  });
+
   it('실패했는데 반복도 못 채웠으면 다음 세트를 낮춘다', () => {
     const result = adjustWithinSession(bench, set({ reps: 5, rir: 0 }), rule);
     assert.ok(result.deltaKg < 0);

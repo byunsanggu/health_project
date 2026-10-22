@@ -169,8 +169,10 @@ export function adjustWithinSession(
   const step = exercise.increment;
   const observedRir = correctRir(lastSet.rir, rule.rirOffset);
   const surplus = observedRir - rule.targetRir;
+  // 다섯 개 넘게 남았으면(RIR 5) 목표가 4여도 가벼운 것이다 — RIR은 5에서 끊기므로 차이가 1로 보일 뿐
+  const light = surplus >= 2 || (observedRir >= 5 && surplus >= 1);
 
-  if (surplus >= 2 && lastSet.reps >= rule.repRange.min) {
+  if (light && lastSet.reps >= rule.repRange.min) {
     const jump = step * (surplus >= 3 ? 2 : 1);
     return {
       weightKg: roundToIncrement(lastSet.weightKg + jump, step),
