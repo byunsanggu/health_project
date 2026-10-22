@@ -2827,7 +2827,8 @@
             el('span', { class: 'muscle', text: row.label }),
             el('span', {
               class: 'nums',
-              text: '오늘 ' + fmt(row.today) + ' · 이번 주 ' + fmt(row.week) + '세트 · 목표 ' + row.landmark.mev + '–' + row.landmark.mrv,
+              text: '오늘 ' + row.todaySets + '세트(유효 ' + fmt(row.today) + ') · 이번 주 유효 ' + fmt(row.week) +
+                ' · 목표 ' + row.landmark.mev + '–' + row.landmark.mrv,
             }),
             el('span', { class: 'zone ' + zoneClass(E.zoneOf(row.week, row.landmark)), text: row.zone }),
           ]);
@@ -2882,8 +2883,9 @@
       el('div', { class: 'list-label', text: '오늘 쓴 부위' }),
       el('div', { class: 'summary-body-row' }, [
         el('div', { class: 'summary-body-map' }, [map.render(weights, '오늘 쓴 부위')]),
+        // 실제로 그 부위를 주로 쓴 세트 수 — "3세트 했는데 1.9세트"가 되지 않게
         el('div', { class: 'summary-body-top' }, top.map(function (row) {
-          return el('div', {}, [el('b', { text: row.label }), el('span', { text: fmt(row.today) + '세트' })]);
+          return el('div', {}, [el('b', { text: row.label }), el('span', { text: (row.todaySets || Math.round(row.today)) + '세트' })]);
         })),
       ]),
     ]);
@@ -2930,6 +2932,7 @@
       el('span', {}, [el('i', { class: 'key before' }), el('span', { text: '이번 주 앞서' })]),
       el('span', {}, [el('i', { class: 'key band' }), el('span', { text: '목표 범위' })]),
     ]));
+    host.appendChild(el('p', { class: 'hint-line', text: VOLUME_COUNT_NOTE }));
     var bind = chartTip(host);
     rows.forEach(function (row) {
       var before = Math.max(0, row.week - row.today);
@@ -2948,7 +2951,7 @@
       ]);
       host.appendChild(line);
       bind(line, [
-        row.label + ' · 이번 주 ' + fmt(row.week) + '세트',
+        row.label + ' · 이번 주 유효 ' + fmt(row.week) + '세트',
         '오늘 ' + fmt(row.today) + '세트 · 앞서 ' + fmt(before) + '세트',
         '목표 범위 ' + row.landmark.mev + '–' + row.landmark.mrv + '세트 · ' + row.zone,
       ]);
@@ -9549,6 +9552,14 @@
     return row;
   }
 
+  /*
+   * 유효 세트가 무엇인지 — 볼륨 숫자 옆에 늘 같은 말로.
+   * 엔진은 보조 근육(벤치의 삼두)과 여유를 많이 남긴 세트를 덜 센다. 그걸 말하지
+   * 않으면 3세트를 했는데 1.9세트로 나오는 것이 고장처럼 보인다.
+   */
+  var VOLUME_COUNT_NOTE = '유효 세트로 셉니다 — 보조로 쓴 근육은 기여한 만큼, 여유를 많이 남긴 세트는 덜 셉니다. ' +
+    '그래서 3세트를 해도 2세트 남짓으로 나올 수 있습니다.';
+
   /* 볼륨 */
   function renderVolume() {
     var report = E.volumeReport(weekSessions(), state.landmarks, index)
@@ -9557,7 +9568,7 @@
 
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('h2', { text: '주간 볼륨' }),
-      el('p', { class: 'meta', text: state.monday + ' 주 · 유효 세트 기준 · 오늘 포함 ' + (weekSessionsDone() + 1) + '회차' }),
+      el('p', { class: 'meta', text: Number(state.monday.slice(5, 7)) + '월 ' + Number(state.monday.slice(8, 10)) + '일 주 · 유효 세트 기준 · 오늘 포함 ' + (weekSessionsDone() + 1) + '회차' }),
     ]));
 
     if (report.length === 0) {
@@ -9565,7 +9576,7 @@
       return;
     }
 
-    var body = el('div', { class: 'sheet-body' }, []);
+    var body = el('div', { class: 'sheet-body' }, [el('p', { class: 'hint-line', text: VOLUME_COUNT_NOTE })]);
     report.forEach(function (row) { body.appendChild(gaugeRow(row)); });
 
     screen.appendChild(el('div', { class: 'sheet' }, [
@@ -9703,7 +9714,7 @@
         ]),
         el('span', { class: 'value zone-text-' + zone }, [
           document.createTextNode(fmt(row.effectiveSets) + ' '),
-          el('span', { text: '세트 · ' + row.zoneLabel }),
+          el('span', { text: '유효 세트 · ' + row.zoneLabel }),
         ]),
       ]),
       gauge,

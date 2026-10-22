@@ -19,6 +19,12 @@ export interface MuscleSummary {
   label: string;
   /** 오늘 채운 유효 세트 */
   today: number;
+  /**
+   * 오늘 이 부위를 주로 쓴 세트 수(기여 0.5 이상) — 사람에게 보여 주는 숫자.
+   * 유효 세트는 보조 근육과 여유를 많이 남긴 세트를 덜 세서, 고블릿 스쿼트
+   * 3세트가 대퇴사두 1.9세트로 나온다. 판단은 유효 세트로, 말은 이 숫자로 한다.
+   */
+  todaySets: number;
   /** 이번 주 누적 */
   week: number;
   landmark: { mev: number; mav: number; mrv: number };
@@ -70,6 +76,15 @@ export function summarizeSession(input: SummaryInput): SessionSummary {
   const weekSessions = sessionsInWeek([...input.history, todaySession], input.date);
   const weekVolume = aggregateVolume(weekSessions, input.index, input.volumeOptions);
 
+  const directSets: Partial<Record<MuscleGroup, number>> = {};
+  for (const set of working) {
+    const exercise = input.index.get(set.exerciseId);
+    if (!exercise) continue;
+    for (const [muscle, share] of Object.entries(exercise.contribution) as [MuscleGroup, number][]) {
+      if (share >= 0.5) directSets[muscle] = (directSets[muscle] ?? 0) + 1;
+    }
+  }
+
   const byMuscle: MuscleSummary[] = [];
   for (const muscle of Object.keys(todayVolume) as MuscleGroup[]) {
     const today = todayVolume[muscle].effectiveSets;
@@ -79,6 +94,7 @@ export function summarizeSession(input: SummaryInput): SessionSummary {
       muscle,
       label: MUSCLE_LABELS_KO[muscle],
       today,
+      todaySets: directSets[muscle] ?? 0,
       week,
       landmark: input.landmarks[muscle],
       zone: ZONE_LABELS_KO[zoneOf(week, input.landmarks[muscle])],

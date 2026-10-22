@@ -45,6 +45,20 @@ describe('summarizeSession', () => {
     assert.equal(chest.landmark.mrv, landmarks.chest.mrv);
   });
 
+  it('사람에게 보일 세트 수는 실제로 그 부위를 주로 쓴 세트 — 고블릿 스쿼트 3세트는 대퇴사두 3세트', () => {
+    const summary = summarizeSession({
+      ...base,
+      sets: sets('goblet-squat', 3, { weightKg: 16, reps: 12, rir: 4 }),
+      history: [],
+    });
+    const quads = summary.byMuscle.find((row) => row.muscle === 'quads')!;
+    assert.equal(quads.todaySets, 3);
+    assert.ok(quads.today < 3, '유효 세트는 여유 · 기여만큼 덜 센다');
+    // 기여가 0.5 아래(복근 0.4)면 "주로 쓴" 세트로 세지 않는다
+    const abs = summary.byMuscle.find((row) => row.muscle === 'abs');
+    assert.equal(abs ? abs.todaySets : 0, 0);
+  });
+
   it('오늘 건드리지 않은 부위는 요약에 넣지 않는다', () => {
     const summary = summarizeSession({
       ...base,
