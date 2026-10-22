@@ -258,6 +258,34 @@ export interface BeforeSetInput {
   totalLifts?: number;
   /** 이번 세트에 짚을 흔한 실수 (mistakeToWatch). 있으면 동작 포인트 대신 말한다 */
   watch?: { cue: string; moment: MistakeMoment } | null;
+  /**
+   * 끝까지 밀지 않는 날 — 첫날 · 덜어내는 주 · 컨디션 낮은 날 · 아픈 데 있는 날.
+   * 남길 횟수가 3개 이상인 주(블록 초반)도 그렇다. 빡센 코치도 이날은 "오늘이 마지막인
+   * 것처럼"을 말하지 않는다 — 시작할 때 "무리하지 않습니다"라고 해 놓고 세트 앞에서
+   * 끝까지 가자고 하면 둘 다 안 믿는다.
+   */
+  restrained?: boolean;
+}
+
+/** 끝까지 밀지 않는 날의 빡센 각오 — 기운은 그대로, "끝까지 · 마지막인 것처럼"은 뺀다. */
+export const FIRED_CONTROLLED: readonly string[] = [
+  '자세로 이깁니다. 목표 개수까지 정확하게!',
+  '빠르게 말고 정확하게, 갑니다!',
+  '깔끔한 반복만 셉니다. 집중!',
+  '무게보다 자세입니다. 제대로 갑니다!',
+];
+
+/** 끝까지 밀지 않는 날의 빡센 중간 세트 한마디. */
+export const FIRED_CONTROLLED_MIDDLE: readonly string[] = [
+  '방금처럼 깔끔하게 갑니다.',
+  '자세 그대로, 집중합시다.',
+  '목표 개수만 정확하게요.',
+  '숨 고르고, 같은 모양으로 갑니다.',
+];
+
+/** 끝까지 밀지 않는 날인가 — 시켜서든, 남길 횟수가 많아서든. */
+function holdsBack(input: BeforeSetInput): boolean {
+  return Boolean(input.restrained) || input.targetRir >= 3;
 }
 
 /**
@@ -345,10 +373,10 @@ export const CALM_MIDDLE: readonly string[] = [
 /**
  * 종목을 시작할 때 오늘 어디쯤인지 — 마지막 종목이라는 말이 그날 남은 힘을 끌어낸다.
  */
-function liftMarker(style: CoachStyle, liftIndex?: number, totalLifts?: number): string | null {
+function liftMarker(style: CoachStyle, liftIndex?: number, totalLifts?: number, calmDown = false): string | null {
   if (liftIndex === undefined || !totalLifts || totalLifts < 3) return null;
   if (liftIndex === totalLifts - 1) {
-    if (style === 'fired') return '마지막 종목입니다. 남은 거 다 쏟고 갑니다!';
+    if (style === 'fired') return calmDown ? '마지막 종목입니다. 마무리까지 깔끔하게 갑니다!' : '마지막 종목입니다. 남은 거 다 쏟고 갑니다!';
     if (style === 'data') return `마지막 종목, ${totalLifts}/${totalLifts}.`;
     return '오늘 마지막 종목이에요. 거의 다 왔어요.';
   }
@@ -378,7 +406,10 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
     const head = `${input.setIndex + 1}세트`;
     if (style === 'fired') {
       lines.push(`${head}! ${today} ${reps}.`);
-      lines.push(isLast ? `마지막 세트입니다. ${firedResolve(turn + 1)}` : pick(FIRED_MIDDLE, turn));
+      const calmDown = holdsBack(input);
+      lines.push(isLast
+        ? `마지막 세트입니다. ${calmDown ? pick(FIRED_CONTROLLED, turn + 1) : firedResolve(turn + 1)}`
+        : pick(calmDown ? FIRED_CONTROLLED_MIDDLE : FIRED_MIDDLE, turn));
     } else if (style === 'data') {
       const left = input.totalSets - input.setIndex - 1;
       lines.push(`${head}, ${today}, ${reps}.${isLast ? ' 마지막.' : ` 남은 세트 ${left}.`}`);
@@ -393,7 +424,7 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
 
   // 첫 세트
   const name = input.exerciseName;
-  const marker = liftMarker(style, input.liftIndex, input.totalLifts);
+  const marker = liftMarker(style, input.liftIndex, input.totalLifts, holdsBack(input));
   if (marker) lines.push(marker);
   if (style === 'fired') lines.push(`${name}, 갑니다!`);
   else if (style === 'data') lines.push(`${name}.`);
@@ -435,10 +466,11 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
       lines.push(`${today} ${reps}.`);
     }
     // 바로 앞 줄이 "오늘"로 시작하면 "오늘"로 시작하지 않는 각오를 고른다.
-    let resolve = firedResolve(turn);
+    const pool = holdsBack(input) ? FIRED_CONTROLLED : FIRED_RESOLVE;
+    let resolve = pick(pool, turn);
     const before = lines[lines.length - 1] ?? '';
-    for (let step = 1; /^오늘/.test(before) && /^오늘/.test(resolve) && step < FIRED_RESOLVE.length; step += 1) {
-      resolve = firedResolve(turn + step);
+    for (let step = 1; /^오늘/.test(before) && /^오늘/.test(resolve) && step < pool.length; step += 1) {
+      resolve = pick(pool, turn + step);
     }
     lines.push(resolve);
   } else if (last) {
@@ -471,8 +503,11 @@ const PUSH: Record<CoachStyle, readonly string[]> = {
   data: ['두 개 남음.', '잔여 2회.'],
 };
 
-export function pushLine(style: CoachStyle, at = 0): string {
-  return pick(PUSH[style], at);
+/** 끝까지 밀지 않는 날(restrained)의 빡센 재촉 — "끝까지 · 포기하지 않습니다"를 뺀다. */
+const FIRED_PUSH_CONTROLLED: readonly string[] = ['자세 유지합니다!', '깔끔하게, 두 개요!', '그대로 갑니다!', '호흡 지킵니다!'];
+
+export function pushLine(style: CoachStyle, at = 0, restrained = false): string {
+  return pick(style === 'fired' && restrained ? FIRED_PUSH_CONTROLLED : PUSH[style], at);
 }
 
 /**
@@ -619,7 +654,7 @@ const NEXT_SAME: Record<CoachStyle, readonly string[]> = {
   data: ['다음 세트 유지, {w}.'],
 };
 const LIFT_DONE: Record<CoachStyle, readonly string[]> = {
-  fired: ['끝까지 해냈습니다. 다음 종목 갑니다!', '한 종목 끝. 쉬지 않고 이어 갑니다!', '이 종목은 이겼습니다. 다음 갑니다.'],
+  fired: ['끝까지 해냈습니다. 다음 종목 갑니다!', '한 종목 끝. 숨 고르고 다음 갑니다!', '이 종목은 이겼습니다. 다음 갑니다.'],
   calm: ['이 종목 끝났어요. 수고하셨어요.', '잘하셨어요. 이 종목은 마무리예요.', '깔끔하게 끝냈어요. 잠깐 쉬고 다음 거 가요.'],
   data: ['종목 완료{n}.'],
 };

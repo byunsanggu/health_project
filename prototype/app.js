@@ -5687,7 +5687,17 @@
       liftIndex: liftIndex,
       totalLifts: state.lifts.length,
       watch: watchFor(lift, setIndex, first),
+      restrained: holdingBack(),
     }));
+  }
+
+  /*
+   * 끝까지 밀지 않는 날 — 첫날 · 덜어내는 주 · 컨디션 낮은 날 · 아픈 데 있는 날.
+   * 시작할 때 "무리하지 않습니다"라고 한 날은 세트 앞에서도, 세트 중에도 끝까지 가자고 하지 않는다.
+   */
+  function holdingBack() {
+    return state.plan.phase === 'deload' || conditionPercent() < E.LOW_CONDITION || activePain().length > 0 ||
+      !state.history.some(function (session) { return session.date < state.todayDate; });
   }
 
   /** 이번 세트에 짚을 흔한 실수 — 체크한 것, 무거웠던 뒤, 처음, 마지막 세트. */
@@ -6346,7 +6356,8 @@
         speak(cue.say);
         // 끝나기 두 개 전. 숫자 사이에 들어가야 해서 짧은 말만 한다.
         if (ptOn() && set.targetReps.max >= 5 && cue.rep === set.targetReps.max - 2) {
-          speak(E.forSpeech(E.pushLine(state.coach.style, liftIndex + setIndex)));
+          var easyRir = (typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir) >= 3;
+          speak(E.forSpeech(E.pushLine(state.coach.style, liftIndex + setIndex, holdingBack() || easyRir)));
         }
         // 두 번째 개수 뒤에 자세 한마디 — 리듬이 잡힌 자리, 아직 지치기 전.
         if (ptOn() && set.targetReps.max >= 6 && cue.rep === 2 && set.targetReps.min !== 2) {

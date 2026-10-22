@@ -6,6 +6,8 @@ import {
   FEELS,
   FIRED_RESOLVE,
   FIRED_MIDDLE,
+  FIRED_CONTROLLED,
+  FIRED_CONTROLLED_MIDDLE,
   bestWeightBefore,
   sessionStartLines,
   lastCallLine,
@@ -83,6 +85,53 @@ describe('말투는 셋, 모두 존댓말', () => {
     const firsts = [0, 1, 2, 3].map((liftIndex) =>
       beforeSetLines(base({ style: 'fired', liftIndex })).join(' '));
     assert.equal(new Set(firsts).size, 4);
+  });
+});
+
+describe('끝까지 밀지 않는 날', () => {
+  /*
+   * 첫날 시작할 때 "무리하지 않습니다"라고 해 놓고, 세트 앞에서 "오늘이 마지막인
+   * 것처럼 갑시다"라고 하면 둘 다 안 믿는다. 덜어내는 주 · 컨디션 낮은 날 · 아픈 데
+   * 있는 날 · 남길 횟수가 3개 이상인 주도 마찬가지다.
+   */
+  const ALL_OUT = /마지막인 것처럼|갈아 넣|끝까지|더 할 수 있어요|다 쏟고|포기하지 않습니다|버티는 사람/;
+  const range = (n: number) => Array.from({ length: n }, (_, i) => i);
+  const wholeDay = (over: Partial<BeforeSetInput>) =>
+    range(6).flatMap((liftIndex) => range(3).flatMap((setIndex) =>
+      beforeSetLines(base({ style: 'fired', liftIndex, totalLifts: 6, setIndex, totalSets: 3, ...over })))).join(' ');
+
+  it('무리하지 않는 날엔 빡센 코치도 끝까지 가자고 하지 않는다 — 첫 세트 · 중간 · 마지막 세트 · 마지막 종목', () => {
+    const said = wholeDay({ restrained: true });
+    assert.doesNotMatch(said, ALL_OUT);
+    assert.match(said, /정확하게|깔끔하게|자세/);
+  });
+
+  it('남길 횟수가 3개 이상인 주도 같다', () => {
+    assert.doesNotMatch(wholeDay({ targetRir: 3 }), ALL_OUT);
+  });
+
+  it('세트 중 재촉도 끝까지 밀지 않는다', () => {
+    assert.doesNotMatch(range(8).map((at) => pushLine('fired', at, true)).join(' '), ALL_OUT);
+    // 차분 · 숫자 말투는 원래 끝까지 가자고 하지 않는다
+    assert.equal(pushLine('calm', 1, true), pushLine('calm', 1));
+  });
+
+  it('여느 날(남길 횟수 2개 이하)엔 원래 각오를 그대로 한다', () => {
+    assert.match(wholeDay({}), /마지막인 것처럼/);
+    assert.match(wholeDay({}), /다 쏟고/);
+  });
+
+  it('그래도 빡센 말투다 — 존댓말, 느낌표', () => {
+    const said = [...FIRED_CONTROLLED, ...FIRED_CONTROLLED_MIDDLE, ...range(4).map((at) => pushLine('fired', at, true))].join(' ');
+    assert.doesNotMatch(said, /(해|가자|버텨|해라|하자|봐|밀어|짜내)!/);
+    assert.ok(FIRED_CONTROLLED.every((line) => line.endsWith('!')));
+    assert.ok(FIRED_CONTROLLED.every((line) => !line.startsWith('오늘')), '앞 줄과 "오늘"이 겹치지 않게');
+  });
+
+  it('차분 · 숫자 말투의 세트 전 말은 그대로다', () => {
+    for (const style of ['calm', 'data'] as const) {
+      assert.deepEqual(beforeSetLines(base({ style, restrained: true })), beforeSetLines(base({ style })));
+    }
   });
 });
 
