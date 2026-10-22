@@ -84,7 +84,7 @@ export function prescribeLoad(
       weightKg: null,
       change: 'start',
       deltaKg: 0,
-      reason: `첫 수행입니다. ${rule.repRange.min}~${rule.repRange.max}회를 RIR ${rule.targetRir}로 마칠 수 있는 중량으로 시작하세요.`,
+      reason: `첫 수행입니다. ${rule.repRange.min}~${rule.repRange.max}회를 하고도 ${rule.targetRir}개쯤 더 할 수 있는 무게로 시작하세요.`,
     };
   }
 
@@ -102,7 +102,7 @@ export function prescribeLoad(
       weightKg: roundToIncrement(last.weightKg + jump, step),
       change: 'increase',
       deltaKg: round1(jump),
-      reason: `${last.reps}회 × RIR ${describeRir(last.rir, observedRir)}로 목표 상단에 여유 있게 도달했습니다. ${round1(jump)}kg 올립니다.`,
+      reason: `${last.reps}회에 여유 ${describeRir(last.rir, observedRir)}로 목표 상단을 넉넉히 채웠습니다. ${round1(jump)}kg 올립니다.`,
     };
   }
 
@@ -113,7 +113,7 @@ export function prescribeLoad(
       weightKg: last.weightKg,
       change: 'hold',
       deltaKg: 0,
-      reason: `목표 반복은 채웠지만 RIR ${describeRir(last.rir, observedRir)}로 여유가 없었습니다. 같은 중량에서 RIR ${rule.targetRir}이 될 때까지 유지합니다.`,
+      reason: `목표 반복은 채웠지만 여유가 ${describeRir(last.rir, observedRir)}뿐이었습니다. 같은 무게로 여유가 ${rule.targetRir}개 남을 때까지 유지합니다.`,
     };
   }
 
@@ -124,7 +124,7 @@ export function prescribeLoad(
       weightKg: roundToIncrement(last.weightKg + step, step),
       change: 'increase',
       deltaKg: round1(step),
-      reason: `RIR ${describeRir(last.rir, observedRir)}로 목표(${rule.targetRir})보다 가벼웠습니다. ${round1(step)}kg 올립니다.`,
+      reason: `여유 ${describeRir(last.rir, observedRir)}로 목표(${rule.targetRir}개)보다 가벼웠습니다. ${round1(step)}kg 올립니다.`,
     };
   }
 
@@ -177,7 +177,7 @@ export function adjustWithinSession(
     return {
       weightKg: roundToIncrement(lastSet.weightKg + jump, step),
       deltaKg: round1(jump),
-      reason: `RIR ${describeRir(lastSet.rir, observedRir)}로 여유가 많습니다. 다음 세트 ${round1(jump)}kg 올립니다.`,
+      reason: `여유 ${describeRir(lastSet.rir, observedRir)}로 넉넉합니다. 다음 세트 ${round1(jump)}kg 올립니다.`,
     };
   }
 
@@ -186,14 +186,14 @@ export function adjustWithinSession(
     return {
       weightKg: reduced,
       deltaKg: round1(reduced - lastSet.weightKg),
-      reason: `실패 지점에서 목표 반복을 못 채웠습니다. 다음 세트 10% 낮춥니다.`,
+      reason: `더는 못 드는 지점에서 목표 반복을 못 채웠습니다. 다음 세트 10% 낮춥니다.`,
     };
   }
 
   return {
     weightKg: lastSet.weightKg,
     deltaKg: 0,
-    reason: '중량 유지합니다.',
+    reason: '무게를 유지합니다.',
   };
 }
 
@@ -202,8 +202,9 @@ function correctRir(reported: number, offset = 0): number {
 }
 
 /** 보정이 들어갔으면 사용자에게 그 사실을 숨기지 않는다. */
+/** "2개" — 보정이 들어갔으면 "3개(보정하면 2개)". 화면에 "RIR"이라는 말은 쓰지 않는다. */
 function describeRir(reported: number, corrected: number): string {
-  return reported === corrected ? String(reported) : `${reported}→${round1(corrected)}(보정)`;
+  return reported === corrected ? `${reported}개` : `${reported}개(보정하면 ${round1(corrected)}개)`;
 }
 
 function round1(value: number): number {

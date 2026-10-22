@@ -99,7 +99,7 @@ export const STYLE_PROFILES: Record<TrainingStyle, StyleProfile> = {
     allowsIntensityTechniques: true,
     includesMaxTest: false,
     minLevel: 'intermediate',
-    caution: '회복 요구가 가장 큰 블록입니다. 끝나면 반드시 디로드로 넘어갑니다',
+    caution: '회복 요구가 가장 큰 블록입니다. 끝나면 반드시 덜어내는 주로 넘어갑니다',
   },
   peak: {
     style: 'peak',
@@ -118,7 +118,7 @@ export const STYLE_PROFILES: Record<TrainingStyle, StyleProfile> = {
     allowsIntensityTechniques: false,
     includesMaxTest: true,
     minLevel: 'intermediate',
-    caution: '축적 블록과 디로드를 거친 뒤에만 들어갑니다. 피로가 남은 상태로는 기록이 안 나옵니다',
+    caution: '쌓는 블록과 덜어내는 주를 거친 뒤에만 들어갑니다. 피로가 남은 상태로는 기록이 안 나옵니다',
   },
   conditioning: {
     style: 'conditioning',
@@ -199,7 +199,7 @@ export function availableStyles(context: StyleContext): StyleAvailability[] {
     }
 
     if (style === 'peak' && !context.justDeloaded) {
-      return deny('한계 돌파는 디로드로 피로를 뺀 다음 주에 들어갑니다. 지금 시도하면 기록이 아니라 컨디션을 재는 셈입니다.');
+      return deny('한계 돌파는 덜어내는 주로 피로를 뺀 다음 주에 들어갑니다. 지금 시도하면 기록이 아니라 컨디션을 재는 셈입니다.');
     }
 
     const streak = countTrailing(recent, style);
@@ -232,7 +232,7 @@ export function suggestNextStyle(context: StyleContext): StyleSuggestion {
     return {
       style: 'peak',
       profile: STYLE_PROFILES.peak,
-      reason: '근력 블록과 디로드를 마쳤습니다. 지금이 기록을 확인하기 가장 좋은 시점입니다.',
+      reason: '근력 블록과 덜어내는 주를 마쳤습니다. 지금이 기록을 확인하기 가장 좋은 시점입니다.',
     };
   }
 

@@ -436,7 +436,7 @@ function referenceLoad(
   if (!lastSession) return undefined;
   const set = lastSession.sets.find((s) => s.exerciseId === original.id && !s.warmup);
   if (!set) return undefined;
-  return `참고: ${original.name} ${set.weightKg}kg × ${set.reps}회 (RIR ${set.rir})`;
+  return `참고: ${original.name} ${set.weightKg}kg × ${set.reps}회 (여유 ${set.rir}개)`;
 }
 
 /**

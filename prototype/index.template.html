@@ -2024,15 +2024,19 @@ input[type="search"] {
 .head-actions { display: flex; align-items: center; gap: 8px; }
 /*
  * 버튼이 넷이 되면 좁은 폰에서 제목이 쪼개진다. 제목은 제목 줄에 두고,
- * 버튼은 아래 한 줄에 모아 넘치면 옆으로 민다 — 줄바꿈보다 낫다.
+ * 버튼은 아래 줄에 모은다.
+ *
+ * 칸은 카드 폭을 꽉 채운다(minmax(0, 1fr)). .sheet-head의 space-between을 물려받으면
+ * grid 칸이 내용 폭으로 줄어서 "닫기"가 오른쪽 끝에 안 붙고, 좁은 폰에서는 칸이 카드보다
+ * 넓어져 잘렸다. 버튼 줄은 넘치면 다음 줄로 — 숨은 가로 스크롤은 마지막 버튼이 잘린
+ * 것처럼 보인다. "편집"을 눌러야 펼쳐지는 줄이라 두 줄이 돼도 괜찮다.
  */
-.sheet-head.stacked { display: grid; gap: 9px; align-items: stretch; }
-.head-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.sheet-head.stacked .head-actions {
-  flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
-  margin: 0 -2px; padding: 0 2px 1px;
+.sheet-head.stacked {
+  display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch;
+  gap: 9px; align-items: stretch;
 }
-.sheet-head.stacked .head-actions::-webkit-scrollbar { display: none; }
+.head-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sheet-head.stacked .head-actions { flex-wrap: wrap; row-gap: 7px; }
 .sheet-head.stacked .head-actions .demo-open { flex: none; }
 .head-actions .demo-open { margin-left: 0; }
 
@@ -2425,6 +2429,8 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .wt-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .short-note { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); font-size: 13px; }
 .short-note b { color: var(--accent); }
+/* 글이 길면 버튼이 눌려 "원래/대로" 두 줄이 됐다 — 버튼은 줄이지 않는다 */
+.short-note .pick { flex: none; white-space: nowrap; }
 .extras-toggle { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; background: none; font-size: 14px; color: var(--muted); }
 .extras-caret { font-size: 12px; color: var(--accent); }
 .streak-chip { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; }

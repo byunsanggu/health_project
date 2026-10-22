@@ -57,7 +57,7 @@ test('제자리면 세트와 반복을 대신 말한다', () => {
 
 test('내려가는 데는 이유가 붙는다', () => {
   const dropped = lift({ weightKg: 90 });
-  assert.match(liftDetail(dropped, { drop: 'deload' }), /이번 주는 디로드라 12\.5kg 내립니다/);
+  assert.match(liftDetail(dropped, { drop: 'deload' }), /이번 주는 덜어내는 주라 12\.5kg 내립니다/);
   assert.match(liftDetail(dropped, { drop: 'comeback' }), /복귀 주라 12\.5kg 내려서 갑니다/);
   assert.match(liftDetail(dropped), /지난번보다 12\.5kg 내려서 갑니다/);
 });

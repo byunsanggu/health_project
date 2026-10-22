@@ -80,14 +80,15 @@ describe('calibrateRir', () => {
     const result = calibrateRir(noAnchor, { asOf: '2026-09-10' });
     assert.equal(result.anchorCount, 0);
     assert.equal(result.applied, false);
-    assert.match(result.note, /실패 세트가 없어/);
+    assert.match(result.note, /"더는 못 든" 세트가 없어/);
   });
 
   it('RIR을 실제보다 높게 신고하면 음수 보정이 나온다', () => {
     const result = calibrateRir(OVER_REPORTER, { asOf: '2026-09-10' });
     assert.ok(result.offset < -1, `offset ${result.offset}`);
     assert.equal(result.applied, true);
-    assert.ok(result.signals.some((signal) => signal.includes('높게 신고')));
+    assert.ok(result.signals.some((signal) => signal.includes('더 남았다고 답하고')));
+    assert.ok([result.note, ...result.signals].every((line) => !/RIR/.test(line)), '화면에 나가는 말에 RIR을 쓰지 않는다');
     assert.ok(result.reliability < 1);
   });
 
@@ -124,7 +125,7 @@ describe('calibrateRir', () => {
       Array.from({ length: 5 }, () => ({ exerciseId: BENCH, weightKg: 70, reps: 10, rir: 2 })),
     );
     const result = calibrateRir(flat, { asOf: '2026-09-10' });
-    assert.ok(result.signals.some((signal) => signal.includes('같은 RIR')));
+    assert.ok(result.signals.some((signal) => signal.includes('같은 답')));
   });
 
   it('워밍업 세트는 기준으로 쓰지 않는다', () => {

@@ -121,7 +121,8 @@ describe('calibrateFromSet', () => {
     );
     assert.ok(result.weightKg >= 37.5 && result.weightKg <= 45, `나온 값 ${result.weightKg}kg`);
     assert.ok(result.estimated1RM > 40);
-    assert.match(result.rationale, /추정 1RM/);
+    assert.match(result.rationale, /1회 최대 약/);
+    assert.doesNotMatch(result.rationale, /RIR|1RM/, '화면에 나가는 말에 현장 용어를 쓰지 않는다');
   });
 
   it('같은 중량이라도 여유가 많았으면 더 무겁게 잡는다', () => {

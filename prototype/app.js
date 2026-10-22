@@ -966,7 +966,7 @@
       volume: [],
       neglected: [],
       frequency: [],
-      summary: '첫 주: 템플릿 그대로 수행하며 기준선을 잡습니다',
+      summary: '첫 주: 짜 준 그대로 해 보면서 기준을 잡습니다',
     };
   }
 
@@ -2655,7 +2655,8 @@
      * 늘 보이는 줄이라 현장 용어(축적 · RIR)를 쓰지 않는다. "여유 3개"는 세트를
      * 끝낼 때 몇 개를 더 할 수 있게 남기라는 뜻이다 — 버튼("3회 더")과 같은 말이다.
      */
-    var phase = state.plan.phase === 'deload' ? '쉬어 가는 주' : state.plan.weekInBlock + '주차';
+    // "쉬어 가는 주"라고 하면 안 나와도 되는 줄 안다 — 덜어내는 주는 나와서 가볍게 하는 주다
+    var phase = state.plan.phase === 'deload' ? '덜어내는 주' : state.plan.weekInBlock + '주차';
     statusMeta.textContent = phase + ' · 여유 ' + state.plan.targetRir + '개';
   }
 
@@ -2747,7 +2748,7 @@
       body.push(el('p', {
         class: 'asset-note',
         text: '오늘 최고 수행 · ' + (bestExercise ? bestExercise.name : best.set.exerciseId) + ' ' +
-          best.set.weightKg + 'kg × ' + best.set.reps + '회 (RIR ' + best.set.rir + ') → 추정 1RM ' +
+          best.set.weightKg + 'kg × ' + best.set.reps + '회 (여유 ' + best.set.rir + '개) → 1회 최대 약 ' +
           fmt(best.value) + 'kg' +
           (summary.durationMinutes ? ' · 소요 ' + summary.durationMinutes + '분' : ''),
       }));
@@ -2803,8 +2804,8 @@
       }
 
       body.push(el('p', { class: 'asset-note', text:
-        '환산값은 추정 1RM입니다. RIR 신고가 흔들리면 같이 흔들리므로 ' +
-        E.MEANINGFUL_KG + 'kg 미만 변화는 "비슷하다"로 봅니다.' }));
+        '비교는 한 번에 들 수 있는 최대 무게를 추정해서 합니다. "몇 회 더" 답이 흔들리면 같이 흔들려서 ' +
+        E.MEANINGFUL_KG + 'kg 미만 차이는 "비슷하다"로 봅니다.' }));
     }
 
     if (summary.records.length > 0) {
@@ -2815,7 +2816,7 @@
           el('span', { text: record.name }),
           el('span', {
             class: 'detail',
-            text: record.weightKg + 'kg × ' + record.reps + ' · 1RM ' + fmt(record.estimated1RM),
+            text: record.weightKg + 'kg × ' + record.reps + '회 · 1회 최대 약 ' + fmt(record.estimated1RM) + 'kg',
           }),
         ]);
       })));
@@ -2868,7 +2869,7 @@
       onclick: closeToday,
     }));
 
-    openModal(state.session.name, state.todayDate, body);
+    openModal(state.session.name, dateText(state.todayDate), body);
     pushLog('세션 요약', '<b>' + summary.setsCompleted + '세트</b> · ' + summary.totalReps + '회 · ' +
       fmt(summary.tonnageKg / 1000) + '톤' +
       (summary.records.length > 0 ? ' · 개인 기록 ' + summary.records.length + '건' : ''));
@@ -3617,7 +3618,8 @@
   function sessionHead() {
     var phaseBadge = el('span', {
       class: 'badge ' + (state.plan.phase === 'deload' ? 'deload' : 'accum'),
-      text: state.plan.phase === 'deload' ? '디로드' : '축적 ' + state.plan.weekInBlock + '주차',
+      // 위 상태 줄과 같은 말 — 현장 용어(축적 · 디로드)를 쓰지 않는다
+      text: state.plan.phase === 'deload' ? '덜어내는 주' : state.plan.weekInBlock + '주차',
     });
     var estimate = E.estimateSessionTime(state.session, {
       restMultiplier: E.styleProfile(state.style).restMultiplier,
@@ -4597,7 +4599,7 @@
           el('h3', { text: '오늘 할 것' }),
           el('span', { class: 'meta', text: '총 ' + state.lifts.length + '개' }),
           /*
-           * 다른 운동 · 세어주기 · 휴식 · 순서 · 묶기는 "편집" 하나로 접는다.
+           * 종목 추가 · 세어주기 · 휴식 · 순서 · 묶기는 "편집" 하나로 접는다.
            * 매일 쓰는 버튼이 아니다 — 늘 펼쳐 두면 목록보다 버튼이 먼저 읽힌다.
            */
           el('button', {
@@ -4607,8 +4609,9 @@
           }),
         ]),
         !state.listToolsOpen ? null : el('span', { class: 'head-actions' }, [
+          // "다른 운동"이라고 하면 지금 종목을 바꾸는 줄 안다 — 실제로는 하나 더 끼운다
           el('button', {
-            type: 'button', class: 'demo-open', text: '다른 운동',
+            type: 'button', class: 'demo-open', text: '종목 추가',
             title: '프로그램에 없는 종목을 오늘만 끼워 넣습니다',
             onclick: openAddLift,
           }),
@@ -5098,7 +5101,7 @@
         ]);
       })));
 
-      openModal('다른 운동 하기', state.extraLifts.length > 0
+      openModal('종목 추가', state.extraLifts.length > 0
         ? state.extraLifts.length + '개 추가됨' : '오늘만', body);
     };
     draw();
@@ -5108,7 +5111,7 @@
     state.extraLifts = state.extraLifts.concat([{ exerciseId: exercise.id, sets: 3 }]);
     state.addLiftQuery = '';
     rebuildSession();
-    pushLog('다른 운동', '<b>' + exercise.name + '</b>' +
+    pushLog('종목 추가', '<b>' + exercise.name + '</b>' +
       particleOf(exercise.name, '을/를') + ' 오늘 목록에 넣었습니다.');
     modal.close();
     render();
@@ -7035,7 +7038,7 @@
           wrap.appendChild(el('div', { class: 'done-set' }, [
             el('span', { class: 'set-no', text: String(setIndex + 1) }),
             el('span', { class: 'done-detail', text:
-              (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회 · RIR ' + set.rir +
+              (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회 · 여유 ' + set.rir + '개' +
               // 계획과 다르게 한 세트는 그 사실이 남아야 한다
               (set.plannedKg != null && set.plannedKg !== set.weightKg
                 ? '  (계획 ' + (set.plannedKg > 0 ? set.plannedKg + 'kg' : '맨몸') + ')' : '') }),
@@ -8935,7 +8938,7 @@
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '한계 테스트 — ' + plan.name }),
-        el('span', { class: 'meta', text: plan.testReps + 'RM · 추정 ' + plan.estimated1RM + 'kg' }),
+        el('span', { class: 'meta', text: plan.testReps + '회 최대 · 지금 1회 최대 약 ' + plan.estimated1RM + 'kg' }),
       ]),
       body,
     ]));
@@ -9046,7 +9049,7 @@
         ? el('div', { class: 'summary-list' },
             E.historyOf(state.wodResults, result.signature).map(function (r) {
               return el('div', { class: 'record' }, [
-                el('span', { text: r.date }),
+                el('span', { text: dateText(r.date) }),
                 r === comparison.best ? el('span', { class: 'pr', text: '최고' }) : null,
                 el('span', { class: 'detail', text: E.describeScore(r) }),
               ]);
@@ -9495,7 +9498,7 @@
   function conditionDetail() {
     var f = state.plan.fatigue;
     var out = [el('p', { class: 'hint-line', text:
-      '피로 점수 ' + f.score + ' / 디로드 기준 ' + f.threshold + '. 낮을수록 좋습니다.' })];
+      '피로 점수 ' + f.score + ' / 덜어내는 주 기준 ' + f.threshold + '. 낮을수록 좋습니다.' })];
 
     if (!f.signals || f.signals.length === 0) {
       out.push(el('p', { class: 'hint-line', text: '잡힌 피로 신호가 없습니다.' }));
@@ -9507,7 +9510,7 @@
 
     if (f.deloadRecommended) {
       out.push(el('p', { class: 'hint-line warn', text:
-        '디로드 기준을 넘었습니다. 주간 탭에서 처방을 확인하세요.' }));
+        '덜어내는 주 기준을 넘었습니다. 주간 탭에서 처방을 확인하세요.' }));
     }
     return out;
   }
@@ -11946,8 +11949,8 @@
 
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('div', { class: 'title' }, [
-        el('h2', { text: deload ? '디로드 주간' : '축적 ' + plan.weekInBlock + '주차' }),
-        el('span', { class: 'badge ' + (deload ? 'deload' : 'accum'), text: 'RIR ' + plan.targetRir }),
+        el('h2', { text: deload ? '덜어내는 주' : plan.weekInBlock + '주차' }),
+        el('span', { class: 'badge ' + (deload ? 'deload' : 'accum'), text: '여유 ' + plan.targetRir + '개' }),
       ]),
       el('p', { class: 'meta', text: plan.summary }),
     ]));
@@ -12003,7 +12006,7 @@
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '피로 신호' }),
-        el('span', { class: 'meta', text: plan.fatigue.score + ' / 디로드 기준 ' + plan.fatigue.threshold }),
+        el('span', { class: 'meta', text: plan.fatigue.score + ' / 덜어내는 주 기준 ' + plan.fatigue.threshold }),
       ]),
       el('div', { class: 'sheet-body' }, [
         el('div', { class: 'fatigue' }, [bar]),
@@ -12081,7 +12084,7 @@
       styleBody,
     ]));
 
-    // RIR 신뢰도 — 엔진 전체가 이 신고값 위에 서 있다
+    // "몇 회 더" 답이 얼마나 맞나(RIR 신뢰도) — 엔진 전체가 이 답 위에 서 있다
     var calibration = state.session.rirCalibration;
     // 판단 전에는 막대를 그리지 않는다 — "아직 판단 전" 옆에 꽉 찬 100%가 있으면 서로 다른 말을 한다
     var judged = calibration.confidence !== 'none';
@@ -12103,14 +12106,14 @@
     if (calibration.applied) {
       calBody.appendChild(el('p', {
         class: 'hint-line',
-        text: '적용 보정: 신고 RIR ' + (calibration.offset > 0 ? '+' : '') + calibration.offset +
-          ' · 기준 실패 세트 ' + calibration.anchorCount + '개',
+        text: '적용한 보정: 답한 여유 ' + (calibration.offset > 0 ? '+' : '') + calibration.offset + '회' +
+          ' · 기준으로 쓴 "더는 못 든" 세트 ' + calibration.anchorCount + '개',
       }));
     }
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: 'RIR 신뢰도' }),
+        el('h3', { text: '"몇 회 더" 답 정확도' }),
         el('span', { class: 'meta', text: { none: '아직 판단 전', low: '낮음', medium: '보통', high: '높음' }[calibration.confidence] || calibration.confidence }),
       ]),
       calBody,
@@ -12383,7 +12386,7 @@
     var trendClass = selected.trend === 'up' ? 'zone-text-ok' : selected.trend === 'down' ? 'zone-text-over' : 'zone-text-low';
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '추정 1RM' }),
+        el('h3', { text: '1회 최대 (추정)' }),
         el('span', {
           class: 'num ' + trendClass,
           text: (selected.changePercent > 0 ? '+' : '') + selected.changePercent + '%',
@@ -12449,7 +12452,7 @@
     var y = function (v) { return pad.top + (H - pad.top - pad.bottom) * (1 - (v - min) / (max - min)); };
 
     var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img',
-      'aria-label': lift.name + ' 추정 1RM 추이' });
+      'aria-label': lift.name + ' 1회 최대 추정 추이' });
 
     // 격자는 뒤로 물러나 있어야 한다
     [0, 0.5, 1].forEach(function (t) {
@@ -12468,7 +12471,7 @@
       var isLast = i === lift.points.length - 1;
       var dot = svg('circle', { cx: x(i), cy: y(p.value), r: isLast ? 4.5 : 3,
         fill: 'var(--accent)', stroke: 'var(--surface)', 'stroke-width': 2 });
-      dot.appendChild(svg('title', { text: p.date + ' · ' + p.value + 'kg' }));
+      dot.appendChild(svg('title', { text: dateText(p.date) + ' · ' + p.value + 'kg' }));
       root.appendChild(dot);
     });
 
@@ -13776,7 +13779,7 @@
     if (state.block) {
       var status = E.blockStatus(state.block, state.todayDate || todayISO());
       parts.push(state.block.number + '번째 블록');
-      parts.push(status.stage === 'deload' ? '디로드 주' : status.weekInBlock + ' / ' + status.accumulationWeeks + '주차');
+      parts.push(status.stage === 'deload' ? '덜어내는 주' : status.weekInBlock + ' / ' + status.accumulationWeeks + '주차');
       if (state.block.transition) parts.push(E.LEVEL_LABELS_KO[state.block.transition.to] + '로 옮기는 중');
     }
     return parts.join(' · ');
@@ -13982,7 +13985,7 @@
 
     if (state.consentRecord) {
       rows.appendChild(el('p', { class: 'hint-line', text:
-        state.consentRecord.at + '에 ' + state.consentRecord.version + ' 판 문구로 동의했습니다.' }));
+        dateText(state.consentRecord.at) + '에 ' + dateText(state.consentRecord.version) + ' 판 문구로 동의했습니다.' }));
     }
 
     renderPainHistory();
@@ -17147,7 +17150,7 @@
         el('h3', { text: result.program.name }),
         el('span', {
           class: 'badge accum',
-          text: E.LEVEL_LABELS_KO[result.level.level] + ' · RIR ' + result.firstWeek.targetRir,
+          text: E.LEVEL_LABELS_KO[result.level.level] + ' · 여유 ' + result.firstWeek.targetRir + '개',
         }),
       ]),
       el('div', { class: 'sheet-body' }, result.notes.map(function (note) {

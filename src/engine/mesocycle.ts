@@ -185,7 +185,7 @@ function deloadVolume(currentSets: number, mev: number): VolumeDecision {
   const halved = Math.round(currentSets / 2);
   const floor = Math.max(2, Math.round(mev / 2));
   const sets = Math.max(floor, halved);
-  return { sets, action: 'deload', rationale: `디로드: ${currentSets}세트 → ${sets}세트 (중량은 90% 유지)` };
+  return { sets, action: 'deload', rationale: `덜어내는 주: ${currentSets}세트 → ${sets}세트 (무게는 90%로)` };
 }
 
 function accumulationVolume(args: {
@@ -267,12 +267,12 @@ function summarize(
       .sort((a, b) => b.weight - a.weight)
       .slice(0, 2)
       .map((signal) => signal.label);
-    return `디로드 주간입니다. 볼륨을 절반으로 줄이고 중량은 90%로 유지합니다. 근거: ${top.join(' / ')}`;
+    return `덜어내는 주입니다. 볼륨을 절반으로 줄이고 무게는 90%로 둡니다. 근거: ${top.join(' / ')}`;
   }
 
   const increased = volume.filter((item) => item.action === 'increase');
   const reduced = volume.filter((item) => item.action === 'reduce');
-  const parts = [`축적 ${weekInBlock}주차`];
+  const parts = [`${weekInBlock}주차`];
 
   if (increased.length > 0) {
     parts.push(

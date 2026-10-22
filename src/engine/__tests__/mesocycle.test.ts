@@ -197,7 +197,8 @@ describe('디로드 판정', () => {
         { date: '2026-09-14', pain: [{ joint: 'shoulder', score: 4 }] },
       ],
     });
-    assert.match(result.summary, /디로드/);
+    assert.match(result.summary, /덜어내는 주/);
+    assert.doesNotMatch(result.summary, /디로드|축적|RIR/, '화면에 나가는 말에 현장 용어를 쓰지 않는다');
     assert.ok(result.fatigue.signals.length > 0);
     assert.ok(result.fatigue.signals.every((signal) => signal.label.length > 0));
   });

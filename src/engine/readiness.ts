@@ -84,7 +84,7 @@ export function assessFatigue(input: FatigueInput): FatigueAssessment {
   if (thisRir !== null && lastRir !== null && lastRir - thisRir >= 1) {
     signals.push({
       id: 'rirDrift',
-      label: `평균 RIR이 ${lastRir.toFixed(1)} → ${thisRir.toFixed(1)}로 떨어졌습니다. 같은 중량이 더 무겁게 느껴지는 상태입니다`,
+      label: `세트마다 남은 여유가 평균 ${lastRir.toFixed(1)}개 → ${thisRir.toFixed(1)}개로 줄었습니다. 같은 무게가 더 무겁게 느껴지는 상태입니다`,
       weight: 2,
     });
   }
@@ -150,7 +150,7 @@ export function assessFatigue(input: FatigueInput): FatigueAssessment {
   if (input.weekInBlock >= accumulationWeeks) {
     signals.push({
       id: 'blockComplete',
-      label: `디로드 없이 ${input.weekInBlock}주째입니다. 계획된 축적 기간(${accumulationWeeks}주)을 채웠습니다`,
+      label: `덜어내는 주 없이 ${input.weekInBlock}주째입니다. 계획한 ${accumulationWeeks}주를 다 채웠습니다`,
       weight: 2,
     });
   }

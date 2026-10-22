@@ -852,7 +852,7 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
 
   notes.push(
     `${program.name} · ${profile.label} 볼륨으로 시작합니다. ` +
-      `${profile.accumulationWeeks}주 축적 후 디로드가 들어갑니다.`,
+      `${profile.accumulationWeeks}주 동안 조금씩 늘리고, 그다음 한 주는 덜어냅니다.`,
   );
 
   const gaps = coverageReport(answers.gym.equipmentIds).filter((item) => !item.sufficient);
@@ -899,7 +899,7 @@ export function firstWeekPlan(program: TrainingProgram, targetRir: number): Week
     volume: [],
     neglected: [],
     frequency: [],
-    summary: `${program.name} 1주차 — 기준선을 잡는 주입니다. 목표 RIR ${targetRir}로 여유 있게 수행하세요.`,
+    summary: `${program.name} 1주차 — 기준을 잡는 주입니다. 세트마다 ${targetRir}개쯤 여유를 남기세요.`,
   };
 }
 

@@ -203,8 +203,8 @@ export function suggestStartingLoad(input: StartingLoadInput): StartingLoad {
     : round(conservative, 0.5);
 
   const rationale = fromHistory
-    ? `${fromHistory.label} 기록에서 환산한 값입니다. ${input.repRange.max}회 × RIR ${input.targetRir} 기준으로 보수적으로 잡았습니다.`
-    : `체중 ${input.profile?.bodyweightKg}kg · ${levelLabel(input.profile?.level)} 기준선에서 환산했습니다. 첫 세트에서 반드시 확인하세요.`;
+    ? `${fromHistory.label} 기록에서 환산한 값입니다. ${input.repRange.max}회에 여유 ${input.targetRir}개 기준으로 보수적으로 잡았습니다.`
+    : `체중 ${input.profile?.bodyweightKg}kg · ${levelLabel(input.profile?.level)} 기준에서 환산했습니다. 첫 세트에서 반드시 확인하세요.`;
 
   return {
     ...base,
@@ -281,8 +281,8 @@ export function calibrateFromSet(
   return {
     weightKg,
     estimated1RM: round(estimated, 0.5),
-    rationale: `${probe.weightKg}kg × ${probe.reps}회 (RIR ${probe.rir}) → 추정 1RM ${round(estimated, 0.5)}kg. ` +
-      `${target.repRange.max}회 × RIR ${target.targetRir} 작업 중량은 ${weightKg}kg입니다.`,
+    rationale: `${probe.weightKg}kg × ${probe.reps}회 (여유 ${probe.rir}개) → 1회 최대 약 ${round(estimated, 0.5)}kg. ` +
+      `${target.repRange.max}회에 여유 ${target.targetRir}개 남기는 무게는 ${weightKg}kg입니다.`,
   };
 }
 

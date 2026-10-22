@@ -132,7 +132,7 @@ export function liftDetail(
   if (delta > 0) return `${head} — 지난번보다 ${weightLabel(delta)} 올립니다`;
   if (delta < 0) {
     const down = weightLabel(-delta);
-    if (options.drop === 'deload') return `${head} — 이번 주는 디로드라 ${down} 내립니다`;
+    if (options.drop === 'deload') return `${head} — 이번 주는 덜어내는 주라 ${down} 내립니다`;
     if (options.drop === 'comeback') return `${head} — 복귀 주라 ${down} 내려서 갑니다`;
     return `${head} — 지난번보다 ${down} 내려서 갑니다`;
   }

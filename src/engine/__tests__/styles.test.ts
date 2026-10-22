@@ -88,7 +88,7 @@ describe('블록 선택 가능 여부', () => {
   it('한계 돌파는 디로드 다음 주에만 연다', () => {
     const notReady = availableStyles({ level: 'advanced', justDeloaded: false });
     assert.equal(allowed(notReady, 'peak'), false);
-    assert.match(notReady.find((i) => i.style === 'peak')!.reason!, /디로드/);
+    assert.match(notReady.find((i) => i.style === 'peak')!.reason!, /덜어내는 주/);
 
     const ready = availableStyles({ level: 'advanced', justDeloaded: true });
     assert.equal(allowed(ready, 'peak'), true);

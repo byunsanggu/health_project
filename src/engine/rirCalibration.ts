@@ -56,7 +56,7 @@ export const NO_CALIBRATION: RirCalibration = {
   confidence: 'none',
   applied: false,
   signals: [],
-  note: 'RIR 신고를 검증할 기록이 아직 없습니다. 가끔 실패 지점까지 가는 세트를 남기면 정확도가 올라갑니다.',
+  note: '"몇 회 더" 답을 맞춰 볼 기록이 아직 없습니다. 가끔 더는 못 드는 지점까지 가는 세트를 남기면 정확해집니다.',
 };
 
 export function calibrateRir(
@@ -112,7 +112,7 @@ export function calibrateRir(
 
   // 늘 같은 숫자만 찍는 사람은 실제로 재고 있지 않다.
   if (reported.length >= 15 && spread < 0.4) {
-    signals.push('모든 세트에 거의 같은 RIR을 입력하고 있습니다. 세트마다 실제 느낌을 다시 보세요');
+    signals.push('세트마다 "몇 회 더"에 거의 같은 답을 누르고 있습니다. 세트마다 실제 느낌을 다시 보세요');
   }
 
   if (sampleSize === 0 || anchorCount === 0) {
@@ -123,8 +123,8 @@ export function calibrateRir(
       signals,
       reliability: signals.length > 0 ? 0.8 : 1,
       note: hasRecords
-        ? '기준으로 삼을 실패 세트가 없어 RIR 신고를 검증하지 못했습니다. ' +
-          '가끔 한 세트를 실패 지점까지 가져가면 이후 처방이 정확해집니다.'
+        ? '기준으로 삼을 "더는 못 든" 세트가 없어 "몇 회 더" 답을 맞춰 보지 못했습니다. ' +
+          '가끔 한 세트를 더는 못 드는 지점까지 가져가면 이후 처방이 정확해집니다.'
         : NO_CALIBRATION.note,
     };
   }
@@ -136,10 +136,10 @@ export function calibrateRir(
 
   if (offset <= -1) {
     signals.push(
-      `실패 세트와 대조하면 실제보다 RIR을 평균 ${Math.abs(offset)} 정도 높게 신고하고 있습니다`,
+      `더는 못 든 세트와 대조하면, 실제보다 평균 ${Math.abs(offset)}회쯤 더 남았다고 답하고 있습니다`,
     );
   } else if (offset >= 1) {
-    signals.push('실제보다 RIR을 낮게 신고하는 편입니다. 아직 여유가 더 있습니다');
+    signals.push('실제보다 덜 남았다고 답하는 편입니다. 아직 여유가 더 있습니다');
   }
 
   const reliability = clamp(
@@ -160,6 +160,8 @@ export function calibrateRir(
   };
 }
 
+const CONFIDENCE_KO: Record<RirCalibration['confidence'], string> = { none: '판단 전', low: '낮음', medium: '보통', high: '높음' };
+
 function confidenceOf(anchorCount: number, sampleSize: number): RirCalibration['confidence'] {
   if (anchorCount >= 6 && sampleSize >= 30) return 'high';
   if (anchorCount >= 3 && sampleSize >= 12) return 'medium';
@@ -173,17 +175,17 @@ function buildNote(
   anchorCount: number,
 ): string {
   if (!applied) {
-    return `기준이 될 실패 세트가 ${anchorCount}개뿐이라 아직 보정하지 않습니다. ` +
-      '가끔 실패 지점까지 가는 세트를 남기면 정확도가 올라갑니다.';
+    return `기준이 될 "더는 못 든" 세트가 ${anchorCount}개뿐이라 아직 보정하지 않습니다. ` +
+      '가끔 그런 세트를 남기면 정확해집니다.';
   }
   if (offset <= -0.5) {
-    return `신고한 RIR에서 ${Math.abs(offset)}을(를) 빼서 계산합니다. ` +
-      '중량을 과도하게 올리는 것을 막아 줍니다.';
+    return `답한 여유에서 ${Math.abs(offset)}회를 빼서 계산합니다. ` +
+      '무게를 너무 빨리 올리는 것을 막아 줍니다.';
   }
   if (offset >= 0.5) {
-    return `신고한 RIR에 ${offset}을(를) 더해서 계산합니다. 실제로는 더 여유가 있습니다.`;
+    return `답한 여유에 ${offset}회를 더해서 계산합니다. 실제로는 더 여유가 있습니다.`;
   }
-  return `RIR 신고가 실제 수행과 잘 맞습니다 (신뢰도 ${confidence}).`;
+  return `"몇 회 더" 답이 실제 수행과 잘 맞습니다 (믿을 만한 정도 ${CONFIDENCE_KO[confidence]}).`;
 }
 
 /** 신고값에 보정을 적용한 RIR. */

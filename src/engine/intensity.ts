@@ -139,7 +139,7 @@ export function availableTechniques(context: TechniqueContext): TechniqueAvailab
     const technique = TECHNIQUES[id];
     const deny = (reason: string): TechniqueAvailability => ({ technique, allowed: false, reason });
 
-    if (context.deloadWeek) return deny('디로드 주에는 강도 기법을 쓰지 않습니다. 덜어내는 주입니다.');
+    if (context.deloadWeek) return deny('덜어내는 주에는 강도 기법을 쓰지 않습니다.');
     if (!styleAllows) {
       return deny(`${styleProfile(style).label} 블록에서는 강도 기법을 쓰지 않습니다. 강도는 중량으로 올립니다.`);
     }
@@ -264,10 +264,10 @@ export function planMaxTest(input: MaxTestInput): MaxTestPlan {
     }
   }
   if (input.justDeloaded === false) {
-    blockers.push('디로드로 피로를 뺀 다음 주에 시도하세요. 지금은 기록이 아니라 컨디션을 재는 셈이 됩니다.');
+    blockers.push('덜어내는 주로 피로를 뺀 다음 주에 시도하세요. 지금은 기록이 아니라 컨디션을 재는 셈이 됩니다.');
   }
   if ((input.weeksAccumulated ?? 99) < 3) {
-    blockers.push('축적 블록을 3주 이상 마친 뒤에 시도하세요. 올릴 게 남아 있어야 기록이 갱신됩니다.');
+    blockers.push('한 블록을 3주 이상 쌓은 뒤에 시도하세요. 올릴 게 남아 있어야 기록이 갱신됩니다.');
   }
 
   // 목표 반복에서의 강도 — 5RM 테스트면 1RM의 87% 근처가 목표다.
