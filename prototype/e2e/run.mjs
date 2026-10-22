@@ -31,7 +31,13 @@ const files = (await readdir(HERE))
 await mkdir(OUT, { recursive: true });
 
 const server = await serve();
-const browser = await (await chromium()).launch();
+/*
+ * 실제 사용자처럼 연다. localhost로 열면 앱이 만드는 사람용 판(소개 글 · 시나리오 ·
+ * 가짜 지난 기록)으로 뜬다. 다른 이름(volume.test)을 같은 서버에 붙여서 연다.
+ */
+const port = new URL(server.url).port;
+const browser = await (await chromium()).launch({ args: [`--host-resolver-rules=MAP volume.test 127.0.0.1`] });
+const appUrl = process.env.E2E_DEV ? server.url : `http://volume.test:${port}/`;
 let failed = 0;
 
 for (const name of files) {
@@ -44,7 +50,7 @@ for (const name of files) {
   const errors = [];
   page.on('pageerror', (err) => errors.push(err.message));
   const t = {
-    page, context, url: server.url,
+    page, context, url: appUrl,
     shot: (what) => page.screenshot({ path: join(OUT, `${label}-${what}.png`) }),
   };
   const started = Date.now();

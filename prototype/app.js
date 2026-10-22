@@ -14242,7 +14242,7 @@
     ]));
 
     screen.appendChild(el('div', { class: 'wizard-nav' }, [
-      el('button', { type: 'button', class: 'ghost', text: '초기 설정 다시 하기', onclick: startOnboarding }),
+      el('button', { type: 'button', class: 'ghost', text: '초기 설정 다시 하기', onclick: confirmRedoSetup }),
     ]));
   }
 
@@ -15410,7 +15410,10 @@
    */
   function steps() {
     var usable = typeof Remote !== 'undefined' && Remote.configured();
+    // 다시 설정할 때는 가입 · 동의를 다시 거치지 않는다 — 이미 했다
+    var redo = state.onboarding && state.onboarding.redo;
     return ALL_STEPS.filter(function (step) {
+      if (redo && (step.id === 'account' || step.id === 'consent')) return false;
       if (step.id !== 'account') return true;
       return usable && !Remote.signedIn();
     });
@@ -15624,16 +15627,74 @@
     render();
   }
 
+  /**
+   * 초기 설정 다시 하기.
+   *
+   * 전에는 저장소를 통째로 비우고 처음 설문으로 갔다 — 확인 한 번 없이 몇 달 치
+   * 운동 기록과 동의가 사라졌다. 다시 설정하는 사람이 바꾸려는 것은 프로그램
+   * (경력 · 주 몇 번 · 기구)이지 지난 기록이 아니다. 기록 · 동의는 그대로 두고,
+   * 지금 답을 채운 채로 설문을 연다. 중간에 그만두면 아무것도 안 바뀐다.
+   */
+  function confirmRedoSetup() {
+    if (state.started && !state.sessionClosed) {
+      openModal('초기 설정 다시 하기', null, [
+        el('p', { class: 'asset-note', text: '운동 중에는 프로그램을 바꿀 수 없습니다. 오늘 운동을 끝낸 뒤에 다시 해 주세요.' }),
+      ]);
+      return;
+    }
+    openModal('초기 설정 다시 하기', null, [
+      el('p', { class: 'asset-note', text:
+        '경력 · 운동 횟수 · 목표 · 헬스장 기구를 다시 고르고 프로그램을 새로 짭니다. ' +
+        '지난 운동 기록과 체중 · 식단 기록은 그대로 남습니다.' }),
+      el('p', { class: 'hint-line', text: '지금 답이 채워진 채로 열립니다. 중간에 그만두면 아무것도 바뀌지 않습니다.' }),
+      el('div', { class: 'chip-row' }, [
+        el('button', { type: 'button', class: 'finish redo-go', text: '다시 설정하기', onclick: function () { modal.close(); redoSetup(); } }),
+        el('button', { type: 'button', class: 'finish quiet', text: '그대로 두기', onclick: function () { modal.close(); } }),
+      ]),
+    ]);
+  }
+
+  function redoSetup() {
+    // 기구 단계는 지금 쓰는 헬스장의 기구로 채워 둔다
+    var gym = state.gymBook && E.activeGym(state.gymBook);
+    if (gym) state.answers.gym = { equipmentIds: gym.equipmentIds.slice(), measurements: gym.measurements || {} };
+    state.onboarding = {
+      active: true, step: 0, account: null, redo: true,
+      // 그만두면 이대로 되돌린다
+      before: JSON.stringify({ answers: state.answers, coach: state.coach, restAlerts: state.restAlerts }),
+    };
+    render();
+  }
+
+  function cancelRedoSetup() {
+    var before = JSON.parse(state.onboarding.before);
+    state.answers = before.answers;
+    state.coach = before.coach;
+    state.restAlerts = before.restAlerts;
+    state.onboarding = { active: false, step: 0 };
+    persist();
+    render();
+  }
+
   function completeOnboarding() {
     // 언제 · 어느 판 문구에 동의했는지 남긴다. 증빙이 없으면 동의가 아니다.
     state.consentRecord = E.recordConsent(state.consent, todayISO());
 
     var result = E.runOnboarding(state.answers);
-    state.gymBook = E.createGymBook({
-      id: 'my-gym', name: '내 헬스장',
-      equipmentIds: state.answers.gym.equipmentIds.slice(),
-      measurements: state.answers.gym.measurements,
-    });
+    var current = state.onboarding.redo && state.gymBook ? E.activeGym(state.gymBook) : null;
+    if (current) {
+      // 다시 설정할 때는 등록해 둔 헬스장들을 지우지 않는다 — 지금 헬스장의 기구만 새 답으로
+      state.gymBook = E.addGym(state.gymBook, Object.assign({}, current, {
+        equipmentIds: state.answers.gym.equipmentIds.slice(),
+        measurements: state.answers.gym.measurements,
+      }), true);
+    } else {
+      state.gymBook = E.createGymBook({
+        id: 'my-gym', name: '내 헬스장',
+        equipmentIds: state.answers.gym.equipmentIds.slice(),
+        measurements: state.answers.gym.measurements,
+      });
+    }
     state.gym = result.gym;
     state.lifter = result.lifter;
     state.program = result.program;
@@ -15673,6 +15734,12 @@
 
     var isLast = state.onboarding.step === STEPS.length - 1;
     var nav = el('div', { class: 'wizard-nav' }, []);
+    if (state.onboarding.redo) {
+      nav.appendChild(el('button', {
+        type: 'button', class: 'ghost redo-cancel', text: '그만두기',
+        onclick: cancelRedoSetup,
+      }));
+    }
     if (state.onboarding.step > 0) {
       nav.appendChild(el('button', {
         type: 'button', class: 'ghost', text: '이전',
