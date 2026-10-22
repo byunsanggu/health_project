@@ -247,3 +247,37 @@ describe('쉼표 기준', () => {
     assert.equal(FREEZE_AFTER, 4);
   });
 });
+
+describe('주 중간에 시작한 주', () => {
+  it('목요일에 시작했으면 그 주 목표는 남은 날만큼 — 주 3회면 2번', async () => {
+    const { proratedTarget } = await import('../streak.ts');
+    assert.equal(proratedTarget(3, '2026-10-22'), 2); // 목
+    assert.equal(proratedTarget(3, '2026-10-19'), 3); // 월
+    assert.equal(proratedTarget(3, '2026-10-25'), 1); // 일 — 한 번 아래로는 내리지 않는다
+    assert.equal(proratedTarget(4, '2026-10-21'), 3); // 수 · 주 4회
+  });
+
+  it('목 · 금을 다 나왔으면 첫 주를 지킨 것 — 다음 주에 "0주 연속"이 아니다', () => {
+    const streak = buildStreak({
+      sessions: [day('2026-10-22'), day('2026-10-23')],
+      thisMonday: '2026-10-26',
+      target: 3,
+      today: '2026-10-26',
+      startDate: '2026-10-22',
+    });
+    assert.equal(streak.weeks[1]!.target, 2);
+    assert.equal(streak.weeks[1]!.kept, true);
+    assert.equal(streak.current, 1);
+  });
+
+  it('가입한 날을 모르면 첫 운동 날로 센다', () => {
+    const streak = buildStreak({
+      sessions: [day('2026-10-22'), day('2026-10-23')],
+      thisMonday: '2026-10-19',
+      target: 3,
+      today: '2026-10-23',
+    });
+    assert.equal(streak.thisWeek.target, 2);
+    assert.equal(streak.thisWeek.kept, true);
+  });
+});

@@ -80,6 +80,23 @@ export interface StreakInput {
   lookbackWeeks?: number;
   /** 오늘 (YYYY-MM-DD) — 이번 주가 끝났는지 판단한다 */
   today?: string;
+  /** 시작한 날. 없으면 첫 운동 날로 본다 — 그 주는 남은 날만큼으로 목표를 줄인다 */
+  startDate?: string;
+}
+
+/**
+ * 시작한 주의 목표.
+ *
+ * 목요일에 가입한 사람에게 그 주 "3번"을 요구하면, 목 · 금을 다 나와도 못 지킨
+ * 주가 되고 다음 주에 "0주 연속"이 뜬다. 첫 주는 남은 날의 비율만큼만 — 목요일이면
+ * 7일 중 4일이 남았으니 3번 × 4/7 ≈ 2번. 한 번 아래로는 내리지 않는다.
+ */
+export function proratedTarget(target: number, startDate: string): number {
+  const time = Date.parse(startDate + 'T00:00:00Z');
+  if (Number.isNaN(time)) return target;
+  const weekday = (new Date(time).getUTCDay() + 6) % 7;
+  const left = 7 - weekday;
+  return Math.max(1, Math.min(target, Math.round((target * left) / 7)));
 }
 
 function shiftDays(date: string, days: number): string {
@@ -88,7 +105,7 @@ function shiftDays(date: string, days: number): string {
   return new Date(time + days * 86400000).toISOString().slice(0, 10);
 }
 
-function weekOf(input: StreakInput, weekStart: string): WeekResult {
+function weekOf(input: StreakInput, weekStart: string, startDate?: string): WeekResult {
   const weekEnd = shiftDays(weekStart, 6);
   const days = new Set(
     input.sessions
@@ -98,7 +115,9 @@ function weekOf(input: StreakInput, weekStart: string): WeekResult {
   ).size;
 
   const deload = (input.deloadWeeks ?? []).includes(weekStart);
-  const target = deload ? deloadTarget(input.target) : input.target;
+  const full = deload ? deloadTarget(input.target) : input.target;
+  // 시작한 주는 남은 날만큼만
+  const target = startDate && startDate >= weekStart && startDate <= weekEnd ? proratedTarget(full, startDate) : full;
   const today = input.today ?? input.thisMonday;
 
   return {
@@ -119,12 +138,6 @@ function weekOf(input: StreakInput, weekStart: string): WeekResult {
  * 못 지켰어도 시간이 남아 있으면 그대로 둔다.
  */
 export function buildStreak(input: StreakInput): StreakState {
-  const lookback = Math.max(1, input.lookbackWeeks ?? 26);
-  const weeks: WeekResult[] = [];
-  for (let i = 0; i < lookback; i += 1) {
-    weeks.push(weekOf(input, shiftDays(input.thisMonday, -7 * i)));
-  }
-
   /*
    * 기록이 시작되기 전의 주는 "안 한 주"가 아니라 "없는 주"다. 앱을
    * 깔기 전 주에 쉼표를 써 버리면, 정작 필요할 때 쉼표가 없다.
@@ -133,6 +146,14 @@ export function buildStreak(input: StreakInput): StreakState {
     .filter((session) => session.sets.some((set) => !set.warmup && set.reps > 0))
     .map((session) => session.date)
     .sort()[0];
+  // 시작한 날 — 가입한 날을 알면 그날, 모르면 첫 운동 날
+  const startDate = input.startDate && (!firstDay || input.startDate <= firstDay) ? input.startDate : firstDay;
+
+  const lookback = Math.max(1, input.lookbackWeeks ?? 26);
+  const weeks: WeekResult[] = [];
+  for (let i = 0; i < lookback; i += 1) {
+    weeks.push(weekOf(input, shiftDays(input.thisMonday, -7 * i), startDate));
+  }
 
   /*
    * 뒤(최근)에서 앞으로 걸어간다. 빠진 주를 만나면 일단 건너뛰고, 그

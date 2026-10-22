@@ -258,6 +258,7 @@
         wodResults: state.wodResults,
         sessionStartedAt: state.sessionStartedAt,
         sessionEndedAt: state.sessionEndedAt,
+        startedOn: state.startedOn,
         gymBook: state.gymBook,
         consent: state.consent,
         consentRecord: state.consentRecord,
@@ -332,6 +333,7 @@
       state.wodResults = settings.wodResults || [];
       state.sessionStartedAt = settings.sessionStartedAt || null;
       state.sessionEndedAt = settings.sessionEndedAt || null;
+      state.startedOn = settings.startedOn || null;
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
       if (!E.allows(state.consent, 'dietLog')) state.foodLog = [];
@@ -617,6 +619,8 @@
     sessionStartedAt: null,
     // 오늘을 마친 시각 — 마친 뒤에는 운동 시간이 더 늘지 않는다
     sessionEndedAt: null,
+    // 처음 설정을 마친 날 — 시작한 주는 남은 날만큼만 약속을 센다
+    startedOn: null,
     busyEquipment: [],
     occupied: {},
     homeGymId: null,
@@ -10712,23 +10716,47 @@
       // 덜어내는 주는 프로그램이 정한다. 그 주는 절반만 나와도 지킨 것이다.
       deloadWeeks: state.plan.phase === 'deload' ? [state.monday] : [],
       today: state.todayDate,
+      // 시작한 주는 남은 날만큼만 센다 — 목요일에 시작해 목 · 금을 다 나오면 지킨 주다
+      startDate: state.startedOn || undefined,
+    });
+  }
+
+  /** 이번 주 칸 — 한 날 · 오늘 · 남은 날을 실제 순서로 (E.weekView). */
+  function weekCells(streak) {
+    var trained = {};
+    state.history.forEach(function (item) {
+      if (item.date >= state.monday && item.date < state.todayDate &&
+        (item.sets || []).some(function (set) { return !set.warmup && set.reps > 0; })) trained[item.date] = true;
+    });
+    return E.weekView({
+      monday: state.monday,
+      today: state.todayDate,
+      trainedDates: Object.keys(trained),
+      todayDone: state.todaySets.some(function (set) { return !set.warmup && set.reps > 0; }),
+      templateNames: state.program.templates.map(function (template) { return template.name; }),
+      todayIndex: currentTemplateIndex(),
+      plannedWeekdays: trainingDays(),
+      target: (streak || currentStreak()).thisWeek.target,
+      startDate: state.startedOn || undefined,
     });
   }
 
   /**
    * 이번 주 리포트를 보여줄 때가 됐는가.
    *
-   * 금요일부터, 또는 약속한 횟수를 이미 채운 날부터. 이미 본 주에는
-   * 다시 말하지 않는다 — 같은 말을 두 번 하면 그때부터 잔소리다.
+   * 약속한 횟수를 채운 날, 아니면 이번 주에 더 할 날이 안 남았을 때(일요일이거나,
+   * 오늘까지 하고 남은 칸이 없을 때). 전에는 금요일이면 무조건 떴다 — 금요일
+   * 운동을 하기도 전에 "계획은 3번이었습니다"라고 지난 일처럼 말했다.
+   * 이미 본 주에는 다시 말하지 않는다 — 같은 말을 두 번 하면 그때부터 잔소리다.
    */
   function reportReady() {
     if (state.reportSeenWeek === state.monday) return false;
     var streak = currentStreak();
     if (streak.thisWeek.kept) return true;
-    // 월요일을 0으로 센 요일. 금요일이면 4다.
-    var dayIndex = Math.round(
-      (Date.parse(state.todayDate + 'T00:00:00Z') - Date.parse(state.monday + 'T00:00:00Z')) / 86400000);
-    return dayIndex >= 4 && streak.thisWeek.days > 0;
+    if (streak.thisWeek.days === 0) return false;
+    var cells = weekCells(streak);
+    var pending = cells.some(function (cell) { return cell.kind === 'today' || cell.kind === 'planned'; });
+    return !pending || state.todayDate >= E.addDays(state.monday, 6);
   }
 
   /**
@@ -11410,7 +11438,8 @@
       index: index,
       from: state.monday,
       to: E.addDays(state.monday, 6),
-      targetSessions: trainingDays().length,
+      // 시작한 주는 줄어든 목표로 — "계획은 3번이었습니다"가 목요일에 시작한 사람에게 맞지 않는다
+      targetSessions: currentStreak().thisWeek.target,
     });
   }
 
@@ -11979,18 +12008,25 @@
       level: state.lifter.level,
       index: index,
     });
+    /*
+     * 요일에 박힌 표가 아니라 이번 주 실제 칸이다. 오늘 화면의 "다음 운동"과
+     * 같은 규칙(이번 주에 몇 번 했나)으로 그려야 둘이 같은 말을 한다.
+     */
     var days = el('div', { class: 'week-strip' }, []);
-    E.WEEKDAY_LABELS_KO.forEach(function (label, weekday) {
-      var planned = schedule.sessions.filter(function (s) { return s.weekday === weekday; })[0];
-      days.appendChild(el('div', { class: 'day' + (planned ? ' on' : '') }, [
-        el('span', { class: 'day-label', text: label }),
-        el('span', { class: 'day-name', text: planned ? planned.templateName : '휴식' }),
+    weekCells().forEach(function (cell) {
+      var isToday = cell.date === state.todayDate;
+      days.appendChild(el('div', { class: 'day ' + cell.kind + (isToday ? ' is-today' : '') +
+        (cell.kind === 'planned' || cell.kind === 'today' ? ' on' : '') }, [
+        // 오늘 칸은 요일 자리에 "오늘" — 좁은 칸에 "오늘 · 상체 A"를 넣으면 세 줄이 된다
+        el('span', { class: 'day-label', text: isToday ? '오늘' : E.WEEKDAY_LABELS_KO[cell.weekday] }),
+        el('span', { class: 'day-name', text: cell.kind === 'done' ? '✓ ' + cell.name : cell.name }),
       ]));
     });
 
     var scheduleBody = el('div', { class: 'sheet-body' }, [days]);
-    schedule.notes.forEach(function (note) {
-      scheduleBody.appendChild(el('p', { class: 'hint-line', text: note }));
+    schedule.notes.forEach(function (note, i) {
+      // 위 칸은 이번 주 실제, 이 줄은 평소 배치 — 첫 주에는 둘이 다를 수 있다
+      scheduleBody.appendChild(el('p', { class: 'hint-line', text: (i === 0 ? '평소 ' : '') + note }));
     });
     schedule.warnings.forEach(function (warning) {
       scheduleBody.appendChild(el('p', { class: 'hint-line warn', text: '⚠ ' + warning }));
@@ -15952,6 +15988,8 @@
     state.consentRecord = E.recordConsent(state.consent, todayISO());
 
     var result = E.runOnboarding(state.answers);
+    // 처음 시작한 날 — 다시 설정해도 바뀌지 않는다
+    if (!state.onboarding.redo && !state.startedOn) state.startedOn = todayISO();
     var current = state.onboarding.redo && state.gymBook ? E.activeGym(state.gymBook) : null;
     if (current) {
       // 다시 설정할 때는 등록해 둔 헬스장들을 지우지 않는다 — 지금 헬스장의 기구만 새 답으로

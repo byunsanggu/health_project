@@ -262,3 +262,108 @@ function* permutations<T>(items: readonly T[]): Generator<T[]> {
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/* ── 이번 주 칸 ─────────────────────────────────── */
+
+export type WeekCellKind = 'done' | 'today' | 'planned' | 'rest' | 'before';
+
+export interface WeekCell {
+  weekday: Weekday;
+  date: string;
+  kind: WeekCellKind;
+  /** 그날 하는(한) 날 이름. 쉬는 날은 '휴식', 시작 전은 빈칸 */
+  name: string;
+}
+
+export interface WeekViewInput {
+  /** 이번 주 월요일 (YYYY-MM-DD) */
+  monday: string;
+  today: string;
+  /** 이번 주에 운동한 날 — 오늘은 빼고 */
+  trainedDates: readonly string[];
+  /** 오늘 운동했는가 */
+  todayDone: boolean;
+  templateNames: readonly string[];
+  /** 오늘 할(한) 날의 순서 — 이번 주에 앞서 한 횟수 */
+  todayIndex: number;
+  /** 운동하러 가는 요일 (월=0) */
+  plannedWeekdays: readonly number[];
+  /** 이번 주에 하기로 한 횟수. 시작한 주는 남은 날만큼으로 줄어 있다 */
+  target: number;
+  /** 시작한 날 — 그 앞의 날은 "쉰 날"이 아니라 아직 없던 날이다 */
+  startDate?: string;
+}
+
+function addDaysIso(date: string, days: number): string {
+  const time = Date.parse(date + 'T00:00:00Z');
+  return new Date(time + days * 86400000).toISOString().slice(0, 10);
+}
+
+/**
+ * 이번 주 칸 — 한 날은 한 날로, 남은 날은 실제 순서대로.
+ *
+ * 요일에 박아 둔 표(월 A · 수 B · 금 C)는 목요일에 시작한 사람에게 틀린다.
+ * 오늘 화면은 "내일 · 전신 B"라고 하는데 표는 "목 휴식 · 금 전신 C"라고 하면
+ * 둘 다 안 믿는다. 앱은 요일이 아니라 이번 주에 몇 번 했는지로 오늘 할 날을
+ * 정하므로(A → B → C), 표도 같은 규칙으로 그린다:
+ *   · 지난 날 — 운동했으면 그 순서의 날 이름, 아니면 휴식
+ *   · 오늘 — 오늘 할(한) 날
+ *   · 남은 날 — 목표까지 남은 횟수만큼, 가기로 한 요일부터 채운다. 모자라면
+ *     남은 다른 날로. 목표를 채웠으면 나머지는 휴식.
+ */
+export function weekView(input: WeekViewInput): WeekCell[] {
+  const names = input.templateNames.length > 0 ? input.templateNames : ['운동'];
+  const nameAt = (order: number) => names[((order % names.length) + names.length) % names.length]!;
+  const trained = [...input.trainedDates].sort();
+  const done = trained.length + (input.todayDone ? 1 : 0);
+  // 오늘 아직 안 했으면 오늘 한 번은 하는 것으로 본다 — 오늘 화면의 "다음 운동"과 같은 가정
+  let remaining = Math.max(0, input.target - done - (input.todayDone ? 0 : 1));
+
+  const cells: WeekCell[] = [];
+  for (let weekday = 0; weekday < 7; weekday += 1) {
+    const date = addDaysIso(input.monday, weekday);
+    cells.push({ weekday: weekday as Weekday, date, kind: 'rest', name: '휴식' });
+  }
+
+  let order = 0;
+  for (const cell of cells) {
+    if (cell.date >= input.today) break;
+    if (trained.includes(cell.date)) {
+      cell.kind = 'done';
+      cell.name = nameAt(order);
+      order += 1;
+    } else if (input.startDate && cell.date < input.startDate) {
+      cell.kind = 'before';
+      cell.name = '';
+    }
+  }
+
+  const todayCell = cells.find((cell) => cell.date === input.today);
+  if (todayCell) {
+    todayCell.kind = input.todayDone ? 'done' : 'today';
+    todayCell.name = nameAt(input.todayIndex);
+  }
+
+  let next = input.todayIndex + 1;
+  const future = cells.filter((cell) => cell.date > input.today);
+  const fill = (cell: WeekCell) => {
+    cell.kind = 'planned';
+    cell.name = nameAt(next);
+    next += 1;
+    remaining -= 1;
+  };
+  for (const cell of future) {
+    if (remaining <= 0) break;
+    if (input.plannedWeekdays.includes(cell.weekday)) fill(cell);
+  }
+  for (const cell of future) {
+    if (remaining <= 0) break;
+    if (cell.kind === 'rest') fill(cell);
+  }
+  // 요일 순서대로 이름을 다시 붙인다 — 남은 날을 둘째 바퀴에서 채웠으면 순서가 섞인다
+  next = input.todayIndex + 1;
+  for (const cell of future) {
+    if (cell.kind === 'planned') { cell.name = nameAt(next); next += 1; }
+  }
+  return cells;
+}

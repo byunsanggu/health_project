@@ -114,3 +114,36 @@ describe('buildSchedule', () => {
     assert.equal(schedule.restDays.length, 6);
   });
 });
+
+describe('이번 주 칸', () => {
+  it('목요일에 시작 — 앞의 날은 비우고, 오늘 A · 내일 B, 목표(2번)를 채우면 나머지는 휴식', async () => {
+    const { weekView } = await import('../schedule.ts');
+    const cells = weekView({
+      monday: '2026-10-19', today: '2026-10-22', trainedDates: [], todayDone: false,
+      templateNames: ['전신 A', '전신 B', '전신 C'], todayIndex: 0, plannedWeekdays: [0, 2, 4],
+      target: 2, startDate: '2026-10-22',
+    });
+    assert.deepEqual(cells.map((cell) => cell.kind), ['before', 'before', 'before', 'today', 'planned', 'rest', 'rest']);
+    assert.deepEqual(cells.map((cell) => cell.name).slice(3, 5), ['전신 A', '전신 B']);
+  });
+
+  it('한 날은 한 순서대로 이름이 붙고, 오늘 한 것은 한 날로', async () => {
+    const { weekView } = await import('../schedule.ts');
+    const cells = weekView({
+      monday: '2026-10-19', today: '2026-10-23', trainedDates: ['2026-10-19', '2026-10-21'], todayDone: true,
+      templateNames: ['A', 'B', 'C'], todayIndex: 2, plannedWeekdays: [0, 2, 4], target: 3,
+    });
+    assert.deepEqual(cells.map((cell) => cell.kind + ':' + cell.name),
+      ['done:A', 'rest:휴식', 'done:B', 'rest:휴식', 'done:C', 'rest:휴식', 'rest:휴식']);
+  });
+
+  it('밀렸으면 가기로 한 요일 다음에 남은 다른 날로 채운다', async () => {
+    const { weekView } = await import('../schedule.ts');
+    const cells = weekView({
+      monday: '2026-10-19', today: '2026-10-23', trainedDates: [], todayDone: false,
+      templateNames: ['A', 'B', 'C'], todayIndex: 0, plannedWeekdays: [0, 2, 4], target: 3,
+    });
+    // 금(오늘) A · 토 B · 일 C — 주 3번을 지키려면 남은 날이 이것뿐이다
+    assert.deepEqual(cells.slice(4).map((cell) => cell.kind + ':' + cell.name), ['today:A', 'planned:B', 'planned:C']);
+  });
+});
