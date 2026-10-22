@@ -174,7 +174,7 @@ function buildNotes(byMuscle: readonly MuscleSummary[], setsCompleted: number): 
 
   if (reached.length > 0) {
     const names = reached.slice(0, 3).map((item) => item.label).join(', ');
-    notes.push(`${withParticle(names, '은/는')} 이번 주 최소 자극선(MEV)을 넘겼습니다.`);
+    notes.push(`${withParticle(names, '은/는')} 이번 주 최소 자극선을 넘겼습니다.`);
   }
   if (over.length > 0) {
     const names = over.map((item) => item.label).join(', ');

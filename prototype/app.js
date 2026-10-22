@@ -1644,8 +1644,8 @@
     var status = report.filter(function (row) { return row.muscle === muscle; })[0];
     if (status && (status.zone === 'mavToMrv' || status.zone === 'overMrv')) {
       pushLog('볼륨 경보', '<b>' + E.MUSCLE_LABELS_KO[status.muscle] + '</b> 주간 ' + fmt(status.effectiveSets) +
-        '세트 — ' + (status.zone === 'overMrv' ? 'MRV 초과' : 'MAV 초과') +
-        ' (MRV ' + status.landmark.mrv + ')');
+        '세트 — ' + (status.zone === 'overMrv' ? '회복 한계를 넘었습니다' : '적정 범위를 넘었습니다') +
+        ' (한계 ' + status.landmark.mrv + '세트)');
     }
 
     render();
@@ -9369,7 +9369,8 @@
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '부위별 현황' }),
-        el('span', { class: 'meta', text: 'MEV · MAV · MRV' }),
+        // 현장 용어(MEV · MAV · MRV) 대신 우리말로 — 처음 보는 사람도 읽힌다
+        el('span', { class: 'meta', text: '최소 · 적정 · 한계 세트' }),
       ]),
       body,
     ]));
@@ -9431,10 +9432,10 @@
     shifted.forEach(function (obs) {
       var shifts = [];
       if (obs.mevShift !== undefined) {
-        shifts.push(shiftNode('MEV', base[obs.muscle].mev, state.landmarks[obs.muscle].mev));
+        shifts.push(shiftNode('최소', base[obs.muscle].mev, state.landmarks[obs.muscle].mev));
       }
       if (obs.mrvShift !== undefined) {
-        shifts.push(shiftNode('MRV', base[obs.muscle].mrv, state.landmarks[obs.muscle].mrv));
+        shifts.push(shiftNode('한계', base[obs.muscle].mrv, state.landmarks[obs.muscle].mrv));
       }
 
       card.appendChild(el('div', { class: 'obs' }, [
@@ -9471,9 +9472,9 @@
     var zone = zoneClass(row.zone);
 
     var marks = [
-      { label: 'MEV', value: row.landmark.mev },
-      { label: 'MAV', value: row.landmark.mav },
-      { label: 'MRV', value: row.landmark.mrv },
+      { label: '최소', value: row.landmark.mev },
+      { label: '적정', value: row.landmark.mav },
+      { label: '한계', value: row.landmark.mrv },
     ];
 
     var gauge = el('div', { class: 'gauge' }, [
@@ -12077,7 +12078,7 @@
 
     var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': '주간 볼륨 추이' });
 
-    [{ v: landmark.mev, label: 'MEV' }, { v: landmark.mrv, label: 'MRV' }].forEach(function (mark) {
+    [{ v: landmark.mev, label: '최소' }, { v: landmark.mrv, label: '한계' }].forEach(function (mark) {
       root.appendChild(svg('line', { x1: pad.left, y1: y(mark.v), x2: W - pad.right, y2: y(mark.v),
         stroke: 'var(--line)', 'stroke-width': 1, 'stroke-dasharray': '3 3' }));
       root.appendChild(svg('text', { x: W - pad.right + 3, y: y(mark.v) + 3,

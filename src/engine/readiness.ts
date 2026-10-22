@@ -103,7 +103,7 @@ export function assessFatigue(input: FatigueInput): FatigueAssessment {
     );
     signals.push({
       id: 'volumeOverMrv',
-      label: `${over.map((m) => MUSCLE_LABELS_KO[m]).join(', ')} 볼륨이 회복 가능 범위(MRV)를 넘었습니다`,
+      label: `${over.map((m) => MUSCLE_LABELS_KO[m]).join(', ')} 세트 수가 회복 가능 범위를 넘었습니다`,
       weight:
         over.length >= 3
           ? DELOAD_THRESHOLD

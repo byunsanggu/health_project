@@ -74,7 +74,7 @@ export function planGoals(input: readonly TrainingGoal[]): GoalPlan {
       '체지방은 반복 범위가 아니라 식사에서 빠집니다. 훈련에서 할 일은 근육을 지키는 것이고, ' +
       '그래서 중량을 낮추지 않고 그대로 갑니다.',
     );
-    notes.push('적자에서는 회복이 느려집니다. 볼륨을 MRV까지 밀지 않고 MAV에서 멈춥니다.');
+    notes.push('적자에서는 회복이 느려집니다. 세트 수를 회복 한계까지 밀지 않고 적정 범위에서 멈춥니다.');
 
     if (has('strength')) {
       notes.push('적자에서 근력이 오르기는 어렵습니다. 올리기보다 지키는 것을 목표로 잡습니다.');
