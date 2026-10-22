@@ -7,7 +7,7 @@ import {
   recentFoods, rescaleEntry, searchFoods, totalsFor, type FoodEntry,
 } from '../foodLog.ts';
 
-const ALCOHOL = new Set(['beer', 'soju', 'makgeolli', 'wine']);
+const ALCOHOL = new Set(['beer', 'soju', 'makgeolli', 'wine', 'highball']);
 
 describe('음식표', () => {
   it('칼로리가 탄단지와 맞는다 (단백질·탄수 4, 지방 9kcal/g — 술 빼고 ±20%)', () => {
@@ -37,6 +37,20 @@ describe('음식표', () => {
     range('gimbap', 350, 500);
     range('soju', 330, 450);
     range('protein-powder', 100, 140);
+    range('udon', 350, 500);
+    range('omurice', 550, 800);
+    range('pork-galbi', 450, 700);
+    range('fish-cake', 60, 110);
+  });
+
+  it('흔히 먹는데 빠졌던 것들 — 돼지고기 · 어묵 · 우동 · 포도 · 브로콜리 · 갈비 · 하이볼', () => {
+    const ids = (text: string) => parseFoodText(text).items.map((item) => item.food.id);
+    assert.deepEqual(ids('돼지고기 200g, 어묵 2장, 우동'), ['pork-neck', 'fish-cake', 'udon']);
+    assert.deepEqual(ids('포도 반 송이랑 브로콜리'), ['grape', 'broccoli']);
+    assert.deepEqual(ids('갈비 1인분, 닭갈비'), ['pork-galbi', 'dakgalbi']);
+    assert.deepEqual(ids('LA갈비'), ['la-galbi']);
+    assert.deepEqual(ids('하이볼 2잔'), ['highball']);
+    assert.deepEqual(ids('스테이크 200g'), ['beef-sirloin']);
   });
 
   it('이름 · 별명이 겹치지 않는다 (입력이 엉뚱한 음식으로 가지 않게)', () => {

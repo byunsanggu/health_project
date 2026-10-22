@@ -1999,6 +1999,13 @@
     if (focusOn()) host.hidden = true;
     if (!state.rest) return;
 
+    if (state.undo && Date.now() < state.undo.until) {
+      host.appendChild(el('div', { class: 'undo-strip', role: 'status' }, [
+        el('span', { text: state.undo.label + ' 기록했습니다' }),
+        el('button', { type: 'button', class: 'undo-btn', text: '되돌리기', onclick: undoLastSet }),
+      ]));
+    }
+
     var remaining = restRemaining();
     host.appendChild(el('div', { class: 'rest-bar-track' }, [
       el('div', {
@@ -5622,6 +5629,7 @@
     lift.lastFeel = feel;
     completeSet(liftIndex, setIndex, E.feelToRir(feel, target));
     coachAfter(liftIndex, setIndex, feel, weight, reps);
+    offerUndo(liftIndex, setIndex);
   }
 
   function coachAfter(liftIndex, setIndex, feel, weight, reps) {
@@ -8126,6 +8134,10 @@
     }
 
     if (plates) body.push(el('div', { class: 'plates', text: E.describePlates(plates) }));
+    // 덤벨은 하나의 무게다 — 두 개 합친 무게로 읽으면 두 배를 든다
+    else if (lift.exercise.equipment === 'dumbbell' && set.weightKg > 0) {
+      body.push(el('div', { class: 'plates', text: '덤벨 하나 무게입니다' }));
+    }
 
     /*
      * 친 무게를 이 헬스장에서 만들 수 있는지 본다. 못 만들면 고쳐주지
@@ -8284,6 +8296,7 @@
           var reps = set.reps;
           completeSet(liftIndex, setIndex, rir);
           coachAfter(liftIndex, setIndex, 'right', weight, reps);
+          offerUndo(liftIndex, setIndex);
         },
       }));
     });
@@ -8368,6 +8381,42 @@
       ]));
     }
     return bits;
+  }
+
+  /*
+   * 방금 적은 세트 되돌리기 — 5초 동안.
+   *
+   * 땀난 손가락은 "2회"를 누르려다 "1회"를 누른다. 고치는 길("완료 › 보기 ›
+   * 고치기")은 있지만 세 번을 찾아 눌러야 한다. 누른 바로 그때 한 번에 되돌리게 한다.
+   * PT는 묻는 화면에서 "횟수 · 무게 고치기"로 고친다.
+   */
+  var UNDO_MS = 5000;
+
+  function offerUndo(liftIndex, setIndex) {
+    if (ptOn()) return;
+    var lift = state.lifts[liftIndex];
+    if (!lift || !lift.sets[setIndex] || !lift.sets[setIndex].done) return;
+    state.undo = { liftIndex: liftIndex, setIndex: setIndex, until: Date.now() + UNDO_MS,
+      label: lift.exercise.name + ' ' + (setIndex + 1) + '세트' };
+    if (state.undoTimer) clearTimeout(state.undoTimer);
+    state.undoTimer = setTimeout(function () {
+      state.undo = null;
+      state.undoTimer = null;
+      renderRest();
+    }, UNDO_MS);
+    renderRest();
+  }
+
+  function undoLastSet() {
+    var undo = state.undo;
+    state.undo = null;
+    if (state.undoTimer) clearTimeout(state.undoTimer);
+    state.undoTimer = null;
+    if (!undo || !state.lifts[undo.liftIndex]) return;
+    stopRest();
+    state.liftCursor = undo.liftIndex;
+    pushLog('되돌리기', '<b>' + undo.label + '</b> 기록을 되돌렸습니다.');
+    undoSet(undo.liftIndex, undo.setIndex);
   }
 
   /** 잘못 누른 세트를 되돌린다. 기록도 같이 빼야 볼륨이 부풀지 않는다. */
@@ -11978,6 +12027,139 @@
   }
 
   /* 진행 */
+  /** "10월 22일 (목)" */
+  function dayLabel(iso) {
+    var date = new Date(iso + 'T12:00:00');
+    return (date.getMonth() + 1) + '월 ' + date.getDate() + '일 (' + '일월화수목금토'.charAt(date.getDay()) + ')';
+  }
+
+  /** 하루에 든 무게 합 — 1톤이 넘으면 톤으로. */
+  function tonnageText(kg) {
+    return kg >= 1000 ? (Math.round(kg / 100) / 10) + '톤' : Math.round(kg) + 'kg';
+  }
+
+  /** 본세트에 나온 종목 이름 — 한 순서대로, 한 번씩. */
+  function sessionNames(sets) {
+    var names = [];
+    sets.forEach(function (set) {
+      var exercise = index.get(set.exerciseId);
+      if (exercise && names.indexOf(exercise.name) < 0) names.push(exercise.name);
+    });
+    return names;
+  }
+
+  /**
+   * 운동 기록 — 날마다 한 줄. 누르면 그날 한 세트가 다 보인다.
+   *
+   * "기록은 진행 탭에 반영됐습니다"라고 해 놓고 진행 탭에 같은 종목을 두 번 해야
+   * 나오는 그래프만 있으면, 첫 주에는 기록이 사라진 줄 안다. 한 번만 해도 보이는
+   * 목록이 먼저다. 잘못 적힌 날(폰을 두고 간 날)은 여기서 지운다.
+   */
+  function historyCard() {
+    var work = function (session) { return (session.sets || []).filter(function (set) { return !set.warmup; }); };
+    var past = state.history
+      .filter(function (session) { return work(session).length > 0 || (session.cardio && session.cardio.length); })
+      .slice()
+      .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+    var rows = (state.todaySets.length ? [{ date: state.todayDate, sets: state.todaySets, today: true }] : []).concat(past);
+    if (rows.length === 0) return null;
+
+    var shown = rows.slice(0, state.historyMore ? 90 : 7);
+    var body = el('div', { class: 'sheet-body tight history-list' }, []);
+    shown.forEach(function (session) {
+      var sets = work(session);
+      var names = sessionNames(sets);
+      var lifted = sets.reduce(function (sum, set) { return sum + (set.weightKg || 0) * (set.reps || 0); }, 0);
+      body.appendChild(el('button', {
+        type: 'button', class: 'history-row',
+        onclick: function () { openHistoryDay(session); },
+      }, [
+        el('span', { class: 'history-date', text: dayLabel(session.date) + (session.today ? ' · 오늘' : '') }),
+        el('span', { class: 'history-what', text: names.length
+          ? names.slice(0, 2).join(' · ') + (names.length > 2 ? ' 외 ' + (names.length - 2) + '개' : '')
+          : '유산소' }),
+        el('span', { class: 'history-meta', text: sets.length + '세트' + (lifted > 0 ? ' · ' + tonnageText(lifted) : '') }),
+        el('span', { class: 'detail', 'aria-hidden': 'true', text: '›' }),
+      ]));
+    });
+    if (rows.length > shown.length) {
+      body.appendChild(el('button', {
+        type: 'button', class: 'history-more', text: '더 보기 · ' + (rows.length - shown.length) + '일 더',
+        onclick: function () { state.historyMore = true; render(); },
+      }));
+    }
+    return el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '운동 기록' }),
+        el('span', { class: 'meta', text: rows.length + '일' }),
+      ]),
+      body,
+    ]);
+  }
+
+  /** 그날 한 것 — 종목마다 세트를 다. 지난날은 지울 수 있다(오늘 것은 오늘 화면에서 고친다). */
+  function openHistoryDay(session) {
+    var body = [];
+    var groups = [];
+    (session.sets || []).forEach(function (set) {
+      if (set.warmup) return;
+      var last = groups[groups.length - 1];
+      if (!last || last.id !== set.exerciseId) groups.push(last = { id: set.exerciseId, sets: [] });
+      last.sets.push(set);
+    });
+    groups.forEach(function (group) {
+      var exercise = index.get(group.id);
+      var rows = el('div', { class: 'history-sets' }, group.sets.map(function (set, i) {
+        return el('div', { class: 'history-set' }, [
+          el('span', { class: 'set-no', text: String(i + 1) }),
+          el('span', { text: (set.weightKg > 0 ? E.weightLabelIn(set.weightKg, inPounds(group.id)) : '맨몸') + ' × ' + set.reps + '회' }),
+          el('span', { class: 'history-rir', text: typeof set.rir === 'number' ? '여유 ' + set.rir + '개' : '' }),
+        ]);
+      }));
+      body.push(el('div', { class: 'history-lift' }, [
+        el('b', { text: exercise ? exercise.name : group.id }),
+        rows,
+      ]));
+    });
+    (session.cardio || []).forEach(function (entry) {
+      body.push(el('p', { class: 'hint-line', text: '유산소 · ' + (entry.label || entry.kind || '') + (entry.minutes ? ' ' + entry.minutes + '분' : '') }));
+    });
+    if (session.today) {
+      body.push(el('p', { class: 'hint-line', text: '오늘 기록은 오늘 화면의 "완료 › 보기"에서 고칩니다.' }));
+    } else if (session.id) {
+      body.push(el('button', {
+        type: 'button', class: 'finish quiet history-delete', text: '이 날 기록 지우기',
+        onclick: function () { confirmDeleteDay(session); },
+      }));
+    }
+    openModal(dayLabel(session.date), (session.sets || []).filter(function (set) { return !set.warmup; }).length + '세트', body);
+  }
+
+  function confirmDeleteDay(session) {
+    openModal('이 날 기록 지우기', dayLabel(session.date), [
+      el('p', { class: 'asset-note', text:
+        '이 날 한 세트가 모두 지워지고, 주간 볼륨과 다음 무게 계산에서도 빠집니다. 되돌릴 수 없습니다.' }),
+      el('div', { class: 'chip-row' }, [
+        el('button', {
+          type: 'button', class: 'finish danger', text: '지우기',
+          onclick: function () {
+            storage.removeSession(session.id);
+            state.history = state.history.filter(function (item) { return item.id !== session.id; });
+            pushLog('기록', dayLabel(session.date) + ' 기록을 지웠습니다.');
+            modal.close();
+            // 지운 날이 빠진 이력으로 볼륨 · 처방을 다시 계산한다
+            refreshLandmarks();
+            rebuildPlan();
+            rebuildSession();
+            syncSoon();
+            render();
+          },
+        }),
+        el('button', { type: 'button', class: 'finish quiet', text: '그대로 두기', onclick: function () { modal.close(); } }),
+      ]),
+    ]);
+  }
+
   function renderProgress() {
     var calibration = state.session.rirCalibration;
     var options = rirOptions();
@@ -11990,8 +12172,11 @@
 
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('h2', { text: '진행' }),
-      el('p', { class: 'meta', text: '추정 1RM · 주간 볼륨 · 개인 기록' }),
+      el('p', { class: 'meta', text: '운동 기록 · 무게 추이 · 개인 기록' }),
     ]));
+
+    var days = historyCard();
+    if (days) screen.appendChild(days);
 
     if (lifts.length === 0) {
       screen.appendChild(el('div', { class: 'notice' }, [

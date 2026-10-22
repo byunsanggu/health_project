@@ -2562,6 +2562,24 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .food-custom-macros { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .food-field { display: grid; gap: 4px; font-size: 11.5px; color: var(--muted); }
 .food-field .text-input { padding: 9px 10px; }
+/* 방금 적은 세트 되돌리기 — 휴식 막대 위 5초 */
+.undo-strip { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; background: var(--ink); color: var(--surface); font-size: 13px; }
+.undo-btn { border: 0; background: none; padding: 4px 2px; color: var(--surface); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+/* 운동 기록 */
+.history-list { display: grid; }
+.history-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "date meta go" "what what go"; gap: 2px 10px; align-items: center; width: 100%; padding: 11px 14px; border: 0; border-top: 1px solid var(--line-soft); background: none; color: inherit; font: inherit; text-align: left; }
+.history-row:first-child { border-top: 0; }
+.history-row:hover { background: var(--surface-2); }
+.history-date { grid-area: date; font-size: 13.5px; font-weight: 600; }
+.history-what { grid-area: what; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-meta { grid-area: meta; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.history-row .detail { grid-area: go; color: var(--muted); }
+.history-more { border: 0; border-top: 1px solid var(--line-soft); background: none; padding: 11px 14px; color: var(--accent); font-size: 12.5px; text-align: left; }
+.history-lift { display: grid; gap: 6px; }
+.history-lift b { font-size: 14px; }
+.history-sets { display: grid; gap: 2px; }
+.history-set { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.history-rir { color: var(--muted); font-size: 12px; }
 </style>
 
 <div class="wrap">
