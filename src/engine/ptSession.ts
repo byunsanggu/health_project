@@ -291,6 +291,9 @@ const MOVES: readonly MobilityStep[] = [
 /** 몸 풀기에 쓰는 시간. */
 export const MOBILITY_SECONDS = 5 * 60;
 
+/** 시간이 없는 날(25분 밑)의 몸 풀기 — 20분 중 5분을 몸 풀기에 쓰면 운동이 반으로 준다. */
+export const SHORT_MOBILITY_SECONDS = 2 * 60;
+
 export interface MobilityOptions {
   /** 이 헬스장에 있는 기구 id. 없으면 맨몸 · 서서 하는 동작만 */
   equipment?: readonly string[];

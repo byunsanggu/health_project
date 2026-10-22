@@ -72,6 +72,41 @@ describe('종목 역할 분류', () => {
   });
 });
 
+describe('짧은 날에도 고르게', () => {
+  const beginner = runOnboarding({
+    selfReportedLevel: 'beginner', monthsTraining: 3, bodyweightKg: 70, sex: 'female',
+    daysPerWeek: 3, goals: ['hypertrophy'], gym: { equipmentIds: COMMON_EQUIPMENT_IDS },
+  });
+  const fullBody = buildSession({
+    template: beginner.program.templates[0]!, date: '2026-09-21', plan: beginner.firstWeek,
+    history: [], index, gym: beginner.gym, lifter: beginner.lifter,
+  });
+  const family = (pattern: string) =>
+    /squat|lunge|hinge/.test(pattern) ? 'lower' : /Push/.test(pattern) ? 'push' : /Pull/.test(pattern) ? 'pull' : pattern;
+
+  it('전신 날 15 · 20분 — 하체 · 밀기 · 당기기가 하나씩 남는다(당기기를 통째로 빼지 않는다)', () => {
+    const before = new Set(fullBody.exercises.map((item) => family(item.exercise.pattern)));
+    assert.ok(before.has('pull'));
+    for (const [minutes, warmup] of [[20, 300], [15, 120]] as const) {
+      const result = fitToTimeBudget(fullBody, minutes, { generalWarmupSeconds: warmup });
+      const kept = new Set(result.session.exercises.filter((item) => item.sets.length > 0).map((item) => family(item.exercise.pattern)));
+      for (const name of ['lower', 'push', 'pull']) {
+        if (before.has(name)) {
+          assert.ok(kept.has(name), `${minutes}분: ${name}이 빠졌다 — ${result.session.exercises.map((item) => item.exercise.name).join(', ')}`);
+        }
+      }
+    }
+  });
+
+  it('뺀 종목의 세트 줄임은 세지 않고, 한 종목은 한 줄로', () => {
+    const result = fitToTimeBudget(fullBody, 15, { generalWarmupSeconds: 120 });
+    const dropped = new Set(result.adjustments.filter((item) => item.action === 'drop').map((item) => item.exerciseId));
+    const trimmed = result.adjustments.filter((item) => item.action === 'trimSets');
+    assert.ok(trimmed.every((item) => !dropped.has(item.exerciseId)));
+    assert.equal(new Set(trimmed.map((item) => item.exerciseId)).size, trimmed.length);
+  });
+});
+
 describe('시간 예산에 맞추기', () => {
   it('넉넉하면 아무것도 건드리지 않는다', () => {
     const result = fitToTimeBudget(session, 180);

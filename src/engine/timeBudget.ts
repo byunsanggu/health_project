@@ -69,13 +69,35 @@ export interface SessionTimeEstimate {
 }
 
 /** 종목의 역할 — 자를 순서를 정하는 기준이다. */
+/** 하체 · 밀기 · 당기기 — 복합 동작의 큰 갈래. */
+function familyOf(pattern: PlannedExercise['exercise']['pattern']): string {
+  if (pattern === 'squat' || pattern === 'lunge' || pattern === 'hinge') return 'lower';
+  if (pattern === 'horizontalPush' || pattern === 'verticalPush') return 'push';
+  if (pattern === 'horizontalPull' || pattern === 'verticalPull') return 'pull';
+  return pattern;
+}
+
+/**
+ * 메인 · 보조 · 고립.
+ *
+ * 메인은 갈래(하체 · 밀기 · 당기기)마다 첫 복합 동작이다. 전에는 "앞의 복합 동작
+ * 둘"이었는데, 전신 날(스쿼트 · 벤치 · 로우)에 시간을 줄이면 셋째인 당기기가
+ * 통째로 빠지고 밀기만 남았다. 한 갈래뿐인 날(하체 날의 스쿼트 · 루마니안,
+ * 밀기 날의 벤치 · 오버헤드)은 전처럼 앞의 둘까지 메인이다.
+ */
 export function classifyRoles(exercises: readonly PlannedExercise[]): ExerciseRole[] {
-  let compoundSeen = 0;
+  const seen = new Set<string>();
+  let primaries = 0;
   return exercises.map((item) => {
     const isIsolation = item.exercise.pattern === 'isolation' || item.exercise.pattern === 'core';
     if (isIsolation) return 'isolation';
-    compoundSeen += 1;
-    return compoundSeen <= 2 ? 'primary' : 'accessory';
+    const family = familyOf(item.exercise.pattern);
+    if (!seen.has(family) || primaries < 2) {
+      seen.add(family);
+      primaries += 1;
+      return 'primary';
+    }
+    return 'accessory';
   });
 }
 
@@ -298,6 +320,23 @@ export function fitToTimeBudget(
 
   const after = estimate();
   const fits = after.totalSeconds <= budgetSeconds;
+
+  /*
+   * 세트를 줄였다가 결국 뺀 종목은 "뺐다"만 남기고, 한 종목을 여러 번 줄였으면
+   * 한 줄로 합친다. 그러지 않으면 남은 종목은 하나도 안 줄었는데 "세트 축소 2건"이 뜬다.
+   */
+  const droppedIds = new Set(adjustments.filter((item) => item.action === 'drop').map((item) => item.exerciseId));
+  const merged: TimeAdjustment[] = [];
+  for (const item of adjustments) {
+    if (item.action === 'trimSets') {
+      if (droppedIds.has(item.exerciseId)) continue;
+      const prev = merged.find((one) => one.action === 'trimSets' && one.exerciseId === item.exerciseId);
+      if (prev) { prev.to = item.to; continue; }
+    }
+    merged.push({ ...item });
+  }
+  adjustments.length = 0;
+  adjustments.push(...merged);
 
   if (!fits) {
     notes.push(

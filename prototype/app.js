@@ -1419,7 +1419,7 @@
         restBand: state.restBand || undefined,
         restOverrides: state.restOverrides,
         // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
-        generalWarmupSeconds: E.MOBILITY_SECONDS,
+        generalWarmupSeconds: mobilitySeconds(),
         allowShortRest: state.style === 'density',
       });
       built = state.timeFit.session;
@@ -3517,7 +3517,7 @@
       restBand: state.restBand || undefined,
       restOverrides: state.restOverrides,
       // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
-      generalWarmupSeconds: E.MOBILITY_SECONDS,
+      generalWarmupSeconds: mobilitySeconds(),
     });
     return {
       estimate: estimate,
@@ -4273,13 +4273,19 @@
     return short.minutes;
   }
 
-  function shortFitOptions() {
+  /** 시작 몸 풀기 길이 — 짧은 날은 2분, 평소는 5분. 시간 계산과 PT가 같은 값을 쓴다. */
+  function mobilitySeconds() {
+    return shortBudget() ? E.SHORT_MOBILITY_SECONDS : E.MOBILITY_SECONDS;
+  }
+
+  /** short: 짧은 날 후보를 셀 때 — 그날은 몸 풀기가 2분이니 그 값으로 센다. */
+  function shortFitOptions(short) {
     return {
       restMultiplier: E.styleProfile(state.style).restMultiplier,
       restBand: state.restBand || undefined,
       restOverrides: state.restOverrides,
-      // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
-      generalWarmupSeconds: E.MOBILITY_SECONDS,
+      // 시작 몸 풀기 — 종목 워밍업은 필요한 종목만 짧게 계산된다
+      generalWarmupSeconds: short ? E.SHORT_MOBILITY_SECONDS : mobilitySeconds(),
       allowShortRest: state.style === 'density',
     };
   }
@@ -4345,7 +4351,7 @@
     }
 
     var full = E.estimateSessionTime(state.session, shortFitOptions()).totalMinutes;
-    var options = E.shortOptions(state.session, full, shortFitOptions());
+    var options = E.shortOptions(state.session, full, shortFitOptions(true));
     if (options.length === 0) return null;
 
     var rows = el('div', { class: 'summary-list' }, options.map(function (option) {
@@ -4428,7 +4434,7 @@
      * 시작은 몸 풀기 5분(움직이는 스트레칭). 종목마다 워밍업 세트를 밟는 대신이다 —
      * 워밍업 세트는 오늘 처음 하는 복합 동작에만 남는다.
      */
-    var moves = E.mobilityFor(plannedMusclesToday(), { equipment: warmupEquipment() });
+    var moves = E.mobilityFor(plannedMusclesToday(), { equipment: warmupEquipment(), budgetSeconds: mobilitySeconds() });
     rows.push(el('div', { class: 'plan-row warm-row' }, [
       el('span', { class: 'lift-thumb warm', 'aria-hidden': 'true', text: '↗' }),
       el('span', { class: 'plan-main' }, [
@@ -5739,7 +5745,7 @@
         restBand: state.restBand || undefined,
         restOverrides: state.restOverrides,
         // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
-        generalWarmupSeconds: E.MOBILITY_SECONDS,
+        generalWarmupSeconds: mobilitySeconds(),
       });
     } catch (err) { estimate = null; }
     var status = state.block ? E.blockStatus(state.block, state.todayDate) : null;
@@ -6674,7 +6680,7 @@
         restBand: state.restBand || undefined,
         restOverrides: state.restOverrides,
         // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
-        generalWarmupSeconds: E.MOBILITY_SECONDS,
+        generalWarmupSeconds: mobilitySeconds(),
       });
       body.push(el('p', { class: 'hint-line', text:
         '지금 설정으로 오늘 ' + state.lifts.length + '종목 · 약 ' +
@@ -7039,7 +7045,7 @@
           restBand: state.restBand || undefined,
           restOverrides: state.restOverrides,
           // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
-          generalWarmupSeconds: E.MOBILITY_SECONDS,
+          generalWarmupSeconds: mobilitySeconds(),
         });
         minutes = estimate && estimate.totalMinutes;
       } catch (err) { minutes = null; }
@@ -7293,7 +7299,7 @@
   function startPrep(delayMs) {
     var pt = ensurePtRun();
     if (pt.prep || pt.prepped) return;
-    var run = { steps: E.mobilityFor(plannedMusclesToday(), { equipment: warmupEquipment() }), index: -1, endsAt: null, timers: [] };
+    var run = { steps: E.mobilityFor(plannedMusclesToday(), { equipment: warmupEquipment(), budgetSeconds: mobilitySeconds() }), index: -1, endsAt: null, timers: [] };
     pt.prep = run;
     run.timers.push(setTimeout(function () { if (ptAlive(run, 'prep')) prepStep(run, 0); }, delayMs || 0));
     render();
@@ -9338,11 +9344,11 @@
 
     if (state.timeFit) {
       var fit = state.timeFit;
-      out.push(el('p', {
-        class: 'hint-line' + (fit.fits ? '' : ' warn'),
-        text: Math.round(fit.beforeSeconds / 60) + '분 → ' + Math.round(fit.afterSeconds / 60) + '분' +
-          (fit.fits ? '' : ' (예산 초과)'),
-      }));
+      // 맞췄으면 아래 메모가 "37분 → 18분으로 맞췄습니다"를 이미 말한다 — 같은 숫자를 두 번 쓰지 않는다
+      if (!fit.fits) {
+        out.push(el('p', { class: 'hint-line warn', text:
+          Math.round(fit.beforeSeconds / 60) + '분 → ' + Math.round(fit.afterSeconds / 60) + '분 (예산 초과)' }));
+      }
 
       var dropped = fit.adjustments.filter(function (a) { return a.action === 'drop'; });
       var trimmed = fit.adjustments.filter(function (a) { return a.action === 'trimSets'; });
@@ -9351,7 +9357,9 @@
           '제외: ' + dropped.map(function (a) { return a.name; }).join(', ') }));
       }
       if (trimmed.length > 0) {
-        out.push(el('p', { class: 'hint-line', text: '세트 축소 ' + trimmed.length + '건' }));
+        out.push(el('p', { class: 'hint-line', text: '세트 줄임: ' + trimmed.map(function (a) {
+          return a.name + ' ' + a.from + '→' + a.to;
+        }).join(', ') }));
       }
       fit.notes.forEach(function (note) {
         out.push(el('p', { class: 'hint-line', text: note }));
