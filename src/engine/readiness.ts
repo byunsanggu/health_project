@@ -42,6 +42,11 @@ export interface FatigueInput {
    * 디로드가 디로드를 부르는 무한 루프에 빠진다.
    */
   lastWeekPhase?: 'accumulation' | 'deload';
+  /**
+   * 방금 끝낸 주와 그 앞 주의 목표 RIR. 블록은 주마다 일부러 여유를 줄인다(3 → 2 → 1) —
+   * 그만큼 줄어든 것은 계획대로 한 것이지 피로가 아니다. 주면 계획한 폭을 빼고 본다.
+   */
+  plannedRir?: { thisWeek: number; lastWeek: number };
 }
 
 const DELOAD_THRESHOLD = 5;
@@ -78,13 +83,16 @@ export function assessFatigue(input: FatigueInput): FatigueAssessment {
     });
   }
 
-  // 2) RIR 드리프트 — 같은 일을 하는데 더 힘들어졌는가
+  // 2) RIR 드리프트 — 같은 일을 하는데 더 힘들어졌는가. 계획대로 줄인 몫은 빼고 본다
   const thisRir = comparable ? averageRir(thisWeek) : null;
   const lastRir = comparable ? averageRir(lastWeek) : null;
-  if (thisRir !== null && lastRir !== null && lastRir - thisRir >= 1) {
+  const plannedDrop = input.plannedRir ? Math.max(0, input.plannedRir.lastWeek - input.plannedRir.thisWeek) : 0;
+  if (thisRir !== null && lastRir !== null && lastRir - thisRir - plannedDrop >= 1) {
     signals.push({
       id: 'rirDrift',
-      label: `세트마다 남은 여유가 평균 ${lastRir.toFixed(1)}개 → ${thisRir.toFixed(1)}개로 줄었습니다. 같은 무게가 더 무겁게 느껴지는 상태입니다`,
+      label: plannedDrop > 0
+        ? `세트마다 남은 여유가 평균 ${lastRir.toFixed(1)}개 → ${thisRir.toFixed(1)}개로, 계획(${plannedDrop}개 줄이기)보다 더 줄었습니다. 같은 무게가 더 무겁게 느껴지는 상태입니다`
+        : `세트마다 남은 여유가 평균 ${lastRir.toFixed(1)}개 → ${thisRir.toFixed(1)}개로 줄었습니다. 같은 무게가 더 무겁게 느껴지는 상태입니다`,
       weight: 2,
     });
   }

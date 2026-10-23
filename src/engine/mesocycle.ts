@@ -72,7 +72,15 @@ export interface PlanInput {
    * 축적 주를 다 채웠으면 몸이 괜찮다고 느껴도 한 주 덜어낸다.
    */
   forceDeload?: boolean;
+  /**
+   * 방금 끝낸 주와 그 앞 주의 목표 RIR. 없으면 이 처방의 기본 일정(targetRirFor)으로 본다 —
+   * 계획대로 여유를 줄인 것을 피로로 읽지 않게.
+   */
+  plannedRir?: { thisWeek: number; lastWeek: number };
 }
+
+/** 덜어내는 주의 목표 RIR. */
+export const DELOAD_RIR = 4;
 
 /**
  * 축적 주차별 목표 RIR.
@@ -101,6 +109,10 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
     weekInBlock: input.weekInBlock,
     accumulationWeeks: input.accumulationWeeks,
     lastWeekPhase: input.lastWeekPhase,
+    // 1주차 앞 주는 지난 블록의 덜어내는 주다(여유 4개)
+    plannedRir: input.plannedRir ?? (input.weekInBlock >= 1
+      ? { thisWeek: targetRirFor(input.weekInBlock), lastWeek: input.weekInBlock >= 2 ? targetRirFor(input.weekInBlock - 1) : DELOAD_RIR }
+      : undefined),
   });
 
   // 디로드를 연달아 두 번 하지 않는다. 쉬는 목적은 훈련으로 돌아가는 것이고,
@@ -164,7 +176,7 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
     weekStart: nextWeekStart(input.asOf),
     phase,
     weekInBlock: nextWeekInBlock,
-    targetRir: phase === 'deload' ? 4 : targetRirFor(nextWeekInBlock),
+    targetRir: phase === 'deload' ? DELOAD_RIR : targetRirFor(nextWeekInBlock),
     intensityMultiplier: phase === 'deload' ? 0.9 : 1,
     fatigue,
     volume,

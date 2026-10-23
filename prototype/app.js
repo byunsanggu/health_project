@@ -918,7 +918,7 @@
           ? template.slots.map(function (slot) { return Object.assign({}, slot, { sets: slot.sets + 2 }); })
           : template.slots;
         var planned = E.buildSession({
-          template: { name: template.name, slots: slots },
+          template: { name: template.name, slots: slots, fixed: template.fixed },
           date: date,
           plan: plan,
           history: history,
@@ -1218,6 +1218,8 @@
       lastWeekPhase: status.weekInBlock === 1 && state.block.number > 1 ? 'deload' : 'accumulation',
       painfulMuscles: painfulMuscles(),
       forceDeload: status.stage === 'deload',
+      // 블록은 주마다 일부러 여유를 줄인다 — 그만큼은 피로로 읽지 않게 이 앱의 실제 일정을 준다
+      plannedRir: { thisWeek: plannedRirFor(status.weekInBlock - 1), lastWeek: plannedRirFor(status.weekInBlock - 2) },
     });
     if (plan.phase === 'deload' && status.stage === 'accumulation') {
       state.block = E.markDeload(state.block, state.todayDate);
@@ -1293,7 +1295,7 @@
       });
     });
 
-    return { name: template.name, slots: slots, setCap: template.setCap };
+    return { name: template.name, slots: slots, setCap: template.setCap, fixed: template.fixed };
   }
 
   /**
@@ -1304,6 +1306,13 @@
     if (!LIVE || !state.block) return styleRir;
     var start = E.levelProfile(state.block.level).startingRir;
     return Math.max(styleRir, start - (state.plan.weekInBlock - 1));
+  }
+
+  /** 블록 몇 주차의 목표 여유(RIR) — liveRir와 같은 일정. 0주차는 지난 블록의 덜어내는 주. */
+  function plannedRirFor(week) {
+    if (week <= 0) return E.DELOAD_RIR;
+    var start = E.levelProfile(state.block.level).startingRir;
+    return Math.max(E.targetRirFor(state.style, week), start - (week - 1));
   }
 
   /**
@@ -1353,6 +1362,8 @@
     var baseTemplate = state.program.templates[currentTemplateIndex()];
     var template = state.extraLifts.length === 0 ? baseTemplate : {
       name: baseTemplate.name,
+      // 내 루틴의 날이면 끼워 넣어도 정한 세트 그대로다
+      fixed: baseTemplate.fixed,
       slots: baseTemplate.slots.concat(
         state.extraLifts
           .filter(function (extra) {
@@ -1405,6 +1416,9 @@
       // 같은 헬스장에 같은 기계가 둘 있으면 오늘 선 쪽의 기록만 본다.
       machines: state.machinePick,
       lifter: state.lifter,
+      // 세트 수는 한 주를 통째로 보고 나눈다 — 날마다 따로 정하면 주마다 흔들린다
+      week: { templates: state.program.templates, day: currentTemplateIndex() },
+      landmarks: state.landmarks,
     });
 
     /*
@@ -4130,6 +4144,8 @@
         // 오늘 선 기계를 그대로 본다. 다음에도 같은 기계일 확률이 높다.
         machines: state.machinePick,
         lifter: state.lifter,
+        week: { templates: templates, day: (currentTemplateIndex() + 1) % templates.length },
+        landmarks: state.landmarks,
       });
     } catch (err) {
       // 예고는 덤이다. 계산이 안 되면 조용히 빠진다.

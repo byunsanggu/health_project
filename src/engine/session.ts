@@ -1,6 +1,7 @@
 import { prescribeLoad, roundToIncrement, type LoadRule, type RepRange } from './load.ts';
 import { findSubstitutes, screenExercise, type PainRuling } from './pain.ts';
-import { addDays, aggregateVolume, sessionsInWeek } from './volume.ts';
+import { planWeekSets } from './weekSets.ts';
+import { addDays, sessionsInWeek } from './volume.ts';
 import { MUSCLE_GROUPS } from './muscles.ts';
 import {
   availableEquipmentOf,
@@ -22,6 +23,7 @@ import type { WeeklyPlan } from './mesocycle.ts';
 import type {
   Equipment,
   Exercise,
+  LandmarksByMuscle,
   MuscleGroup,
   PainReport,
   SessionLog,
@@ -34,16 +36,15 @@ export interface SessionSlot {
   repRange: RepRange;
   /** 프로그램에서 맡은 역할. 블록이 바뀔 때 보조 · 고립만 바꿔 끼우는 데 쓴다. */
   role?: 'primary' | 'accessory' | 'isolation';
+  /** 뺀 종목 대신 들어온 자리면 원래 종목 — 주간 세트 배분은 원래 자리를 따른다 */
+  replacedFrom?: string;
 }
 
 export interface SessionTemplate {
   /** 예: '상체 A' */
   name: string;
   slots: SessionSlot[];
-  /**
-   * 블록 1주차의 세션 총 세트 상한. 주간 처방이 세트를 늘려도 한 주에
-   * 2세트씩, 최대 6세트까지만 이 위로 늘린다. 없으면 템플릿 세트 합을 쓴다.
-   */
+  /** 프로그램을 짤 때 맞춘 세션 총 세트 상한(참고값). 주마다 늘어나는 폭은 planWeekSets가 정한다. */
   setCap?: number;
   /**
    * 사용자가 직접 짠 루틴의 날. 세트 수를 주간 처방으로 늘리거나 줄이지 않고
@@ -51,10 +52,6 @@ export interface SessionTemplate {
    */
   fixed?: boolean;
 }
-
-/** 주차가 오를 때 세션 총 세트가 늘 수 있는 폭. */
-export const SESSION_GROWTH_PER_WEEK = 2;
-export const SESSION_GROWTH_MAX = 6;
 
 export interface PlannedSet {
   setNumber: number;
@@ -140,6 +137,13 @@ export interface BuildSessionInput {
   lifter?: LifterProfile;
   /** 미리 계산한 RIR 보정. 없으면 이력에서 직접 구한다 */
   rirCalibration?: RirCalibration;
+  /**
+   * 이번 주 전체 — 프로그램의 날 전부와 오늘이 몇 번째 날인가. 세트 수는 한 주를 통째로
+   * 보고 나눠야 날마다 앞뒤가 맞는다(planWeekSets). 없으면 오늘 템플릿만 한 주로 본다.
+   */
+  week?: { templates: readonly SessionTemplate[]; day: number };
+  /** 부위별 기준선 — 세트를 붙일 때 최소 미달을 먼저 채우고 한계를 넘기지 않는다 */
+  landmarks?: LandmarksByMuscle;
 }
 
 /**
@@ -167,7 +171,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     });
   }
 
-  const scaling = volumeScaling(input);
+  const setsFor = weekSetsFor(input);
   const gym = input.gym;
   const calibration =
     input.rirCalibration ??
@@ -236,10 +240,8 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     if (taken.has(exercise.id)) continue;
     taken.add(exercise.id);
 
-    // 3) 세트 수 — 주간 볼륨 처방에 맞춰 조정. 내 루틴은 정한 대로(덜어내는 주만 절반)
-    const setCount = input.template.fixed
-      ? fixedSetCount(slot, input.plan)
-      : adjustSetCount(slot, exercise, scaling);
+    // 3) 세트 수 — 주간 처방을 한 주 통째로 나눈 몫. 내 루틴은 정한 대로(덜어내는 주만 절반)
+    const setCount = input.template.fixed ? fixedSetCount(slot, input.plan) : setsFor(slot);
 
     /*
      * 4) 중량 — 마지막 수행 기록 기준, 그 헬스장이 만들 수 있는 값으로 맞춘다.
@@ -317,8 +319,6 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     });
   }
 
-  if (input.plan.phase !== 'deload' && !input.template.fixed) capSessionSets(exercises, input);
-
   return {
     date: input.date,
     name: input.template.name,
@@ -331,60 +331,24 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
 }
 
 /**
- * 주간 처방으로 늘어난 세트를 세션 길이 안으로 되돌린다.
+ * 오늘 슬롯마다 세트 수. 한 주를 통째로 나눈 몫(planWeekSets)에서 오늘 날 것을 꺼낸다.
  *
- * 처방은 부위마다 따로 세트를 올린다. 부위 다섯 개가 한꺼번에 +2씩 받으면
- * 한 주 만에 45분 세션이 1시간을 넘는다 — 그런 프로그램은 3주 안에 안 나온다.
- * 블록 1주차 상한에서 한 주에 2세트씩만 늘리고, 넘치면 고립 종목에서
- * 늘어난 세트부터 걷어 낸다. 템플릿 세트 아래로는 깎지 않는다.
+ * 오늘 템플릿에는 오늘만 끼워 넣은 종목이 뒤에 붙거나, 뺀 종목 자리에 대체가 들어와
+ * 있을 수 있다. 대체는 원래 자리의 몫을 받고, 끼워 넣은 종목은 고른 세트 그대로다.
  */
-function capSessionSets(exercises: PlannedExercise[], input: BuildSessionInput): void {
-  const base = input.template.setCap
-    ?? input.template.slots.reduce((sum, slot) => sum + slot.sets, 0);
-  const week = Math.max(1, input.plan.weekInBlock);
-  const cap = base + Math.min(SESSION_GROWTH_MAX, SESSION_GROWTH_PER_WEEK * (week - 1));
-
-  const total = () => exercises.reduce((sum, item) => sum + item.sets.length, 0);
-  while (total() > cap) {
-    const grown = exercises
-      .filter((item) => item.sets.length > (item.templateSets ?? item.sets.length))
-      .sort((a, b) =>
-        Number(b.exercise.pattern === 'isolation') - Number(a.exercise.pattern === 'isolation') ||
-        (b.sets.length - (b.templateSets ?? 0)) - (a.sets.length - (a.templateSets ?? 0)));
-    const target = grown[0];
-    if (!target) break;
-    target.sets.pop();
-  }
-}
-
-/**
- * 근육군별 "처방 세트 ÷ 지난주 세트" 배율.
- * 이 배율로 템플릿 세트 수를 늘리거나 줄인다.
- */
-function volumeScaling(input: BuildSessionInput): Map<MuscleGroup, number> {
-  /*
-   * 처방이 기준으로 삼은 주(처방 주의 바로 앞 주)와 비교한다.
-   *
-   * "마지막으로 운동한 주"와 비교하면 주중에 틀린다. 목요일이면 이번 주
-   * 월 · 화에 한 것과 주간 처방을 견주게 되어, 처방이 0인 부위(지난 4주
-   * 기록 없음)는 세트가 1로 깎이고 나머지는 부풀려진다.
-   */
-  const basis = input.plan.weekStart
-    ? addDays(input.plan.weekStart, -1)
-    : lastTrainedDate(input.history) ?? input.date;
-  const lastWeek = sessionsInWeek(input.history, basis);
-  const current = aggregateVolume(lastWeek, input.index);
-  const scaling = new Map<MuscleGroup, number>();
-
-  for (const item of input.plan.volume) {
-    const currentSets = current[item.muscle]?.effectiveSets ?? 0;
-    // 지난주 기록이 없으면 템플릿을 그대로 신뢰한다.
-    scaling.set(item.muscle, currentSets <= 0 ? 1 : item.prescribedSets / currentSets);
-  }
-  for (const muscle of MUSCLE_GROUPS) {
-    if (!scaling.has(muscle)) scaling.set(muscle, 1);
-  }
-  return scaling;
+function weekSetsFor(input: BuildSessionInput): (slot: SessionSlot) => number {
+  const week = input.week ?? { templates: [input.template], day: 0 };
+  const day = week.templates[week.day];
+  if (!day) return (slot) => Math.max(1, slot.sets);
+  // 처방의 바탕이 된 주(이번 주 바로 앞 주) — 종목마다 거기서 한 만큼에서 출발한다
+  const lastWeek = input.plan.weekStart ? sessionsInWeek(input.history, addDays(input.plan.weekStart, -1)) : [];
+  const planned = planWeekSets({
+    templates: week.templates, plan: input.plan, index: input.index, landmarks: input.landmarks, lastWeek,
+  });
+  return (slot) => {
+    const at = day.slots.findIndex((item) => item.exerciseId === (slot.replacedFrom ?? slot.exerciseId));
+    return at >= 0 ? planned[week.day]![at]! : Math.max(1, slot.sets);
+  };
 }
 
 /**
@@ -393,19 +357,6 @@ function volumeScaling(input: BuildSessionInput): Map<MuscleGroup, number> {
  */
 function fixedSetCount(slot: SessionSlot, plan: WeeklyPlan): number {
   return plan.phase === 'deload' ? Math.max(1, Math.ceil(slot.sets / 2)) : Math.max(1, slot.sets);
-}
-
-/** 슬롯의 주동근 배율을 적용하되, 한 번에 ±2세트 넘게 흔들지 않는다. */
-function adjustSetCount(
-  slot: SessionSlot,
-  exercise: Exercise,
-  scaling: ReadonlyMap<MuscleGroup, number>,
-): number {
-  const primary = primaryMuscle(exercise);
-  const factor = primary ? scaling.get(primary) ?? 1 : 1;
-  const scaled = Math.round(slot.sets * factor);
-  const bounded = Math.min(slot.sets + 2, Math.max(slot.sets - 2, scaled));
-  return Math.max(1, bounded);
 }
 
 export function primaryMuscle(exercise: Exercise): MuscleGroup | undefined {
@@ -430,14 +381,6 @@ function findLastSession(
     const performed = session.sets.some((set) => set.exerciseId === exerciseId && !set.warmup);
     if (!performed) continue;
     if (!latest || session.date > latest.date) latest = session;
-  }
-  return latest;
-}
-
-function lastTrainedDate(history: readonly SessionLog[]): string | undefined {
-  let latest: string | undefined;
-  for (const session of history) {
-    if (!latest || session.date > latest) latest = session.date;
   }
   return latest;
 }
