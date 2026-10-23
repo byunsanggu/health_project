@@ -58,11 +58,41 @@ export function topWorkingSet(sets: readonly SetLog[], exerciseId: string): SetL
   });
 }
 
+/** 증량 단위로 내림 — 낮출 때 반올림하면 10kg × 0.9 = 9가 다시 10이 된다. */
+export function floorToIncrement(weightKg: number, increment: number): number {
+  if (increment <= 0) return round1(weightKg);
+  return round1(Math.floor(weightKg / increment + 1e-9) * increment);
+}
+
+/**
+ * 낮춘 무게. 10% 내리되 증량 단위로 내림하고, 적어도 한 칸은 내린다. 맨몸에 더한 무게는
+ * 0(맨몸)까지, 나머지는 가장 가벼운 한 칸 밑으로는 안 내린다.
+ */
+function lowered(exercise: Exercise, weightKg: number): number {
+  const step = exercise.increment;
+  if (step <= 0) return round1(weightKg * 0.9);
+  const floor = exercise.equipment === 'bodyweight' ? 0 : step;
+  const reduced = Math.min(floorToIncrement(weightKg * 0.9, step), round1(weightKg - step));
+  return Math.max(floor, reduced);
+}
+
+/** 한 번에 올리는 폭 — 두 칸은 무게의 10% 안쪽일 때만. 6kg 덤벨이 한 번에 10kg이 되지 않게. */
+function jumpFor(exercise: Exercise, weightKg: number, surplus: number): number {
+  const step = exercise.increment;
+  if (surplus >= 2 && step * 2 <= weightKg * 0.1) return step * 2;
+  return step;
+}
+
 /**
  * 이중 진행(double progression) + RIR 보정으로 다음 중량을 처방한다.
  *
  * 순서가 중요하다. 반복 상단에 닿았어도 RIR이 목표보다 모자라면 올리지 않는다 —
  * 이걸 무시하고 올리다가 4~6주차에 정체와 통증이 몰린다.
+ *
+ * 그 무게로 한 세트를 전부 본다. 첫 세트만 보면 "10회 · 여유 3 → 9회 · 1 → 8회 · 0"처럼
+ * 뒤 세트에서 무너진 것을 놓치고 두 칸을 올린다. 상단은 모든 세트가 채워야, 여유는 가장
+ * 빠듯했던 세트 기준이다. 낮출지는 가장 잘된 세트로 본다 — 마지막 세트 하나 무너졌다고
+ * 무게를 깎지는 않는다.
  *
  * @param lastSession 그 종목을 마지막으로 수행한 세션의 세트들
  */
@@ -77,8 +107,12 @@ export function prescribeLoad(
     targetRir: rule.targetRir,
   };
 
+  const attempts = (lastSession ?? []).filter((set) => set.exerciseId === exercise.id && !set.warmup);
   const last = lastSession ? topWorkingSet(lastSession, exercise.id) : undefined;
   if (!last) {
+    // 했는데 한 개도 못 했다 — 처음이 아니라 실패다. 처음으로 되돌리면 같은 무게를 또 권한다
+    const tried = attempts.filter((set) => set.reps <= 0).sort((a, b) => b.weightKg - a.weightKg)[0];
+    if (tried) return failedOutright(exercise, tried, rule, base);
     return {
       ...base,
       weightKg: null,
@@ -89,20 +123,24 @@ export function prescribeLoad(
   }
 
   const step = exercise.increment;
-  const observedRir = correctRir(last.rir, rule.rirOffset);
-  const reachedTop = last.reps >= rule.repRange.max;
+  const atTop = attempts.filter((set) => set.reps > 0 && set.weightKg === last.weightKg);
+  const fewestReps = Math.min(...atTop.map((set) => set.reps));
+  const tightest = atTop.reduce((worst, set) => (set.rir < worst.rir ? set : worst), atTop[0]!);
+  const observedRir = correctRir(tightest.rir, rule.rirOffset);
+  const reachedTop = fewestReps >= rule.repRange.max;
   const belowBottom = last.reps < rule.repRange.min;
   const rirSurplus = observedRir - rule.targetRir;
+  const sets = atTop.length > 1 ? `${atTop.length}세트 모두 ` : '';
 
-  // 1) 반복 상단 + RIR 여유 → 증량. 여유가 2 이상이면 두 칸.
+  // 1) 모든 세트가 반복 상단 + 가장 빠듯한 세트도 여유 → 증량. 여유가 2 이상이면 두 칸(무게의 10% 안).
   if (reachedTop && rirSurplus >= 0) {
-    const jump = rirSurplus >= 2 ? step * 2 : step;
+    const jump = jumpFor(exercise, last.weightKg, rirSurplus);
     return {
       ...base,
       weightKg: roundToIncrement(last.weightKg + jump, step),
       change: 'increase',
       deltaKg: round1(jump),
-      reason: `${last.reps}회에 여유 ${describeRir(last.rir, observedRir)}로 목표 상단을 넉넉히 채웠습니다. ${round1(jump)}kg 올립니다.`,
+      reason: `${sets}${rule.repRange.max}회를 채우고 여유도 ${describeRir(tightest.rir, observedRir)} 남았습니다. ${round1(jump)}kg 올립니다.`,
     };
   }
 
@@ -113,41 +151,74 @@ export function prescribeLoad(
       weightKg: last.weightKg,
       change: 'hold',
       deltaKg: 0,
-      reason: `목표 반복은 채웠지만 여유가 ${describeRir(last.rir, observedRir)}뿐이었습니다. 같은 무게로 여유가 ${rule.targetRir}개 남을 때까지 유지합니다.`,
+      reason: `목표 반복은 채웠지만 여유가 ${describeRir(tightest.rir, observedRir)}뿐인 세트가 있었습니다. 같은 무게로 여유가 ${rule.targetRir}개 남을 때까지 유지합니다.`,
     };
   }
 
-  // 3) 반복은 덜 됐는데 너무 가볍다 → 중량을 올려 자극 구간으로 옮긴다.
+  // 3) 반복은 덜 됐는데 모든 세트가 너무 가볍다 → 중량을 올려 자극 구간으로 옮긴다.
   if (rirSurplus >= 2) {
     return {
       ...base,
       weightKg: roundToIncrement(last.weightKg + step, step),
       change: 'increase',
       deltaKg: round1(step),
-      reason: `여유 ${describeRir(last.rir, observedRir)}로 목표(${rule.targetRir}개)보다 가벼웠습니다. ${round1(step)}kg 올립니다.`,
+      reason: `여유 ${describeRir(tightest.rir, observedRir)}로 목표(${rule.targetRir}개)보다 가벼웠습니다. ${round1(step)}kg 올립니다.`,
     };
   }
 
-  // 4) 목표 반복 하단에도 못 미쳤다 → 감량해 수행 품질을 되찾는다.
+  // 4) 가장 잘된 세트도 목표 반복 하단에 못 미쳤다 → 감량해 수행 품질을 되찾는다.
   if (belowBottom) {
-    const reduced = roundToIncrement(last.weightKg * 0.9, step);
+    // 맨몸으로 못 채웠으면 낮출 무게가 없다 — 되는 만큼 하고 보조를 권한다
+    if (exercise.equipment === 'bodyweight' && last.weightKg <= 0) return bodyweightShort(exercise, last.reps, rule, base);
+    const reduced = lowered(exercise, last.weightKg);
     return {
       ...base,
       weightKg: reduced,
       change: 'decrease',
       deltaKg: round1(reduced - last.weightKg),
-      reason: `${last.reps}회로 목표 하단(${rule.repRange.min}회)에 못 미쳤습니다. 10% 낮춰 반복 수부터 회복합니다.`,
+      reason: `${last.reps}회로 목표 하단(${rule.repRange.min}회)에 못 미쳤습니다. ${round1(last.weightKg - reduced)}kg 낮춰 반복 수부터 회복합니다.`,
     };
   }
 
-  // 5) 범위 안 → 중량 유지하고 반복을 1회 늘린다.
+  // 5) 범위 안 → 중량 유지하고 반복을 1회 늘린다(가장 적게 한 세트 기준).
+  const aim = Math.min(fewestReps + 1, rule.repRange.max);
   return {
     ...base,
     weightKg: last.weightKg,
-    targetReps: { min: Math.min(last.reps + 1, rule.repRange.max), max: rule.repRange.max },
+    targetReps: { min: aim, max: rule.repRange.max },
     change: 'hold',
     deltaKg: 0,
-    reason: `같은 중량으로 ${Math.min(last.reps + 1, rule.repRange.max)}회를 노립니다.`,
+    reason: `같은 중량으로 ${aim}회를 노립니다.`,
+  };
+}
+
+type PrescriptionBase = Pick<LoadPrescription, 'exerciseId' | 'targetReps' | 'targetRir'>;
+
+/** 한 개도 못 한 세션 — 낮추거나, 맨몸이면 되는 만큼 + 보조. */
+function failedOutright(exercise: Exercise, tried: SetLog, rule: LoadRule, base: PrescriptionBase): LoadPrescription {
+  if (exercise.equipment === 'bodyweight' && tried.weightKg <= 0) return bodyweightShort(exercise, 0, rule, base);
+  const reduced = lowered(exercise, tried.weightKg);
+  return {
+    ...base,
+    weightKg: reduced,
+    change: 'decrease',
+    deltaKg: round1(reduced - tried.weightKg),
+    reason: `지난번 ${tried.weightKg}kg로 한 개도 못 했습니다. ${round1(tried.weightKg - reduced)}kg 낮춰 다시 시작합니다.`,
+  };
+}
+
+/** 맨몸으로 목표 하단을 못 채웠다 — 무게로는 더 낮출 수 없다. */
+function bodyweightShort(exercise: Exercise, reps: number, rule: LoadRule, base: PrescriptionBase): LoadPrescription {
+  const aim = Math.max(1, reps);
+  return {
+    ...base,
+    weightKg: 0,
+    targetReps: { min: aim, max: rule.repRange.max },
+    change: 'hold',
+    deltaKg: 0,
+    reason: reps > 0
+      ? `맨몸으로 ${reps}회 — 목표 하단(${rule.repRange.min}회)에 못 미쳤습니다. 되는 만큼 하고, 보조 기계나 밴드가 있으면 그쪽(어시스트)으로 바꾸는 게 낫습니다.`
+      : `맨몸으로 한 개가 안 됩니다. 보조 기계나 밴드로 하거나, 위에서 천천히 내려오는 동작(네거티브)으로 시작하세요.`,
   };
 }
 
@@ -182,11 +253,18 @@ export function adjustWithinSession(
   }
 
   if (observedRir <= 0 && lastSet.reps < rule.repRange.min) {
-    const reduced = roundToIncrement(lastSet.weightKg * 0.9, step);
+    const reduced = lowered(exercise, lastSet.weightKg);
+    if (reduced >= lastSet.weightKg) {
+      return {
+        weightKg: lastSet.weightKg,
+        deltaKg: 0,
+        reason: '더 낮출 무게가 없습니다. 다음 세트는 되는 만큼만 하세요.',
+      };
+    }
     return {
       weightKg: reduced,
       deltaKg: round1(reduced - lastSet.weightKg),
-      reason: `더는 못 드는 지점에서 목표 반복을 못 채웠습니다. 다음 세트 10% 낮춥니다.`,
+      reason: `더는 못 드는 지점에서 목표 반복을 못 채웠습니다. 다음 세트 ${round1(lastSet.weightKg - reduced)}kg 낮춥니다.`,
     };
   }
 

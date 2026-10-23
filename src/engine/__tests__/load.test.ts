@@ -121,6 +121,53 @@ describe('prescribeLoad', () => {
   });
 });
 
+describe('prescribeLoad — 검토에서 나온 경우', () => {
+  const dumbbell = exerciseById('incline-dumbbell-press') as Exercise;
+  const pullUp = exerciseById('pull-up') as Exercise;
+  const strengthish: LoadRule = { repRange: { min: 6, max: 10 }, targetRir: 1 };
+
+  it('첫 세트만 보지 않는다 — 10회 · 여유 3 → 9회 · 1 → 8회 · 0이면 올리지 않는다', () => {
+    const sets = [set({ weightKg: 60, reps: 10, rir: 3 }), set({ weightKg: 60, reps: 9, rir: 1 }), set({ weightKg: 60, reps: 8, rir: 0 })];
+    const result = prescribeLoad(bench, sets, strengthish);
+    assert.equal(result.change, 'hold');
+    assert.equal(result.weightKg, 60);
+    assert.equal(result.targetReps.min, 9, '가장 적게 한 세트(8회)보다 하나 더');
+  });
+
+  it('모든 세트가 상단을 채우고 여유도 남았을 때만 올린다', () => {
+    const sets = [set({ weightKg: 60, reps: 10, rir: 2 }), set({ weightKg: 60, reps: 10, rir: 1 })];
+    assert.equal(prescribeLoad(bench, sets, strengthish).change, 'increase');
+    assert.match(prescribeLoad(bench, sets, strengthish).reason, /2세트 모두 10회/);
+  });
+
+  it('가벼운 덤벨은 한 번에 두 칸 뛰지 않는다 — 6kg이 바로 10kg이 되지 않게', () => {
+    const result = prescribeLoad(dumbbell, [{ exerciseId: dumbbell.id, weightKg: 6, reps: 10, rir: 5 }], strengthish);
+    assert.equal(result.weightKg, 8);
+  });
+
+  it('낮출 때는 실제로 낮춘다 — 10kg 덤벨의 "10% 감량"이 다시 10kg이 되지 않는다', () => {
+    const result = prescribeLoad(dumbbell, [{ exerciseId: dumbbell.id, weightKg: 10, reps: 4, rir: 0 }], strengthish);
+    assert.equal(result.change, 'decrease');
+    assert.equal(result.weightKg, 8);
+  });
+
+  it('맨몸으로 목표 하단을 못 채우면 되는 만큼 + 보조를 권한다', () => {
+    const result = prescribeLoad(pullUp, [{ exerciseId: pullUp.id, weightKg: 0, reps: 3, rir: 0 }], strengthish);
+    assert.equal(result.weightKg, 0);
+    assert.equal(result.targetReps.min, 3);
+    assert.match(result.reason, /보조/);
+  });
+
+  it('한 개도 못 한 세션은 "첫 수행"이 아니라 실패다', () => {
+    const failed = prescribeLoad(dumbbell, [{ exerciseId: dumbbell.id, weightKg: 10, reps: 0, rir: 0 }], strengthish);
+    assert.equal(failed.change, 'decrease');
+    assert.equal(failed.weightKg, 8);
+    const hang = prescribeLoad(pullUp, [{ exerciseId: pullUp.id, weightKg: 0, reps: 0, rir: 0 }], strengthish);
+    assert.notEqual(hang.change, 'start');
+    assert.match(hang.reason, /한 개가 안 됩니다/);
+  });
+});
+
 describe('adjustWithinSession', () => {
   it('세트가 너무 가벼웠으면 다음 세트를 올린다', () => {
     const result = adjustWithinSession(bench, set({ reps: 12, rir: 4 }), rule);
@@ -136,6 +183,13 @@ describe('adjustWithinSession', () => {
   it('실패했는데 반복도 못 채웠으면 다음 세트를 낮춘다', () => {
     const result = adjustWithinSession(bench, set({ reps: 5, rir: 0 }), rule);
     assert.ok(result.deltaKg < 0);
+  });
+
+  it('맨몸이라 더 낮출 무게가 없으면 낮춘다고 하지 않는다', () => {
+    const pullUp = exerciseById('pull-up') as Exercise;
+    const result = adjustWithinSession(pullUp, { exerciseId: pullUp.id, weightKg: 0, reps: 2, rir: 0 }, rule);
+    assert.equal(result.deltaKg, 0);
+    assert.match(result.reason, /더 낮출 무게가 없습니다/);
   });
 
   it('목표대로 했으면 중량을 유지한다', () => {
