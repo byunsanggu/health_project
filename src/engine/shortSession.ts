@@ -68,10 +68,13 @@ export function shortOptions(
     const kept = keptLine(fit.session);
     if (!kept) continue;
     if (out.some((prev) => prev.kept === kept)) continue;
+    // 메인 둘을 2세트씩만 남겨도 넘치면(무거운 데드리프트 날의 15분) 그 칸은 내놓지 않는다
+    const actualMinutes = Math.max(1, Math.round(fit.afterSeconds / 60));
+    if (actualMinutes > budget) continue;
 
     out.push({
       budgetMinutes: budget,
-      actualMinutes: Math.max(1, Math.round(fit.afterSeconds / 60)),
+      actualMinutes,
       kept,
       session: fit.session,
     });

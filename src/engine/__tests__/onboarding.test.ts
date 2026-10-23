@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { buildProgram, runOnboarding, type OnboardingAnswers } from '../onboarding.ts';
+import { buildSession } from '../session.ts';
+import { HEAVY_PULLS } from '../exercises.ts';
 import { COMMON_EQUIPMENT_IDS } from '../equipment.ts';
 import { EXERCISES } from '../exercises.ts';
 import { levelProfile } from '../levels.ts';
@@ -355,6 +357,79 @@ describe('buildProgram — 트레이너 기준 점검', () => {
   it('초보에게 바벨 기본 종목이 나중에 들어온다고 알려준다', () => {
     const result = runOnboarding(answers({ selfReportedLevel: 'beginner', monthsTraining: 2, daysPerWeek: 3 }));
     assert.ok(result.notes.some((note) => note.includes('중급으로 다시 짤 때')));
+  });
+});
+
+describe('buildProgram — 하체 구성 · 데드리프트 · 풀업', () => {
+  const isCurl = (id: string) => {
+    const exercise = exerciseById(id)!;
+    return exercise.pattern === 'isolation' && (exercise.contribution.hamstrings ?? 0) >= 0.85;
+  };
+  const heavyHinge = (id: string) => {
+    const exercise = exerciseById(id)!;
+    return exercise.pattern === 'hinge' && (exercise.jointStress.lowBack ?? 0) >= 0.5;
+  };
+
+  it('주 5 · 6회 레그 날마다 레그컬이 있다 — 힌지만으로는 뒤허벅지가 덜 자란다', () => {
+    for (const days of [5, 6]) {
+      for (const level of ['intermediate', 'advanced'] as const) {
+        const program = buildProgram(answers({ daysPerWeek: days }), level);
+        for (const template of program.templates.filter((item) => item.name.startsWith('레그'))) {
+          assert.ok(template.slots.some((slot) => isCurl(slot.exerciseId)), `${days}회 ${level} ${template.name}`);
+        }
+      }
+    }
+  });
+
+  it('하루에 허리를 많이 쓰는 힌지는 하나 — 데드리프트 뒤에 스티프 레그 데드를 붙이지 않는다', () => {
+    const gyms = [COMMON_EQUIPMENT_IDS, ['floor', 'barbell-set', 'power-rack', 'bench-flat', 'dumbbells', 'pull-up-bar']];
+    for (const equipmentIds of gyms) {
+      for (const days of [2, 3, 4, 5, 6]) {
+        const program = buildProgram(answers({ daysPerWeek: days, gym: { equipmentIds } }), 'intermediate');
+        for (const template of program.templates) {
+          const hinges = template.slots.filter((slot) => heavyHinge(slot.exerciseId)).map((slot) => slot.exerciseId);
+          assert.ok(hinges.length <= 1, `${days}회 ${template.name}: ${hinges.join(', ')}`);
+        }
+      }
+    }
+  });
+
+  it('데드리프트는 4~6회(근력이면 3~5회)이고, 블록 끝에도 여유를 2개는 남긴다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 4 }), 'intermediate');
+    const slots = program.templates.flatMap((template) => template.slots).filter((slot) => HEAVY_PULLS.has(slot.exerciseId));
+    assert.ok(slots.length > 0, '주 4회 하체 B에 데드리프트가 있어야 이 시험이 뜻이 있다');
+    for (const slot of slots) assert.deepEqual(slot.repRange, { min: 4, max: 6 });
+    const strength = buildProgram(answers({ daysPerWeek: 4, goals: ['strength'] }), 'intermediate');
+    for (const slot of strength.templates.flatMap((template) => template.slots).filter((item) => HEAVY_PULLS.has(item.exerciseId))) {
+      assert.deepEqual(slot.repRange, { min: 3, max: 5 });
+    }
+    const day = program.templates.find((template) => template.slots.some((slot) => HEAVY_PULLS.has(slot.exerciseId)))!;
+    const plan = { ...runOnboarding(answers()).firstWeek, targetRir: 1, weekInBlock: 1 };
+    const planned = buildSession({ template: day, date: '2026-09-21', plan, history: [], index });
+    for (const item of planned.exercises) {
+      const floor = HEAVY_PULLS.has(item.exercise.id) ? 2 : 1;
+      assert.ok(item.sets.every((set) => set.targetRir === floor), `${item.exercise.name} ${item.sets[0]!.targetRir}`);
+    }
+  });
+
+  it('데드리프트 전날에는 허리를 많이 쓰는 로우를 두지 않는다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 4 }), 'intermediate');
+    program.templates.forEach((template, d) => {
+      const next = program.templates[d + 1];
+      if (!next?.slots.some((slot) => HEAVY_PULLS.has(slot.exerciseId))) return;
+      for (const slot of template.slots) {
+        assert.ok((exerciseById(slot.exerciseId)!.jointStress.lowBack ?? 0) < 0.7, `${template.name} ${slot.exerciseId}`);
+      }
+    });
+  });
+
+  it('랫풀다운이 있으면 풀업보다 먼저 — 몇 개 되는지 모르는 처음이다. 철봉뿐이면 풀업', () => {
+    const ids = (program: ReturnType<typeof buildProgram>) => program.templates.flatMap((template) => template.slots.map((slot) => slot.exerciseId));
+    for (const level of ['beginner', 'intermediate'] as const) {
+      assert.ok(!ids(buildProgram(answers({ daysPerWeek: 4 }), level)).includes('pull-up'), level);
+    }
+    const bar = buildProgram(answers({ daysPerWeek: 4, gym: { equipmentIds: ['floor', 'dumbbells', 'bench-flat', 'pull-up-bar'] } }), 'intermediate');
+    assert.ok(ids(bar).some((id) => id === 'pull-up' || id === 'chin-up'));
   });
 });
 

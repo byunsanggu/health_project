@@ -794,6 +794,15 @@ export const EXERCISES: readonly Exercise[] = [
   },
 ]
 
+/**
+ * 바닥에서 무겁게 드는 데드리프트. 반복 상한(4~6회)과 남길 여유(2개 이상)를 따로 둔다 —
+ * 10회짜리 데드리프트를 실패 가까이 밀면 뒤 반복에서 허리가 먼저 무너진다.
+ */
+export const HEAVY_PULLS: ReadonlySet<string> = new Set(['conventional-deadlift', 'sumo-deadlift', 'trap-bar-deadlift']);
+
+/** 무거운 데드리프트에 남길 최소 여유(RIR) */
+export const HEAVY_PULL_MIN_RIR = 2;
+
 const BY_ID = new Map(EXERCISES.map((exercise) => [exercise.id, exercise]));
 
 export function exerciseById(id: string): Exercise | undefined {

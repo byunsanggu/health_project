@@ -1,4 +1,4 @@
-import { EXERCISES } from './exercises.ts';
+import { EXERCISES, HEAVY_PULLS } from './exercises.ts';
 import { availableExercises, coverageReport, gymFromCatalog, type GymSelection } from './equipment.ts';
 import { assessLevel, levelProfile, type LevelAssessment } from './levels.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO, landmarksFor } from './muscles.ts';
@@ -184,13 +184,18 @@ const PULL: DayBlueprint = {
   ],
 };
 
+/*
+ * 레그 날에는 무릎을 굽히는 뒤허벅지 운동(레그컬)을 둔다. 엉덩이를 접는 힌지만으로는
+ * 뒤허벅지가 덜 자란다 — 주 5 · 6회 분할에 레그컬이 한 번도 없던 것을 고쳤다. 둔근은
+ * 스쿼트 · 힌지 · 런지에서 충분히 들어가므로 따로 자리를 두지 않는다.
+ */
 const LEGS: DayBlueprint = {
   name: '레그',
   slots: [
     { muscle: 'quads', role: 'primary', patterns: ['squat'] },
     { muscle: 'hamstrings', role: 'accessory', patterns: ['hinge'] },
-    { muscle: 'glutes', role: 'accessory', patterns: ['hinge', 'lunge'] },
-    { muscle: 'quads', role: 'accessory', patterns: ['squat', 'isolation'] },
+    { muscle: 'quads', role: 'accessory', patterns: ['squat', 'lunge', 'isolation'] },
+    { muscle: 'hamstrings', role: 'isolation', patterns: ['isolation'] },
     { muscle: 'calves', role: 'isolation' },
   ],
 };
@@ -385,15 +390,29 @@ const HOME_FALLBACK: ReadonlySet<string> = new Set([
   'standing-dumbbell-press', 'dumbbell-bent-over-row',
 ]);
 
-const HEAVY_PULLS: ReadonlySet<string> = new Set(['conventional-deadlift', 'sumo-deadlift', 'trap-bar-deadlift']);
+/** 허리를 많이 쓰는 힌지 — 하루에 하나만(덤벨 루마니안도 데드리프트 뒤에는 두 번째 힌지다) */
+const HEAVY_HINGE_LOW_BACK = 0.5;
 
-function scoreExercise(
-  exercise: Exercise,
-  slot: SlotSpec,
-  level: TrainingLevel,
-  sessionLoad: ReadonlyMap<Joint, number>,
-  introduced?: readonly string[],
-): number {
+/** 무게를 맞출 수 있는 세로 당기기 — 이게 있으면 풀업보다 먼저 */
+const LOADABLE_PULLS: ReadonlySet<string> = new Set(['lat-pulldown', 'neutral-grip-pulldown', 'assisted-pull-up']);
+
+/** 무게를 못 다루는 사람도 있는 맨몸 당기기. 할 수 있는지 모르는 처음에는 랫풀다운이 먼저다. */
+const BODYWEIGHT_PULLS: ReadonlySet<string> = new Set(['pull-up', 'chin-up']);
+
+interface PickContext {
+  level: TrainingLevel;
+  sessionLoad: ReadonlyMap<Joint, number>;
+  introduced?: readonly string[];
+  /** 오늘 이미 고른 종목 */
+  today: readonly Exercise[];
+  /** 다음 날이 무거운 힌지(데드리프트) 날 */
+  beforeHeavyHinge: boolean;
+  /** 이 헬스장에 랫풀다운 · 어시스트 풀업이 있다 */
+  loadablePull: boolean;
+}
+
+function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext): number {
+  const { level, sessionLoad, introduced } = context;
   const contribution = exercise.contribution[slot.muscle] ?? 0;
   let score = contribution * 10;
 
@@ -423,6 +442,19 @@ function scoreExercise(
   if (HOME_FALLBACK.has(exercise.id)) score -= 3;
   // 데드리프트는 메인 자리에서 무겁게 하는 종목이다. 8~12회 보조로 돌리지 않는다.
   if (slot.role !== 'primary' && HEAVY_PULLS.has(exercise.id)) score -= 5;
+
+  /*
+   * 풀업은 맨몸을 끌어올릴 수 있어야 한다. 처음 짜는 시점에는 몇 개 되는지 모른다 —
+   * 경력 1년 남짓 회원도 0개인 경우가 흔하다. 무게를 맞출 수 있는 랫풀다운을 먼저 두고,
+   * 풀업이 되는 사람은 메인 종목으로 직접 고른다. 철봉뿐인 곳이면 그래도 풀업이다.
+   */
+  if (BODYWEIGHT_PULLS.has(exercise.id) && context.loadablePull && (level === 'beginner' || level === 'intermediate')) score -= 2;
+
+  /*
+   * 다음 날이 데드리프트 날이면 오늘은 허리를 많이 쓰는 로우(바벨 로우 · T바)를 피한다.
+   * 이틀 연달아 척추를 무겁게 싣게 된다 — 원암 로우 · 머신 로우로 같은 등을 한다.
+   */
+  if (context.beforeHeavyHinge && (exercise.jointStress.lowBack ?? 0) >= 0.7) score -= 3;
 
   // 한 세션에서 같은 관절에 최대 부하를 거듭 싣지 않는다.
   // 스쿼트 · RDL 뒤에 데드리프트를 붙이는 구성이 이 규칙 없이 자주 나온다.
@@ -469,9 +501,7 @@ function pickExercise(
   slot: SlotSpec,
   pool: readonly Exercise[],
   used: ReadonlySet<string>,
-  level: TrainingLevel,
-  sessionLoad: ReadonlyMap<Joint, number>,
-  introduced?: readonly string[],
+  context: PickContext,
 ): Exercise | undefined {
   /*
    * 메인 자리는 복합 동작만 — 덤벨만 있는 집에서 어깨 메인 자리에 프론트 레이즈가 들어간
@@ -480,11 +510,24 @@ function pickExercise(
    */
   const minContribution = slot.role === 'accessory' ? 0.5 : slot.role === 'primary' ? 0.75 : 0.85;
 
-  return pool
+  // 오늘 이미 무거운 힌지가 있으면 두 번째 무거운 힌지는 넣지 않는다(데드 뒤 스티프 레그 데드)
+  const heavyHinge = (exercise: Exercise) => exercise.pattern === 'hinge' && (exercise.jointStress.lowBack ?? 0) >= HEAVY_HINGE_LOW_BACK;
+  const hingedToday = context.today.some(heavyHinge);
+
+  const candidates = pool
     .filter((exercise) => !used.has(exercise.id))
     .filter((exercise) => slot.role !== 'primary' || (exercise.pattern !== 'isolation' && exercise.pattern !== 'core'))
-    .filter((exercise) => (exercise.contribution[slot.muscle] ?? 0) >= minContribution)
-    .map((exercise) => ({ exercise, score: scoreExercise(exercise, slot, level, sessionLoad, introduced) }))
+    .filter((exercise) => !hingedToday || !heavyHinge(exercise))
+    .filter((exercise) => (exercise.contribution[slot.muscle] ?? 0) >= minContribution);
+  /*
+   * 고립 자리에는 고립 종목이 먼저다. 레그컬 기계가 없는 곳에서 "뒤허벅지 고립" 자리에
+   * 스티프 레그 데드리프트가 10~15회로 들어가던 것을 막는다 — 고립 종목이 하나도 없을
+   * 때만 복합 동작으로 채운다.
+   */
+  const light = (exercise: Exercise) => exercise.pattern === 'isolation' || exercise.pattern === 'core';
+  const narrowed = slot.role === 'isolation' && candidates.some(light) ? candidates.filter(light) : candidates;
+  return narrowed
+    .map((exercise) => ({ exercise, score: scoreExercise(exercise, slot, context) }))
     .sort((a, b) => b.score - a.score)[0]?.exercise;
 }
 
@@ -695,6 +738,13 @@ export function buildProgram(
     const usedToday = new Set<string>();
     const sessionLoad = new Map<Joint, number>();
     const picked: Picked[] = [];
+    const next = blueprints[dayIndex + 1];
+    const context: PickContext = {
+      level, sessionLoad, introduced,
+      today: [],
+      loadablePull: pool.some((exercise) => LOADABLE_PULLS.has(exercise.id)),
+      beforeHeavyHinge: Boolean(next?.slots.some((slot) => slot.role === 'primary' && slot.patterns?.[0] === 'hinge')),
+    };
 
     day.slots.forEach((slot, slotIndex) => {
       const mine = pinSlot.get(`${dayIndex}:${slotIndex}`);
@@ -707,10 +757,11 @@ export function buildProgram(
         // 보조 · 고립 자리는 지난 블록 종목을 먼저 피한다.
         const base = new Set([...usedToday, ...usedThisWeek, ...reserved]);
         const fresh = slot.role === 'primary' ? base : new Set([...base, ...rotateOut]);
+        context.today = picked.map((item) => item.exercise);
         exercise =
-          pickExercise(slot, pool, fresh, level, sessionLoad, introduced) ??
-          pickExercise(slot, pool, base, level, sessionLoad, introduced) ??
-          pickExercise(slot, pool, usedToday, level, sessionLoad, introduced);
+          pickExercise(slot, pool, fresh, context) ??
+          pickExercise(slot, pool, base, context) ??
+          pickExercise(slot, pool, usedToday, context);
       }
       if (!exercise) return;
 
@@ -825,7 +876,7 @@ export function buildProgram(
       slots: week[dayIndex]!.map((item): SessionSlot => ({
         exerciseId: item.exercise.id,
         sets: item.sets,
-        repRange: repRangeForGoals(item.slot.role, answers.goals),
+        repRange: repRangeFor(item.exercise, item.slot.role, answers.goals),
         role: item.slot.role,
       })),
     };
@@ -967,6 +1018,16 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
     firstWeek: firstWeekPlan(program, profile.startingRir),
     notes,
   };
+}
+
+/**
+ * 종목의 반복 범위. 목표와 자리(메인 · 보조 · 고립)가 정하고, 데드리프트만 따로 —
+ * 근비대 메인 6~10회로 데드리프트를 하면 뒤 반복에서 허리가 먼저 무너진다. 4~6회(근력 3~5회).
+ */
+function repRangeFor(exercise: Exercise, role: SlotRole, goals: readonly TrainingGoal[]): { min: number; max: number } {
+  const range = repRangeForGoals(role, goals);
+  if (!HEAVY_PULLS.has(exercise.id)) return range;
+  return range.max <= 6 ? { min: 3, max: 5 } : { min: 4, max: 6 };
 }
 
 /** 처음 설문의 통증으로 프로그램에서 뺄 종목인가 — 오늘이라면 대체하거나 멈출 종목. */

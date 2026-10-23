@@ -1,6 +1,7 @@
 import { prescribeLoad, roundToIncrement, type LoadRule, type RepRange } from './load.ts';
 import { findSubstitutes, screenExercise, type PainRuling } from './pain.ts';
 import { planWeekSets } from './weekSets.ts';
+import { HEAVY_PULLS, HEAVY_PULL_MIN_RIR } from './exercises.ts';
 import { addDays, sessionsInWeek } from './volume.ts';
 import { MUSCLE_GROUPS } from './muscles.ts';
 import {
@@ -254,7 +255,9 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
       machine: input.machines?.[exercise.id],
     });
     const lastSession = findLastSession(weightHistory, exercise.id);
-    const rule: LoadRule = { repRange: slot.repRange, targetRir: input.plan.targetRir, rirOffset };
+    // 데드리프트는 블록 끝에서도 여유를 2개는 남긴다 — 무너지면 허리가 받는다
+    const targetRir = HEAVY_PULLS.has(exercise.id) ? Math.max(HEAVY_PULL_MIN_RIR, input.plan.targetRir) : input.plan.targetRir;
+    const rule: LoadRule = { repRange: slot.repRange, targetRir, rirOffset };
     const prescription = prescribeLoad(exercise, lastSession?.sets, rule);
     /*
      * 이 기계가 실제로 만드는 무게로 맞춘다.
@@ -314,7 +317,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
         setNumber: i + 1,
         weightKg,
         targetReps: prescription.targetReps,
-        targetRir: input.plan.targetRir,
+        targetRir,
       })),
     });
   }

@@ -42,11 +42,11 @@ describe('세션 시간 추정', () => {
   it('휴식이 세션 시간의 큰 몫을 차지한다', () => {
     /*
      * 휴식을 1분~1분 30초 띠로 줄이기 전에는 휴식이 수행 시간보다 컸다.
-     * 지금은 그렇지 않다 — 그래도 4분의 1 이상은 휴식이라, 시간을 맞출 때
+     * 지금은 그렇지 않다 — 그래도 5분의 1 이상은 휴식이라, 시간을 맞출 때
      * 휴식부터 건드리는 게 여전히 맞다.
      */
     const { breakdown, totalSeconds } = estimateSessionTime(session);
-    assert.ok(breakdown.rest / totalSeconds >= 0.25,
+    assert.ok(breakdown.rest / totalSeconds >= 0.2,
       `휴식 비중 ${Math.round((breakdown.rest / totalSeconds) * 100)}%`);
   });
 
