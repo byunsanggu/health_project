@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>body3d</title>
+<style>
+  html, body { margin: 0; background: transparent; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script id="fs" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform float uView;      // 0 = 앞, 1 = 뒤
+uniform float uW[15];     // 근육별 칠할 세기 0..1 (14번은 허리 — 엔진의 '등'을 동작에 따라 나눈다)
+uniform vec3 uAccent;     // 주동근 색
+uniform vec3 uClay;       // 몸 색
+uniform int uSS;          // 한 픽셀에 쏘는 광선 수(한 변)
+uniform vec2 uFrame;      // 보이는 가운데 높이(y) · 보이는 높이
+uniform float uFiber;     // 칠한 근육의 결 세기 (작은 그림에서는 0)
+uniform float uYaw;       // 카메라를 몸 둘레로 돌린 각도(라디안)
+out vec4 fragColor;
+
+/* 근육 번호 — 엔진 MUSCLE_GROUPS 순서와 같다 */
+const int CHEST = 0, BACK = 1, FDELT = 2, SDELT = 3, RDELT = 4, TRAPS = 5, BICEPS = 6, TRICEPS = 7,
+          FOREARMS = 8, QUADS = 9, HAMS = 10, GLUTES = 11, CALVES = 12, ABS = 13, LOWBACK = 14;
+const int N = 15;
+
+float smin(float a, float b, float k) { float h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }
+
+float sdEllipsoid(vec3 p, vec3 r) {
+  float k0 = length(p / r);
+  float k1 = length(p / (r * r));
+  return k0 * (k0 - 1.0) / k1;
+}
+
+float sdRoundCone(vec3 p, vec3 a, vec3 b, float r1, float r2) {
+  vec3 ba = b - a; float l2 = dot(ba, ba); float rr = r1 - r2; float a2 = l2 - rr * rr; float il2 = 1.0 / l2;
+  vec3 pa = p - a; float y = dot(pa, ba); float z = y - l2;
+  vec3 xv = pa * l2 - ba * y; float x2 = dot(xv, xv);
+  float y2 = y * y * l2; float z2 = z * z * l2;
+  float k = sign(rr) * rr * rr * x2;
+  if (sign(z) * a2 * z2 > k) return sqrt(x2 + z2) * il2 - r2;
+  if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - r1;
+  return (sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
+}
+
+/* 긴 축이 a→b인 타원체. rs는 옆 폭, rd는 앞뒤 두께 */
+float sdSeg(vec3 p, vec3 a, vec3 b, float rs, float rd) {
+  vec3 c = 0.5 * (a + b); vec3 u = b - a; float h = 0.5 * length(u); u /= (2.0 * h);
+  vec3 f = normalize(vec3(0.0, 0.0, 1.0) - u * u.z);
+  vec3 s = cross(u, f);
+  vec3 q = p - c;
+  return sdEllipsoid(vec3(dot(q, s), dot(q, u), dot(q, f)), vec3(rs, h, rd));
+}
+
+/* z축으로 기울인 타원체 */
+float sdTilt(vec3 p, vec3 c, vec3 r, float ang) {
+  vec3 q = p - c; float cs = cos(ang), sn = sin(ang);
+  q.xy = mat2(cs, -sn, sn, cs) * q.xy;
+  return sdEllipsoid(q, r);
+}
+
+/* ── 뼈대 위치 (오른쪽 반, x ≥ 0) ── */
+const vec3 SH = vec3(0.170, 1.430, -0.006);   // 어깨 관절
+const vec3 EL = vec3(0.238, 1.160, -0.014);   // 팔꿈치
+const vec3 WR = vec3(0.276, 0.920, 0.016);    // 손목
+const vec3 HP = vec3(0.090, 0.905, 0.0);      // 고관절
+const vec3 KN = vec3(0.098, 0.500, 0.010);    // 무릎
+const vec3 AN = vec3(0.100, 0.086, -0.012);   // 발목
+
+float ssub(float d, float cut, float k) { return -smin(-d, cut, k); }
+
+/* 뼈대와 살 — 근육이 얹힐 몸. 근육보다 조금 작게 둬서 겉모양은 근육이 만든다 */
+float base(vec3 q) {
+  float d = sdEllipsoid(q - vec3(0.0, 1.640, 0.006), vec3(0.070, 0.094, 0.084));
+  d = smin(d, sdEllipsoid(q - vec3(0.0, 1.655, -0.020), vec3(0.067, 0.074, 0.070)), 0.03);
+  d = smin(d, sdEllipsoid(q - vec3(0.0, 1.576, 0.032), vec3(0.049, 0.043, 0.054)), 0.03);
+  d = smin(d, sdEllipsoid(q - vec3(0.071, 1.628, -0.002), vec3(0.011, 0.024, 0.017)), 0.01);
+  d = smin(d, sdRoundCone(q, vec3(0.0, 1.470, -0.014), vec3(0.0, 1.585, -0.004), 0.066, 0.054), 0.035);
+  float t = sdEllipsoid(q - vec3(0.0, 1.292, -0.014), vec3(0.150, 0.168, 0.098));
+  t = smin(t, sdEllipsoid(q - vec3(0.0, 1.418, -0.020), vec3(0.160, 0.060, 0.074)), 0.05);
+  t = smin(t, sdEllipsoid(q - vec3(0.0, 1.100, -0.008), vec3(0.118, 0.130, 0.080)), 0.07);
+  t = smin(t, sdEllipsoid(q - vec3(0.0, 0.955, -0.010), vec3(0.140, 0.095, 0.094)), 0.06);
+  t = smin(t, sdTilt(q, vec3(0.098, 1.330, -0.088), vec3(0.050, 0.056, 0.022), 0.30), 0.02);
+  d = smin(d, t, 0.045);
+  float a = sdRoundCone(q, SH, EL, 0.044, 0.031);
+  a = smin(a, sdRoundCone(q, EL, WR, 0.031, 0.023), 0.045);
+  // 손 — 손바닥과 엄지
+  a = smin(a, sdEllipsoid(q - vec3(0.288, 0.855, 0.022), vec3(0.027, 0.056, 0.016)), 0.02);
+  a = smin(a, sdSeg(q, vec3(0.279, 0.890, 0.030), vec3(0.272, 0.846, 0.038), 0.011, 0.010), 0.02);
+  d = smin(d, a, 0.03);
+  float l = sdRoundCone(q, HP, KN, 0.078, 0.046);
+  // 내전근 — 허벅지 안쪽 살
+  l = smin(l, sdSeg(q, vec3(0.040, 0.860, 0.010), vec3(0.078, 0.640, 0.010), 0.038, 0.050), 0.03);
+  l = smin(l, sdEllipsoid(q - (KN + vec3(0.0, 0.0, 0.032)), vec3(0.027, 0.031, 0.016)), 0.03);
+  l = smin(l, sdRoundCone(q, KN, AN, 0.045, 0.028), 0.05);
+  // 정강이 앞 근육(전경골근) — 칠하지 않는다
+  l = smin(l, sdSeg(q, KN + vec3(0.014, -0.05, 0.030), AN + vec3(0.006, 0.12, 0.020), 0.020, 0.018), 0.015);
+  l = smin(l, sdEllipsoid(q - vec3(0.100, 0.036, 0.032), vec3(0.037, 0.029, 0.096)), 0.03);
+  d = smin(d, l, 0.04);
+  return d;
+}
+
+void muscles(vec3 q, out float m[15], out float obl, out float plate) {
+  // 가슴 — 대흉근을 부채꼴로: 쇄골 쪽 · 가운데 · 아래가 위팔 앞쪽 한 점으로 모인다
+  vec3 ins = vec3(0.150, 1.388, 0.044);
+  float pc = sdSeg(q, vec3(0.020, 1.405, 0.074), ins, 0.026, 0.022);
+  float ps = sdSeg(q, vec3(0.018, 1.340, 0.082), ins + vec3(0.0, -0.008, 0.0), 0.046, 0.030);
+  float pl = sdSeg(q, vec3(0.036, 1.268, 0.074), ins + vec3(0.0, -0.016, -0.004), 0.030, 0.024);
+  m[CHEST] = smin(smin(ps, pc, 0.03), pl, 0.03);
+  // 삼각근 — 어깨 뚜껑 하나에 세 갈래
+  m[FDELT] = sdEllipsoid(q - vec3(0.168, 1.420, 0.040), vec3(0.040, 0.064, 0.032));
+  m[SDELT] = sdEllipsoid(q - vec3(0.204, 1.400, 0.0), vec3(0.040, 0.076, 0.050));
+  m[RDELT] = sdEllipsoid(q - vec3(0.170, 1.414, -0.040), vec3(0.040, 0.070, 0.030));
+  // 승모근 — 목에서 어깨로 내려오는 비탈, 등 가운데 마름모
+  float tu = sdSeg(q, vec3(0.030, 1.545, -0.032), vec3(0.155, 1.458, -0.026), 0.038, 0.030);
+  // 등 가운데는 연 모양 — 위가 넓고 허리 쪽으로 좁아진다
+  float tm = smin(sdEllipsoid(q - vec3(0.0, 1.405, -0.094), vec3(0.112, 0.052, 0.016)),
+                  sdEllipsoid(q - vec3(0.0, 1.250, -0.098), vec3(0.042, 0.125, 0.015)), 0.05);
+  m[TRAPS] = smin(tu, tm, 0.035);
+  // 등 — 광배근은 허리에서 겨드랑이로 번지는 판, 대원근, 허리 기둥(척추기립근)
+  // 광배근 — 척추를 따라 붙어 겨드랑이로 모이는 넓은 판
+  float lat = sdTilt(q, vec3(0.088, 1.180, -0.072), vec3(0.070, 0.178, 0.033), -0.26);
+  float teres = sdTilt(q, vec3(0.118, 1.338, -0.072), vec3(0.040, 0.024, 0.020), 0.35);
+  float erector = sdSeg(q, vec3(0.026, 0.950, -0.090), vec3(0.026, 1.180, -0.094), 0.022, 0.016);
+  m[BACK] = smin(lat, teres, 0.035);
+  m[LOWBACK] = erector;
+  // 팔 — 이두는 앞, 삼두는 뒤에 두 갈래, 전완은 팔꿈치 쪽이 굵다
+  m[BICEPS] = sdSeg(q, SH + vec3(0.008, -0.062, 0.030), EL + vec3(0.0, 0.036, 0.030), 0.040, 0.034);
+  float tl = sdSeg(q, SH + vec3(0.004, -0.036, -0.032), EL + vec3(0.0, 0.050, -0.034), 0.038, 0.032);
+  float tlat = sdSeg(q, SH + vec3(0.022, -0.060, -0.018), EL + vec3(0.016, 0.065, -0.022), 0.028, 0.026);
+  m[TRICEPS] = smin(tl, tlat, 0.01);
+  float fx = sdRoundCone(q, EL + vec3(0.004, -0.040, 0.010), WR + vec3(0.0, 0.030, 0.0), 0.036, 0.021);
+  float br = sdEllipsoid(q - (EL + vec3(0.022, -0.052, 0.012)), vec3(0.024, 0.062, 0.024));
+  m[FOREARMS] = smin(fx, br, 0.012);
+  // 복근 — 한 장의 판에 가운데 줄과 가로 홈 셋, 옆구리는 외복사근
+  float ra = sdEllipsoid(q - vec3(0.0, 1.090, 0.060), vec3(0.070, 0.170, 0.024));
+  for (int i = 0; i < 3; i++) {
+    float y = 1.206 - float(i) * 0.066;
+    ra = smin(ra, sdEllipsoid(q - vec3(0.031, y, 0.076), vec3(0.029, 0.033, 0.019)), 0.014);
+  }
+  ra = smin(ra, sdEllipsoid(q - vec3(0.028, 1.000, 0.072), vec3(0.027, 0.050, 0.018)), 0.014);
+  obl = sdTilt(q, vec3(0.092, 1.080, 0.044), vec3(0.030, 0.080, 0.038), 0.10);
+  plate = ra;
+  m[ABS] = smin(ra, obl, 0.022);
+  // 허벅지 앞 — 대퇴직근 · 외측광근 · 무릎 위 눈물방울(내측광근)
+  float rf = sdSeg(q, HP + vec3(0.004, -0.070, 0.060), KN + vec3(0.0, 0.085, 0.048), 0.040, 0.034);
+  float vl = sdSeg(q, HP + vec3(0.040, -0.060, 0.020), KN + vec3(0.028, 0.060, 0.012), 0.045, 0.042);
+  float vm = sdEllipsoid(q - (KN + vec3(-0.030, 0.094, 0.032)), vec3(0.032, 0.052, 0.028));
+  m[QUADS] = smin(smin(rf, vl, 0.008), vm, 0.008);
+  // 허벅지 뒤 — 햄스트링 바깥 · 안쪽 갈래
+  float bf = sdSeg(q, HP + vec3(0.022, -0.080, -0.055), KN + vec3(0.020, 0.070, -0.045), 0.042, 0.036);
+  float st = sdSeg(q, HP + vec3(-0.022, -0.080, -0.052), KN + vec3(-0.024, 0.075, -0.042), 0.040, 0.035);
+  m[HAMS] = smin(bf, st, 0.008);
+  // 엉덩이 — 대둔근 · 중둔근
+  m[GLUTES] = smin(sdEllipsoid(q - vec3(0.066, 0.884, -0.058), vec3(0.086, 0.094, 0.050)),
+                   sdEllipsoid(q - vec3(0.110, 0.962, -0.026), vec3(0.046, 0.052, 0.040)), 0.035);
+  // 종아리 — 비복근 두 갈래와 그 아래 가자미근
+  float gm = sdEllipsoid(q - (KN + vec3(-0.015, -0.125, -0.048)), vec3(0.033, 0.082, 0.038));
+  float gl = sdEllipsoid(q - (KN + vec3(0.021, -0.115, -0.042)), vec3(0.030, 0.076, 0.034));
+  float so = sdEllipsoid(q - vec3(0.099, 0.252, -0.026), vec3(0.040, 0.095, 0.030));
+  m[CALVES] = smin(smin(gm, gl, 0.012), so, 0.02);
+}
+
+float mapAll(vec3 p, out float m[15]) {
+  vec3 q = vec3(abs(p.x), p.y, p.z);
+  float d = base(q);
+  float obl, plate;
+  muscles(q, m, obl, plate);
+  // 외복사근은 옆구리 살로 녹인다 — 따로 두면 허리에 괄호 같은 선이 생긴다
+  d = smin(d, obl, 0.05);
+  // 삼각근 세 갈래는 한 덩어리로 빚는다(색은 따로 칠한다)
+  float delt = smin(smin(m[FDELT], m[SDELT], 0.03), m[RDELT], 0.03);
+  float mm = smin(plate, delt, 0.008);
+  for (int i = 0; i < N; i++) {
+    if (i == ABS || i == FDELT || i == SDELT || i == RDELT) continue;
+    mm = smin(mm, m[i], 0.008);
+  }
+  // 근육과 몸은 넓게 섞고(덧붙인 풍선처럼 안 보이게), 근육끼리는 좁게(사이 홈이 남게)
+  return smin(d, mm, 0.03);
+}
+
+float map(vec3 p) { float m[15]; return mapAll(p, m); }
+
+vec3 calcNormal(vec3 p) {
+  const vec2 e = vec2(1.0, -1.0) * 0.0007;
+  return normalize(e.xyy * map(p + e.xyy) + e.yyx * map(p + e.yyx) + e.yxy * map(p + e.yxy) + e.xxx * map(p + e.xxx));
+}
+
+float calcAO(vec3 p, vec3 n) {
+  float occ = 0.0, sca = 1.0;
+  for (int i = 0; i < 5; i++) {
+    float h = 0.006 + 0.024 * float(i) / 4.0;
+    occ += (h - map(p + h * n)) * sca;
+    sca *= 0.82;
+  }
+  return clamp(1.0 - 9.0 * occ, 0.0, 1.0);
+}
+
+vec3 fiberDir(int id, vec3 p) {
+  vec3 d = vec3(0.0, 1.0, 0.0);
+  vec3 ap = vec3(abs(p.x), p.y, p.z);
+  if (id == CHEST) d = vec3(0.150, 1.388, 0.044) - ap;              // 위팔 앞 한 점으로 모이는 부채꼴
+  else if (id == TRAPS) d = p.y > 1.43 ? vec3(1.0, -0.6, 0.0) : vec3(1.0, -0.15, 0.0);
+  else if (id == BACK) d = ap.x < 0.045 && ap.y < 1.2 ? vec3(0.0, 1.0, 0.0) : vec3(0.150, 1.360, -0.050) - ap;
+  else if (id == BICEPS || id == TRICEPS) d = EL - SH;
+  else if (id == FOREARMS) d = WR - EL;
+  else if (id == QUADS || id == HAMS) d = KN - HP;
+  else if (id == GLUTES) d = vec3(1.0, -0.65, 0.0);
+  else if (id == FDELT || id == SDELT || id == RDELT) d = vec3(0.22, -1.0, 0.0);
+  d.x *= sign(p.x + 1e-6);
+  return normalize(d);
+}
+
+vec4 shade(vec2 frag) {
+  // 원근 카메라 — 멀리서 좁게 본다(왜곡 없이 입체감만)
+  float back = uView;
+  float ang = uYaw + (back > 0.5 ? 3.14159265 : 0.0);
+  vec3 ro = vec3(6.6 * sin(ang), uFrame.x, 6.6 * cos(ang));
+  vec3 ta = vec3(0.0, uFrame.x, 0.0);
+  vec3 cw = normalize(ta - ro);
+  vec3 cu = normalize(cross(cw, vec3(0.0, 1.0, 0.0)));
+  vec3 cv = cross(cu, cw);
+  vec2 uv = (2.0 * frag - uRes) / uRes.y;
+  vec3 rd = normalize(uv.x * cu + uv.y * cv + (2.0 * 6.6 / uFrame.y) * cw);
+
+  float t = 5.6;
+  float hit = -1.0;
+  for (int i = 0; i < 200; i++) {
+    vec3 p = ro + rd * t;
+    float d = map(p);
+    if (d < 0.00035) { hit = t; break; }
+    t += d * 0.9;
+    if (t > 7.8) break;
+  }
+  if (hit < 0.0) return vec4(0.0);
+
+  vec3 p = ro + rd * hit;
+  float m[15];
+  mapAll(p, m);
+  vec3 n = calcNormal(p);
+  vec3 v = -rd;
+
+  // 근육 색 — 표면에 가까운 근육일수록 그 근육의 세기를 받는다
+  vec3 albedo = uClay;
+  float paint = 0.0;
+  for (int i = 0; i < N; i++) {
+    float near = 1.0 - smoothstep(0.0, 0.006, m[i]);
+    paint = max(paint, near * uW[i]);
+  }
+  vec3 accent = uAccent;
+  // 근섬유 결 — 칠한 근육만. 살갗(칠 안 한 곳)은 매끈하게 둔다
+  int top = 0; float best = 1e5;
+  for (int i = 0; i < N; i++) if (m[i] < best) { best = m[i]; top = i; }
+  vec3 fd = fiberDir(top, p);
+  vec3 across = normalize(cross(fd, n) + 1e-5);
+  float wave = dot(p, across) * 1500.0 + sin(dot(p, fd) * 40.0) * 0.8;
+  float fiber = 0.5 + 0.5 * sin(wave);
+  accent *= 1.0 - uFiber * 0.10 * fiber;
+  albedo = mix(albedo, accent, paint);
+
+  // 빛 — 카메라 쪽 왼위 주광, 오른쪽 보조광, 뒤 테두리광
+  vec3 L1 = normalize(-0.55 * cu + 0.80 * cv - 0.55 * cw);
+  vec3 L2 = normalize(0.75 * cu + 0.10 * cv - 0.45 * cw);
+  float ao = calcAO(p, n);
+  float wrap = clamp((dot(n, L1) + 0.30) / 1.30, 0.0, 1.0);
+  float fill = clamp(dot(n, L2) * 0.5 + 0.5, 0.0, 1.0);
+  float sky = clamp(0.5 + 0.5 * n.y, 0.0, 1.0);
+  float rim = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 3.0);
+  vec3 col = albedo * (0.82 * wrap * mix(0.55, 1.0, ao) + 0.22 * fill * ao + 0.16 * sky * ao);
+  col += vec3(0.85, 0.88, 1.0) * rim * 0.22 * ao;
+  col += albedo * vec3(1.0, 0.93, 0.86) * 0.07 * clamp(0.5 - 0.5 * n.y, 0.0, 1.0) * ao;
+  vec3 h = normalize(L1 + v);
+  col += vec3(1.0) * pow(clamp(dot(n, h), 0.0, 1.0), 28.0) * (0.10 + 0.18 * paint) * ao;
+  col = pow(col, vec3(0.4545));
+  return vec4(col, 1.0);
+}
+
+void main() {
+  vec4 acc = vec4(0.0);
+  for (int j = 0; j < 4; j++) {
+    if (j >= uSS) break;
+    for (int i = 0; i < 4; i++) {
+      if (i >= uSS) break;
+      vec2 off = (vec2(float(i), float(j)) + 0.5) / float(uSS) - 0.5;
+      vec4 c = shade(gl_FragCoord.xy + off);
+      acc += vec4(c.rgb * c.a, c.a);
+    }
+  }
+  acc /= float(uSS * uSS);
+  fragColor = acc.a > 0.0 ? vec4(acc.rgb / acc.a, acc.a) : vec4(0.0);
+}
+</script>
+<script>
+  var params = new URLSearchParams(location.search);
+  var W = Number(params.get('w') || 300), H = Number(params.get('h') || 600);
+  var canvas = document.getElementById('c');
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = (W / (Number(params.get('scale')) || 1)) + 'px';
+  var gl = canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false });
+  function compile(type, src) {
+    var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  var vs = '#version 300 es\nin vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
+  var prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, document.getElementById('fs').textContent));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  var buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  var loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  var hex = function (h) { return [parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255]; };
+  var lin = function (c) { return c.map(function (x) { return Math.pow(x, 2.2); }); };
+  gl.uniform2f(gl.getUniformLocation(prog, 'uRes'), W, H);
+  gl.uniform1f(gl.getUniformLocation(prog, 'uView'), params.get('view') === 'back' ? 1 : 0);
+  var weights = (params.get('m') || '').split(',').map(Number);
+  var arr = new Float32Array(15); for (var i = 0; i < 15; i++) arr[i] = weights[i] || 0;
+  gl.uniform1fv(gl.getUniformLocation(prog, 'uW'), arr);
+  gl.uniform3fv(gl.getUniformLocation(prog, 'uAccent'), lin(hex(params.get('accent') || '4f46e5')));
+  gl.uniform3fv(gl.getUniformLocation(prog, 'uClay'), lin(hex(params.get('clay') || 'd4d7de')));
+  gl.uniform1i(gl.getUniformLocation(prog, 'uSS'), Number(params.get('ss') || 1));
+  var frame = (params.get('frame') || '0.885,1.846').split(',').map(Number);
+  gl.uniform2f(gl.getUniformLocation(prog, 'uFrame'), frame[0], frame[1]);
+  gl.uniform1f(gl.getUniformLocation(prog, 'uFiber'), Number(params.get('fiber') || 0));
+  gl.uniform1f(gl.getUniformLocation(prog, 'uYaw'), Number(params.get('yaw') || 0) * Math.PI / 180);
+  gl.viewport(0, 0, W, H);
+  var t0 = performance.now();
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.finish();
+  var px = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  window.renderMs = performance.now() - t0;
+  window.done = true;
+</script>
+</body>
+</html>
