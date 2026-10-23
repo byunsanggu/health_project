@@ -391,6 +391,18 @@ describe('통증 대체 — 세트를 잃지 않고 종목에 맞게', () => {
     }
   });
 
+  it('어깨가 아픈 날 스쿼트 대체로 프론트 스쿼트(어깨로 바를 받친다)가 나오지 않는다', () => {
+    const squat: SessionTemplate = { name: '하체', slots: [{ exerciseId: 'back-squat', sets: 3, repRange: { min: 6, max: 10 } }] };
+    const planned = buildSession({ template: squat, date: '2026-09-21', plan: planFrom([], '2026-09-18'), history: [], index, pain: [{ joint: 'shoulder', score: 8 }] });
+    assert.ok(!planned.exercises.some((item) => item.exercise.id === 'front-squat'));
+  });
+
+  it('허리가 아픈 날 루마니안 데드리프트 대체로 글루트 햄 레이즈(맨몸 · 처음이면 한 개도 어렵다)를 먼저 고르지 않는다', () => {
+    const rdl: SessionTemplate = { name: '하체', slots: [{ exerciseId: 'romanian-deadlift', sets: 3, repRange: { min: 8, max: 12 } }] };
+    const planned = buildSession({ template: rdl, date: '2026-09-21', plan: planFrom([], '2026-09-18'), history: [], index, pain: [{ joint: 'lowBack', score: 5 }] });
+    assert.notEqual(planned.exercises[0]?.exercise.id, 'glute-ham-raise');
+  });
+
   it('7점 이상이면 그 관절에 조금이라도 실리는 종목은 다 뺀다 — 말과 맞게', () => {
     const planned = build({ pain: [{ joint: 'shoulder', score: 8 }] });
     for (const item of planned.exercises) {
@@ -398,6 +410,31 @@ describe('통증 대체 — 세트를 잃지 않고 종목에 맞게', () => {
     }
     // 진료 경고는 맨 위 한 번 — 종목마다 같은 말을 되풀이하지 않는다
     assert.equal(planned.warnings.filter((warning) => warning.medical).length, 1);
+  });
+});
+
+describe('풀업이 안 되는 사람', () => {
+  const pulls: SessionTemplate = { name: '등', slots: [{ exerciseId: 'pull-up', sets: 3, repRange: { min: 6, max: 10 } }] };
+  const failed = (date: string) => session(date, sets('pull-up', 3, { weightKg: 0, reps: 1, rir: 0 }));
+
+  it('두 번 연속 목표 하단에 못 미치면 무게를 맞출 수 있는 당기기로 바꾼다', () => {
+    const history = [failed('2026-09-14'), failed('2026-09-17')];
+    const planned = buildSession({ template: pulls, date: '2026-09-21', plan: planFrom(history, '2026-09-18'), history, index });
+    const swapped = planned.exercises[0]!;
+    assert.ok(['assisted-pull-up', 'lat-pulldown', 'neutral-grip-pulldown'].includes(swapped.exercise.id), swapped.exercise.id);
+    assert.equal(swapped.swapReason, 'ability');
+    assert.ok(planned.warnings.some((warning) => /네거티브/.test(warning.text)));
+  });
+
+  it('한 번 못 한 것으로는 안 바꾸고, 대신할 기구가 없으면 그대로 둔다', () => {
+    const once = [failed('2026-09-17')];
+    assert.equal(buildSession({ template: pulls, date: '2026-09-21', plan: planFrom(once, '2026-09-18'), history: once, index }).exercises[0]!.exercise.id, 'pull-up');
+    const twice = [failed('2026-09-14'), failed('2026-09-17')];
+    const bar = { ...DEFAULT_GYM, overrides: { ...DEFAULT_GYM.overrides, 'assisted-pull-up': 'unavailable' as const, 'lat-pulldown': 'unavailable' as const, 'neutral-grip-pulldown': 'unavailable' as const } };
+    const planned = buildSession({ template: pulls, date: '2026-09-21', plan: planFrom(twice, '2026-09-18'), history: twice, index, gym: bar });
+    assert.equal(planned.exercises[0]!.exercise.id, 'pull-up');
+    assert.equal(planned.exercises[0]!.swapReason, undefined);
+    assert.match(planned.exercises[0]!.note, /보조/, '바꿀 게 없으면 처방이 보조 · 밴드를 권한다');
   });
 });
 

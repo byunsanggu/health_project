@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { planWeekSets, SESSION_GROWTH_PER_WEEK, SLOT_SWING } from '../weekSets.ts';
+import { planWeekSets, SESSION_GROWTH_PER_WEEK, SESSION_GROWTH_PER_WEEK_GENTLE, SLOT_SWING } from '../weekSets.ts';
+import { HEAVY_PULLS } from '../exercises.ts';
 import { buildSession, type SessionTemplate } from '../session.ts';
 import { planNextWeek, type WeeklyPlan } from '../mesocycle.ts';
 import { assessFatigue } from '../readiness.ts';
@@ -96,6 +97,16 @@ describe('주간 세트 — 처방대로 하는 사람', () => {
         }
       });
 
+      it('데드리프트는 다른 부위 목표를 채우려고 늘리지 않는다 — 정한 세트 그대로', () => {
+        templates.forEach((template, d) => template.slots.forEach((slot, i) => {
+          if (!HEAVY_PULLS.has(slot.exerciseId)) return;
+          for (const week of weeks) {
+            if (week.phase === 'deload') continue;
+            assert.equal(week.sets[d]![i], base[d]![i], `${week.weekInBlock}주차 ${slot.exerciseId}`);
+          }
+        }));
+      });
+
       it('하루는 블록 주차마다 2세트까지만 길어지고, 종목은 템플릿 +2까지', () => {
         for (const week of weeks) {
           if (week.phase === 'deload') continue;
@@ -149,6 +160,19 @@ describe('주간 세트 — 경계', () => {
     weekStart: '2026-09-21', phase: 'accumulation', weekInBlock: 3, targetRir: 2, intensityMultiplier: 1,
     fatigue: { score: 0, threshold: 5, deloadRecommended: false, signals: [] },
     volume: [], neglected: [], frequency: [], summary: '', ...overrides,
+  });
+
+  it('감량 중이거나 초보면 하루가 주차마다 1세트씩만 길어진다', () => {
+    const plan = planFor({
+      weekInBlock: 4,
+      volume: (['chest', 'back', 'sideDelt'] as const).map((muscle) => ({
+        muscle, label: '', currentSets: 3, prescribedSets: 12, deltaSets: 9, zone: 'underMev' as const, zoneLabel: '', action: 'increase' as const, rationale: '',
+      })),
+    });
+    const grown = (sets: number[][]) => sets[0]!.reduce((a, b) => a + b, 0) - 9;
+    assert.equal(grown(planWeekSets({ templates: [template], plan, index })), SESSION_GROWTH_PER_WEEK * 3);
+    assert.equal(grown(planWeekSets({ templates: [template], plan: { ...plan, volumeCeiling: 'mav' }, index })), SESSION_GROWTH_PER_WEEK_GENTLE * 3);
+    assert.equal(grown(planWeekSets({ templates: [template], plan, index, level: 'beginner' })), SESSION_GROWTH_PER_WEEK_GENTLE * 3);
   });
 
   it('여유를 많이 남긴 종목이 있어도 덜어내는 주에 세트가 늘지 않는다', () => {

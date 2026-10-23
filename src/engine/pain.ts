@@ -184,7 +184,7 @@ export function findSubstitutes(
   return candidates
     .map((candidate) => ({
       candidate,
-      score: similarity(exercise, candidate) - painPenalty(candidate, pain),
+      score: similarity(exercise, candidate) - painPenalty(candidate, pain) - (HARD_SUBSTITUTES.has(candidate.id) ? 0.25 : 0),
     }))
     // 자극이 충분히 겹치지 않으면 대체가 아니다. 애매한 후보를 내놓느니 없다고 하는 편이 낫다.
     .filter((entry) => entry.score >= SUBSTITUTE_MIN_SCORE)
@@ -210,6 +210,12 @@ export function similarity(a: Exercise, b: Exercise): number {
   if (normA === 0 || normB === 0) return 0;
   return dot / Math.sqrt(normA * normB);
 }
+
+/**
+ * 맨몸이라 무게를 못 줄이고, 처음이면 한 개도 어려운 종목. 아픈 날 대체로는 뒤로 —
+ * 허리가 아픈 날 루마니안 데드리프트 대신 글루트 햄 레이즈가 나오던 것.
+ */
+const HARD_SUBSTITUTES: ReadonlySet<string> = new Set(['glute-ham-raise']);
 
 function painPenalty(exercise: Exercise, pain: readonly PainReport[]): number {
   let penalty = 0;

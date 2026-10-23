@@ -2,7 +2,8 @@ import { MUSCLE_GROUPS } from './muscles.ts';
 import { aggregateVolume } from './volume.ts';
 import type { WeeklyPlan } from './mesocycle.ts';
 import type { SessionTemplate } from './session.ts';
-import type { Exercise, LandmarksByMuscle, MuscleGroup, SessionLog } from './types.ts';
+import { HEAVY_PULLS } from './exercises.ts';
+import type { Exercise, LandmarksByMuscle, MuscleGroup, SessionLog, TrainingLevel } from './types.ts';
 
 /**
  * 이번 주 날마다 · 종목마다 세트 수.
@@ -32,11 +33,23 @@ import type { Exercise, LandmarksByMuscle, MuscleGroup, SessionLog } from './typ
 /** 하루 세션이 블록 주차마다 늘 수 있는 폭. */
 export const SESSION_GROWTH_PER_WEEK = 2;
 export const SESSION_GROWTH_MAX = 6;
+/**
+ * 감량 중이거나 초보면 절반 폭으로. 적자에서는 회복이 느리고, 초보는 적은 볼륨으로도
+ * 충분히 자란다 — 3개월 차가 4주차에 템플릿보다 40% 긴 세션(한 시간 가까이)을 하게 된다.
+ */
+export const SESSION_GROWTH_PER_WEEK_GENTLE = 1;
+export const SESSION_GROWTH_MAX_GENTLE = 3;
 /** 한 종목이 템플릿보다 늘거나 줄 수 있는 폭. */
 export const SLOT_SWING = 2;
 
-/** 그 종목이 이 부위를 "쓴다"고 볼 기여도 — 이보다 작으면 세트를 붙여도 그 부위에 거의 안 간다. */
+/** 그 종목이 이 부위를 "쓴다"고 볼 기여도 — 다른 부위를 한계 위로 미는지 볼 때 쓴다. */
 const MEANINGFUL = 0.5;
+/**
+ * 부위를 늘리려고 세트를 붙일 종목은 그 부위가 주동근(0.85 이상)인 종목뿐이다. 0.5로 두니
+ * 데드리프트(등 0.7 · 승모 · 전완 0.5)가 등 · 승모 · 전완 목표를 채우느라 4 → 5 → 6세트로
+ * 늘었다 — 등은 로우 · 풀다운으로 늘린다.
+ */
+const PRIMARY_MOVER = 0.85;
 
 export interface WeekSetsInput {
   /** 한 주에 도는 날 전부(프로그램의 templates) */
@@ -47,6 +60,8 @@ export interface WeekSetsInput {
   landmarks?: LandmarksByMuscle;
   /** 지난주(처방의 바탕이 된 주)에 실제로 한 기록 — 종목마다 그만큼에서 출발한다 */
   lastWeek?: readonly SessionLog[];
+  /** 단계 — 초보면 늘리는 폭이 절반 */
+  level?: TrainingLevel;
 }
 
 function isLight(exercise: Exercise): boolean {
@@ -85,7 +100,10 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
   if (week <= 1 || plan.volume.length === 0) return base.map((day) => day.slice());
 
   const sets = startingSets(templates, base, input.lastWeek ?? []);
-  const growth = Math.min(SESSION_GROWTH_MAX, SESSION_GROWTH_PER_WEEK * (week - 1));
+  const gentle = plan.volumeCeiling === 'mav' || input.level === 'beginner';
+  const growth = gentle
+    ? Math.min(SESSION_GROWTH_MAX_GENTLE, SESSION_GROWTH_PER_WEEK_GENTLE * (week - 1))
+    : Math.min(SESSION_GROWTH_MAX, SESSION_GROWTH_PER_WEEK * (week - 1));
   const dayCap = base.map((day) => day.reduce((sum, value) => sum + value, 0) + growth);
   const daySum = (d: number) => sets[d]!.reduce((sum, value) => sum + value, 0);
   const exerciseAt = (d: number, i: number) => index.get(templates[d]!.slots[i]!.exerciseId);
@@ -110,7 +128,8 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
   /** 이 자리에 한 세트를 붙일 수 있는가 — 종목 · 하루 상한, 다른 부위의 한계 */
   const canAdd = (d: number, i: number, muscle: MuscleGroup, now: ReturnType<typeof volumeOf>): boolean => {
     const exercise = exerciseAt(d, i);
-    if (!exercise || (exercise.contribution[muscle] ?? 0) < MEANINGFUL) return false;
+    // 그 부위가 주동근인 종목에만. 데드리프트는 무겁게 정한 세트 그대로 둔다
+    if (!exercise || (exercise.contribution[muscle] ?? 0) < PRIMARY_MOVER || HEAVY_PULLS.has(exercise.id)) return false;
     if (sets[d]![i]! >= base[d]![i]! + SLOT_SWING || daySum(d) >= dayCap[d]!) return false;
     return MUSCLE_GROUPS.every((other) => {
       if (other === muscle) return true;

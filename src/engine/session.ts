@@ -62,7 +62,7 @@ export interface PlannedSet {
   targetRir: number;
 }
 
-export type SwapReason = 'pain' | 'unavailable' | 'occupied';
+export type SwapReason = 'pain' | 'unavailable' | 'occupied' | 'ability';
 
 export interface PlannedExercise {
   exercise: Exercise;
@@ -247,6 +247,25 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
       });
     }
 
+    /*
+     * 1-2) 맨몸 풀업을 두 번 연속 목표 하단까지 못 했으면 무게를 맞출 수 있는 당기기로 바꾼다.
+     * 0~1개짜리 세트를 6주 동안 반복하면 등은 안 자란다. 랫풀다운 · 어시스트가 없으면
+     * 그대로 두고 처방이 보조 · 네거티브를 권한다.
+     */
+    if (BODYWEIGHT_PULLS.has(exercise.id) && failedTwice(input.history, exercise.id, slot.repRange.min)) {
+      const easier = pool.find((candidate) => LOADABLE_PULLS.includes(candidate.id) && !taken.has(candidate.id) && !planned.has(candidate.id));
+      if (easier) {
+        warnings.push({
+          kind: 'plan',
+          text: `${exercise.name} 두 번 연속 ${slot.repRange.min}회에 못 미쳤습니다. 오늘은 ${withParticle(easier.name, '으로/로')} 등을 채웁니다 — ` +
+            '풀업은 운동 끝에 위에서 천천히 내려오기(네거티브) 3개로 이어 가세요.',
+        });
+        substitutedFrom = substitutedFrom ?? exercise;
+        exercise = easier;
+        swapReason = swapReason ?? 'ability';
+      }
+    }
+
     // 2) 통증 게이트
     const ruling = screenExercise(exercise, pain, { pool, availableEquipment });
 
@@ -399,6 +418,7 @@ function weekSetsFor(input: BuildSessionInput): (slot: SessionSlot) => number {
   const lastWeek = input.plan.weekStart ? sessionsInWeek(input.history, addDays(input.plan.weekStart, -1)) : [];
   const planned = planWeekSets({
     templates: week.templates, plan: input.plan, index: input.index, landmarks: input.landmarks, lastWeek,
+    level: input.lifter?.level,
   });
   return (slot) => {
     const at = day.slots.findIndex((item) => item.exerciseId === (slot.replacedFrom ?? slot.exerciseId));
@@ -408,6 +428,25 @@ function weekSetsFor(input: BuildSessionInput): (slot: SessionSlot) => number {
 
 /** 다른 자리 세트를 얹어도 한 종목은 이만큼까지 — 더 하면 뒤 세트는 버리는 세트다 */
 const MERGED_SET_CAP = 6;
+
+/** 맨몸 세로 당기기와, 못 할 때 대신할 무게를 맞출 수 있는 당기기(앞에 둘수록 먼저) */
+const BODYWEIGHT_PULLS: ReadonlySet<string> = new Set(['pull-up', 'chin-up']);
+const LOADABLE_PULLS: readonly string[] = ['assisted-pull-up', 'lat-pulldown', 'neutral-grip-pulldown'];
+
+/** 그 종목을 한 마지막 두 세션 모두 맨몸으로 목표 하단에 못 미쳤는가 */
+function failedTwice(history: readonly SessionLog[], exerciseId: string, minReps: number): boolean {
+  const recent = history
+    .filter((session) => session.sets.some((set) => set.exerciseId === exerciseId && !set.warmup))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .slice(0, 2);
+  if (recent.length < 2) return false;
+  return recent.every((session) => {
+    const best = Math.max(0, ...session.sets
+      .filter((set) => set.exerciseId === exerciseId && !set.warmup && set.weightKg <= 0)
+      .map((set) => set.reps));
+    return best < minReps;
+  });
+}
 
 /** 대체 종목에 맞는 반복 범위 — 고립은 10~15회, 한 발 종목은 무거운 범위(6회 이하)를 8~12회로. */
 function substituteRange(range: RepRange, original: Exercise, replacement: Exercise): RepRange {

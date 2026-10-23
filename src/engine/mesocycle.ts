@@ -49,6 +49,8 @@ export interface WeeklyPlan {
   /** 분배를 손봐야 하는 부위 — 볼륨을 더 넣기 전에 먼저 해결할 것. */
   frequency: MuscleFrequency[];
   summary: string;
+  /** 볼륨 상한. 'mav'(감량 중)면 세트를 적정에서 멈추고 주마다 늘리는 폭도 절반이다 */
+  volumeCeiling?: 'mav' | 'mrv';
 }
 
 export interface PlanInput {
@@ -189,6 +191,7 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
     neglected,
     frequency: actionableFrequency(frequency),
     summary: summarize(phase, nextWeekInBlock, fatigue, volume, actionableFrequency(frequency)),
+    volumeCeiling: input.volumeCeiling ?? 'mrv',
   };
 }
 
@@ -241,10 +244,14 @@ function accumulationVolume(args: {
 
   switch (zone) {
     case 'underMev':
+      /*
+       * 최소선까지만 올리면 7.8세트 같은 부위가 "8세트"를 처방받고 반올림 아래에서 영영
+       * 7.8에 머문다. 최소 바로 밑이면 적정 구간처럼 한 걸음 올린다.
+       */
       return {
-        sets: landmark.mev,
+        sets: Math.min(landmark.mav, Math.max(landmark.mev, Math.round(currentSets) + step)),
         action: 'increase',
-        rationale: `MEV(${landmark.mev}세트) 미만입니다. 자극 최소선까지 올립니다`,
+        rationale: `MEV(${landmark.mev}세트) 미만입니다. 자극 최소선 위로 올립니다`,
       };
     case 'mevToMav':
       return {

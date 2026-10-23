@@ -76,6 +76,14 @@ describe('볼륨 진행', () => {
     assert.equal(chest.prescribedSets, landmarks.chest.mev);
   });
 
+  it('최소 바로 밑이면 최소에 멈추지 않고 한 걸음 올린다 — 7.8세트가 "8세트" 처방에 영영 머물지 않게', () => {
+    // 펙덱 9세트 = 가슴 9 (최소 10) → 처방 11
+    const result = plan({ sessions: chestWeek('2026-09-14', 9), asOf: '2026-09-14', weekInBlock: 1 });
+    const chest = chestPlan(result);
+    assert.equal(chest.zone, 'underMev');
+    assert.equal(chest.prescribedSets, 11);
+  });
+
   it('적정 구간에서는 주당 2세트씩 올린다', () => {
     const result = plan({ sessions: chestWeek('2026-09-14', 12), asOf: '2026-09-14', weekInBlock: 1 });
     const chest = chestPlan(result);

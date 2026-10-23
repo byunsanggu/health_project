@@ -490,7 +490,8 @@ export const EXERCISES: readonly Exercise[] = [
     id: 'front-squat', name: '프론트 스쿼트', nameEn: 'Front Squat',
     equipment: 'barbell', pattern: 'squat', increment: 2.5,
     contribution: { quads: 1, glutes: 0.5, abs: 0.5, calves: 0.25 },
-    jointStress: { knee: 0.8, lowBack: 0.5, hip: 0.4, wrist: 0.5, ankle: 0.55 },
+    // 바를 어깨 앞에 얹는다(프론트 랙) — 어깨가 아픈 날 스쿼트 대체로 나오면 안 된다
+    jointStress: { knee: 0.8, lowBack: 0.5, hip: 0.4, wrist: 0.5, ankle: 0.55, shoulder: 0.3 },
   },
   {
     id: 'bulgarian-split-squat', name: '불가리안 스플릿 스쿼트', nameEn: 'Bulgarian Split Squat',
