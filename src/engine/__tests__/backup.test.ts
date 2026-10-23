@@ -109,6 +109,12 @@ describe('백업 파일을 읽는다', () => {
     assert.deepEqual(odd, {});
   });
 
+  it('내 루틴도 싣는다 — 날 목록 뼈대가 틀린 것만 버린다(종목은 앱이 다시 고른다)', () => {
+    const routine = { days: [{ name: '상체', slots: [{ exerciseId: 'barbell-bench-press', sets: 4, repRange: { min: 6, max: 10 } }] }] };
+    assert.deepEqual(read(exported({ 설정: { customRoutine: routine } })).settings.customRoutine, routine);
+    assert.equal(read(exported({ 설정: { customRoutine: { days: 'x' } } })).settings.customRoutine, undefined);
+  });
+
   it('첫 형식(형식 · 설정 칸이 없던 때)도 읽는다', () => {
     const payload = exported();
     delete payload['앱'];

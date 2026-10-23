@@ -1,6 +1,7 @@
 import { EXERCISES } from './exercises.ts';
 import { normalizeFoodLog, type FoodEntry } from './foodLog.ts';
 import { TRAINING_STYLES } from './styles.ts';
+import { isRoutineShape } from './routine.ts';
 import type { ConsentId } from './consent.ts';
 import type { GymBook, GymEntry } from './gyms.ts';
 import type { OnboardingAnswers, TrainingProgram } from './onboarding.ts';
@@ -34,7 +35,7 @@ export const BACKUP_SETTING_KEYS: readonly string[] = [
   'style', 'blockHistory', 'block', 'startedOn', 'promise', 'timeBudget', 'coach',
   'restBand', 'restOverrides', 'restAlerts', 'voiceOn', 'voiceRate', 'autoCount', 'nudgeOn',
   'tempo', 'tempoByExercise', 'tempoVersion', 'machineSettings', 'machineKnown', 'machinePound',
-  'mistakeFlags', 'diet',
+  'mistakeFlags', 'diet', 'customRoutine',
 ];
 
 export interface Backup {
@@ -259,6 +260,8 @@ const SETTING_CHECKS: Record<string, (value: unknown) => boolean> = {
   mistakeFlags: (value) => isPlain(value) && Object.values(value).every(isTexts),
   // 앱이 normalizeDiet로 다시 고른다
   diet: isPlain,
+  // 지금 앱에 없는 종목은 앱이 sanitizeRoutine으로 걸러 낸다
+  customRoutine: isRoutineShape,
 };
 
 function readSettings(raw: unknown): Record<string, unknown> {

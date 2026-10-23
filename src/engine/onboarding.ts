@@ -109,6 +109,11 @@ export interface TrainingProgram {
    * 되는 척하지 않고 무엇이 가능한지 말한다.
    */
   caution?: string;
+  /**
+   * 사용자가 직접 짠 루틴(routineProgram)인가. 블록이 바뀌어도 다시 짜지 않고,
+   * 세트 수는 정한 대로 간다.
+   */
+  custom?: boolean;
   /** 주간 순환 템플릿 */
   templates: SessionTemplate[];
   /** 부위별 주간 목표 유효 세트 */

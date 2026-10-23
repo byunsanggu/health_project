@@ -45,6 +45,11 @@ export interface SessionTemplate {
    * 2세트씩, 최대 6세트까지만 이 위로 늘린다. 없으면 템플릿 세트 합을 쓴다.
    */
   setCap?: number;
+  /**
+   * 사용자가 직접 짠 루틴의 날. 세트 수를 주간 처방으로 늘리거나 줄이지 않고
+   * 정한 대로 한다 — 덜어내는 주에만 절반으로. 무게 · 횟수 진행은 똑같다.
+   */
+  fixed?: boolean;
 }
 
 /** 주차가 오를 때 세션 총 세트가 늘 수 있는 폭. */
@@ -231,8 +236,10 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     if (taken.has(exercise.id)) continue;
     taken.add(exercise.id);
 
-    // 3) 세트 수 — 주간 볼륨 처방에 맞춰 조정
-    const setCount = adjustSetCount(slot, exercise, scaling);
+    // 3) 세트 수 — 주간 볼륨 처방에 맞춰 조정. 내 루틴은 정한 대로(덜어내는 주만 절반)
+    const setCount = input.template.fixed
+      ? fixedSetCount(slot, input.plan)
+      : adjustSetCount(slot, exercise, scaling);
 
     /*
      * 4) 중량 — 마지막 수행 기록 기준, 그 헬스장이 만들 수 있는 값으로 맞춘다.
@@ -310,7 +317,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     });
   }
 
-  if (input.plan.phase !== 'deload') capSessionSets(exercises, input);
+  if (input.plan.phase !== 'deload' && !input.template.fixed) capSessionSets(exercises, input);
 
   return {
     date: input.date,
@@ -378,6 +385,14 @@ function volumeScaling(input: BuildSessionInput): Map<MuscleGroup, number> {
     if (!scaling.has(muscle)) scaling.set(muscle, 1);
   }
   return scaling;
+}
+
+/**
+ * 내 루틴의 세트 수. 사용자가 정한 그대로 — 덜어내는 주에는 절반(올림)으로 줄인다.
+ * 회복 주를 건너뛰면 루틴이어도 피로가 쌓인다.
+ */
+function fixedSetCount(slot: SessionSlot, plan: WeeklyPlan): number {
+  return plan.phase === 'deload' ? Math.max(1, Math.ceil(slot.sets / 2)) : Math.max(1, slot.sets);
 }
 
 /** 슬롯의 주동근 배율을 적용하되, 한 번에 ±2세트 넘게 흔들지 않는다. */

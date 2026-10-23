@@ -1492,6 +1492,55 @@ input[type="search"] {
   padding: 0 5px; font-weight: 500;
 }
 
+/* ── 내 루틴 ──────────────────────────────────── */
+.routine-editor { display: grid; gap: 12px; }
+.routine-day {
+  display: grid; gap: 8px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); padding: 10px;
+}
+.routine-day-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.routine-day-head .text-input { padding: 8px 10px; font-size: 14px; font-weight: 600; font-family: var(--sans); }
+.routine-slots { display: grid; border: 1px solid var(--line-soft); border-radius: 10px; overflow: hidden; }
+.routine-slot { display: grid; gap: 7px; padding: 9px 10px; border-top: 1px solid var(--line-soft); }
+.routine-slot:first-child { border-top: 0; }
+.routine-slot-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.routine-slot-top .name { font-size: 14px; }
+.routine-slot-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.routine-stepper { display: inline-flex; align-items: center; gap: 4px; }
+.routine-stepper .num { min-width: 42px; text-align: center; font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.routine-icon {
+  width: 30px; height: 30px; flex: none;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--muted);
+  font-size: 15px; line-height: 1;
+}
+.routine-icon:hover:not([disabled]) { border-color: var(--accent); color: var(--accent); }
+.routine-icon[disabled] { opacity: .4; cursor: default; }
+.routine-reps {
+  height: 30px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-2); color: var(--ink);
+  font: inherit; font-family: var(--mono); font-size: 12px;
+}
+.routine-add { justify-self: start; }
+.routine-add-day { justify-self: start; }
+.routine-actions { display: grid; gap: 7px; }
+.routine-from + .routine-from { margin-top: 0; }
+.routine-review { display: grid; gap: 8px; }
+.routine-muscles { display: grid; gap: 5px; }
+.routine-muscle { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 12px; }
+.routine-muscle .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.routine-muscle .bar {
+  position: relative; height: 9px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--surface-2);
+}
+.routine-muscle .bar i { position: absolute; inset-block: 1px; left: 1px; border-radius: 3px; }
+.routine-muscle .bar b { position: absolute; inset-block: 0; width: 1.5px; background: var(--muted); opacity: .7; }
+.routine-muscle .num { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; min-width: 74px; }
+.routine-note.ok { color: var(--zone-ok); }
+.routine-week .sheet-head .pick { flex: none; }
+
 /* ── 통증 이력 ──────────────────────────────────── */
 .pain-row {
   display: grid; gap: 6px;

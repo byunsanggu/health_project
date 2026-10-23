@@ -243,6 +243,8 @@
         todayDate: state.todayDate,
         block: state.block,
         blockNews: state.blockNews,
+        customRoutine: state.customRoutine,
+        lastRoutine: state.lastRoutine,
         liftOrder: state.liftOrder,
         supersets: state.supersets,
         restBand: state.restBand,
@@ -348,6 +350,9 @@
       state.blockHistory = settings.blockHistory || ['hypertrophy'];
       state.block = settings.block || null;
       state.blockNews = settings.blockNews || null;
+      state.customRoutine = settings.customRoutine || null;
+      state.lastRoutine = settings.lastRoutine ? E.sanitizeRoutine(settings.lastRoutine, index) : null;
+      reconcileRoutine();
 
       /*
        * 실제 판에서 날이 바뀌었으면 오늘치는 버린다. 어제 하다 만 세트,
@@ -779,6 +784,13 @@
     block: null,
     /* 방금 바뀐 블록 — 무엇이 왜 바뀌었는지. 확인하면 비운다. */
     blockNews: null,
+    /*
+     * 내 루틴 — 사용자가 직접 짠 날 · 종목 · 세트. 있으면 프로그램은 여기서 나오고
+     * (E.routineProgram), 세트는 정한 대로 · 무게만 앱이 올린다. null이면 앱이 짠 프로그램.
+     */
+    customRoutine: null,
+    /* 끈 내 루틴 — 앱 프로그램으로 돌아가거나 설정을 다시 해도 지우지 않고 넣어 둔다 */
+    lastRoutine: null,
     /* 오늘 PT 세션 진행 — 워밍업 · 스트레칭 · 한 말 · 일시정지. 하루짜리 */
     ptRun: null,
     /*
@@ -1127,20 +1139,24 @@
     });
     var available = E.availableExercises(state.answers.gym.equipmentIds).map(function (item) { return item.id; });
     var next = E.nextBlock(before, review, state.todayDate, available);
+    // 내 루틴은 다시 짜지 않는다 — 종목 · 세트는 사용자가 정한 대로 간다
+    var mine = Boolean(state.customRoutine);
     var built = E.programOptionsFor(next, state.program);
-    var program = E.buildProgram(state.answers, built.level, built.options);
+    var program = mine ? state.program : E.buildProgram(state.answers, built.level, built.options);
 
     state.blockNews = {
       number: next.number,
       decision: review.decision,
       reasons: review.reasons,
-      changes: E.programChanges(state.program, program),
-      introduced: E.newlyIntroduced(before, next),
+      changes: mine ? [] : E.programChanges(state.program, program),
+      introduced: mine ? null : E.newlyIntroduced(before, next),
+      routine: mine,
       level: next.level,
       to: next.transition ? next.transition.to : null,
     };
     state.program = program;
     state.block = next;
+    if (mine) return;
     // 다른 날 · 다른 순서는 지난 프로그램 기준이었다.
     state.dayOverride = null;
     state.liftOrder = null;
@@ -2854,10 +2870,10 @@
       ]));
     }
 
-    if (summary.notes.length > 0 || summary.nextWeek) {
+    if (summary.notes.length > 0 || (summary.nextWeek && !state.customRoutine)) {
       body.push(el('div', { class: 'list-label', text: '다음' }));
       var notes = summary.notes.slice();
-      if (summary.nextWeek) notes.push('다음 주 처방 — ' + summary.nextWeek);
+      if (summary.nextWeek && !state.customRoutine) notes.push('다음 주 처방 — ' + summary.nextWeek);
       body.push(el('ul', { class: 'cue-list' }, notes.map(function (note) {
         return el('li', {}, [el('span', { text: note })]);
       })));
@@ -5081,111 +5097,128 @@
     ]);
 
     var draw = function () {
-      var entry = currentGymEntry();
-      var query = (state.addLiftQuery || '').trim();
-      var body = [];
-
       var already = {};
       state.lifts.forEach(function (lift) { already[lift.exercise.id] = true; });
-
-      var candidates = E.EXERCISES.filter(function (exercise) {
-        if (already[exercise.id]) return false;
-        if (!query) return true;
-        return exercise.name.indexOf(query) >= 0
-          || (exercise.nameEn || '').toLowerCase().indexOf(query.toLowerCase()) >= 0;
+      var body = exerciseChoiceList({
+        query: state.addLiftQuery,
+        region: state.addLiftRegion,
+        onRegion: function (region) { state.addLiftRegion = region; draw(); },
+        skip: already,
+        // 끼워 넣는 종목은 대개 오늘 하는 부위의 보조 종목이다
+        prefer: todayMuscleList(),
+        onPick: addExtraLift,
       });
-
-      /*
-       * 이 헬스장에 기구가 없는 종목은 뒤로. 목록에서 아예 빼지는
-       * 않는다 — 기구 등록이 안 끝났을 수도 있고, 오늘만 다른 데서
-       * 할 수도 있다.
-       */
-      var painful = activePain();
-
-      /*
-       * 이 헬스장에 "없는" 기구. equipmentBehind()는 반대로 — 있는 것 중
-       * 무엇을 꺼야 하는지를 주므로 여기서는 쓸 수 없다.
-       */
-      var gymIds = entry ? entry.equipmentIds : [];
-      var missingFor = function (exercise) {
-        var required = E.EXERCISE_REQUIREMENTS[exercise.id] || [];
-        return required
-          .filter(function (id) { return gymIds.indexOf(id) < 0; })
-          .map(function (id) {
-            var item = E.equipmentItem(id);
-            return item ? item.name : id;
-          });
-      };
-
-      /*
-       * 오늘 쓰는 부위를 앞에 둔다. 하체 날에 벤치프레스가 맨 위에
-       * 뜨면 목록을 안 믿게 된다 — 끼워 넣는 종목은 대개 오늘 하는
-       * 부위의 보조 종목이다.
-       */
-      var todayMuscles = todayMuscleList();
-      var rank = function (exercise) {
-        var offToday = todayMuscles.indexOf(E.primaryMuscle(exercise)) < 0 ? 1 : 0;
-        var missing = entry && missingFor(exercise).length > 0 ? 2 : 0;
-        var hurts = painful.some(function (report) {
-          return report.score >= 3 && (exercise.jointStress[report.joint] || 0) >= 0.5;
-        }) ? 4 : 0;
-        return offToday + missing + hurts;
-      };
-      candidates = candidates.slice().sort(function (a, b) { return rank(a) - rank(b); });
-
-      /*
-       * 부위로 묶는다 — 가슴은 가슴끼리, 등은 등끼리. 섞어 늘어놓으면 가슴 종목 사이에
-       * 어깨 종목이 끼어들어 찾던 것을 지나친다. 오늘 쓰는 부위 묶음이 앞에 온다.
-       * 위의 부위 칩을 누르면 그 부위만 본다.
-       */
-      var groups = E.groupByRegion(candidates, E.primaryMuscle, todayMuscles);
-      var picked = state.addLiftRegion || 'all';
-      if (picked !== 'all' && !groups.some(function (group) { return group.region === picked; })) picked = 'all';
-      body.push(el('div', { class: 'chip-row add-lift-regions', role: 'group', 'aria-label': '부위' },
-        [{ region: 'all', label: '전체' }].concat(groups).map(function (group) {
-          return el('button', {
-            type: 'button', class: 'chip', 'aria-pressed': String(picked === group.region),
-            text: group.label,
-            onclick: function () { state.addLiftRegion = group.region; draw(); },
-          });
-        })));
-
-      if (candidates.length === 0) {
-        body.push(el('p', { class: 'hint-line', text: '그 이름으로는 없습니다. 다르게 쳐 보세요.' }));
-      }
-
-      groups.filter(function (group) { return picked === 'all' || group.region === picked; }).forEach(function (group) {
-        body.push(el('div', { class: 'list-label add-lift-group' }, [
-          el('span', { text: group.label }),
-          el('span', { class: 'meta', text: group.items.length + '개' }),
-        ]));
-        body.push(el('div', { class: 'summary-list' }, group.items.map(function (exercise) {
-          var missing = entry ? missingFor(exercise) : [];
-          var hurts = painful.filter(function (report) {
-            return report.score >= 3 && (exercise.jointStress[report.joint] || 0) >= 0.5;
-          })[0];
-
-          return el('button', {
-            type: 'button', class: 'add-lift-row',
-            onclick: function () { addExtraLift(exercise); },
-          }, [
-            el('span', { class: 'plan-main' }, [
-              el('span', { class: 'name', text: exercise.name }),
-              el('span', { class: 'plan-sets', text:
-                hurts ? '⚠ ' + E.JOINT_LABELS_KO[hurts.joint] + '에 부담이 큽니다'
-                  : missing.length > 0
-                    ? '이 헬스장에 ' + withParticleJs(missing[0], '이/가') + ' 없습니다'
-                  : rowDetail(exercise, group.label) }),
-            ]),
-            el('span', { class: 'detail', text: '＋' }),
-          ]);
-        })));
-      });
-
       results.textContent = '';
       body.forEach(function (node) { results.appendChild(node); });
     };
     draw();
+  }
+
+  /**
+   * 종목 고르는 목록 — 부위 칩과 부위별 묶음. 오늘 종목 추가와 내 루틴 편집이 같이 쓴다.
+   *
+   * opts: query(이름) · region(고른 부위 칩) · onRegion(region) · skip({ 종목id: true } — 이미
+   * 있는 것) · prefer(앞에 둘 근육) · onPick(exercise)
+   */
+  function exerciseChoiceList(opts) {
+    var entry = currentGymEntry();
+    var query = (opts.query || '').trim();
+    var skip = opts.skip || {};
+    var body = [];
+
+    var candidates = E.EXERCISES.filter(function (exercise) {
+      if (skip[exercise.id]) return false;
+      if (!query) return true;
+      return exercise.name.indexOf(query) >= 0
+        || (exercise.nameEn || '').toLowerCase().indexOf(query.toLowerCase()) >= 0;
+    });
+
+    /*
+     * 이 헬스장에 기구가 없는 종목은 뒤로. 목록에서 아예 빼지는
+     * 않는다 — 기구 등록이 안 끝났을 수도 있고, 오늘만 다른 데서
+     * 할 수도 있다.
+     */
+    var painful = activePain();
+
+    /*
+     * 이 헬스장에 "없는" 기구. equipmentBehind()는 반대로 — 있는 것 중
+     * 무엇을 꺼야 하는지를 주므로 여기서는 쓸 수 없다.
+     */
+    var gymIds = entry ? entry.equipmentIds : [];
+    var missingFor = function (exercise) {
+      var required = E.EXERCISE_REQUIREMENTS[exercise.id] || [];
+      return required
+        .filter(function (id) { return gymIds.indexOf(id) < 0; })
+        .map(function (id) {
+          var item = E.equipmentItem(id);
+          return item ? item.name : id;
+        });
+    };
+
+    /*
+     * 겨누는 부위(오늘 쓰는 부위 · 그날 하는 부위)를 앞에 둔다. 하체 날에
+     * 벤치프레스가 맨 위에 뜨면 목록을 안 믿게 된다.
+     */
+    var prefer = opts.prefer || [];
+    var rank = function (exercise) {
+      var offToday = prefer.indexOf(E.primaryMuscle(exercise)) < 0 ? 1 : 0;
+      var missing = entry && missingFor(exercise).length > 0 ? 2 : 0;
+      var hurts = painful.some(function (report) {
+        return report.score >= 3 && (exercise.jointStress[report.joint] || 0) >= 0.5;
+      }) ? 4 : 0;
+      return offToday + missing + hurts;
+    };
+    candidates = candidates.slice().sort(function (a, b) { return rank(a) - rank(b); });
+
+    /*
+     * 부위로 묶는다 — 가슴은 가슴끼리, 등은 등끼리. 섞어 늘어놓으면 가슴 종목 사이에
+     * 어깨 종목이 끼어들어 찾던 것을 지나친다. 겨누는 부위 묶음이 앞에 온다.
+     * 위의 부위 칩을 누르면 그 부위만 본다.
+     */
+    var groups = E.groupByRegion(candidates, E.primaryMuscle, prefer);
+    var picked = opts.region || 'all';
+    if (picked !== 'all' && !groups.some(function (group) { return group.region === picked; })) picked = 'all';
+    body.push(el('div', { class: 'chip-row add-lift-regions', role: 'group', 'aria-label': '부위' },
+      [{ region: 'all', label: '전체' }].concat(groups).map(function (group) {
+        return el('button', {
+          type: 'button', class: 'chip', 'aria-pressed': String(picked === group.region),
+          text: group.label,
+          onclick: function () { opts.onRegion(group.region); },
+        });
+      })));
+
+    if (candidates.length === 0) {
+      body.push(el('p', { class: 'hint-line', text: '그 이름으로는 없습니다. 다르게 쳐 보세요.' }));
+    }
+
+    groups.filter(function (group) { return picked === 'all' || group.region === picked; }).forEach(function (group) {
+      body.push(el('div', { class: 'list-label add-lift-group' }, [
+        el('span', { text: group.label }),
+        el('span', { class: 'meta', text: group.items.length + '개' }),
+      ]));
+      body.push(el('div', { class: 'summary-list' }, group.items.map(function (exercise) {
+        var missing = entry ? missingFor(exercise) : [];
+        var hurts = painful.filter(function (report) {
+          return report.score >= 3 && (exercise.jointStress[report.joint] || 0) >= 0.5;
+        })[0];
+
+        return el('button', {
+          type: 'button', class: 'add-lift-row',
+          onclick: function () { opts.onPick(exercise); },
+        }, [
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: exercise.name }),
+            el('span', { class: 'plan-sets', text:
+              hurts ? '⚠ ' + E.JOINT_LABELS_KO[hurts.joint] + '에 부담이 큽니다'
+                : missing.length > 0
+                  ? '이 헬스장에 ' + withParticleJs(missing[0], '이/가') + ' 없습니다'
+                : rowDetail(exercise, group.label) }),
+          ]),
+          el('span', { class: 'detail', text: '＋' }),
+        ]);
+      })));
+    });
+    return body;
   }
 
   /** "덤벨 · 측면 삼각근" — 묶음 이름(가슴)과 같은 근육 이름은 다시 적지 않는다. */
@@ -9865,7 +9898,7 @@
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
     'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
-    'mistakeFlags',
+    'mistakeFlags', 'customRoutine',
   ];
 
   function sharedSettings() {
@@ -9893,6 +9926,12 @@
     SHARED_SETTINGS.forEach(function (key) {
       if (body[key] !== undefined) state[key] = body[key];
     });
+    /*
+     * 내 루틴은 받은 프로그램을 따른다. 루틴을 끈 폰은 루틴 칸을 안 보낸다(빈 칸은 안
+     * 싣는다) — 받은 프로그램이 루틴 것이 아니면 이 폰의 루틴도 끈다.
+     */
+    if (body.program) state.customRoutine = body.program.custom ? (body.customRoutine || null) : null;
+    reconcileRoutine();
     // 다른 폰에서 식단 기록 동의를 철회했으면 이 폰의 기록도 지운다. 동의 없이 남겨 두면 안 된다.
     if (!E.allows(state.consent, 'dietLog') && state.foodLog.length) purgeFor('dietLog');
     /*
@@ -12046,7 +12085,7 @@
         el('h2', { text: deload ? '덜어내는 주' : plan.weekInBlock + '주차' }),
         el('span', { class: 'badge ' + (deload ? 'deload' : 'accum'), text: '여유 ' + plan.targetRir + '개' }),
       ]),
-      el('p', { class: 'meta', text: plan.summary }),
+      el('p', { class: 'meta', text: planLine(plan) }),
     ]));
 
     /*
@@ -12128,13 +12167,24 @@
       list.appendChild(el('p', { class: 'hint-line', text: '한 주를 마치면 그 주 기록을 보고 다음 주 부위별 세트 수를 여기서 정합니다.' }));
     }
 
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '다음 주 볼륨 처방' }),
-        el('span', { class: 'meta', text: '지난주 → 이번주' }),
-      ]),
-      el('div', { class: 'sheet-body' }, [list]),
-    ]));
+    if (state.customRoutine) {
+      // 내 루틴은 세트를 처방하지 않는다 — 정한 루틴이 부위마다 어떤지를 보여 준다
+      screen.appendChild(el('div', { class: 'sheet routine-week' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: '내 루틴 — 부위별 한 주' }),
+          el('button', { type: 'button', class: 'pick routine-edit', text: '고치기', onclick: openRoutineEditor }),
+        ]),
+        el('div', { class: 'sheet-body' }, [routineReviewPanel(routineReview(state.customRoutine))]),
+      ]));
+    } else {
+      screen.appendChild(el('div', { class: 'sheet' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: '다음 주 볼륨 처방' }),
+          el('span', { class: 'meta', text: '지난주 → 이번주' }),
+        ]),
+        el('div', { class: 'sheet-body' }, [list]),
+      ]));
+    }
 
     // 다음 블록 — 하고 싶은 걸 막는 게 아니라 지금 고르면 손해인 걸 알려준다
     var styleContext = {
@@ -13846,6 +13896,10 @@
     var body = [el('div', { class: 'label', text: news.number + '번째 블록 시작' }),
       el('div', { class: 'block-news-title', text: title })];
     news.reasons.forEach(function (line) { body.push(el('p', { class: 'hint-line', text: line })); });
+    if (news.routine) {
+      body.push(el('p', { class: 'hint-line', text:
+        '내 루틴의 종목 · 세트는 그대로입니다. 단계에 따라 바뀌는 건 세트마다 남길 여유와 쉬어 가는 주기입니다.' }));
+    }
     if (news.introduced) {
       body.push(el('p', { class: 'hint-line', text:
         '새로 배우는 종목: ' + news.introduced + '. 첫 2주는 무게보다 자세입니다 — 가볍게, 끝까지 같은 모양으로.' }));
@@ -13881,22 +13935,37 @@
 
   function programCard() {
     var answers = state.answers || {};
-    var picks = (answers.priorities || []).map(function (muscle) { return E.MUSCLE_LABELS_KO[muscle]; });
-    var mains = Object.keys(answers.mainLifts || {}).map(function (pattern) {
-      var exercise = index.get(answers.mainLifts[pattern]);
-      return exercise ? exercise.name : null;
-    }).filter(Boolean);
+    var body = [el('p', { class: 'hint-line', text: programSummaryLine() })];
+
+    if (state.customRoutine) {
+      var review = routineReview(state.customRoutine);
+      body.push(el('p', { class: 'hint-line routine-days', text:
+        state.customRoutine.days.map(function (day) { return day.name; }).join(' · ') }));
+      body.push(el('p', { class: 'hint-line' + (review.notes.length ? ' warn' : ''), text: E.routineHeadline(review) }));
+      body.push(el('p', { class: 'hint-line', text: '종목 · 세트는 정한 대로 하고, 무게와 횟수만 기록을 보고 올립니다.' }));
+      body.push(el('div', { class: 'chip-row' }, [
+        el('button', { type: 'button', class: 'pick routine-edit', text: '내 루틴 고치기', onclick: openRoutineEditor }),
+        el('button', { type: 'button', class: 'pick routine-off', text: '앱이 짠 프로그램으로', onclick: confirmRoutineOff }),
+      ]));
+    } else {
+      var picks = (answers.priorities || []).map(function (muscle) { return E.MUSCLE_LABELS_KO[muscle]; });
+      var mains = Object.keys(answers.mainLifts || {}).map(function (pattern) {
+        var exercise = index.get(answers.mainLifts[pattern]);
+        return exercise ? exercise.name : null;
+      }).filter(Boolean);
+      body.push(el('p', { class: 'hint-line', text: '약점 부위: ' + (picks.length ? picks.join(', ') : '없음') }));
+      body.push(el('p', { class: 'hint-line', text: '고른 메인 종목: ' + (mains.length ? mains.join(', ') : '자동') }));
+      body.push(el('div', { class: 'chip-row' }, [
+        el('button', { type: 'button', class: 'pick program-tune', text: '약점 · 메인 종목 고르기', onclick: openProgramTune }),
+        el('button', { type: 'button', class: 'pick routine-start', text: '내 루틴으로 바꾸기', onclick: openRoutineEditor }),
+      ]));
+      body.push(el('p', { class: 'hint-line', text:
+        '하던 루틴이 있으면 그대로 넣을 수 있습니다. 종목 · 세트는 정한 대로 두고 무게만 앱이 올립니다.' }));
+    }
+
     return el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [el('h3', { text: '프로그램' })]),
-      el('div', { class: 'sheet-body' }, [
-        el('p', { class: 'hint-line', text: programSummaryLine() }),
-        el('p', { class: 'hint-line', text: '약점 부위: ' + (picks.length ? picks.join(', ') : '없음') }),
-        el('p', { class: 'hint-line', text: '고른 메인 종목: ' + (mains.length ? mains.join(', ') : '자동') }),
-        el('button', {
-          type: 'button', class: 'pick program-tune', text: '약점 · 메인 종목 고르기',
-          onclick: openProgramTune,
-        }),
-      ]),
+      el('div', { class: 'sheet-body' }, body),
     ]);
   }
 
@@ -13984,6 +14053,355 @@
       openModal('프로그램 다듬기', null, body);
     };
     draw();
+  }
+
+  /* ── 내 루틴 ─────────────────────────────────────── */
+
+  /**
+   * 내 루틴과 프로그램을 맞춘다.
+   *
+   * 루틴이 있으면 프로그램은 언제나 루틴에서 나온다 — 저장된 프로그램보다 루틴이 원본이다
+   * (앱 종목이 바뀌었으면 루틴에서 다시 고른다). 프로그램만 루틴 것으로 남아 있으면(루틴 칸
+   * 없이 받은 경우) 거기서 루틴을 되살리고, 쓸 수 있는 종목이 하나도 안 남았으면 앱이 짠
+   * 프로그램으로 돌아간다.
+   */
+  function reconcileRoutine() {
+    var source = state.customRoutine ||
+      (state.program && state.program.custom ? E.routineFromProgram(state.program) : null);
+    state.customRoutine = source ? E.sanitizeRoutine(source, index) : null;
+    if (state.customRoutine) state.program = E.routineProgram(state.customRoutine, index);
+    else if (state.program && state.program.custom && state.answers) rebuildProgramInPlace();
+  }
+
+  /** 루틴 점검 — 볼륨 탭과 같은 자(지금 쓰는 볼륨 기준선)로 잰다. */
+  function routineReview(routine) {
+    return E.reviewRoutine(routine, index, state.landmarks || E.landmarksFor(state.lifter.level));
+  }
+
+  /** 이번 주 머리줄 — 내 루틴은 세트를 늘리거나 줄이지 않으므로 처방 문구 대신 이것. */
+  function planLine(plan) {
+    if (!state.customRoutine) return plan.summary;
+    if (plan.phase === 'deload') return '덜어내는 주입니다. 내 루틴 세트를 절반으로 줄이고 무게는 90%로 둡니다.';
+    return plan.weekInBlock + '주차 — 내 루틴 그대로, 세트마다 ' + plan.targetRir + '개쯤 여유를 남깁니다.';
+  }
+
+  /**
+   * 부위별 한 주 세트와 고칠 만한 것. 편집 창 · 주간 탭이 같이 쓴다.
+   * 막대는 한계까지를 한 칸으로 — 눈금은 최소, 색은 볼륨 탭과 같다.
+   */
+  function routineReviewPanel(review) {
+    var rows = review.muscles.filter(function (line) { return line.sets > 0 || line.landmark.mev > 0; });
+    var list = el('div', { class: 'routine-muscles' }, rows.map(function (line) {
+      var scale = line.landmark.mrv * 1.2;
+      var pct = function (value) { return clamp((value / scale) * 100, 0, 100); };
+      var zone = zoneClass(line.zone);
+      return el('div', { class: 'routine-muscle' }, [
+        el('span', { class: 'name', text: E.MUSCLE_LABELS_KO[line.muscle] }),
+        el('span', { class: 'bar', 'aria-hidden': 'true' }, [
+          el('i', { class: 'zone-' + zone, style: 'width:' + pct(line.sets) + '%' }),
+          el('b', { style: 'left:' + pct(line.landmark.mev) + '%' }),
+        ]),
+        el('span', { class: 'num zone-text-' + zone, text: fmt(line.sets) + ' / ' + line.landmark.mev + '–' + line.landmark.mrv }),
+      ]);
+    }));
+    var notes = review.notes.map(function (note) {
+      return el('p', { class: 'hint-line warn routine-note', text: '⚠ ' + note.text });
+    });
+    if (notes.length === 0) {
+      notes.push(el('p', { class: 'hint-line routine-note ok', text: '부위마다 주 최소 세트를 넘고 한계 안입니다.' }));
+    }
+    return el('div', { class: 'routine-review' }, [
+      el('p', { class: 'hint-line', text:
+        '유효 세트 / 최소–한계. 보조로 쓴 근육은 기여한 만큼, 하루 9세트를 넘는 몫은 절반만 셉니다.' }),
+      list,
+    ].concat(notes));
+  }
+
+  function cloneRoutine(routine) {
+    return JSON.parse(JSON.stringify(routine));
+  }
+
+  function emptyRoutine(days) {
+    var out = { days: [] };
+    for (var i = 0; i < days; i += 1) out.days.push({ name: (i + 1) + '일차', slots: [] });
+    return out;
+  }
+
+  /*
+   * 저장 안 한 편집. 창을 실수로 닫아도(뒤로가기) 다시 열면 이어서 한다 — 루틴을
+   * 다 넣는 데 몇 분이 걸린다. 저장하거나 "그만두기"를 누르면 비운다.
+   */
+  var routineDraft = null;
+  var routineDraftBase = null;
+
+  /**
+   * 내 루틴 편집.
+   *
+   * 창 하나에서 다 한다 — 날 이름 · 종목 · 세트 · 반복, 종목 넣기(부위별 목록)까지. 고칠
+   * 때마다 아래 점검이 바로 바뀐다. 저장 전에는 아무것도 바뀌지 않는다.
+   */
+  function openRoutineEditor() {
+    if (state.started && !state.sessionClosed) {
+      openModal('내 루틴', null, [
+        el('p', { class: 'asset-note', text: '운동 중에는 루틴을 바꿀 수 없습니다. 오늘 운동을 끝낸 뒤에 고쳐 주세요.' }),
+      ]);
+      return;
+    }
+    var saved = state.customRoutine ? JSON.stringify(state.customRoutine) : null;
+    // 그사이 루틴이 바뀌었으면(다른 폰) 고치던 것은 낡았다
+    if (routineDraft && routineDraftBase !== saved) routineDraft = null;
+    var resumed = Boolean(routineDraft) && JSON.stringify(routineDraft) !== saved;
+    if (!routineDraft && state.customRoutine) routineDraft = cloneRoutine(state.customRoutine);
+    routineDraftBase = saved;
+
+    var view = { picking: null, added: [], confirmDay: null, error: null, region: 'all' };
+    var wrap = el('div', { class: 'routine-editor' }, []);
+    openModal('내 루틴', null, [wrap]);
+
+    var setTitle = function (text) {
+      var title = document.getElementById('modal-title');
+      if (title) title.textContent = text;
+    };
+
+    var draw = function () {
+      var top = modal.scrollTop;
+      wrap.textContent = '';
+      if (!routineDraft) { setTitle('내 루틴'); drawStart(); }
+      else if (view.picking !== null) { setTitle('종목 넣기 — ' + (routineDraft.days[view.picking].name || (view.picking + 1) + '일차')); drawPicker(); return; }
+      else { setTitle('내 루틴'); drawDays(); }
+      modal.scrollTop = top;
+    };
+
+    var drawStart = function () {
+      wrap.appendChild(el('p', { class: 'asset-note', text:
+        '하던 루틴이 있으면 그대로 넣으세요. 종목 · 세트 · 반복은 정한 대로 하고, 무게와 횟수만 기록을 보고 앱이 올립니다. ' +
+        '몇 주에 한 번 오는 쉬어 가는 주에는 세트를 절반으로 줄입니다.' }));
+      var days = state.program.daysPerWeek;
+      var options = [];
+      if (state.lastRoutine) {
+        options.push({ title: '지난번 내 루틴 불러오기', hint: state.lastRoutine.days.map(function (day) { return day.name; }).join(' · '),
+          make: function () { return cloneRoutine(state.lastRoutine); } });
+      }
+      options.push({ title: '지금 프로그램에서 고쳐 쓰기', hint: state.program.templates.map(function (t) { return t.name; }).join(' · ') + ' — 종목을 빼고 넣어서',
+        make: function () { return E.routineFromProgram(state.program); } });
+      options.push({ title: '빈 칸에서 짜기', hint: '주 ' + days + '회 — 날마다 종목을 직접 넣습니다',
+        make: function () { return emptyRoutine(days); } });
+      options.forEach(function (option) {
+        wrap.appendChild(el('button', {
+          type: 'button', class: 'choice routine-from',
+          onclick: function () { routineDraft = option.make(); modal.scrollTop = 0; draw(); },
+        }, [
+          el('span', { class: 'choice-title', text: option.title }),
+          el('span', { class: 'choice-hint', text: option.hint }),
+        ]));
+      });
+    };
+
+    var drawDays = function () {
+      var review = routineReview(routineDraft);
+      if (resumed) {
+        wrap.appendChild(el('p', { class: 'hint-line', text: '저장하지 않고 닫았던 것을 이어서 고칩니다.' }));
+        resumed = false;
+      }
+      var excluded = excludedSet();
+      routineDraft.days.forEach(function (day, d) {
+        var rows = day.slots.map(function (slot, i) {
+          var exercise = index.get(slot.exerciseId);
+          if (!exercise) return null;
+          var ranges = E.ROUTINE_REP_RANGES.slice();
+          var same = function (range) { return range.min === slot.repRange.min && range.max === slot.repRange.max; };
+          if (!ranges.some(same)) ranges.push(slot.repRange);
+          var move = function (to) {
+            day.slots.splice(i, 1);
+            day.slots.splice(to, 0, slot);
+            draw();
+          };
+          return el('div', { class: 'routine-slot' }, [
+            el('div', { class: 'routine-slot-top' }, [
+              el('span', { class: 'plan-main' }, [
+                el('span', { class: 'name', text: exercise.name }),
+                el('span', { class: 'plan-sets', text: excluded.has(exercise.id)
+                  ? '빼 둔 종목 — 그날은 대체 종목으로 합니다' : rowDetail(exercise, null) }),
+              ]),
+              el('button', { type: 'button', class: 'routine-icon', text: '×', 'aria-label': exercise.name + ' 빼기',
+                onclick: function () { day.slots.splice(i, 1); draw(); } }),
+            ]),
+            el('div', { class: 'routine-slot-controls' }, [
+              el('span', { class: 'routine-stepper' }, [
+                el('button', { type: 'button', class: 'routine-icon', text: '−', 'aria-label': '세트 줄이기',
+                  disabled: slot.sets <= 1 ? '' : null, onclick: function () { slot.sets = Math.max(1, slot.sets - 1); draw(); } }),
+                el('span', { class: 'num', text: slot.sets + '세트' }),
+                el('button', { type: 'button', class: 'routine-icon', text: '+', 'aria-label': '세트 늘리기',
+                  disabled: slot.sets >= E.ROUTINE_MAX_SETS ? '' : null, onclick: function () { slot.sets = Math.min(E.ROUTINE_MAX_SETS, slot.sets + 1); draw(); } }),
+              ]),
+              el('select', { class: 'routine-reps', 'aria-label': exercise.name + ' 반복 범위',
+                onchange: function (event) {
+                  var range = ranges[Number(event.target.value)];
+                  slot.repRange = { min: range.min, max: range.max };
+                } }, ranges.map(function (range, k) {
+                return el('option', { value: String(k), text: range.min + '~' + range.max + '회', selected: same(range) ? '' : null });
+              })),
+              el('button', { type: 'button', class: 'routine-icon', text: '↑', 'aria-label': '위로',
+                disabled: i === 0 ? '' : null, onclick: function () { move(i - 1); } }),
+              el('button', { type: 'button', class: 'routine-icon', text: '↓', 'aria-label': '아래로',
+                disabled: i === day.slots.length - 1 ? '' : null, onclick: function () { move(i + 1); } }),
+            ]),
+          ]);
+        });
+
+        var removeDay = routineDraft.days.length > 1 ? el('button', {
+          type: 'button', class: 'pick' + (view.confirmDay === d ? ' danger' : ''),
+          text: view.confirmDay === d ? '정말 빼기' : '날 빼기',
+          onclick: function () {
+            if (view.confirmDay !== d && day.slots.length > 0) { view.confirmDay = d; draw(); return; }
+            routineDraft.days.splice(d, 1);
+            view.confirmDay = null;
+            draw();
+          },
+        }) : null;
+
+        wrap.appendChild(el('section', { class: 'routine-day' }, [
+          el('div', { class: 'routine-day-head' }, [
+            el('input', {
+              type: 'text', class: 'text-input routine-day-name', value: day.name,
+              maxlength: String(E.ROUTINE_DAY_NAME_MAX), 'aria-label': (d + 1) + '번째 날 이름',
+              // 치는 동안 다시 그리지 않는다 — 칸이 바뀌면 커서와 한글 조합이 깨진다
+              oninput: function (event) { day.name = event.target.value; },
+            }),
+            el('span', { class: 'meta', text: review.days[d].sets + '세트' }),
+            removeDay,
+          ]),
+          rows.length ? el('div', { class: 'routine-slots' }, rows) : el('p', { class: 'hint-line', text: '아직 종목이 없습니다.' }),
+          el('button', {
+            type: 'button', class: 'pick routine-add', text: '＋ 종목 넣기',
+            disabled: day.slots.length >= E.ROUTINE_MAX_LIFTS ? '' : null,
+            onclick: function () { view.picking = d; view.added = []; modal.scrollTop = 0; draw(); },
+          }),
+        ]));
+      });
+
+      if (routineDraft.days.length < E.ROUTINE_MAX_DAYS) {
+        wrap.appendChild(el('button', {
+          type: 'button', class: 'pick routine-add-day', text: '＋ 날 더하기',
+          onclick: function () {
+            routineDraft.days.push({ name: (routineDraft.days.length + 1) + '일차', slots: [] });
+            draw();
+          },
+        }));
+      }
+
+      wrap.appendChild(el('div', { class: 'list-label', text: '이대로 한 주(주 ' + routineDraft.days.length + '회)를 다 하면' }));
+      wrap.appendChild(routineReviewPanel(review));
+      if (view.error) wrap.appendChild(el('p', { class: 'hint-line warn', text: view.error }));
+      wrap.appendChild(el('div', { class: 'routine-actions' }, [
+        el('button', { type: 'button', class: 'finish routine-save', text: '이대로 저장', onclick: save }),
+        el('button', { type: 'button', class: 'finish quiet', text: '그만두기',
+          onclick: function () { routineDraft = null; modal.close(); } }),
+      ]));
+    };
+
+    var drawPicker = function () {
+      var day = routineDraft.days[view.picking];
+      var results = el('div', { class: 'add-lift-results' }, []);
+      var addedLine = el('p', { class: 'hint-line routine-added' }, []);
+      var search = el('input', {
+        type: 'search', class: 'text-input', value: '',
+        placeholder: '종목 이름 (예: 컬, 레그)', 'aria-label': '종목 찾기',
+        // 결과만 다시 그린다 — 칸을 새로 만들면 치던 글이 끊긴다
+        oninput: function () { refill(); },
+      });
+      var refill = function () {
+        var have = {};
+        day.slots.forEach(function (slot) { have[slot.exerciseId] = true; });
+        var prefer = [];
+        day.slots.forEach(function (slot) {
+          var exercise = index.get(slot.exerciseId);
+          var muscle = exercise && E.primaryMuscle(exercise);
+          if (muscle && prefer.indexOf(muscle) < 0) prefer.push(muscle);
+        });
+        var full = day.slots.length >= E.ROUTINE_MAX_LIFTS;
+        addedLine.textContent = view.added.length
+          ? '넣은 것: ' + view.added.join(', ') + (full ? ' — 하루 ' + E.ROUTINE_MAX_LIFTS + '종목까지입니다' : '')
+          : '누르면 이 날 끝에 3세트로 들어갑니다. 여러 개 넣고 "다 넣었어요"를 누르세요.';
+        var body = full ? [] : exerciseChoiceList({
+          query: search.value,
+          region: view.region,
+          onRegion: function (region) { view.region = region; refill(); },
+          skip: have,
+          prefer: prefer,
+          onPick: function (exercise) {
+            if (day.slots.length >= E.ROUTINE_MAX_LIFTS) return;
+            day.slots.push(E.routineSlotFor(exercise));
+            view.added.push(exercise.name);
+            refill();
+          },
+        });
+        results.textContent = '';
+        body.forEach(function (node) { results.appendChild(node); });
+      };
+      wrap.appendChild(el('button', {
+        type: 'button', class: 'finish routine-picked', text: '다 넣었어요',
+        onclick: function () { view.picking = null; modal.scrollTop = 0; draw(); },
+      }));
+      wrap.appendChild(addedLine);
+      wrap.appendChild(search);
+      wrap.appendChild(results);
+      refill();
+    };
+
+    var save = function () {
+      var routine = E.sanitizeRoutine(routineDraft, index);
+      if (!routine) {
+        view.error = '종목을 하나 이상 넣어 주세요. 종목이 없는 날은 저장할 때 빠집니다.';
+        draw();
+        return;
+      }
+      routine.updatedAt = new Date().toISOString();
+      var first = !state.customRoutine;
+      state.customRoutine = routine;
+      state.program = E.routineProgram(routine, index);
+      routineDraft = null;
+      modal.close();
+      // 다른 날 · 다른 순서 · 묶음은 지난 날 기준이었다
+      state.dayOverride = null;
+      state.liftOrder = null;
+      state.supersets = [];
+      loadScenario(state.scenario, true);
+      pushLog('내 루틴', first
+        ? '내 루틴으로 바꿨습니다 — 주 ' + routine.days.length + '회. 종목 · 세트는 정한 대로, 무게와 횟수만 앱이 올립니다.'
+        : '내 루틴을 고쳤습니다.');
+      persist();
+      render();
+    };
+
+    draw();
+  }
+
+  function confirmRoutineOff() {
+    if (state.started && !state.sessionClosed) {
+      openModal('앱이 짠 프로그램으로', null, [
+        el('p', { class: 'asset-note', text: '운동 중에는 프로그램을 바꿀 수 없습니다. 오늘 운동을 끝낸 뒤에 다시 해 주세요.' }),
+      ]);
+      return;
+    }
+    openModal('앱이 짠 프로그램으로', null, [
+      el('p', { class: 'asset-note', text:
+        '설문 답으로 앱이 짠 프로그램으로 돌아갑니다. 세트 수는 다시 한 주 기록을 보고 앱이 정합니다.' }),
+      el('p', { class: 'hint-line', text: '내 루틴은 지우지 않고 넣어 둡니다 — "내 루틴으로 바꾸기"에서 다시 불러올 수 있습니다.' }),
+      el('div', { class: 'routine-actions' }, [
+        el('button', { type: 'button', class: 'finish routine-off-go', text: '앱이 짠 프로그램으로', onclick: function () {
+          state.lastRoutine = state.customRoutine;
+          state.customRoutine = null;
+          rebuildProgramInPlace();
+          modal.close();
+          loadScenario(state.scenario, true);
+          pushLog('프로그램', '앱이 짠 프로그램으로 돌아갔습니다. 내 루틴은 넣어 뒀습니다.');
+          persist();
+          render();
+        } }),
+        el('button', { type: 'button', class: 'finish quiet', text: '그대로 두기', onclick: function () { modal.close(); } }),
+      ]),
+    ]);
   }
 
   function renderMe() {
@@ -14343,7 +14761,9 @@
         equipmentIds: backup.answers.gym.equipmentIds.slice(),
         measurements: backup.answers.gym.measurements,
       });
+      state.customRoutine = null;
       Object.keys(settings).forEach(function (key) { state[key] = settings[key]; });
+      reconcileRoutine();
       if (settings.diet) state.diet = E.normalizeDiet(settings.diet);
       // 예전 판 박자면 받은 값만 옮긴다 — 이 폰의 값은 이미 옮겼다(applyRemoteSettings와 같다)
       if (settings.tempoVersion !== TEMPO_VERSION) {
@@ -16483,6 +16903,8 @@
       el('p', { class: 'asset-note', text:
         '경력 · 운동 횟수 · 목표 · 헬스장 기구를 다시 고르고 프로그램을 새로 짭니다. ' +
         '지난 운동 기록과 체중 · 식단 기록은 그대로 남습니다.' }),
+      state.customRoutine ? el('p', { class: 'hint-line warn', text:
+        '내 루틴을 쓰는 중입니다. 다시 설정하면 앱이 새로 짠 프로그램으로 바뀝니다 — 루틴은 지우지 않고 넣어 둡니다(내 정보 › 프로그램에서 다시 불러오기).' }) : null,
       el('p', { class: 'hint-line', text: '지금 답이 채워진 채로 열립니다. 중간에 그만두면 아무것도 바뀌지 않습니다.' }),
       el('div', { class: 'chip-row' }, [
         el('button', { type: 'button', class: 'finish redo-go', text: '다시 설정하기', onclick: function () { modal.close(); redoSetup(); } }),
@@ -16537,6 +16959,9 @@
     state.gym = result.gym;
     state.lifter = result.lifter;
     state.program = result.program;
+    // 새로 짠 프로그램으로 간다 — 내 루틴은 지우지 않고 넣어 둔다
+    if (state.customRoutine) state.lastRoutine = state.customRoutine;
+    state.customRoutine = null;
     // 새 설문이면 새 출발이다. 블록은 오늘부터 센다.
     state.block = null;
     state.blockNews = null;
