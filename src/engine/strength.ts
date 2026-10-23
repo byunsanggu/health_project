@@ -113,6 +113,15 @@ export const ANCHOR_FACTORS: Record<string, AnchorFactor> = {
   'cable-pull-through': { anchor: 'deadlift', factor: 0.35 },
   'seated-leg-curl': { anchor: 'deadlift', factor: 0.3 },
   'machine-hip-thrust': { anchor: 'deadlift', factor: 0.9 },
+
+  // 덤벨만 있는 곳
+  'dumbbell-romanian-deadlift': { anchor: 'deadlift', factor: 0.28, perHand: true },
+  'dumbbell-bent-over-row': { anchor: 'row', factor: 0.35, perHand: true },
+  'dumbbell-calf-raise': { anchor: 'squat', factor: 0.15, perHand: true },
+  'dumbbell-rear-delt-fly': { anchor: 'overheadPress', factor: 0.1, perHand: true },
+  'dumbbell-floor-press': { anchor: 'bench', factor: 0.32, perHand: true },
+  'standing-dumbbell-press': { anchor: 'overheadPress', factor: 0.36, perHand: true },
+  'dumbbell-overhead-extension': { anchor: 'bench', factor: 0.25 },
 };
 
 /**

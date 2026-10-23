@@ -742,6 +742,56 @@ export const EXERCISES: readonly Exercise[] = [
     contribution: { abs: 1 },
     jointStress: { lowBack: 0.25, shoulder: 0.15 },
   },
+
+  /*
+   * 덤벨만 있는 곳(집 · 작은 헬스장)에서도 등 · 뒤허벅지 · 종아리 · 후면 어깨를 채운다.
+   * 전에는 벤치가 없으면 덤벨로 할 등 운동이 하나도 없어서, 홈짐 프로그램에 등과
+   * 뒤허벅지가 통째로 빠지고 프론트 레이즈가 메인 자리에 들어갔다.
+   */
+  {
+    id: 'dumbbell-romanian-deadlift', name: '덤벨 루마니안 데드리프트', nameEn: 'Dumbbell Romanian Deadlift',
+    equipment: 'dumbbell', pattern: 'hinge', increment: 2,
+    // 바벨보다 가볍게 다루고 덤벨이 몸 옆으로 내려가 허리 부담이 덜하다
+    contribution: { hamstrings: 1, glutes: 0.8, back: 0.3, forearms: 0.4 },
+    jointStress: { lowBack: 0.55, hip: 0.4, knee: 0.15 },
+  },
+  {
+    id: 'dumbbell-bent-over-row', name: '덤벨 벤트오버 로우', nameEn: 'Dumbbell Bent-Over Row',
+    equipment: 'dumbbell', pattern: 'horizontalPull', increment: 2,
+    contribution: { back: 1, rearDelt: 0.5, biceps: 0.4, traps: 0.4, hamstrings: 0.25 },
+    jointStress: { lowBack: 0.55, shoulder: 0.3, elbow: 0.3 },
+  },
+  {
+    id: 'dumbbell-calf-raise', name: '덤벨 카프레이즈', nameEn: 'Dumbbell Calf Raise',
+    equipment: 'dumbbell', pattern: 'isolation', increment: 2, unilateral: true,
+    contribution: { calves: 1 },
+    jointStress: { ankle: 0.4 },
+  },
+  {
+    id: 'dumbbell-rear-delt-fly', name: '덤벨 리어델트 플라이', nameEn: 'Dumbbell Rear Delt Fly',
+    equipment: 'dumbbell', pattern: 'isolation', increment: 1,
+    contribution: { rearDelt: 1, traps: 0.3 },
+    jointStress: { shoulder: 0.25, lowBack: 0.25 },
+  },
+  {
+    id: 'dumbbell-floor-press', name: '덤벨 플로어 프레스', nameEn: 'Dumbbell Floor Press',
+    equipment: 'dumbbell', pattern: 'horizontalPush', increment: 2,
+    // 바닥이 가동 범위를 끊어 벤치프레스보다 가슴이 덜 늘어나고 삼두를 더 쓴다
+    contribution: { chest: 0.85, triceps: 0.6, frontDelt: 0.4 },
+    jointStress: { shoulder: 0.35, elbow: 0.35, wrist: 0.3 },
+  },
+  {
+    id: 'standing-dumbbell-press', name: '스탠딩 덤벨 숄더프레스', nameEn: 'Standing Dumbbell Shoulder Press',
+    equipment: 'dumbbell', pattern: 'verticalPush', increment: 2,
+    contribution: { frontDelt: 1, sideDelt: 0.5, triceps: 0.4, abs: 0.25 },
+    jointStress: { shoulder: 0.65, lowBack: 0.3, elbow: 0.3, wrist: 0.3 },
+  },
+  {
+    id: 'dumbbell-overhead-extension', name: '덤벨 오버헤드 익스텐션', nameEn: 'Dumbbell Overhead Triceps Extension',
+    equipment: 'dumbbell', pattern: 'isolation', increment: 2,
+    contribution: { triceps: 1 },
+    jointStress: { elbow: 0.5, shoulder: 0.4 },
+  },
 ]
 
 const BY_ID = new Map(EXERCISES.map((exercise) => [exercise.id, exercise]));

@@ -3,6 +3,9 @@ import { availableExercises, coverageReport, gymFromCatalog, type GymSelection }
 import { assessLevel, levelProfile, type LevelAssessment } from './levels.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO, landmarksFor } from './muscles.ts';
 import { JOINT_LABELS_KO, screenExercise } from './pain.ts';
+import { volumeReport } from './volume.ts';
+import { templateWeekLogs } from './weekSets.ts';
+import { withParticle } from './korean.ts';
 import type { LifterProfile } from './strength.ts';
 import type { SessionSlot, SessionTemplate } from './session.ts';
 import type { Phase, WeeklyPlan } from './mesocycle.ts';
@@ -265,6 +268,19 @@ const FULL_B: DayBlueprint = {
   ],
 };
 
+/*
+ * 주 2회는 A · B만 돈다. B에 가슴 자리가 없으면 가슴이 주 1회 3~4세트로 끝난다 —
+ * 최소 세트의 절반도 안 된다. 2회 분할의 B에는 가슴 보조 자리를 하나 더 둔다.
+ */
+const FULL_B_TWICE: DayBlueprint = {
+  name: '전신 B',
+  slots: [
+    ...FULL_B.slots.slice(0, 3),
+    { muscle: 'chest', role: 'accessory', patterns: ['horizontalPush'] },
+    ...FULL_B.slots.slice(3),
+  ],
+};
+
 const FULL_C: DayBlueprint = {
   name: '전신 C',
   slots: [
@@ -307,7 +323,7 @@ const ACCESSORY_DAY: DayBlueprint = {
 const SPLITS: Record<number, DayBlueprint[]> = {
   // 주 1회는 늘리기 위한 일정이 아니라 지키기 위한 일정이다. 전신 한 번.
   1: [FULL_A],
-  2: [FULL_A, FULL_B],
+  2: [FULL_A, FULL_B_TWICE],
   3: [FULL_A, FULL_B, FULL_C],
   4: [UPPER_A, LOWER_A, UPPER_B, LOWER_B],
   5: [UPPER_A, LOWER_A, PUSH, PULL, LEGS],
@@ -360,6 +376,15 @@ const LOW_VALUE_ISOLATION: ReadonlySet<string> = new Set([
 /** 기본값으로 고를 이유가 적은 변형. 원하면 메인 종목으로 직접 고르면 된다. */
 const SPECIALTY_LIFTS: ReadonlySet<string> = new Set(['decline-barbell-press', 'floor-press']);
 
+/**
+ * 덤벨만 있는 곳을 위한 종목. 기구가 있는 헬스장에서는 머신 카프레이즈 · 리버스 펙덱 ·
+ * 벤치프레스처럼 더 안정적이거나 무겁게 다룰 수 있는 쪽을 먼저 고른다.
+ */
+const HOME_FALLBACK: ReadonlySet<string> = new Set([
+  'dumbbell-calf-raise', 'dumbbell-rear-delt-fly', 'dumbbell-floor-press',
+  'standing-dumbbell-press', 'dumbbell-bent-over-row',
+]);
+
 const HEAVY_PULLS: ReadonlySet<string> = new Set(['conventional-deadlift', 'sumo-deadlift', 'trap-bar-deadlift']);
 
 function scoreExercise(
@@ -395,6 +420,7 @@ function scoreExercise(
 
   if (LOW_VALUE_ISOLATION.has(exercise.id)) score -= 3;
   if (SPECIALTY_LIFTS.has(exercise.id)) score -= 2;
+  if (HOME_FALLBACK.has(exercise.id)) score -= 3;
   // 데드리프트는 메인 자리에서 무겁게 하는 종목이다. 8~12회 보조로 돌리지 않는다.
   if (slot.role !== 'primary' && HEAVY_PULLS.has(exercise.id)) score -= 5;
 
@@ -447,10 +473,16 @@ function pickExercise(
   sessionLoad: ReadonlyMap<Joint, number>,
   introduced?: readonly string[],
 ): Exercise | undefined {
-  const minContribution = slot.role === 'accessory' ? 0.5 : 0.85;
+  /*
+   * 메인 자리는 복합 동작만 — 덤벨만 있는 집에서 어깨 메인 자리에 프론트 레이즈가 들어간
+   * 적이 있다. 대신 기여도는 0.75부터 받는다. 푸시업(가슴 0.8)이 가슴 메인이 못 돼서
+   * 집에서 하는 사람의 가슴이 0세트였다. 더 나은 종목이 있으면 점수에서 밀린다.
+   */
+  const minContribution = slot.role === 'accessory' ? 0.5 : slot.role === 'primary' ? 0.75 : 0.85;
 
   return pool
     .filter((exercise) => !used.has(exercise.id))
+    .filter((exercise) => slot.role !== 'primary' || (exercise.pattern !== 'isolation' && exercise.pattern !== 'core'))
     .filter((exercise) => (exercise.contribution[slot.muscle] ?? 0) >= minContribution)
     .map((exercise) => ({ exercise, score: scoreExercise(exercise, slot, level, sessionLoad, introduced) }))
     .sort((a, b) => b.score - a.score)[0]?.exercise;
@@ -802,11 +834,15 @@ export function buildProgram(
   return {
     name: SPLIT_NAMES[days] ?? `주 ${days}회 분할`,
     daysPerWeek: days,
-    caution: cautionFor(days, weeklyTargets, landmarks),
+    caution: cautionFor(days, templates, landmarks, answers.gym.equipmentIds),
     templates,
     weeklyTargets,
   };
 }
+
+/** 모자라다고 말하지 않는 부위 — 다른 종목에서 저절로 채워지거나 따로 안 해도 되는 곳 */
+const QUIET_WHEN_LOW: ReadonlySet<MuscleGroup> = new Set<MuscleGroup>(['frontDelt', 'forearms', 'abs']);
+const EXERCISE_INDEX: ReadonlyMap<string, Exercise> = new Map(EXERCISES.map((exercise) => [exercise.id, exercise]));
 
 /**
  * 이 일정의 한계를 그대로 말한다.
@@ -814,29 +850,38 @@ export function buildProgram(
  * 주 1~2회로는 대부분의 부위가 최소 자극선(MEV)에 닿지 않는다. 그걸 숨기고
  * "훌륭한 프로그램입니다"라고 하면 몇 달 뒤에 사용자가 앱을 탓하게 된다.
  * 무엇이 되고 무엇이 안 되는지 처음에 말해야 한다.
+ *
+ * 짠 프로그램을 한 주 다 했을 때 부위마다 몇 세트인지(볼륨 탭과 같은 셈)로 판단한다.
+ * 목표로 판단하면 목표가 곧 최소라 한 번도 걸리지 않았다(주 2회 가슴 4세트에도 조용했다).
+ * 기구가 없어서 못 채우는 부위는 여기서 말하지 않는다 — 그건 기구 안내가 따로 하고,
+ * 홈짐에서 등이 0세트인데 "하루를 더 내라"고 하면 틀린 말이다.
  */
 function cautionFor(
   days: number,
-  targets: Partial<Record<MuscleGroup, number>>,
+  templates: readonly SessionTemplate[],
   landmarks: ReturnType<typeof landmarksFor>,
+  equipmentIds: readonly string[],
 ): string | undefined {
-  const below = MUSCLE_GROUPS.filter((muscle) => {
-    const mev = landmarks[muscle].mev;
-    return mev > 0 && (targets[muscle] ?? 0) < mev;
-  });
-
   if (days === 1) {
     return '주 1회는 근육을 늘리기보다 지키는 일정입니다. 전신을 한 번에 돌려 ' +
       '빠지는 부위가 없게 짰지만, 부위별 볼륨은 최소 자극선에 못 미칩니다. ' +
       '늘리는 것이 목표라면 주 2회부터가 현실적입니다.';
   }
 
-  if (below.length >= 6) {
-    return `주 ${days}회로는 ${below.slice(0, 3).map((muscle) => MUSCLE_LABELS_KO[muscle]).join(', ')} 등 ` +
-      `${below.length}개 부위가 최소 자극선에 닿지 않습니다. 하루를 더 낼 수 있으면 크게 달라집니다.`;
-  }
+  // 할 종목이 아예 없는 부위만 기구 탓이다 — 한 가지라도 있으면 세트를 늘려 채울 수 있다
+  const noGear = new Set(coverageReport(equipmentIds).filter((item) => item.directOptions === 0).map((item) => item.muscle));
+  const short = volumeReport(templateWeekLogs(templates), landmarks, EXERCISE_INDEX)
+    .filter((line) => line.landmark.mev > 0 && line.effectiveSets < line.landmark.mev * 0.85)
+    .filter((line) => !QUIET_WHEN_LOW.has(line.muscle) && !noGear.has(line.muscle))
+    .map((line) => line.muscle);
+  if (short.length === 0) return undefined;
 
-  return undefined;
+  const named = short.slice(0, 3).map((muscle) => MUSCLE_LABELS_KO[muscle]).join(' · ') +
+    (short.length > 3 ? ` 외 ${short.length - 3}곳` : '');
+  const plan = days <= 3 ? `주 ${days}회 · 하루 한 시간 안쪽으로` : withParticle(`주 ${days}회`, '으로/로');
+  return `${plan} 짜서 첫 주에는 ${withParticle(named, '이/가')} ` +
+    '주 최소 세트 아래에서 시작합니다. 몇 주에 걸쳐 세트를 늘리며 채웁니다' +
+    (days <= 2 ? ' — 하루를 더 낼 수 있으면 크게 달라집니다.' : '.');
 }
 
 /* ── 온보딩 전체 ───────────────────────────────────────────── */
@@ -866,17 +911,39 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
       `${profile.accumulationWeeks}주 동안 조금씩 늘리고, 그다음 한 주는 덜어냅니다.`,
   );
 
+  /*
+   * 기구 안내 — 할 종목이 아예 없는 부위와, 한 가지뿐이라 블록이 바뀌어도 같은 종목인
+   * 부위를 나눠 말한다. 둘을 묶어 "종목이 부족합니다"라고만 하면 덤벨 로우로 등을 잘 하고
+   * 있는 사람도 등을 못 하는 줄 안다.
+   */
   const gaps = coverageReport(answers.gym.equipmentIds).filter((item) => !item.sufficient);
-  if (gaps.length > 0) {
-    const named = gaps.slice(0, 3).map((gap) => MUSCLE_LABELS_KO[gap.muscle]).join(', ');
-    notes.push(`${named} 종목이 부족합니다. 헬스장에 있는 기구를 더 추가하면 프로그램이 채워집니다.`);
+  const none = gaps.filter((gap) => gap.directOptions === 0);
+  const few = gaps.filter((gap) => gap.directOptions > 0);
+  const labels = (list: typeof gaps) => list.slice(0, 3).map((gap) => MUSCLE_LABELS_KO[gap.muscle]).join(' · ');
+  if (none.length > 0) {
+    const suggestion = none.find((gap) => gap.suggestion)?.suggestion;
+    notes.push(`${labels(none)} 종목을 할 기구가 없어 이 부위는 다른 종목에서 간접으로만 씁니다.` +
+      (suggestion ? ` ${withParticle(suggestion.name, '을/를')} 더하면 채워집니다.` : ''));
+  }
+  if (few.length > 0) {
+    notes.push(`${withParticle(labels(few), '은/는')} 이 기구로 할 종목이 한 가지뿐이라 블록이 바뀌어도 같은 종목입니다. 기구를 더 고르면 바꿔 가며 합니다.`);
   }
 
-  const noBarbellBasics = program.templates.every((template) =>
-    template.slots.every((slot) => !TECHNICAL_LIFTS.has(slot.exerciseId)));
+  /*
+   * 초보 안내 — 바벨 기본 종목이 나중에 들어온다는 말은 그 헬스장에 바벨이 있을 때만,
+   * 루마니안 데드리프트 이야기는 프로그램에 실제로 있을 때만 한다.
+   */
+  const programIds = new Set(program.templates.flatMap((template) => template.slots.map((slot) => slot.exerciseId)));
+  const noBarbellBasics = [...programIds].every((id) => !TECHNICAL_LIFTS.has(id));
   if (level.level === 'beginner' && noBarbellBasics) {
-    notes.push('처음에는 머신 · 덤벨로 자세를 먼저 만듭니다. 바벨 백 스쿼트 · 컨벤셔널 데드리프트는 중급으로 다시 짤 때 들어갑니다. ' +
-      '루마니안 데드리프트는 가벼운 무게로 엉덩이 접는 법을 익히는 종목이라 처음부터 넣었습니다.');
+    const reachable = new Set(availableExercises(answers.gym.equipmentIds, EXERCISES).map((exercise) => exercise.id));
+    const later = ['back-squat', 'conventional-deadlift'].filter((id) => reachable.has(id))
+      .map((id) => (id === 'back-squat' ? '바벨 백 스쿼트' : '컨벤셔널 데드리프트'));
+    const hinge = ['romanian-deadlift', 'dumbbell-romanian-deadlift'].find((id) => programIds.has(id));
+    const lines = ['처음에는 다루기 쉬운 종목으로 자세를 먼저 만듭니다.'];
+    if (later.length > 0) lines.push(`${later.join(' · ')}는 중급으로 다시 짤 때 들어갑니다.`);
+    if (hinge) lines.push(`${EXERCISE_INDEX.get(hinge)!.name}는 가벼운 무게로 엉덩이 접는 법을 익히는 종목이라 처음부터 넣었습니다.`);
+    notes.push(lines.join(' '));
   }
 
   // 실제로 뺀 것이 있을 때만, 무엇을 뺐는지 말한다

@@ -60,7 +60,35 @@ describe('runOnboarding', () => {
     const result = runOnboarding(answers({
       gym: { equipmentIds: ['floor', 'barbell-set', 'power-rack', 'bench-flat'] },
     }));
-    assert.ok(result.notes.some((note) => note.includes('기구를 더 추가하면')));
+    // 아예 없는 부위는 무엇을 더하면 되는지, 한 가지뿐인 부위는 바꿔 가며 못 한다는 것
+    assert.ok(result.notes.some((note) => /더하면 채워집니다|기구를 더 고르면/.test(note)), result.notes.join(' / '));
+  });
+
+  it('덤벨만 있는 집에서도 등 · 가슴 · 뒤허벅지 · 후면 어깨를 하고, 메인 자리는 복합 동작이다', () => {
+    const result = runOnboarding(answers({ selfReportedLevel: 'beginner', monthsTraining: 3, daysPerWeek: 3, gym: { equipmentIds: ['floor', 'dumbbells'] } }));
+    const all = exercisesOf(result.program);
+    for (const muscle of ['back', 'chest', 'hamstrings', 'rearDelt'] as const) {
+      assert.ok(all.some((exercise) => (exercise.contribution[muscle] ?? 0) >= 0.85), muscle);
+    }
+    for (const template of result.program.templates) {
+      for (const slot of template.slots.filter((item) => item.role === 'primary')) {
+        assert.ok(!['isolation', 'core'].includes(exerciseById(slot.exerciseId)!.pattern), `${template.name}: ${slot.exerciseId}`);
+      }
+    }
+    // 바벨이 없는 집에 "바벨 스쿼트는 중급에 들어온다"고 하지 않는다
+    assert.ok(!result.notes.some((note) => note.includes('바벨 백 스쿼트')), result.notes.join(' / '));
+  });
+
+  it('주 2회 전신은 가슴을 두 번 한다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 2 }), 'intermediate');
+    for (const template of program.templates) {
+      assert.ok(template.slots.some((slot) => (exerciseById(slot.exerciseId)!.contribution.chest ?? 0) >= 0.75), template.name);
+    }
+  });
+
+  it('주의 문구는 짠 프로그램의 실제 볼륨으로 — 주 2회 가슴 미달이면 말한다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 2 }), 'intermediate');
+    assert.match(program.caution ?? '', /주 2회.*최소 세트 아래/);
   });
 });
 

@@ -298,6 +298,14 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'torso-rotation': ['torso-rotation-machine'],
   'machine-triceps-extension': ['triceps-extension-machine'],
   'captains-chair-knee-raise': ['captains-chair'],
+  // 덤벨만 있으면 되는 것 — 홈짐에서도 등 · 뒤허벅지 · 종아리 · 후면 어깨가 빠지지 않게
+  'dumbbell-romanian-deadlift': ['dumbbells'],
+  'dumbbell-bent-over-row': ['dumbbells'],
+  'dumbbell-calf-raise': ['dumbbells'],
+  'dumbbell-rear-delt-fly': ['dumbbells'],
+  'dumbbell-floor-press': ['dumbbells', 'floor'],
+  'standing-dumbbell-press': ['dumbbells'],
+  'dumbbell-overhead-extension': ['dumbbells'],
 };
 
 export function requirementsMet(exerciseId: string, selected: ReadonlySet<string>): boolean {

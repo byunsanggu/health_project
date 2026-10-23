@@ -53,8 +53,16 @@ function isLight(exercise: Exercise): boolean {
   return exercise.pattern === 'isolation' || exercise.pattern === 'core';
 }
 
-/** 지금 세트대로 한 주를 다 했을 때의 기록 — 볼륨 셈을 처방과 똑같이 하려고. */
-function asWeek(templates: readonly SessionTemplate[], sets: readonly (readonly number[])[]): SessionLog[] {
+type WeekDay = Pick<SessionTemplate, 'slots'>;
+
+/**
+ * 이 세트대로 한 주를 다 했을 때의 기록 — 볼륨을 처방 · 볼륨 탭과 똑같은 셈으로 재려고.
+ * 세트를 안 주면 템플릿 세트 그대로. 세트마다 반복 범위 가운데 · 여유 2개로 친다.
+ */
+export function templateWeekLogs(
+  templates: readonly WeekDay[],
+  sets: readonly (readonly number[])[] = templates.map((template) => template.slots.map((slot) => slot.sets)),
+): SessionLog[] {
   return templates.map((template, d) => ({
     date: '',
     sets: template.slots.flatMap((slot, i) =>
@@ -81,7 +89,7 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
   const dayCap = base.map((day) => day.reduce((sum, value) => sum + value, 0) + growth);
   const daySum = (d: number) => sets[d]!.reduce((sum, value) => sum + value, 0);
   const exerciseAt = (d: number, i: number) => index.get(templates[d]!.slots[i]!.exerciseId);
-  const volumeOf = () => aggregateVolume(asWeek(templates, sets), index);
+  const volumeOf = () => aggregateVolume(templateWeekLogs(templates, sets), index);
 
   /*
    * 부위마다 이번 주 목표. 처방대로 늘리되 템플릿 밑으로는 안 내린다 — 지난주에 하루
@@ -89,7 +97,7 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
    * 부위('reduce')뿐이다. 4주 동안 안 한 부위('skip')나 지난주에 0이었던 부위는
    * 비교할 게 없으니 템플릿 그대로.
    */
-  const start = aggregateVolume(asWeek(templates, base), index);
+  const start = aggregateVolume(templateWeekLogs(templates, base), index);
   const targets = new Map<MuscleGroup, { target: number; reduce: boolean }>();
   for (const item of plan.volume) {
     if (item.action === 'skip' || item.action === 'deload' || item.currentSets <= 0) continue;

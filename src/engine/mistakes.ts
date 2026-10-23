@@ -131,6 +131,9 @@ const DEADBUG_BACK = m('back-arch', '허리가 바닥에서 떠요', '허리를 
 const SIDE_HIPS = m('hips-drop', '엉덩이가 내려가요', '엉덩이를 들어 몸을 일자로 맞추세요', '엉덩이 들고', '옆구리 근육이 일하지 않습니다');
 const ROTATE_SWING = m('swing', '반동으로 휙 돌려요', '천천히 돌리고 끝에서 멈추세요', '천천히', '허리가 비틀리며 다칩니다');
 const CARRY_LEAN = m('lean', '몸이 한쪽으로 기울어요', '어깨를 수평으로 두고 배에 힘을 주세요', '어깨 수평으로', '허리 한쪽에 부담이 몰립니다');
+// 덤벨로 하는 힌지 · 바닥 프레스
+const DB_AWAY = m('bar-away', '덤벨이 다리에서 멀어져요', '덤벨을 허벅지 앞에 붙여서 쓸어 내리세요', '덤벨은 다리에 붙여서', '멀어질수록 허리가 받는 무게가 커집니다', true);
+const FLOOR_BOUNCE = m('bounce', '팔꿈치를 바닥에 쿵 내려놓고 튕겨요', '팔꿈치가 바닥에 닿으면 잠깐 멈췄다가 미세요', '바닥에서 멈추고', '반동이 가슴 대신 일합니다');
 
 /**
  * 종목별 흔한 실수. 앞에 둘수록 더 흔하고 더 위험하다.
@@ -248,6 +251,14 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'dead-bug': [DEADBUG_BACK],
   'torso-rotation': [ROTATE_SWING],
   'farmers-walk': [CARRY_LEAN],
+  // 덤벨만 있는 곳
+  'dumbbell-romanian-deadlift': [SQUATTING, ROUND_BACK, DB_AWAY, TOO_DEEP_HINGE],
+  'dumbbell-bent-over-row': [ROW_STAND, ROUND_BACK, PULL_SHRUG],
+  'dumbbell-calf-raise': [CALF_SHORT, CALF_BOUNCE],
+  'dumbbell-rear-delt-fly': [REAR_TRAPS, RAISE_SWING],
+  'dumbbell-floor-press': [ELBOW_FLARE, FLOOR_BOUNCE],
+  'standing-dumbbell-press': [OHP_ARCH, PRESS_HALF],
+  'dumbbell-overhead-extension': [EXT_FLARE, OHP_ARCH],
 };
 
 /** 종목별 목록이 없을 때 동작 패턴의 기본. */

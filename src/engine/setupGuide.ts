@@ -137,6 +137,14 @@ export const SETUP_GUIDE: Readonly<Record<string, readonly string[]>> = {
   'torso-rotation': ['시트에 앉아 무릎 패드로 하체를 고정합니다', '처음엔 회전 폭을 작게 둡니다'],
   'machine-triceps-extension': ['팔꿈치가 회전축과 맞게 시트를 맞춥니다', '위팔을 패드에 붙입니다'],
   'captains-chair-knee-raise': ['등을 등받이에 붙이고 팔꿈치로 몸을 띄웁니다', '다리를 늘어뜨리고 시작합니다'],
+  // 덤벨만 있는 곳
+  'dumbbell-romanian-deadlift': ['덤벨을 허벅지 앞에 들고 섭니다', '무릎은 살짝만 굽힌 채 고정합니다'],
+  'dumbbell-bent-over-row': ['무릎을 살짝 굽히고 상체를 45도쯤 숙입니다', '등은 평평하게, 덤벨은 어깨 아래'],
+  'dumbbell-calf-raise': ['한 손에 덤벨, 다른 손은 벽을 짚습니다', '계단 끝에 앞꿈치만 올리면 더 깊게 됩니다'],
+  'dumbbell-rear-delt-fly': ['상체를 바닥과 거의 나란하게 숙입니다', '팔꿈치를 살짝 굽힌 채 옆으로 벌립니다'],
+  'dumbbell-floor-press': ['바닥에 누워 무릎을 세웁니다', '팔꿈치가 바닥에 닿을 때까지 내립니다'],
+  'standing-dumbbell-press': ['발은 골반 너비, 엉덩이와 배에 힘을 줍니다', '덤벨을 어깨 높이에서 시작합니다'],
+  'dumbbell-overhead-extension': ['덤벨 하나를 두 손으로 머리 위에 듭니다', '팔꿈치는 귀 옆에 고정합니다'],
 };
 
 /** 표에 없는 종목은 기구 종류로 말한다. 아무 말 안 하는 것보다 낫다. */
