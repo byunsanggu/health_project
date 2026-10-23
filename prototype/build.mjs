@@ -24,6 +24,19 @@ const app = await readFile(new URL('app.js', root), 'utf8');
 const demo3d = await readFile(new URL('demo3d.js', root), 'utf8');
 const equipmentArt = await readFile(new URL('equipmentArt.js', root), 'utf8');
 const bodyMap = await readFile(new URL('bodyMap.js', root), 'utf8');
+const bodyMap3d = await readFile(new URL('bodyMap3d.js', root), 'utf8');
+
+/*
+ * 3D 근육 그림 장(tools/body3d/layers.mjs가 그린다). 한 파일로 도는 원칙대로 data: 주소로
+ * 싣는다 — 따로 두면 오프라인 첫 실행 · 아티팩트 판에서 그림이 빠진다. 다 합쳐 200KB 안팎이다.
+ */
+const BODY3D_NAMES = ['upper-front', 'upper-back', 'lower-front', 'lower-back', 'full-front', 'full-back'];
+const body3dLayers = {};
+for (const name of BODY3D_NAMES) {
+  const png = await readFile(new URL(`body3d/${name}.png`, root));
+  body3dLayers[name] = 'data:image/png;base64,' + png.toString('base64');
+}
+const body3dScript = `window.__BODY3D__=${JSON.stringify(body3dLayers)};\n` + bodyMap3d;
 const demoClips = await readFile(new URL('demoClips.js', root), 'utf8');
 const remote = await readFile(new URL('remote.js', root), 'utf8');
 const gymSearch = await readFile(new URL('gymSearch.js', root), 'utf8');
@@ -102,6 +115,7 @@ const page = template
   .replace('/*ENGINE_BUNDLE*/', () => engine)
   .replace('/*EQUIPMENT_ART*/', () => equipmentArt)
   .replace('/*BODY_MAP*/', () => bodyMap)
+  .replace('/*BODY_MAP_3D*/', () => body3dScript)
   .replace('/*DEMO_CLIPS*/', () => demoClips)
   .replace('<!--BAKED_SERVER-->', () => bakedServer)
   .replace('/*REMOTE_SCRIPT*/', () => remote)

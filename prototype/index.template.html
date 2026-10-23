@@ -1404,6 +1404,17 @@ input[type="search"] {
   border-radius: 6px; background: var(--surface); border: 1px solid var(--line-soft); color: var(--muted);
 }
 .lift-thumb.warm { font-size: 17px; color: var(--accent); }
+/* 3D 근육 그림 — 칸을 꽉 채우고, 바탕은 위가 밝은 스튜디오 빛 */
+.lift-thumb.three { background: linear-gradient(180deg, #f3f4f8, #e6e8ee); }
+.lift-thumb .thumb-3d { width: 100%; height: 100%; display: block; border-radius: 9px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .lift-thumb.three { background: linear-gradient(180deg, #262a33, #1c1f26); }
+}
+:root[data-theme="dark"] .lift-thumb.three { background: linear-gradient(180deg, #262a33, #1c1f26); }
+.body3d-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; max-width: 300px; margin: 0 auto; }
+.body3d-pair figure { margin: 0; text-align: center; }
+.body3d-pair canvas { width: 100%; height: auto; display: block; }
+.body3d-pair figcaption { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
 .row-menu {
   border: 0; background: none; color: var(--muted);
@@ -2421,6 +2432,7 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .chart-table summary { cursor: pointer; font-size: 12px; color: var(--muted); margin: 6px 0; }
 .summary-body-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 12px; align-items: center; }
 .summary-body-map svg { width: 100%; height: auto; color: var(--chart-now); }
+.summary-body-map .body3d-pair { gap: 2px; }
 .summary-body-top { display: grid; gap: 8px; }
 .summary-body-top div { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
 .summary-body-top span { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -2488,6 +2500,8 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-ask span { font-size: 15px; }
 .focus-next-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 12px; align-items: center; width: 100%; }
 .focus-map svg { width: 100%; height: auto; max-height: 30dvh; }
+.focus-map .body3d-pair { gap: 2px; }
+.focus-map .body3d-pair canvas { max-height: 30dvh; object-fit: contain; }
 .focus-next-info { display: grid; gap: 6px; align-content: center; }
 .focus-next-info b { font-size: 26px; color: var(--accent); }
 .focus-next-info span { font-size: 15px; }
@@ -2725,6 +2739,7 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 <script>/*ENGINE_BUNDLE*/</script>
 <script>/*EQUIPMENT_ART*/</script>
 <script>/*BODY_MAP*/</script>
+<script>/*BODY_MAP_3D*/</script>
 <script>/*DEMO_CLIPS*/</script>
 <!--BAKED_SERVER-->
 <script>/*REMOTE_SCRIPT*/</script>

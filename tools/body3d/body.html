@@ -21,6 +21,11 @@ uniform int uSS;          // 한 픽셀에 쏘는 광선 수(한 변)
 uniform vec2 uFrame;      // 보이는 가운데 높이(y) · 보이는 높이
 uniform float uFiber;     // 칠한 근육의 결 세기 (작은 그림에서는 0)
 uniform float uYaw;       // 카메라를 몸 둘레로 돌린 각도(라디안)
+/*
+ * 0 = 칠한 그림, 1 = 빛 장(앱에서 칠할 때 쓰는 빛 · 그림자), 2 = 근육 칸 장.
+ * 앱은 1 · 2를 미리 그려 싣고, 종목마다 칠하기만 한다 — 폰에서 3D를 돌리지 않는다.
+ */
+uniform int uMode;
 out vec4 fragColor;
 
 /* 근육 번호 — 엔진 MUSCLE_GROUPS 순서와 같다 */
@@ -241,6 +246,22 @@ vec4 shade(vec2 frag) {
   vec3 p = ro + rd * hit;
   float m[15];
   mapAll(p, m);
+
+  if (uMode == 2) {
+    // 표면에 가장 가까운 근육 둘과 그 가까운 정도(0~15). 15번은 "근육 없음"
+    int i1 = 15, i2 = 15; float d1 = 1e5, d2 = 1e5;
+    for (int i = 0; i < N; i++) {
+      if (m[i] < d1) { d2 = d1; i2 = i1; d1 = m[i]; i1 = i; }
+      else if (m[i] < d2) { d2 = m[i]; i2 = i; }
+    }
+    float n1 = 1.0 - smoothstep(0.0, 0.006, d1);
+    float n2 = 1.0 - smoothstep(0.0, 0.006, d2);
+    if (n1 < 0.034) { i1 = 15; n1 = 0.0; }
+    if (n2 < 0.034) { i2 = 15; n2 = 0.0; }
+    return vec4((float(i1) * 16.0 + floor(n1 * 15.0 + 0.5)) / 255.0,
+                (float(i2) * 16.0 + floor(n2 * 15.0 + 0.5)) / 255.0, 0.0, 1.0);
+  }
+
   vec3 n = calcNormal(p);
   vec3 v = -rd;
 
@@ -270,6 +291,14 @@ vec4 shade(vec2 frag) {
   float fill = clamp(dot(n, L2) * 0.5 + 0.5, 0.0, 1.0);
   float sky = clamp(0.5 + 0.5 * n.y, 0.0, 1.0);
   float rim = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 3.0);
+  if (uMode == 1) {
+    // 몸 색에 곱할 빛과 그 위에 더할 빛. 곱할 빛은 어두운 데가 뭉개지지 않게 제곱근으로 담는다
+    float ld = 0.82 * wrap * mix(0.55, 1.0, ao) + 0.22 * fill * ao + 0.16 * sky * ao
+             + 0.07 * clamp(0.5 - 0.5 * n.y, 0.0, 1.0) * ao;
+    vec3 hh = normalize(L1 + v);
+    float ladd = rim * 0.22 * ao + pow(clamp(dot(n, hh), 0.0, 1.0), 28.0) * 0.14 * ao;
+    return vec4(sqrt(clamp(ld / 1.4, 0.0, 1.0)), clamp(ladd / 0.5, 0.0, 1.0), 0.0, 1.0);
+  }
   vec3 col = albedo * (0.82 * wrap * mix(0.55, 1.0, ao) + 0.22 * fill * ao + 0.16 * sky * ao);
   col += vec3(0.85, 0.88, 1.0) * rim * 0.22 * ao;
   col += albedo * vec3(1.0, 0.93, 0.86) * 0.07 * clamp(0.5 - 0.5 * n.y, 0.0, 1.0) * ao;
@@ -280,6 +309,8 @@ vec4 shade(vec2 frag) {
 }
 
 void main() {
+  // 근육 칸은 섞으면 번호가 깨진다 — 한가운데 광선 하나로만
+  if (uMode == 2) { fragColor = shade(gl_FragCoord.xy); return; }
   vec4 acc = vec4(0.0);
   for (int j = 0; j < 4; j++) {
     if (j >= uSS) break;
@@ -330,12 +361,21 @@ void main() {
   gl.uniform2f(gl.getUniformLocation(prog, 'uFrame'), frame[0], frame[1]);
   gl.uniform1f(gl.getUniformLocation(prog, 'uFiber'), Number(params.get('fiber') || 0));
   gl.uniform1f(gl.getUniformLocation(prog, 'uYaw'), Number(params.get('yaw') || 0) * Math.PI / 180);
+  gl.uniform1i(gl.getUniformLocation(prog, 'uMode'), Number(params.get('mode') || 0));
   gl.viewport(0, 0, W, H);
   var t0 = performance.now();
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.finish();
   var px = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
   window.renderMs = performance.now() - t0;
+  window.readRaw = function () {
+    var all = new Uint8Array(W * H * 4);
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, all);
+    var out = new Uint8Array(W * H * 4);
+    for (var y = 0; y < H; y++) out.set(all.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4);
+    var s = ''; for (var i = 0; i < out.length; i += 0x8000) s += String.fromCharCode.apply(null, out.subarray(i, i + 0x8000));
+    return btoa(s);
+  };
   window.done = true;
 </script>
 </body>

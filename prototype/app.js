@@ -2900,7 +2900,7 @@
     return el('div', { class: 'summary-body' }, [
       el('div', { class: 'list-label', text: '오늘 쓴 부위' }),
       el('div', { class: 'summary-body-row' }, [
-        el('div', { class: 'summary-body-map' }, [map.render(weights, '오늘 쓴 부위')]),
+        el('div', { class: 'summary-body-map' }, [bodyPair(weights, null, '오늘 쓴 부위') || map.render(weights, '오늘 쓴 부위')]),
         // 실제로 그 부위를 주로 쓴 세트 수 — "3세트 했는데 1.9세트"가 되지 않게
         el('div', { class: 'summary-body-top' }, top.map(function (row) {
           return el('div', {}, [el('b', { text: row.label }), el('span', { text: (row.todaySets || Math.round(row.today)) + '세트' })]);
@@ -3269,7 +3269,9 @@
 
     var out = [];
     out.push(el('div', { class: 'list-label', text: '쓰는 근육' }));
-    if (map) out.push(map.render(contribution, exercise.name + '에서 쓰는 근육'));
+    var pair = bodyPair(contribution, exercise.pattern, exercise.name + '에서 쓰는 근육');
+    if (pair) out.push(pair);
+    else if (map) out.push(map.render(contribution, exercise.name + '에서 쓰는 근육'));
 
     out.push(el('div', { class: 'body-legend' }, ranked.map(function (muscle) {
       var weight = contribution[muscle];
@@ -3889,7 +3891,14 @@
   function liftThumb(exercise) {
     var box = el('span', { class: 'lift-thumb', 'aria-hidden': 'true' }, []);
     var map = window.FitBodyMap;
-    if (map && exercise.contribution) {
+    // 입체 그림이 준비됐으면 그걸로 — 상반신 · 하반신 중 칠할 게 많은 쪽을 크게
+    var three = exercise.contribution && body3dReady()
+      ? window.FitBody3D.thumb(exercise.contribution, exercise.pattern, bodyPalette()) : null;
+    if (three) {
+      three.setAttribute('class', 'thumb-3d');
+      box.classList.add('three');
+      box.appendChild(three);
+    } else if (map && exercise.contribution) {
       var body = map.render(exercise.contribution, '', { side: 'auto' });
       body.setAttribute('class', 'thumb-art thumb-body');
       box.appendChild(body);
@@ -3898,10 +3907,46 @@
     var id = EQUIPMENT_ART_FOR[exercise.equipment];
     var svg = art && id && art.has(id) ? art.render(id, '') : null;
     if (svg) {
-      svg.setAttribute('class', map && exercise.contribution ? 'thumb-equip' : 'thumb-art');
+      svg.setAttribute('class', exercise.contribution && (three || map) ? 'thumb-equip' : 'thumb-art');
       box.appendChild(svg);
     }
     return box;
+  }
+
+  /*
+   * 3D 근육 그림(bodyMap3d.js). 장을 처음 읽는 데 잠깐 걸린다 — 그동안은 평면 그림을 쓰고,
+   * 다 읽으면 화면을 한 번 다시 그린다. 장이 안 실린 판(개발 중 빌드 등)은 평면 그림 그대로.
+   */
+  var body3dAsked = false;
+  function body3dReady() {
+    var three = window.FitBody3D;
+    if (!three || !three.available()) return false;
+    if (three.ready()) return true;
+    if (!body3dAsked) {
+      body3dAsked = true;
+      three.whenReady(function (ok) { if (ok) render(); });
+    }
+    return false;
+  }
+
+  /** 3D 그림 색 — 앱 색에 맞춘다. 어두운 화면에서는 몸을 어둡게, 칠한 색을 밝게 */
+  function bodyPalette() {
+    var theme = document.documentElement.getAttribute('data-theme');
+    var dark = theme === 'dark' || (theme !== 'light' && prefersDark());
+    return dark ? { clay: '9aa1ae', accent: '7f79ff' } : { clay: 'd9dce3', accent: '4c46d6' };
+  }
+
+  /** 앞 · 뒤 전신 한 쌍. 3D 그림이 아직이면 null — 부르는 쪽이 평면 그림을 쓴다 */
+  function bodyPair(contribution, pattern, label) {
+    if (!body3dReady()) return null;
+    var palette = bodyPalette();
+    var front = window.FitBody3D.figure(contribution, pattern, 'front', palette, label + ' — 앞');
+    var back = window.FitBody3D.figure(contribution, pattern, 'back', palette, label + ' — 뒤');
+    if (!front || !back) return null;
+    return el('div', { class: 'body3d-pair' }, [
+      el('figure', {}, [front, el('figcaption', { text: '앞' })]),
+      el('figure', {}, [back, el('figcaption', { text: '뒤' })]),
+    ]);
   }
 
   /**
@@ -7965,7 +8010,10 @@
       var restLeft = restRemaining();
       var card = el('div', { class: 'focus-next-card' }, []);
       var map = window.FitBodyMap;
-      if (map) card.appendChild(el('div', { class: 'focus-map' }, [map.render(ref.lift.exercise.contribution || {}, ref.lift.exercise.name + '에서 쓰는 근육')]));
+      var nextPair = bodyPair(ref.lift.exercise.contribution || {}, ref.lift.exercise.pattern, ref.lift.exercise.name + '에서 쓰는 근육');
+      if (nextPair || map) {
+        card.appendChild(el('div', { class: 'focus-map' }, [nextPair || map.render(ref.lift.exercise.contribution || {}, ref.lift.exercise.name + '에서 쓰는 근육')]));
+      }
       var info = el('div', { class: 'focus-next-info' }, [
         el('b', { text: ref.lift.sets.filter(function (one) { return !one.done; }).length + '세트' }),
         el('span', { text: loadText(ref.lift, ref.set.weightKg) + ' × ' + repsText(ref.set.targetReps) }),
@@ -17226,6 +17274,8 @@
   state.answers.gym.measurements = {};
   state.program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
 
+  // 3D 근육 그림 장을 먼저 읽기 시작한다 — 첫 화면을 그리는 동안 끝나 있게
+  body3dReady();
   if (!restore()) loadScenario('normal', true);
   // 카카오·구글에서 돌아왔으면 여기서 거둔다. 주소에 실려 온 토큰도 같이 지운다.
   finishOAuth();
