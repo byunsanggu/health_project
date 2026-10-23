@@ -1136,6 +1136,7 @@
       today: state.todayDate,
       daysPerWeek: state.program.daysPerWeek,
       bodyweightKg: state.lifter.bodyweightKg,
+      sex: state.lifter.sex,
     });
     var available = E.availableExercises(state.answers.gym.equipmentIds).map(function (item) { return item.id; });
     var next = E.nextBlock(before, review, state.todayDate, available);
@@ -1220,6 +1221,8 @@
       forceDeload: status.stage === 'deload',
       // 블록은 주마다 일부러 여유를 줄인다 — 그만큼은 피로로 읽지 않게 이 앱의 실제 일정을 준다
       plannedRir: { thisWeek: plannedRirFor(status.weekInBlock - 1), lastWeek: plannedRirFor(status.weekInBlock - 2) },
+      // 감량 중이면 적정(MAV)에서 멈춘다 — 설문 안내가 약속한 것
+      volumeCeiling: E.planGoals((state.answers && state.answers.goals) || []).volumeCeiling,
     });
     if (plan.phase === 'deload' && status.stage === 'accumulation') {
       state.block = E.markDeload(state.block, state.todayDate);
@@ -1841,6 +1844,8 @@
       isLastSet: Boolean(isLastSet),
       band: state.restBand || undefined,
       overrideSeconds: state.restOverrides[lift.exercise.id],
+      // 블록 유형(근력 ×1.5 · 고밀도 ×0.65)을 실제 타이머에도 — 전에는 시간 계산에만 썼다
+      multiplier: E.styleProfile(state.style).restMultiplier,
     };
   }
 

@@ -65,6 +65,14 @@ describe('levelFromStrength', () => {
     assert.equal(levelFromStrength(history(120), 80), 'expert');
   });
 
+  it('여성은 같은 기록이어도 기준을 낮춰 본다 — 벤치 35kg × 5회인 60kg 여성은 초보가 아니다', () => {
+    const bench35 = [session('2026-09-14', sets('barbell-bench-press', 1, { weightKg: 35, reps: 5, rir: 0 }))];
+    assert.equal(levelFromStrength(bench35, 60), 'beginner', '남성 기준으로는 초보');
+    assert.equal(levelFromStrength(bench35, 60, 'female'), 'intermediate');
+    // 남성 · 성별 모름은 그대로
+    assert.equal(levelFromStrength(history(80), 80, 'unspecified'), 'intermediate');
+  });
+
   it('참고할 기록이 없으면 판단하지 않는다', () => {
     assert.equal(levelFromStrength([], 80), null);
     assert.equal(levelFromStrength(history(80), 0), null);

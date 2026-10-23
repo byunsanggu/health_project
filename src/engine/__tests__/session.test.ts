@@ -363,6 +363,44 @@ describe('한 세션에 같은 종목을 두 번 넣지 않는다', () => {
   });
 });
 
+describe('통증 대체 — 세트를 잃지 않고 종목에 맞게', () => {
+  const press: SessionTemplate = {
+    name: '가슴',
+    slots: [
+      { exerciseId: 'barbell-bench-press', sets: 3, repRange: { min: 6, max: 10 } },
+      { exerciseId: 'machine-chest-press', sets: 2, repRange: { min: 8, max: 12 } },
+      { exerciseId: 'cable-fly', sets: 2, repRange: { min: 10, max: 15 } },
+    ],
+  };
+
+  it('대체로 오늘 뒤에 있는 종목을 고르지 않는다 — 고르면 그 자리에서 "이미 했다"고 세트가 사라졌다', () => {
+    const planned = buildSession({ template: press, date: '2026-09-21', plan: planFrom([], '2026-09-18'), history: [], index, pain: [{ joint: 'shoulder', score: 5 }] });
+    const sets = (id: string) => planned.exercises.find((item) => item.exercise.id === id)?.sets.length ?? 0;
+    assert.equal(sets('machine-chest-press'), 2, '뒤의 머신 체스트프레스는 제 세트 그대로');
+    const total = planned.exercises.reduce((sum, item) => sum + item.sets.length, 0);
+    assert.equal(total, 7, '벤치 3세트가 대체로 살아남는다');
+  });
+
+  it('무거운 자리에 한 발 종목이 들어오면 8~12회로 — 스텝업 4~6회가 되지 않는다', () => {
+    const heavy: SessionTemplate = { name: '하체', slots: [{ exerciseId: 'back-squat', sets: 3, repRange: { min: 4, max: 6 } }] };
+    const planned = buildSession({ template: heavy, date: '2026-09-21', plan: planFrom([], '2026-09-18'), history: [], index, pain: [{ joint: 'lowBack', score: 5 }] });
+    const swapped = planned.exercises[0]!;
+    assert.ok(swapped.substitutedFrom);
+    if (swapped.exercise.pattern === 'lunge' || swapped.exercise.unilateral) {
+      assert.deepEqual(swapped.sets[0]!.targetReps.max, 12);
+    }
+  });
+
+  it('7점 이상이면 그 관절에 조금이라도 실리는 종목은 다 뺀다 — 말과 맞게', () => {
+    const planned = build({ pain: [{ joint: 'shoulder', score: 8 }] });
+    for (const item of planned.exercises) {
+      assert.ok((item.exercise.jointStress.shoulder ?? 0) < 0.25, `${item.exercise.name} 어깨 ${item.exercise.jointStress.shoulder}`);
+    }
+    // 진료 경고는 맨 위 한 번 — 종목마다 같은 말을 되풀이하지 않는다
+    assert.equal(planned.warnings.filter((warning) => warning.medical).length, 1);
+  });
+});
+
 describe('buildSession — 주중 · 세션 길이', () => {
   it('첫 주 중간에도 세트가 깎이지 않는다 — 이번 주 기록과 주간 처방을 견주지 않는다', () => {
     // 지난주까지 기록이 없고, 이번 주 월요일에 한 번 했다.

@@ -136,8 +136,8 @@ const BODYWEIGHT_RATIO: Record<Anchor, Record<TrainingLevel, number>> = {
   row: { beginner: 0.65, intermediate: 0.9, advanced: 1.15, expert: 1.4 },
 };
 
-/** 여성은 상체에서 격차가 더 크고 하체는 상대적으로 가깝다. */
-const SEX_SCALE: Record<Anchor, number> = {
+/** 여성은 상체에서 격차가 더 크고 하체는 상대적으로 가깝다. 단계를 근력으로 볼 때도 같은 비율. */
+export const SEX_SCALE: Record<Anchor, number> = {
   bench: 0.6,
   overheadPress: 0.6,
   row: 0.65,

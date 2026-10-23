@@ -120,8 +120,15 @@ export function screenExercise(
   };
 }
 
+/*
+ * 7점 이상이면 "오늘은 그 부위를 쓰지 않는다"고 말한다. 그러면 그 관절에 조금이라도 실리는
+ * 종목(0.25 이상 — 케이블 레터럴 레이즈 · 풀다운 · 페이스 풀)도 빼야 말과 맞는다. 0.3을 넘는
+ * 것만 뺄 때는 어깨 8점에 레터럴 레이즈 · 풀다운이 남았다.
+ */
+const SEVERE_PAIN_STRESS = 0.25;
+
 function rule(painScore: number, stress: number): PainAction {
-  if (painScore >= 7) return stress > 0.3 ? 'stop' : 'allow';
+  if (painScore >= 7) return stress >= SEVERE_PAIN_STRESS ? 'stop' : 'allow';
   if (painScore >= 3) {
     if (stress >= 0.6) return 'substitute';
     if (stress >= 0.3) return 'reduceLoad';

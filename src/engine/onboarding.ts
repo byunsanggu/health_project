@@ -948,6 +948,7 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
     selfReported: answers.selfReportedLevel,
     monthsTraining: answers.monthsTraining,
     bodyweightKg: answers.bodyweightKg,
+    sex: answers.sex,
   });
 
   const profile = levelProfile(level.level);

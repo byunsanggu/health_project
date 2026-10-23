@@ -95,6 +95,17 @@ describe('볼륨 진행', () => {
     assert.ok(chestPlan(result).prescribedSets <= landmarks.chest.mav);
   });
 
+  it('감량 중이면 적정(MAV)에서 멈춘다 — 회복 한계까지 밀지 않는다', () => {
+    const cutting = planNextWeek({
+      sessions: chestWeek('2026-09-14', 18), index, landmarks, asOf: '2026-09-14', weekInBlock: 1, volumeCeiling: 'mav',
+    });
+    const chest = chestPlan(cutting);
+    assert.equal(chest.zone, 'mavToMrv');
+    assert.equal(chest.prescribedSets, landmarks.chest.mav);
+    assert.equal(chest.action, 'hold');
+    assert.match(chest.rationale, /감량 중/);
+  });
+
   it('통증이 보고된 부위는 볼륨을 올리지 않는다', () => {
     const result = plan({
       sessions: chestWeek('2026-09-14', 12),

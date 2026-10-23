@@ -20,6 +20,8 @@ export interface RestInput {
   band?: RestBand;
   /** 이 종목만 직접 정한 값. 있으면 계산하지 않고 그대로 쓴다. */
   overrideSeconds?: number;
+  /** 블록 유형의 휴식 배수(근력 ×1.5 · 고밀도 ×0.65 …). 직접 정한 값에는 안 곱한다 */
+  multiplier?: number;
 }
 
 /**
@@ -59,6 +61,14 @@ export interface RestBand {
  */
 export const REST_MIN_SECONDS = 60;
 export const REST_MAX_SECONDS = 90;
+
+/**
+ * 6회 이하 고중량 복합 세트는 기본 띠에서도 2분은 쉰다. 무거운 스쿼트 · 데드리프트를
+ * 1분 15초 만에 다시 들면 뒤 세트 무게가 안 나오고, 그 세트들은 자극이 덜 붙는다
+ * (짧은 휴식이 근력 · 근비대 모두에 손해라는 연구가 반복해서 나온다). 실패에 가깝거나
+ * 허리를 많이 쓰면 조금 더(최대 2분 반). 사용자가 띠를 직접 골랐으면 그 띠를 따른다.
+ */
+export const HEAVY_COMPOUND_REST_SECONDS = 120;
 
 export const DEFAULT_BAND: RestBand = {
   minSeconds: REST_MIN_SECONDS,
@@ -179,6 +189,15 @@ export function restFor(input: RestInput): RestPrescription {
   need = clamp(need, 0, STEPS);
   const span = band.maxSeconds - band.minSeconds;
   let seconds = clamp(toStep(band.minSeconds + (span * need) / STEPS), band.minSeconds, band.maxSeconds);
+  if (!input.band && !isIsolation && reps <= 6) {
+    const heavy = Math.min(150, HEAVY_COMPOUND_REST_SECONDS + 10 * Math.max(0, need - 3));
+    if (seconds < heavy) {
+      seconds = heavy;
+      reason += ' · 무거운 세트라 2분은 쉽니다';
+    }
+  }
+  // 블록 유형 배수 — 근력 블록은 길게, 고밀도 블록은 짧게
+  if (input.multiplier && input.multiplier > 0 && input.multiplier !== 1) seconds = toStep(seconds * input.multiplier);
 
   /*
    * 마지막 세트는 다음 종목으로 옮겨가는 시간이 곧 휴식이다. 다만 45초

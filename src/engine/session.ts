@@ -1,5 +1,5 @@
 import { prescribeLoad, roundToIncrement, type LoadRule, type RepRange } from './load.ts';
-import { findSubstitutes, screenExercise, type PainRuling } from './pain.ts';
+import { JOINT_LABELS_KO, findSubstitutes, screenExercise, type PainRuling } from './pain.ts';
 import { planWeekSets } from './weekSets.ts';
 import { HEAVY_PULLS, HEAVY_PULL_MIN_RIR } from './exercises.ts';
 import { addDays, sessionsInWeek } from './volume.ts';
@@ -191,8 +191,30 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
    * 두면 한 세션에 같은 종목이 두 번 나온다.
    */
   const taken = new Set<string>();
+  /*
+   * 오늘 뒤에 나올 종목도 대체로 고르지 않는다. 벤치를 머신 체스트프레스로 바꿨는데 머신이
+   * 뒤에 또 있으면, 그 자리에 가서 "이미 했다"고 빠져 가슴 세트가 통째로 사라졌다. 대체가
+   * 그것뿐이면 새로 넣지 않고 그 종목에 세트를 얹는다.
+   */
+  const planned = new Set(input.template.slots.map((slot) => slot.exerciseId));
+  const bonus = new Map<string, number>();
   const pickReplacement = (candidates: readonly Exercise[]) =>
-    candidates.find((candidate) => !taken.has(candidate.id));
+    candidates.find((candidate) => !taken.has(candidate.id) && !planned.has(candidate.id));
+  /** 대체가 오늘 목록에 이미 있다 — 그 종목에 세트를 얹는다(이미 짰으면 바로, 뒤면 그때). 얹었으면 그 종목 */
+  const mergeInto = (candidates: readonly Exercise[], from: Exercise, extra: number): Exercise | undefined => {
+    const into = candidates.find((candidate) => candidate.id !== from.id && planned.has(candidate.id));
+    if (!into) return undefined;
+    const done = exercises.find((item) => item.exercise.id === into.id);
+    if (done) {
+      const last = done.sets[done.sets.length - 1]!;
+      const room = Math.max(0, MERGED_SET_CAP - done.sets.length);
+      for (let i = 0; i < Math.min(extra, room); i += 1) done.sets.push({ ...last, setNumber: done.sets.length + 1 });
+    } else {
+      bonus.set(into.id, (bonus.get(into.id) ?? 0) + extra);
+    }
+    return into;
+  };
+  const slotSets = (slot: SessionSlot) => (input.template.fixed ? fixedSetCount(slot, input.plan) : setsFor(slot));
 
   for (const slot of input.template.slots) {
     const original = input.index.get(slot.exerciseId);
@@ -204,13 +226,15 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
 
     // 1) 그 헬스장에 기구가 있는가
     if (gym && !isAvailableAt(original, gym)) {
-      const replacement = pickReplacement(
-        findSubstitutes(original, [], { pool, availableEquipment, substituteLimit: pool.length }),
-      );
+      const candidates = findSubstitutes(original, [], { pool, availableEquipment, substituteLimit: pool.length });
+      const replacement = pickReplacement(candidates);
       if (!replacement) {
+        const into = mergeInto(candidates, original, slotSets(slot));
         warnings.push({
           kind: 'equipment',
-          text: `${original.name} — 이 헬스장에 없는 기구이고 대체할 종목도 없어 오늘은 건너뜁니다.`,
+          text: into
+            ? `${original.name} — 이 헬스장에 없는 기구입니다. 오늘 하는 ${into.name}에 세트를 더했습니다.`
+            : `${original.name} — 이 헬스장에 없는 기구이고 대체할 종목도 없어 오늘은 건너뜁니다.`,
         });
         continue;
       }
@@ -228,21 +252,49 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
 
     if (ruling.action === 'substitute' || ruling.action === 'stop') {
       const replacement = pickReplacement(ruling.substitutes);
+      const medical = ruling.action === 'stop';
+      const joint = ruling.joint ? `${JOINT_LABELS_KO[ruling.joint]} 통증 ${ruling.painScore}점 — ` : '';
       if (!replacement) {
-        warnings.push({ kind: 'pain', text: `${exercise.name} — ${ruling.message}`, medical: ruling.action === 'stop' });
+        const into = mergeInto(ruling.substitutes, exercise, slotSets(slot));
+        /*
+         * 7점 이상이면 맨 위에 "오늘은 그 부위를 쓰지 않는다 · 진료" 경고가 이미 한 번 있다.
+         * 종목마다 같은 의료 문구를 되풀이하면 경고 다섯 줄이 같은 말이다 — 무엇을 뺐는지만 말한다.
+         */
+        const general = pain.some((report) => report.score >= 7);
+        warnings.push({
+          kind: 'pain',
+          medical: medical && !general,
+          text: into
+            ? `${joint}${exercise.name} 대신 오늘 하는 ${into.name}에 세트를 더했습니다.`
+            : medical && general
+              ? `${joint}${withParticle(exercise.name, '은/는')} 오늘 뺍니다.`
+              : `${exercise.name} — ${ruling.message}`,
+        });
         continue; // 대체가 없으면 오늘은 건너뛴다
       }
+      // 판정의 문구는 첫 후보를 말한다 — 실제로 고른 종목으로 말한다
+      warnings.push({
+        kind: 'pain',
+        medical,
+        text: medical ? ruling.message : `${joint}${exercise.name} 대신 ${withParticle(replacement.name, '을/를')} 합니다.`,
+      });
       substitutedFrom = substitutedFrom ?? exercise;
       exercise = replacement;
       swapReason = 'pain';
-      warnings.push({ kind: 'pain', text: ruling.message, medical: ruling.action === 'stop' });
     }
 
     if (taken.has(exercise.id)) continue;
     taken.add(exercise.id);
 
-    // 3) 세트 수 — 주간 처방을 한 주 통째로 나눈 몫. 내 루틴은 정한 대로(덜어내는 주만 절반)
-    const setCount = input.template.fixed ? fixedSetCount(slot, input.plan) : setsFor(slot);
+    // 3) 세트 수 — 주간 처방을 한 주 통째로 나눈 몫. 내 루틴은 정한 대로(덜어내는 주만 절반).
+    //    앞에서 빠진 종목의 세트를 얹었으면 더한다(종목당 6세트까지)
+    const ownSets = slotSets(slot);
+    const setCount = Math.max(ownSets, Math.min(MERGED_SET_CAP, ownSets + (bonus.get(exercise.id) ?? 0)));
+    /*
+     * 대체 종목의 반복 범위. 백 스쿼트 4~6회 자리에 스텝업이 들어오면 스텝업 4~6회가 된다 —
+     * 한 발 종목 · 고립 종목은 그 종목에 맞는 범위로 바꾼다.
+     */
+    const repRange = substitutedFrom ? substituteRange(slot.repRange, substitutedFrom, exercise) : slot.repRange;
 
     /*
      * 4) 중량 — 마지막 수행 기록 기준, 그 헬스장이 만들 수 있는 값으로 맞춘다.
@@ -257,7 +309,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     const lastSession = findLastSession(weightHistory, exercise.id);
     // 데드리프트는 블록 끝에서도 여유를 2개는 남긴다 — 무너지면 허리가 받는다
     const targetRir = HEAVY_PULLS.has(exercise.id) ? Math.max(HEAVY_PULL_MIN_RIR, input.plan.targetRir) : input.plan.targetRir;
-    const rule: LoadRule = { repRange: slot.repRange, targetRir, rirOffset };
+    const rule: LoadRule = { repRange, targetRir, rirOffset };
     const prescription = prescribeLoad(exercise, lastSession?.sets, rule);
     /*
      * 이 기계가 실제로 만드는 무게로 맞춘다.
@@ -284,7 +336,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
       // 첫 수행. 관련 종목 기록이나 체중 기준선에서 출발점을 제안한다.
       startingLoad = suggestStartingLoad({
         exercise,
-        repRange: slot.repRange,
+        repRange,
         targetRir: input.plan.targetRir,
         profile: input.lifter,
         history: input.history,
@@ -352,6 +404,17 @@ function weekSetsFor(input: BuildSessionInput): (slot: SessionSlot) => number {
     const at = day.slots.findIndex((item) => item.exerciseId === (slot.replacedFrom ?? slot.exerciseId));
     return at >= 0 ? planned[week.day]![at]! : Math.max(1, slot.sets);
   };
+}
+
+/** 다른 자리 세트를 얹어도 한 종목은 이만큼까지 — 더 하면 뒤 세트는 버리는 세트다 */
+const MERGED_SET_CAP = 6;
+
+/** 대체 종목에 맞는 반복 범위 — 고립은 10~15회, 한 발 종목은 무거운 범위(6회 이하)를 8~12회로. */
+function substituteRange(range: RepRange, original: Exercise, replacement: Exercise): RepRange {
+  const light = (exercise: Exercise) => exercise.pattern === 'isolation' || exercise.pattern === 'core';
+  if (light(replacement) && !light(original) && range.max < 10) return { min: 10, max: 15 };
+  if ((replacement.pattern === 'lunge' || replacement.unilateral) && range.max <= 6) return { min: 8, max: 12 };
+  return range;
 }
 
 /**

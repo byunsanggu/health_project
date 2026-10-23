@@ -1,5 +1,5 @@
 import { estimate1RM } from './load.ts';
-import { ANCHOR_FACTORS, type Anchor } from './strength.ts';
+import { ANCHOR_FACTORS, SEX_SCALE, type Anchor } from './strength.ts';
 import type { SessionLog, TrainingLevel } from './types.ts';
 
 export const TRAINING_LEVELS: readonly TrainingLevel[] = [
@@ -88,6 +88,8 @@ export interface LevelAssessmentInput {
   bodyweightKg?: number;
   /** 이미 아는 기록이 있으면 근력으로도 본다 */
   history?: readonly SessionLog[];
+  /** 근력 기준을 성별에 맞춘다 */
+  sex?: 'male' | 'female' | 'unspecified';
 }
 
 export type LevelSource = 'self' | 'experience' | 'strength';
@@ -110,10 +112,17 @@ export function levelFromExperience(months: number): TrainingLevel {
   return 'expert';
 }
 
-/** 체중 대비 벤치·스쿼트 기록으로 본 단계. */
+/**
+ * 체중 대비 벤치·스쿼트 기록으로 본 단계.
+ *
+ * 여성은 같은 경력이라도 체중 대비 기록이 낮다(상체 격차가 더 크다). 남성 기준표 하나로
+ * 보면 벤치 45kg × 5회 · 스쿼트 75kg × 5회를 하는 60kg 여성이 초보로 묶여, 초보 볼륨에
+ * 바벨 스쿼트 · 데드리프트도 영영 안 들어온다. 첫 무게 추정과 같은 비율로 낮춰 본다.
+ */
 export function levelFromStrength(
   history: readonly SessionLog[],
   bodyweightKg: number,
+  sex?: 'male' | 'female' | 'unspecified',
 ): TrainingLevel | null {
   if (!bodyweightKg) return null;
 
@@ -127,13 +136,14 @@ export function levelFromStrength(
   // 두 종목이 있으면 낮은 쪽을 본다. 한쪽만 좋은 건 그 단계가 아니다.
   const ratio = Math.min(...ratios);
   const isSquat = ratios.length === 1 && bestAnchor1RM(history, 'bench') === null;
-  const thresholds = isSquat
+  const base = isSquat
     ? { intermediate: 1.4, advanced: 1.85, expert: 2.25 }
     : { intermediate: 1.0, advanced: 1.35, expert: 1.6 };
+  const scale = sex === 'female' ? SEX_SCALE[isSquat ? 'squat' : 'bench'] : 1;
 
-  if (ratio >= thresholds.expert) return 'expert';
-  if (ratio >= thresholds.advanced) return 'advanced';
-  if (ratio >= thresholds.intermediate) return 'intermediate';
+  if (ratio >= base.expert * scale) return 'expert';
+  if (ratio >= base.advanced * scale) return 'advanced';
+  if (ratio >= base.intermediate * scale) return 'intermediate';
   return 'beginner';
 }
 
@@ -171,7 +181,7 @@ export function assessLevel(input: LevelAssessmentInput): LevelAssessment {
     candidates.push({ level: levelFromExperience(input.monthsTraining), source: 'experience' });
   }
   if (input.history && input.bodyweightKg) {
-    const fromStrength = levelFromStrength(input.history, input.bodyweightKg);
+    const fromStrength = levelFromStrength(input.history, input.bodyweightKg, input.sex);
     if (fromStrength) candidates.push({ level: fromStrength, source: 'strength' });
   }
 

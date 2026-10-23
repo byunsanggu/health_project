@@ -226,6 +226,8 @@ export function reviewBlock(input: {
   today: string;
   daysPerWeek: number;
   bodyweightKg?: number;
+  /** 근력 기준을 성별에 맞춘다 */
+  sex?: 'male' | 'female' | 'unspecified';
 }): BlockReview {
   const { block } = input;
   const accumulationWeeks = levelProfile(block.level).accumulationWeeks;
@@ -283,7 +285,7 @@ export function reviewBlock(input: {
   }
 
   const months = monthsTrained(block, input.today);
-  const strength = input.bodyweightKg ? levelFromStrength(input.history, input.bodyweightKg) : null;
+  const strength = input.bodyweightKg ? levelFromStrength(input.history, input.bodyweightKg, input.sex) : null;
   const strongEnough = strength === null || ORDER[strength] >= ORDER[next];
   const longEnough = months >= MONTHS_FOR[next];
 

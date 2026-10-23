@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { REST_MAX_SECONDS, REST_MIN_SECONDS, describeBand, formatDuration, normalizeBand, restFor } from '../rest.ts';
+import { HEAVY_COMPOUND_REST_SECONDS, REST_MAX_SECONDS, REST_MIN_SECONDS, describeBand, formatDuration, normalizeBand, restFor } from '../rest.ts';
 import { exerciseById } from '../exercises.ts';
 import type { Exercise } from '../types.ts';
 
@@ -34,23 +34,31 @@ describe('restFor', () => {
     assert.ok(near > easy, `${near} > ${easy}`);
   });
 
-  it('현장 띠(1분~1분 30초)를 벗어나지 않는다', () => {
+  it('현장 띠(1분~1분 30초)를 벗어나지 않는다 — 6회 이하 고중량 복합 세트만 2분', () => {
     /*
      * 1분 아래면 복합 동작에서 뒤 세트가 무너지고, 1분 30초를 넘기면
      * 세션이 늘어져서 지키지 않게 된다. 조건이 겹쳐도 넘지 않아야 한다.
-     * (블록 배율은 이 값에 곱해져서 근력 2분대, 컨디셔닝 30초대가 된다.)
+     * 다만 무거운 스쿼트 · 데드리프트를 1분 15초 만에 다시 들면 무게가 안 나온다 —
+     * 6회 이하 복합 세트는 2분이다. (블록 배율은 이 값에 곱해진다.)
      */
     for (const exercise of [bench, deadlift, plank]) {
       for (const reps of [3, 5, 8, 12, 20]) {
         for (const targetRir of [0, 1, 2, 3]) {
           const { seconds } = restFor({ exercise, reps, targetRir });
+          const heavy = exercise !== plank && reps <= 6;
           assert.ok(
-            seconds >= REST_MIN_SECONDS && seconds <= REST_MAX_SECONDS,
+            heavy ? seconds >= HEAVY_COMPOUND_REST_SECONDS && seconds <= 150 : seconds >= REST_MIN_SECONDS && seconds <= REST_MAX_SECONDS,
             `${exercise.name} ${reps}회 RIR${targetRir} → ${seconds}초`,
           );
         }
       }
     }
+  });
+
+  it('블록 유형 배수를 곱한다 — 근력 블록이면 실제 타이머도 길어진다', () => {
+    const base = restFor({ exercise: bench, reps: 5, targetRir: 2 }).seconds;
+    assert.equal(restFor({ exercise: bench, reps: 5, targetRir: 2, multiplier: 1.5 }).seconds, base * 1.5);
+    assert.equal(restFor({ exercise: bench, reps: 5, targetRir: 2, overrideSeconds: 100, multiplier: 1.5 }).seconds, 100, '직접 정한 값에는 안 곱한다');
   });
 
   it('허리 부담이 큰 종목은 더 쉰다', () => {

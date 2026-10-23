@@ -77,6 +77,11 @@ export interface PlanInput {
    * 계획대로 여유를 줄인 것을 피로로 읽지 않게.
    */
   plannedRir?: { thisWeek: number; lastWeek: number };
+  /**
+   * 볼륨을 어디까지 올릴지. 감량 중(planGoals의 cutting)이면 'mav' — 적자에서는 회복이
+   * 느려서 회복 한계(MRV)까지 밀지 않고 적정(MAV)에서 멈춘다. 없으면 'mrv'.
+   */
+  volumeCeiling?: 'mav' | 'mrv';
 }
 
 /** 덜어내는 주의 목표 RIR. */
@@ -157,6 +162,7 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
             painful: painful.has(muscle),
             concentrated: concentrated.has(muscle),
             recommendedSessions: frequency.find((item) => item.muscle === muscle)?.recommendedSessions ?? 2,
+            ceiling: input.volumeCeiling ?? 'mrv',
           });
 
     return {
@@ -208,6 +214,7 @@ function accumulationVolume(args: {
   painful: boolean;
   concentrated: boolean;
   recommendedSessions: number;
+  ceiling: 'mav' | 'mrv';
 }): VolumeDecision {
   const { currentSets, zone, landmark, fatigueScore, painful, concentrated } = args;
 
@@ -246,6 +253,13 @@ function accumulationVolume(args: {
         rationale: `적정 구간입니다. ${step}세트 추가해 MAV(${landmark.mav}세트)로 접근합니다`,
       };
     case 'mavToMrv':
+      if (args.ceiling === 'mav') {
+        return {
+          sets: landmark.mav,
+          action: 'hold',
+          rationale: `감량 중이라 적정(MAV ${landmark.mav}세트)에서 멈춥니다. 적자에서는 회복이 느립니다`,
+        };
+      }
       return fatigueScore >= 3
         ? {
             sets: Math.round(currentSets),
