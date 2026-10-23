@@ -128,6 +128,25 @@ describe('buildProgram', () => {
     }
   });
 
+  it('통증 3~6점이어도 그 관절에 부담이 큰 종목(오늘이면 대체할 종목)은 처음부터 빼고 짠다', () => {
+    const onboarded = runOnboarding(answers({ pain: [{ joint: 'knee', score: 5 }] }));
+    for (const exercise of exercisesOf(onboarded.program)) {
+      assert.ok((exercise.jointStress.knee ?? 0) < 0.6, `${exercise.name} 무릎 ${exercise.jointStress.knee}`);
+    }
+    // 하체는 부담이 덜한 종목으로 남는다 — 통째로 빠지지 않는다
+    assert.ok(exercisesOf(onboarded.program).some((exercise) => (exercise.contribution.quads ?? 0) >= 0.7));
+    const note = onboarded.notes.find((line) => line.includes('통증'));
+    assert.ok(note?.includes('무릎') && note.includes('백 스쿼트'), note);
+  });
+
+  it('통증이 없거나 뺄 종목이 없으면 "뺐다"고 말하지 않는다', () => {
+    assert.ok(!runOnboarding(answers()).notes.some((line) => line.includes('통증')));
+    // 목 통증 3점 — 목에 부담이 큰 종목이 없으면 뺀 것도 없다
+    const neck = runOnboarding(answers({ pain: [{ joint: 'neck', score: 3 }] }));
+    const removed = EXERCISES.some((exercise) => (exercise.jointStress.neck ?? 0) >= 0.6);
+    assert.equal(neck.notes.some((line) => line.includes('빼고 짰습니다')), removed);
+  });
+
   it('생성된 프로그램의 주간 볼륨이 MEV 근처에서 시작한다', () => {
     const program = buildProgram(answers(), 'intermediate');
     const sessions = program.templates.map((template, i) => ({

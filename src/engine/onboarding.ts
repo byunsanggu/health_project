@@ -2,7 +2,7 @@ import { EXERCISES } from './exercises.ts';
 import { availableExercises, coverageReport, gymFromCatalog, type GymSelection } from './equipment.ts';
 import { assessLevel, levelProfile, type LevelAssessment } from './levels.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO, landmarksFor } from './muscles.ts';
-import { screenExercise } from './pain.ts';
+import { JOINT_LABELS_KO, screenExercise } from './pain.ts';
 import type { LifterProfile } from './strength.ts';
 import type { SessionSlot, SessionTemplate } from './session.ts';
 import type { Phase, WeeklyPlan } from './mesocycle.ts';
@@ -569,10 +569,16 @@ export function buildProgram(
     return priorities.includes(muscle) ? Math.round((landmark.mev + landmark.mav) / 2) : landmark.mev;
   };
 
-  // 그 헬스장에서 가능하고, 기존 통증으로 막히지 않는 종목만 후보로 둔다.
+  /*
+   * 그 헬스장에서 가능하고, 기존 통증으로 막히지 않는 종목만 후보로 둔다.
+   *
+   * 오늘 통증이면 그 자리에서 대체할 종목(통증 3~6점 · 그 관절 부담 큼)도 프로그램에는
+   * 처음부터 넣지 않는다. 무릎이 5점인 사람에게 백 스쿼트를 짜 두고 매번 대체하는 건
+   * 프로그램이 아니다 — 레그프레스 · 벨트 스쿼트처럼 부담이 덜한 종목으로 짠다.
+   */
   const pain = answers.pain ?? [];
   const pool = availableExercises(answers.gym.equipmentIds, EXERCISES).filter(
-    (exercise) => screenExercise(exercise, pain).action !== 'stop',
+    (exercise) => !painKeepsOut(exercise, pain),
   );
 
   // 직접 고른 메인 종목. 그 헬스장에서 되는 것만 받는다.
@@ -873,8 +879,13 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
       '루마니안 데드리프트는 가벼운 무게로 엉덩이 접는 법을 익히는 종목이라 처음부터 넣었습니다.');
   }
 
-  if ((answers.pain ?? []).some((report) => report.score >= 3)) {
-    notes.push('보고한 통증 부위에 부담이 큰 종목은 프로그램에서 제외했습니다.');
+  // 실제로 뺀 것이 있을 때만, 무엇을 뺐는지 말한다
+  const kept = availableExercises(answers.gym.equipmentIds, EXERCISES)
+    .filter((exercise) => painKeepsOut(exercise, answers.pain ?? []));
+  if (kept.length > 0) {
+    const joints = [...new Set((answers.pain ?? []).filter((report) => report.score >= 3).map((report) => JOINT_LABELS_KO[report.joint]))];
+    notes.push(`${joints.join(' · ')} 통증 때문에 그 관절에 부담이 큰 종목(${kept.slice(0, 3).map((exercise) => exercise.name).join(' · ')}` +
+      `${kept.length > 3 ? ` 외 ${kept.length - 3}개` : ''})은 빼고 짰습니다. 나아지면 설정을 다시 해 주세요.`);
   }
 
   return {
@@ -889,6 +900,12 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
     firstWeek: firstWeekPlan(program, profile.startingRir),
     notes,
   };
+}
+
+/** 처음 설문의 통증으로 프로그램에서 뺄 종목인가 — 오늘이라면 대체하거나 멈출 종목. */
+function painKeepsOut(exercise: Exercise, pain: readonly PainReport[]): boolean {
+  const action = screenExercise(exercise, pain).action;
+  return action === 'stop' || action === 'substitute';
 }
 
 /** 비교할 이력이 없는 첫 주의 처방. */
