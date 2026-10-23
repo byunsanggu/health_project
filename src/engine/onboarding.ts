@@ -393,6 +393,16 @@ const HOME_FALLBACK: ReadonlySet<string> = new Set([
 /** 허리를 많이 쓰는 힌지 — 하루에 하나만(덤벨 루마니안도 데드리프트 뒤에는 두 번째 힌지다) */
 const HEAVY_HINGE_LOW_BACK = 0.5;
 
+/**
+ * 메인으로 무겁게 하기 어려운 종목. 고블릿 스쿼트는 들 수 있는 덤벨 하나가 상한이라
+ * 중급부터는 다리에 비해 너무 가볍고(초보에게는 좋은 첫 스쿼트다), 케이블 풀스루는
+ * 스택이 먼저 끝난다. 레그프레스 · 핵 스쿼트 · 힙 쓰러스트가 있으면 그쪽을 메인으로.
+ */
+const WEAK_MAIN: Readonly<Record<string, 'all' | 'notBeginner'>> = {
+  'goblet-squat': 'notBeginner',
+  'cable-pull-through': 'all',
+};
+
 /** 무게를 맞출 수 있는 세로 당기기 — 이게 있으면 풀업보다 먼저 */
 const LOADABLE_PULLS: ReadonlySet<string> = new Set(['lat-pulldown', 'neutral-grip-pulldown', 'assisted-pull-up']);
 
@@ -442,6 +452,8 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
   if (HOME_FALLBACK.has(exercise.id)) score -= 3;
   // 데드리프트는 메인 자리에서 무겁게 하는 종목이다. 8~12회 보조로 돌리지 않는다.
   if (slot.role !== 'primary' && HEAVY_PULLS.has(exercise.id)) score -= 5;
+  const weak = WEAK_MAIN[exercise.id];
+  if (slot.role === 'primary' && weak && (weak === 'all' || level !== 'beginner')) score -= 4;
 
   /*
    * 풀업은 맨몸을 끌어올릴 수 있어야 한다. 처음 짜는 시점에는 몇 개 되는지 모른다 —

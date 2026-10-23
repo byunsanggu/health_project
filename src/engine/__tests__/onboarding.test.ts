@@ -4,7 +4,9 @@ import { describe, it } from 'node:test';
 import { buildProgram, runOnboarding, type OnboardingAnswers } from '../onboarding.ts';
 import { buildSession } from '../session.ts';
 import { HEAVY_PULLS } from '../exercises.ts';
-import { COMMON_EQUIPMENT_IDS } from '../equipment.ts';
+import { COMMON_EQUIPMENT_IDS, EQUIPMENT_CATALOG } from '../equipment.ts';
+
+const EQUIPMENT_IDS = new Set(EQUIPMENT_CATALOG.map((item) => item.id));
 import { EXERCISES } from '../exercises.ts';
 import { levelProfile } from '../levels.ts';
 import { exerciseById } from '../exercises.ts';
@@ -421,6 +423,19 @@ describe('buildProgram — 하체 구성 · 데드리프트 · 풀업', () => {
         assert.ok((exerciseById(slot.exerciseId)!.jointStress.lowBack ?? 0) < 0.7, `${template.name} ${slot.exerciseId}`);
       }
     });
+  });
+
+  it('중급부터는 고블릿 스쿼트 · 케이블 풀스루를 메인으로 두지 않는다 — 레그프레스 · 힙 쓰러스트가 있으면', () => {
+    const residence = ['dumbbells', 'bench-flat', 'bench-incline', 'leg-press-machine', 'smith-machine', 'cable-station', 'lat-pulldown-machine', 'leg-curl-machine', 'leg-extension-machine', 'floor']
+      .filter((id) => EQUIPMENT_IDS.has(id));
+    const program = buildProgram(answers({ daysPerWeek: 4, gym: { equipmentIds: residence } }), 'intermediate');
+    for (const template of program.templates) {
+      const main = template.slots.filter((slot) => slot.role === 'primary').map((slot) => slot.exerciseId);
+      assert.ok(!main.includes('goblet-squat') && !main.includes('cable-pull-through'), `${template.name}: ${main.join(', ')}`);
+    }
+    // 초보에게 고블릿 스쿼트는 좋은 첫 스쿼트다
+    const beginner = buildProgram(answers({ selfReportedLevel: 'beginner', monthsTraining: 2, daysPerWeek: 3 }), 'beginner');
+    assert.ok(beginner.templates.some((template) => template.slots.some((slot) => slot.role === 'primary' && slot.exerciseId === 'goblet-squat')));
   });
 
   it('랫풀다운이 있으면 풀업보다 먼저 — 몇 개 되는지 모르는 처음이다. 철봉뿐이면 풀업', () => {
