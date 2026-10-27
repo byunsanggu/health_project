@@ -12,7 +12,7 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
   await page.click('.start-cta');
-  await page.locator('.now-rir .chip', { hasText: '2회' }).click();
+  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
   const before = await weekSets(page);
   check(before > 0, '세트를 했는데 볼륨이 비었습니다');
 

@@ -45,9 +45,9 @@ export default async function ({ page, url, shot }) {
 
   // 두 세트 하고 마친 뒤 요약
   await page.click('.start-cta');
-  await page.locator('.now-rir .chip', { hasText: '2회' }).click();
+  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
-  await page.locator('.now-rir .chip', { hasText: '2회' }).click();
+  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
   const doneLine = await visibleText(page, '#screen');
   check(!/RIR/.test(doneLine), '끝낸 세트 줄에 RIR: ' + (doneLine.match(/.{20}RIR.{10}/) || [''])[0]);
   await page.locator('button', { hasText: '운동 끝내기' }).first().click();

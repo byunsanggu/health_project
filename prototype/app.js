@@ -661,7 +661,6 @@
     comebackDeclined: null,
     timeFit: null,
     warmupOpen: {},
-    doneOpen: {},
     // 위쪽 요약 카드 중 펼쳐진 것. null이면 둘 다 접힘.
     statOpen: null,
     /*
@@ -7149,6 +7148,127 @@
     }
   }
 
+  function setStrip(lift, liftIndex, cursor, doneCount) {
+    var sets = lift.sets;
+    var pounds = inPounds(lift.exercise.id);
+    /*
+     * 세트 카드 안에서는 머리줄 없이 칸만 둔다. 칸이 높아지면 "몇 개 더"
+     * 버튼이 화면 밖으로 밀린다 — 세트를 끝내는 버튼이 먼저다.
+     */
+    return el('div', { class: 'set-strip-wrap' }, [
+      cursor >= 0 ? null : el('div', { class: 'set-strip-head' }, [
+        el('b', { text: sets.length + '세트 모두 끝' }),
+        doneCount > 0 ? el('span', { class: 'meta', text: '칸을 누르면 고칩니다' }) : null,
+      ]),
+      el('div', { class: 'set-strip' }, sets.map(function (set, order) {
+        if (set.done) {
+          var load = set.weightKg > 0 ? E.weightLabelIn(set.weightKg, pounds) : '맨몸';
+          return el('button', {
+            type: 'button', class: 'set-box done',
+            'aria-label': (order + 1) + '세트 끝냄 — ' + load + ' ' + set.reps + '회. 눌러서 고치기',
+            onclick: function () { openSetEdit(liftIndex, order); },
+          }, [
+            el('span', { class: 'set-box-no', text: '✓ ' + (order + 1) + '세트' }),
+            // ✎ — 누르면 고친다는 표시. 칸 위에 설명 줄을 두면 끝내기 버튼이 밀린다.
+            el('span', { class: 'set-box-rec', text: load.replace(/kg$/, '') + '×' + set.reps + ' ✎' }),
+          ]);
+        }
+        var now = order === cursor;
+        return el('div', {
+          class: 'set-box' + (now ? ' now' : ''),
+          'aria-current': now ? 'step' : null,
+        }, [
+          el('span', { class: 'set-box-no', text: (order + 1) + '세트' }),
+          el('span', { class: 'set-box-rec', text: now ? '지금' : '남음' }),
+        ]);
+      })),
+    ]);
+  }
+
+  /**
+   * 끝낸 세트의 숫자를 고친다.
+   *
+   * 세트를 "안 한 것"으로 되돌리지 않는다. 무게나 횟수를 잘못 적은 것뿐이면
+   * 그 숫자만 바뀌어야 하고, 지금 하던 세트는 그대로여야 한다. 정말 안 한
+   * 세트면 아래 "이 세트 기록 지우기"로 지운다.
+   */
+  function openSetEdit(liftIndex, setIndex) {
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set || !set.done) return;
+    var pounds = inPounds(lift.exercise.id);
+    var draft = { weight: pounds ? E.kgToLb(set.weightKg) : set.weightKg, reps: set.reps, rir: set.rir };
+
+    var draw = function () {
+      var body = [];
+      if (set.weightKg > 0 || draft.weight > 0) {
+        body.push(el('div', { class: 'list-label', text: '무게 (' + (pounds ? 'lb' : 'kg') + ')' }));
+        body.push(el('input', {
+          type: 'number', class: 'text-input set-edit-weight', inputmode: 'decimal', min: '0', step: 'any',
+          value: String(draft.weight),
+          oninput: function (event) { draft.weight = parseFloat(event.target.value); },
+        }));
+      }
+      body.push(el('div', { class: 'list-label', text: '횟수' }));
+      body.push(el('input', {
+        type: 'number', class: 'text-input set-edit-reps', inputmode: 'numeric', min: '0', step: '1',
+        value: String(draft.reps),
+        oninput: function (event) { draft.reps = parseInt(event.target.value, 10); },
+      }));
+      body.push(el('div', { class: 'list-label', text: '몇 개 더 할 수 있었나요?' }));
+      body.push(el('div', { class: 'rir-row' }, [0, 1, 2, 3, 4].map(function (rir) {
+        return el('button', {
+          type: 'button', class: 'chip' + (rir === 0 ? ' fail' : ''),
+          'aria-pressed': String(draft.rir === rir),
+          text: rirLabel(rir),
+          onclick: function () { draft.rir = rir; draw(); },
+        });
+      })));
+      body.push(el('button', {
+        type: 'button', class: 'finish set-edit-save', text: '고친 대로 저장',
+        onclick: function () { saveSetEdit(liftIndex, setIndex, draft, pounds); },
+      }));
+      body.push(el('button', {
+        type: 'button', class: 'finish quiet set-edit-drop', text: '이 세트 기록 지우기 (안 한 세트)',
+        onclick: function () {
+          modal.close();
+          pushLog('기록 지움', '<b>' + lift.exercise.name + '</b> ' + (setIndex + 1) + '세트 기록을 지웠습니다.');
+          undoSet(liftIndex, setIndex);
+        },
+      }));
+      openModal(lift.exercise.name + ' ' + (setIndex + 1) + '세트', '기록 고치기', body);
+    };
+    draw();
+  }
+
+  function saveSetEdit(liftIndex, setIndex, draft, pounds) {
+    var lift = state.lifts[liftIndex];
+    var set = lift.sets[setIndex];
+    var weight = Number.isFinite(draft.weight) && draft.weight >= 0
+      ? (pounds ? E.lbToKg(Math.min(2200, draft.weight)) : Math.min(999, draft.weight))
+      : set.weightKg;
+    var reps = Number.isFinite(draft.reps) && draft.reps >= 0 ? Math.min(100, draft.reps) : set.reps;
+    set.weightKg = weight;
+    set.reps = reps;
+    set.rir = draft.rir;
+    if (set.logged) {
+      set.logged.weightKg = weight;
+      set.logged.reps = reps;
+      set.logged.rir = draft.rir;
+    }
+    updateDecision(lift);
+    modal.close();
+    pushLog('기록 고침', '<b>' + lift.exercise.name + '</b> ' + (setIndex + 1) + '세트 — ' +
+      (weight > 0 ? weight + 'kg' : '맨몸') + ' × ' + reps + '회 · 여유 ' + draft.rir + '개');
+    persist();
+    render();
+  }
+
+  /** 남은 힘 버튼 글자 — "2"가 아니라 "2개 더". 반복 수 칸("10회")과 헷갈리지 않게. */
+  function rirLabel(rir) {
+    return rir === 0 ? '못 함' : rir === 4 ? '4개+ 더' : rir + '개 더';
+  }
+
   /**
    * 세트를 한 번에 하나씩.
    *
@@ -7170,54 +7290,16 @@
     var wrap = el('div', { class: 'set-track' }, []);
 
     /*
-     * 점은 "이번 세트" 줄 안으로 들어갔다 — 같은 이야기를 두 줄에 쓰면
-     * 그 한 줄만큼 눌러야 할 것이 화면 밖으로 밀린다. 다 끝낸 종목일
-     * 때만 여기서 한 줄로 말한다.
+     * 세트 칸 한 줄 — 몇 세트를 했는지 세어 보지 않고 본다.
+     *
+     * 예전에는 점 몇 개와 접힌 "완료 N세트 보기"뿐이었다. 거기서 "고치기"를
+     * 누르면 그 세트가 통째로 "안 한 것"이 되고 화면이 1세트로 돌아갔다 —
+     * 2세트는 끝났는데 1세트를 다시 하라는 화면이 되니, 몇 세트를 했는지
+     * 알 수가 없었다. 이제 끝낸 칸은 ✓와 기록을 그대로 보여 주고, 누르면
+     * 그 자리에서 숫자만 고친다. 지금 할 세트는 바뀌지 않는다.
      */
-    if (cursor < 0) {
-      wrap.appendChild(el('div', { class: 'set-dots-row' }, [
-        el('span', { class: 'set-dots' }, sets.map(function (set) {
-          return el('i', { class: set.done ? 'on' : '', 'aria-hidden': 'true' });
-        })),
-        el('span', { class: 'set-count done', text: sets.length + '세트 완료' }),
-      ]));
-    }
-    void doneCount;
-
-    /* 끝낸 세트는 접어 둔다. 기록을 고칠 일은 있지만 늘 보일 필요는 없다. */
-    if (doneCount > 0) {
-      var open = state.doneOpen[lift.exercise.id] === true;
-      wrap.appendChild(el('button', {
-        type: 'button', class: 'done-head', 'aria-expanded': String(open),
-        onclick: function () {
-          state.doneOpen[lift.exercise.id] = !open;
-          render();
-        },
-      }, [
-        el('span', { class: 'warmup-label', text: '완료' }),
-        el('span', { class: 'warmup-summary', text: doneCount + '세트' }),
-        el('span', { class: 'warmup-toggle', text: open ? '접기' : '보기' }),
-      ]));
-
-      if (open) {
-        sets.forEach(function (set, setIndex) {
-          if (!set.done) return;
-          wrap.appendChild(el('div', { class: 'done-set' }, [
-            el('span', { class: 'set-no', text: String(setIndex + 1) }),
-            el('span', { class: 'done-detail', text:
-              (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회 · 여유 ' + set.rir + '개' +
-              // 계획과 다르게 한 세트는 그 사실이 남아야 한다
-              (set.plannedKg != null && set.plannedKg !== set.weightKg
-                ? '  (계획 ' + (set.plannedKg > 0 ? set.plannedKg + 'kg' : '맨몸') + ')' : '') }),
-            el('button', {
-              type: 'button', class: 'demo-open', text: '고치기',
-              'aria-label': (setIndex + 1) + '세트 기록 고치기',
-              onclick: function () { undoSet(liftIndex, setIndex); },
-            }),
-          ]));
-        });
-      }
-    }
+    // 하는 중에는 세트 카드 맨 위에 들어간다(renderCurrentSet) — 화면이 그 카드로 스크롤된다.
+    if (cursor < 0) wrap.appendChild(setStrip(lift, liftIndex, cursor, doneCount));
 
     if (cursor >= 0) {
       wrap.appendChild(renderCurrentSet(lift, liftIndex, sets[cursor], cursor));
@@ -8355,6 +8437,9 @@
      * 다른 기계 앞인데"를 깨닫는 자리는 숫자칸이고, 고치는 버튼도
      * 거기 있어야 한다.
      */
+    body.push(setStrip(lift, liftIndex, setIndex,
+      lift.sets.filter(function (item) { return item.done; }).length));
+
     var machines = machineRow(lift, liftIndex);
     if (machines) body.push(machines);
 
@@ -8367,13 +8452,6 @@
       el('div', { class: 'now-line' }, [
         el('b', { text: (setIndex + 1) + '세트 진행중' }),
         el('span', { class: 'of', text: '/ ' + lift.sets.length + '세트' }),
-        // 점은 세어 보지 않고 어디쯤인지 아는 용이다. 숫자 옆이 제자리다.
-        el('span', { class: 'set-dots' }, lift.sets.map(function (item, order) {
-          return el('i', {
-            class: item.done ? 'on' : (order === setIndex ? 'now' : ''),
-            'aria-hidden': 'true',
-          });
-        })),
       ]),
       el('div', { class: 'plan', text: setPlanLine(set, pounds) }),
       el('div', { class: 'set-timing', text: setTimingLine(lift, liftIndex, set, setIndex) }),
@@ -8560,7 +8638,7 @@
     }
     body.push(el('div', { class: 'rir-ask' + (byFeel ? ' quiet' : '') }, [
       el('b', { text: byFeel ? '정확히 아시면' : (setIndex + 1) + '세트 끝내기' }),
-      el('span', { text: '방금 세트, 몇 회 더 할 수 있었나요?' }),
+      el('span', { text: '방금 세트, 몇 개 더 할 수 있었나요?' }),
     ]));
 
     /*
@@ -8575,7 +8653,7 @@
      */
     var chips = el('div', { class: 'rir-row now-rir' }, []);
     [0, 1, 2, 3, 4].forEach(function (rir) {
-      var label = rir === 0 ? '못 함' : rir === 4 ? '4회+' : rir + '회';
+      var label = rirLabel(rir);
       chips.appendChild(el('button', {
         type: 'button',
         class: 'chip' + (rir === 0 ? ' fail' : ''),
@@ -8678,8 +8756,8 @@
   /*
    * 방금 적은 세트 되돌리기 — 5초 동안.
    *
-   * 땀난 손가락은 "2회"를 누르려다 "1회"를 누른다. 고치는 길("완료 › 보기 ›
-   * 고치기")은 있지만 세 번을 찾아 눌러야 한다. 누른 바로 그때 한 번에 되돌리게 한다.
+   * 땀난 손가락은 "2개 더"를 누르려다 "1개 더"를 누른다. 세트 칸(✓)을 눌러
+   * 고칠 수도 있지만, 누른 바로 그때 한 번에 되돌리게 한다.
    * PT는 묻는 화면에서 "횟수 · 무게 고치기"로 고친다.
    */
   var UNDO_MS = 5000;

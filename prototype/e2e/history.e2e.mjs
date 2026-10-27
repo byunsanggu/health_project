@@ -8,7 +8,7 @@ export default async function ({ page, url, shot }) {
   await page.click('.start-cta');
 
   // 잘못 누른 세트 — 바로 되돌린다
-  await page.locator('.now-rir .chip', { hasText: '1회' }).click();
+  await page.locator('.now-rir .chip', { hasText: '1개 더' }).click();
   const strip = page.locator('#rest-host .undo-strip');
   check((await strip.textContent()).includes('1세트 기록했습니다'), '되돌리기 줄이 없습니다');
   await shot('1-undo');
@@ -17,11 +17,11 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('#rest-host').isHidden(), '되돌렸는데 휴식이 돕니다');
 
   // 다시 적으면 5초 뒤 되돌리기 줄은 사라진다
-  await page.locator('.now-rir .chip', { hasText: '2회' }).click();
+  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
   await page.clock.runFor(5500);
   check(await page.locator('#rest-host .undo-strip').count() === 0, '5초가 지났는데 되돌리기가 남았습니다');
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
-  await page.locator('.now-rir .chip', { hasText: '2회' }).click();
+  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
 
   // 오늘 기록이 진행 탭 맨 위에
   await tab(page, '진행');

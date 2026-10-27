@@ -1280,6 +1280,26 @@ input[type="search"] {
 /* 이 세트 약 45초 → 1분 30초 쉬고 3세트 */
 .now-head .set-timing { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .now-line { display: flex; align-items: center; gap: 7px; }
+/* 세트 칸 한 줄 — 몇 세트 했는지 세어 보지 않고 본다 */
+.set-strip-wrap { padding: 0 0 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+.set-strip-head { font-size: 13px; }
+.set-track > .set-strip-wrap { padding: 12px 14px; margin: 0; }
+.set-strip-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.set-strip-head b { font-size: 13.5px; }
+.set-strip-head .meta { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+.set-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 6px; }
+.set-box {
+  display: grid; justify-items: center; align-content: center; gap: 1px;
+  min-height: 46px; padding: 5px 2px;
+  border: 1px dashed var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.set-box-no { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.set-box-rec { font-family: var(--mono); font-size: 10.5px; line-height: 1.3; white-space: nowrap; }
+.set-box.done { border-style: solid; border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.set-box.done:hover { filter: brightness(1.08); }
+.set-box.now { border: 2px solid var(--accent); color: var(--accent); background: var(--accent-soft); }
 .now-head b { font-size: 18px; font-weight: 600; color: var(--accent); letter-spacing: -.01em; }
 .now-head .of { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .now-line .set-dots { margin-left: auto; flex-wrap: nowrap; }
