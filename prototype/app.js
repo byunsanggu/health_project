@@ -1614,8 +1614,6 @@
     // 세는 중에 RIR을 누를 수 있다. 소리가 혼자 남으면 다음 세트와 겹친다.
     // 이미 답을 눌렀다. 여기서 "무게 어땠어요?"를 또 물으면 답한 사람에게 다시 묻는 꼴이다.
     if (state.counting) stopCounting(true, true);
-    state.askFor = null;
-    clearAskWindow();
     // 세트를 적으면 다시 집중 화면으로 — 기록을 고치러 "자세히"로 갔던 것은 이 세트 한 번이다.
     state.focusHidden = false;
     var lift = state.lifts[liftIndex];
@@ -1878,9 +1876,6 @@
     var nextText = partnerSet >= 0
       ? partner.exercise.name + ' ' + (partnerSet + 1) + '세트'
       : !isLast ? (setIndex + 2) + '세트' : (nextLift ? nextLift.exercise.name : '마무리');
-    // 세트 끝 물음에서 기다린 시간 — 휴식은 세트가 끝난 순간부터 센다
-    var headStart = Math.min(state.restHeadStart || 0, Math.max(0, seconds * 1000 - 5000));
-    state.restHeadStart = 0;
     state.rest = {
       exerciseId: lift.exercise.id,
       exerciseName: lift.exercise.name,
@@ -1888,7 +1883,7 @@
       // 쉬고 나서 무엇을 하는지. 휴식 막대에 "쉬고 → 3세트"로 보인다.
       next: nextText,
       total: seconds,
-      endsAt: Date.now() + seconds * 1000 - headStart,
+      endsAt: Date.now() + seconds * 1000,
       reason: reason,
     };
 
@@ -2041,7 +2036,18 @@
       }
       return;
     }
-    if (ptOn() && state.started) acquireWakeLock();
+    if (ptOn() && state.started) {
+      acquireWakeLock();
+      /*
+       * 화면을 껐다 켜면 PT가 알아서 잇는다. 예전에는 "▶ 계속"을 눌러야
+       * 했는데, 쉬는 동안 폰을 잠그는 건 흔한 일이라 세트마다 PT를 다시
+       * 켜는 셈이 됐다. 일부러 누른 일시정지는 그대로 둔다.
+       */
+      if (state.ptRun && state.ptRun.paused && state.ptRun.pausedWhy === 'background') {
+        resumePt();
+        render();
+      }
+    }
     if (!state.rest) return;
     if (restRemaining() <= 0) tickRest();
     else {
@@ -5923,7 +5929,13 @@
     var lift = state.lifts[liftIndex];
     var set = lift.sets[setIndex];
     var target = typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir;
-    completeSet(liftIndex, setIndex, E.rirFromReps(set.reps, set.targetReps, target));
+    var weight = set.weightKg;
+    var reps = set.reps;
+    // 코치 말(다음 세트 전 자세 한마디)이 보는 체감 — 못 채웠으면 무거웠던 것
+    var feel = reps < set.targetReps.min ? 'heavy' : 'right';
+    lift.lastFeel = feel;
+    completeSet(liftIndex, setIndex, E.rirFromReps(reps, set.targetReps, target));
+    coachAfter(liftIndex, setIndex, feel, weight, reps);
     offerUndo(liftIndex, setIndex);
   }
 
@@ -6260,7 +6272,7 @@
       el('p', { class: 'hint-line', text: (state.askEffort
         ? '세트마다 한 번 더 누릅니다. 다음 무게가 더 정확해집니다.'
         : '세트가 끝나면 "완료" 하나만 누릅니다. 얼마나 힘들었는지는 한 횟수로 짐작합니다.') +
-        ' PT 모드는 코치가 "무게 어땠어요?"로 묻습니다.' }),
+        ' PT 모드는 묻지 않고 센 횟수를 바로 적습니다.' }),
       el('div', { class: 'list-label', text: '알림' }),
       alertControls(render),
     ]);
@@ -6446,31 +6458,24 @@
      * 멈춘 자리까지를 기록으로 제안한다. 앱은 실제 반복을 못 봤으므로
      * 이건 "제안"이고, 숫자칸은 그대로 고칠 수 있게 둔다.
      */
-    var asked = false;
     if (keepReps !== false && run.rep > 0) {
       var lift = state.lifts[run.liftIndex];
       var set = lift && lift.sets[run.setIndex];
       if (set && !set.done) set.reps = run.rep;
-      // 트레이너는 세트가 끝나면 묻는다. 버튼을 찾게 두지 않는다.
-      asked = Boolean(ptOn() && !silent && set && !set.done);
-      if (asked) {
-        // 집중 화면이 "무게 어땠어요?" 버튼을 띄우는 신호. 묻는 말은 하지 않는다 —
-        // 숨 고르는 사람에게 매 세트 질문하면 귀찮다. 10초 안 누르면 알아서 적는다.
-        state.askFor = run.liftIndex + ':' + run.setIndex;
-        state.askDefault = set.reps < set.targetReps.min ? 'heavy' : 'right';
-        state.askStartedAt = Date.now();
-        startAskWindow();
+      /*
+       * PT는 세트가 끝나면 묻지 않고 바로 적는다.
+       *
+       * 예전에는 "무게 어땠어요?" 버튼을 띄우고 10초를 기다렸다. 세 세트를
+       * 안 누르면 "자리를 비우신 것 같아요"로 멈췄고, 그때마다 계속을 눌러야
+       * 했다 — PT가 세트마다 꺼지는 것처럼 느껴졌다. 센 횟수가 곧 기록이고,
+       * 힘이 얼마나 남았는지는 그 횟수로 짐작한다. 그다음은 휴식 → 다음 세트.
+       */
+      if (ptOn() && !silent && set && !set.done) {
+        finishSimple(run.liftIndex, run.setIndex);
+        return;
       }
     }
     render();
-    /*
-     * 물었으면 답할 버튼을 눈앞에 둔다. 묻기만 하고 버튼이 화면 아래에
-     * 있으면, 땀난 손으로 스크롤부터 해야 한다.
-     */
-    if (asked) {
-      var row = document.querySelector('.feel-row');
-      if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }
   }
 
   /**
@@ -6505,11 +6510,6 @@
 
   function startCounting(liftIndex, setIndex, leadSeconds, fromRep) {
     stopCounting(false);
-    // 물어보던 세트를 다시 센다면 그 물음은 끝났다 — 10초 뒤에 저절로 적히면 안 된다
-    if (state.askFor === liftIndex + ':' + setIndex) {
-      state.askFor = null;
-      clearAskWindow();
-    }
     var lift = state.lifts[liftIndex];
     var set = lift && lift.sets[setIndex];
     if (!set) return;
@@ -7102,6 +7102,15 @@
          * 없다"가 나왔다 — 시간이 없어 중간에 나가는 날이 실제로 있다.
          * 누르면 바로 끝나지 않고 요약이 먼저 뜬다. 거기서 "오늘 마치기"를 눌러야 끝.
          */
+        /*
+         * PT는 운동 중에도 켠다. 시작 전 화면에서만 고를 수 있으면, 하다가
+         * "세어 줬으면" 싶을 때 방법이 없다. 켜면 남은 운동 전체를 이끈다.
+         */
+        el('button', {
+          type: 'button', class: 'pt-toggle', 'aria-pressed': String(ptOn()),
+          text: ptOn() ? 'PT 끄기' : 'PT 켜기',
+          onclick: togglePtNow,
+        }),
         el('button', { type: 'button', class: 'end-workout', text: '운동 끝내기', onclick: endWorkout }),
       ]),
     ]));
@@ -7433,6 +7442,41 @@
   }
 
   /* ── PT 세션 — 워밍업 · 이동 · 시간 · 스트레칭 ───── */
+
+  /**
+   * 운동 중에 PT를 켜고 끈다.
+   *
+   * 켜면 그 자리부터 오늘 남은 운동을 통째로 이끈다 — 지금 세트를 세어 주고,
+   * 쉬게 하고, 다음 세트 · 다음 종목으로 저절로 간다. 세트마다 다시 켤 일이
+   * 없다. 끄면 하던 말과 세기를 멈추고 혼자 모드로 돌아간다. 고른 방식은
+   * 다음 운동에도 그대로 간다.
+   */
+  function togglePtNow() {
+    if (ptOn()) {
+      pausePt('off');
+      state.coach = { mode: 'solo', style: state.coach.style };
+      if (!state.rest) releaseWakeLock();
+      pushLog('운동 방식', 'PT를 껐습니다. 혼자 모드로 이어 갑니다.');
+      persist();
+      render();
+      return;
+    }
+    state.coach = { mode: 'pt', style: state.coach.style || 'calm' };
+    var run = ensurePtRun();
+    // 이미 운동 중이면 몸 풀기는 건너뛴다 — 이미 몸이 풀렸다
+    run.prepped = true;
+    acquireWakeLock();
+    pushLog('운동 방식', 'PT를 켰습니다. 오늘 남은 운동을 끝까지 이끕니다.');
+    persist();
+    if (run.paused) {
+      resumePt();
+    } else {
+      // 지금 세트를 세어 주게 한다(쉬는 중이면 휴식이 끝난 뒤)
+      state.autoCountedFor = null;
+      speak(state.coach.style === 'data' ? 'PT 시작.' : '지금부터 같이 할게요.');
+    }
+    render();
+  }
 
   function ensurePtRun() {
     if (!state.ptRun || state.ptRun.day !== state.todayDate) {
@@ -7861,7 +7905,6 @@
     if (!pt || pt.paused) return;
     pt.paused = true;
     pt.pausedWhy = why || null;
-    clearAskWindow();
     if (pt.startTimer) { clearTimeout(pt.startTimer); pt.startTimer = null; }
     // 어디까지 했는지 적어 둔다 — 돌아오면 거기서부터.
     pt.resume = null;
@@ -7891,15 +7934,9 @@
     if (!pt) return;
     pt.paused = false;
     pt.pausedWhy = null;
-    /*
-     * 세트 끝 물음에서 멈췄으면 그 세트는 이미 센 세트다. 표시를 지우면
-     * 화면을 그리는 순간 같은 세트를 처음부터 다시 센다.
-     */
-    state.autoCountedFor = state.askFor && !state.counting ? state.askFor : null;
+    state.autoCountedFor = null;
     var at = pt.resume;
     pt.resume = null;
-    // 세트 끝 물음에서 멈췄으면 10초를 다시 준다
-    if (state.askFor && !state.counting) startAskWindow();
     // 스트레칭 중에 멈췄으면 하던 스트레칭을 다시 한다.
     if (pt.cool) { speak(state.coach.style === 'fired' ? '다시 갑니다!' : '다시 할게요.'); cooldownStep(pt.cool, Math.max(0, pt.cool.index)); return; }
     // 몸 풀기 중에 멈췄으면 하던 동작부터
@@ -7934,67 +7971,6 @@
    *
    * PT 모드에서만 뜬다. 혼자 하는 사람은 지금 화면 그대로.
    */
-  /*
-   * 세트 끝 물음 — 10초 안에 안 누르면 기본값으로 적는다.
-   *
-   * 끝나고 한꺼번에 묻지 않는 이유: 이 답이 다음 세트 무게를 바로 바꾼다.
-   * 기본값은 "딱 좋았어요", 목표 개수를 못 채우고 멈췄으면 "무거웠어요".
-   */
-  var ASK_WINDOW_MS = 10000;
-
-  /*
-   * 손을 한 번도 안 댄 채 저절로 적은 세트가 이만큼 이어지면 자리를 비운 것으로 본다.
-   *
-   * 10초 기본값은 땀난 손으로 매 세트 누르지 않게 하려는 것이지, 아무도 없는데
-   * 세트를 지어내려는 것이 아니다. 폰을 두고 가면 세트 열다섯 개가 "딱 좋았어요"로
-   * 적히고, 그 기록으로 다음 주 무게가 오른다. 한 번이라도 화면을 만지면 다시 센다.
-   */
-  var PT_AWAY_SETS = 3;
-  document.addEventListener('pointerdown', function () { state.ptUntouched = 0; }, true);
-  document.addEventListener('keydown', function () { state.ptUntouched = 0; }, true);
-
-  function clearAskWindow() {
-    if (state.askTimer) clearTimeout(state.askTimer);
-    state.askTimer = null;
-    state.askUntil = null;
-  }
-
-  function startAskWindow() {
-    clearAskWindow();
-    // "자세히 보기"로 간 사람은 손으로 적으려는 것이다 — 저절로 적지 않는다
-    if (state.focusHidden) return;
-    state.askUntil = Date.now() + ASK_WINDOW_MS;
-    state.askTimer = setTimeout(function () {
-      state.askTimer = null;
-      var key = state.askFor;
-      // 세는 중에 지난 세트를 적으면 세던 세트가 엉뚱하게 끝난다
-      if (!key || !ptOn() || state.counting || (state.ptRun && state.ptRun.paused)) return;
-      var parts = key.split(':');
-      state.ptUntouched = (state.ptUntouched || 0) + 1;
-      answerFeel(Number(parts[0]), Number(parts[1]), state.askDefault || 'right');
-      if (state.ptUntouched >= PT_AWAY_SETS && ptOn() && state.ptRun && !state.ptRun.paused && !state.ptRun.cool) {
-        pausePt('away');
-        speak(state.coach.style === 'data'
-          ? '입력 없음. 일시정지.'
-          : '자리를 비우신 것 같아 멈춰 둘게요. 돌아오시면 계속을 눌러 주세요.');
-        render();
-      }
-    }, ASK_WINDOW_MS);
-  }
-
-  /** 세트 끝 답(눌렀든 저절로든). 기다린 시간은 휴식에서 뺀다 — 휴식은 세트가 끝난 때부터다. */
-  function answerFeel(liftIndex, setIndex, feel) {
-    var waited = state.askStartedAt ? Date.now() - state.askStartedAt : 0;
-    clearAskWindow();
-    state.askStartedAt = null;
-    var set = state.lifts[liftIndex] && state.lifts[liftIndex].sets[setIndex];
-    if (!set || set.done) return;
-    // 휴식이 시작될 때 기다린 만큼 빼고 시작한다 — 그래야 "1분 쉬고"라는 말과 숫자가 맞는다.
-    state.restHeadStart = waited;
-    finishByFeel(liftIndex, setIndex, feel);
-    state.restHeadStart = 0;
-  }
-
   /** 다음에 할 것 한 줄 — "다음 · 2세트 47.5kg × 6–10회". */
   function nextUpLine(liftIndex, setIndex) {
     var lift = state.lifts[liftIndex];
@@ -8022,8 +7998,6 @@
     if (pt.warm) return 'warm';
     if (state.counting) return 'count';
     if (state.rest) return 'rest';
-    var ref = focusSetRef();
-    if (ref && state.askFor === ref.liftIndex + ':' + ref.setIndex) return 'ask';
     return null;
   }
 
@@ -8120,11 +8094,6 @@
       prepLeft.textContent = leftSec >= 60 ? E.formatDuration(leftSec) : leftSec + '초';
       setRingFraction('focus-ring-bar', leftSec / step.seconds);
     }
-    var askLeft = document.getElementById('focus-ask-left');
-    if (askLeft && state.askUntil) {
-      var fallback = (E.FEELS.filter(function (feel) { return feel.id === (state.askDefault || 'right'); })[0] || {}).label || '딱 좋았어요';
-      askLeft.textContent = Math.max(0, Math.ceil((state.askUntil - Date.now()) / 1000)) + '초 뒤 "' + fallback + '"로 적어요';
-    }
     var restTime = document.getElementById('focus-rest-time');
     if (state.rest && restTime) {
       var remaining = restRemaining();
@@ -8161,8 +8130,9 @@
     focusHost.appendChild(el('div', { class: 'focus-top' }, [
       el('button', { type: 'button', class: 'focus-more', text: '자세히 보기',
         title: '무게 · 횟수 칸과 오늘 목록이 있는 화면',
-        onclick: function () { clearAskWindow(); state.focusHidden = true; render(); } }),
+        onclick: function () { state.focusHidden = true; render(); } }),
       el('span', { class: 'focus-elapsed', id: 'focus-elapsed', text: elapsedText() }),
+      el('button', { type: 'button', class: 'pt-toggle', 'aria-pressed': 'true', text: 'PT 끄기', onclick: togglePtNow }),
       el('button', { type: 'button', class: 'end-workout', text: '운동 끝내기', onclick: endWorkout }),
     ]));
     focusHost.appendChild(el('div', { class: 'focus-title' }, phase === 'prep' ? [
@@ -8298,30 +8268,6 @@
         onclick: function () { pausePt(null); render(); } }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '워밍업 건너뛰기',
         onclick: function () { try { window.speechSynthesis.cancel(); } catch (err) { void err; } skipWarmup(warm.liftIndex); } }));
-    } else if (phase === 'ask' && ref) {
-      var fallback = state.askDefault || 'right';
-      var fallbackLabel = (E.FEELS.filter(function (feel) { return feel.id === fallback; })[0] || {}).label || '딱 좋았어요';
-      var left = state.askUntil ? Math.max(0, Math.ceil((state.askUntil - Date.now()) / 1000)) : 10;
-      middle.appendChild(el('div', { class: 'focus-ask' }, [
-        el('b', { text: (ref.setIndex + 1) + '세트 · ' + ref.set.reps + '회 끝' }),
-        el('span', { text: loadText(ref.lift, ref.set.weightKg) + ' — 무게는 어땠어요?' }),
-        el('span', { class: 'focus-ask-left', id: 'focus-ask-left',
-          text: state.askUntil ? left + '초 뒤 "' + fallbackLabel + '"로 적어요' : '골라 주세요' }),
-      ]));
-      var feels = el('div', { class: 'focus-feels' }, E.FEELS.map(function (feel) {
-        return el('button', {
-          type: 'button',
-          class: 'feel' + (feel.id === 'hurt' ? ' hurt' : '') + (feel.id === fallback ? ' default' : ''),
-          text: feel.label,
-          onclick: function () { answerFeel(ref.liftIndex, ref.setIndex, feel.id); },
-        });
-      }));
-      middle.appendChild(feels);
-      middle.appendChild(el('div', { class: 'focus-next', text: nextUpLine(ref.liftIndex, ref.setIndex) }));
-      actions.appendChild(el('button', { type: 'button', class: 'focus-btn quiet', text: '횟수 · 무게 고치기',
-        title: '숫자칸이 있는 화면에서 고친 뒤 기록합니다',
-        // 고치러 가면 저절로 적지 않는다 — 고치는 중에 적혀 버리면 안 된다
-        onclick: function () { clearAskWindow(); state.focusHidden = true; render(); } }));
     } else if (phase === 'paused') {
       middle.appendChild(focusRing(0, 'focus-ring-bar', [
         el('b', { class: 'focus-num wide', text: 'Ⅱ' }),
@@ -8330,9 +8276,7 @@
       middle.appendChild(el('div', { class: 'focus-what' }, [
         el('span', { text: pt.pausedWhy === 'background'
           ? '다른 앱에 다녀오셔서 멈춰 뒀어요.'
-          : pt.pausedWhy === 'away'
-            ? '세 세트 동안 화면을 안 만지셔서 멈춰 뒀어요. 그동안 적힌 세트가 맞는지 "자세히 보기"에서 확인해 주세요.'
-            : (pt.resume && pt.resume.rep > 0 ? pt.resume.rep + '개까지 했어요. 이어서 셀게요.' : '준비되면 계속을 눌러 주세요.') }),
+          : (pt.resume && pt.resume.rep > 0 ? pt.resume.rep + '개까지 했어요. 이어서 셀게요.' : '준비되면 계속을 눌러 주세요.') }),
       ]));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn primary pt-pause', text: '▶ 계속', onclick: resumePt }));
     }
@@ -8609,39 +8553,8 @@
       ]),
     ]));
 
-    /*
-     * 기본은 "완료" 하나.
-     *
-     * 세트마다 "몇 개 더 할 수 있었나요?"를 고르게 했더니 운동이 설문이
-     * 됐다. 숨찬 사람은 버튼을 고르지 않는다 — 무게와 횟수는 이미 칸에
-     * 있고(처방대로면 손댈 것도 없다), 남은 힘은 한 횟수로 짐작한다
-     * (rirFromReps). 묻기를 원하는 사람은 내 정보 › 코치 · 알림에서 켠다.
-     */
-    if (!ptOn() && inputMode() === 'none') {
-      var leftAfter = lift.sets.filter(function (item) { return !item.done; }).length - 1;
-      body.push(el('button', {
-        type: 'button', class: 'finish now-done',
-        'aria-label': (setIndex + 1) + '세트 완료 — 기록하고 ' +
-          (leftAfter > 0 ? '쉬기' : '이 종목 마치기'),
-        onclick: function () { finishSimple(liftIndex, setIndex); },
-      }, [
-        el('span', { text: '✓ ' + (setIndex + 1) + '세트 완료' }),
-        el('span', { class: 'now-done-sub', text: leftAfter > 0 ? leftAfter + '세트 남음' : '마지막 세트' }),
-      ]));
-      body.push(countPanel(liftIndex, setIndex));
-      /*
-       * 아픈 건 묻지 않아도 말할 수 있어야 한다. 매 세트 고르는 버튼이 아니라
-       * 아플 때만 누르는 작은 글자로 둔다.
-       */
-      body.push(el('button', {
-        type: 'button', class: 'link-btn hurt-link', text: '아픈 데 있어요',
-        'aria-label': '아픈 데 있어요 — 이 종목 남은 세트를 빼고 어디가 아픈지 묻습니다',
-        onclick: function () { finishByFeel(liftIndex, setIndex, 'hurt'); },
-      }));
-      return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
-    }
-
-    body.push(countPanel(liftIndex, setIndex));
+    // PT는 세어 주기 칸(일시정지 · 계속)이 워밍업 · 휴식 중에도 보여야 한다.
+    if (ptOn()) body.push(countPanel(liftIndex, setIndex));
 
     /*
      * PT가 워밍업을 이끄는 동안에는 본세트를 끝내는 버튼을 숨긴다.
@@ -8681,6 +8594,42 @@
     }
 
     /*
+     * 기본은 "완료" 하나.
+     *
+     * 세트마다 "몇 개 더 할 수 있었나요?"를 고르게 했더니 운동이 설문이
+     * 됐다. 숨찬 사람은 버튼을 고르지 않는다 — 무게와 횟수는 이미 칸에
+     * 있고(처방대로면 손댈 것도 없다), 남은 힘은 한 횟수로 짐작한다
+     * (rirFromReps). 묻기를 원하는 사람은 내 정보 › 코치 · 알림에서 켠다.
+     *
+     * PT는 늘 이렇다 — 세어 주면 저절로 적히고, 손으로 끝낼 때도 이 버튼 하나다.
+     */
+    if (ptOn() || inputMode() === 'none') {
+      var leftAfter = lift.sets.filter(function (item) { return !item.done; }).length - 1;
+      body.push(el('button', {
+        type: 'button', class: 'finish now-done',
+        'aria-label': (setIndex + 1) + '세트 완료 — 기록하고 ' +
+          (leftAfter > 0 ? '쉬기' : '이 종목 마치기'),
+        onclick: function () { finishSimple(liftIndex, setIndex); },
+      }, [
+        el('span', { text: '✓ ' + (setIndex + 1) + '세트 완료' }),
+        el('span', { class: 'now-done-sub', text: leftAfter > 0 ? leftAfter + '세트 남음' : '마지막 세트' }),
+      ]));
+      if (!ptOn()) body.push(countPanel(liftIndex, setIndex));
+      /*
+       * 아픈 건 묻지 않아도 말할 수 있어야 한다. 매 세트 고르는 버튼이 아니라
+       * 아플 때만 누르는 작은 글자로 둔다.
+       */
+      body.push(el('button', {
+        type: 'button', class: 'link-btn hurt-link', text: '아픈 데 있어요',
+        'aria-label': '아픈 데 있어요 — 이 종목 남은 세트를 빼고 어디가 아픈지 묻습니다',
+        onclick: function () { finishByFeel(liftIndex, setIndex, 'hurt'); },
+      }));
+      return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
+    }
+
+    body.push(countPanel(liftIndex, setIndex));
+
+    /*
      * 세트를 넘기는 버튼이 따로 없다는 게 문제였다. RIR 숫자를 누르면
      * 기록되고 다음 세트로 가는데, 화면 어디에도 그 말이 없으니 "다음
      * 세트로 어떻게 가느냐"가 된다. 누르기 전에 무슨 일이 일어나는지를
@@ -8694,7 +8643,7 @@
      * 실제로 하는 말이고, 초보는 남은 횟수를 몰라도 가벼웠는지는 안다.
      * 남은 횟수 버튼은 아래에 그대로 둔다 — 정확히 아는 사람은 그걸 누른다.
      */
-    var byFeel = ptOn() || inputMode() === 'feel';
+    var byFeel = inputMode() === 'feel';
     if (byFeel) {
       body.push(el('div', { class: 'rir-ask' }, [
         el('b', { text: (setIndex + 1) + '세트 끝내기' }),

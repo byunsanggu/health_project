@@ -23,8 +23,8 @@ export default async function ({ page, url, shot }) {
     await runUntil(page, 'count');
   }
   // 첫 세트를 끝까지 센다 — 끝나기 두 개 전의 재촉까지 들어야 한다
-  await runUntil(page, 'ask', { maxMs: 180000 });
-  await shot('1-ask');
+  await runUntil(page, 'rest', { maxMs: 180000 });
+  await shot('1-rest');
 
   const said = await page.evaluate(() => window.__said.slice());
   check(said.some((line) => /무리하지 않습니다/.test(line)), '첫날 시작 말이 없습니다: ' + said.slice(0, 6).join(' / '));

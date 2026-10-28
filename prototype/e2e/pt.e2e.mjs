@@ -1,5 +1,5 @@
 // PT 한 바퀴 — 몸 풀기(목록에 다녀와도 이어진다) → 세기("운동 끝내기 → 계속하기"는 바로 잇는다)
-//   → 무게 물음(화면을 껐다 켜고 ▶ 계속해도 같은 세트를 다시 세지 않는다) → 10초 뒤 저절로 기록 → 휴식 → 다음 세트
+//   → 다 세면 묻지 않고 바로 기록 → 휴식(화면을 껐다 켜면 저절로 잇는다) → 다음 세트
 import { check, choosePt, focusPhase, onboard, runUntil, setVisible } from './lib.mjs';
 
 async function untilRep(page) {
@@ -40,24 +40,24 @@ export default async function ({ page, url, shot }) {
   await page.clock.runFor(500);
   check(await focusPhase(page) === 'count', '계속하기 뒤에 ' + await focusPhase(page));
 
-  await runUntil(page, 'ask', { maxMs: 180000 });
-  await shot('2-ask');
+  // 다 세면 묻지 않고 바로 적고 쉰다
+  await runUntil(page, ['ask', 'rest'], { maxMs: 180000 });
+  check(await focusPhase(page) === 'rest', '세트가 끝났는데 묻습니다');
+  const rest = await page.locator('#focus .focus-what').textContent();
+  check(/쉬고 → 2세트/.test(rest), '휴식 줄: ' + rest);
+  const logged = await page.evaluate(() => (JSON.parse(localStorage.getItem('volume-coach.proto.state') || '{}').sessions || [])
+    .reduce((sum, item) => sum + (item.sets || []).length, 0));
+  await shot('3-rest');
 
-  // 묻는 중에 다른 앱으로 갔다 와서 ▶ 계속 — 같은 세트를 처음부터 다시 세면 안 된다
+  // 쉬는 동안 폰을 잠갔다 켜면 — 멈췄다가 저절로 잇는다(계속을 누를 필요 없다)
   await setVisible(page, false);
   check(await focusPhase(page) === 'paused', '화면을 껐는데 멈추지 않았습니다');
   await setVisible(page, true);
-  await page.locator('#focus .pt-pause').click();
   await page.clock.runFor(1500);
-  check(await focusPhase(page) === 'ask', '이어 한 뒤 무게 물음이 아니라 ' + await focusPhase(page));
+  check(await focusPhase(page) === 'rest', '화면을 켰는데 이어지지 않고 ' + await focusPhase(page));
 
-  // 10초 안 누르면 저절로 적고 쉰다
-  await page.clock.runFor(11000);
-  check(await focusPhase(page) === 'rest', '10초 뒤 휴식이 아니라 ' + await focusPhase(page));
-  const rest = await page.locator('#focus .focus-what').textContent();
-  check(/쉬고 → 2세트/.test(rest), '휴식 줄: ' + rest);
-  await shot('3-rest');
-
-  // 휴식이 끝나면 다음 세트를 센다
+  // 휴식이 끝나면 다음 세트를 센다 — 같은 세트를 다시 적지 않는다
   await runUntil(page, 'count', { maxMs: 400000, stepMs: 2000 });
+  check((await page.locator('#focus .focus-what').textContent()).startsWith('2세트'), '다음 세트가 2세트가 아닙니다');
+  void logged;
 }

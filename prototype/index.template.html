@@ -865,7 +865,7 @@ input[type="search"] {
   padding: 16px; margin: 4px 0 12px;
   font-size: 18px; font-weight: 700; border-radius: 14px;
 }
-.hurt-link { display: block; margin: 10px auto 0; color: var(--muted); font-size: 12.5px; }
+.hurt-link { display: block; margin: 10px auto 0; padding: 6px 8px; border: 0; background: none; color: var(--muted); font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
 .now-done-sub { font-size: 12.5px; font-weight: 500; opacity: .8; }
 .finish {
   width: 100%;
@@ -2548,6 +2548,8 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .progress-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-top: 6px; }
 .progress-name > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .end-workout { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pt-toggle { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pt-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .end-workout:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ── 세어 주기 접힌 줄 · 묻는 방식 ──────────────── */
@@ -2656,9 +2658,6 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-btn.primary { border-color: var(--accent); color: var(--accent); }
 .focus-actions:has(.focus-btn:only-child) { grid-template-columns: 1fr; }
 .focus-btn.quiet { color: var(--muted); }
-.focus-ask { display: grid; gap: 4px; text-align: center; }
-.focus-ask b { font-size: 22px; color: var(--accent); }
-.focus-ask span { font-size: 15px; }
 .focus-next-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 12px; align-items: center; width: 100%; }
 .focus-map svg { width: 100%; height: auto; max-height: 30dvh; }
 .focus-map .body3d-pair { gap: 2px; }
@@ -2672,9 +2671,6 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-switch-time span { font-size: 13px; color: var(--muted); }
 .focus-num.small { font-size: 40px; }
 .focus-next { font-size: 13px; color: var(--muted); text-align: center; }
-.focus-ask-left { font-size: 13px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
-.focus-feels .feel.default { border-color: var(--accent); color: var(--accent); }
-.focus-feels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
 .focus-hurt { align-self: center; border: 0; background: none; font-size: 13px; color: var(--muted); text-decoration: underline; padding: 4px; }
 .count-live-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pt-away, .pt-resting { color: var(--accent); font-weight: 600; margin: 0; }
