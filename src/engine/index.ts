@@ -82,5 +82,6 @@ export * from './autoregulation.ts';
 export * from './timeBudget.ts';
 export * from './occupancy.ts';
 export * from './onboarding.ts';
+export * from './repRules.ts';
 export * from './blocks.ts';
 export * from './routine.ts';

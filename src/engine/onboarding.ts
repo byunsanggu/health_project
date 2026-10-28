@@ -50,7 +50,26 @@ export interface OnboardingAnswers {
   priorities?: readonly MuscleGroup[];
   /** 직접 고른 메인 종목. 그 동작의 첫 메인 자리에 들어간다. */
   mainLifts?: Partial<Record<MainLiftPattern, string>>;
+  /** 평소 반복 스타일. 없거나 'auto'면 목표에 맞춘다 */
+  repStyle?: RepStyle;
 }
+
+/**
+ * 평소 반복 스타일.
+ *
+ * 근육을 키우는 데는 6회든 15회든 한계 가까이 가면 효과가 비슷하다. 그래서
+ * 몇 회가 정답이라기보다 그 사람이 좋아하고 꾸준히 할 수 있는 쪽이 맞다.
+ * 10~15회로 하는 사람에게 4~6회를 고집하면 앱을 안 따른다.
+ */
+export type RepStyle = 'auto' | 'heavy' | 'moderate' | 'light' | 'mixed';
+
+export const REP_STYLES: readonly { id: RepStyle; label: string; hint: string }[] = [
+  { id: 'auto', label: '목표에 맞춰', hint: '고른 목표대로 앱이 정합니다' },
+  { id: 'heavy', label: '무겁게', hint: '바벨 메인 4~6회 · 나머지 6~12회' },
+  { id: 'moderate', label: '보통', hint: '메인 6~10회 · 고립 10~15회' },
+  { id: 'light', label: '가볍게 많이', hint: '메인 10~15회 · 고립 12~20회' },
+  { id: 'mixed', label: '섞어서', hint: '동작마다 한 주에 한 번 무겁게, 나머지는 8~12회' },
+];
 
 /** 메인 종목을 직접 고를 수 있는 동작. */
 export type MainLiftPattern =
@@ -894,7 +913,7 @@ export function buildProgram(
     };
   });
 
-  const ranged = assignRepRanges(templates, answers.goals, level);
+  const ranged = assignRepRanges(templates, answers.goals, level, answers.repStyle);
 
   return {
     name: SPLIT_NAMES[days] ?? `주 ${days}회 분할`,
@@ -1047,7 +1066,7 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
  * 근력 프로그램이 저반복을 거는 곳은 스쿼트 · 벤치 · 데드 · 프레스 · 로우 같은
  * 바벨 종목이다. 나머지 주 종목은 근력이 목표여도 6~10회가 맞다.
  */
-function isStrengthLift(exercise: Exercise): boolean {
+export function isStrengthLift(exercise: Exercise): boolean {
   return exercise.equipment === 'barbell' && !exercise.unilateral &&
     exercise.pattern !== 'isolation' && !NOT_LOW_REP.has(exercise.id);
 }
@@ -1076,6 +1095,7 @@ export function assignRepRanges(
   templates: readonly SessionTemplate[],
   goals: readonly TrainingGoal[],
   level: TrainingLevel,
+  style: RepStyle = 'auto',
 ): SessionTemplate[] {
   const heavyPatterns = new Set<string>();
   return templates.map((template) => {
@@ -1093,7 +1113,7 @@ export function assignRepRanges(
           heavyPatterns.add(exercise.pattern);
           heavyToday += 1;
         }
-        return { ...slot, repRange: repRangeFor(exercise, slot.role, goals, level, heavy) };
+        return { ...slot, repRange: repRangeFor(exercise, slot.role, goals, level, heavy, style) };
       }),
     };
   });
@@ -1118,16 +1138,60 @@ function repRangeFor(
   goals: readonly TrainingGoal[],
   level: TrainingLevel = 'intermediate',
   heavySlot = true,
+  style: RepStyle = 'auto',
 ): { min: number; max: number } {
-  let range = repRangeForGoals(role, goals);
-  const plan = planGoals(goals);
-  if (role === 'primary' && plan.goals.includes('strength')) {
-    const mixed = plan.goals.includes('hypertrophy');
-    if (!isStrengthLift(exercise) || (mixed && !heavySlot)) range = { min: 6, max: 10 };
-    else if (level === 'beginner') range = { min: 5, max: 8 };
+  return heavyPullRange(exercise, styledRange(exercise, role, goals, level, heavySlot, style));
+}
+
+/** 무겁게 드는 칸의 범위 — 초보는 5~8회. */
+function heavyRange(level: TrainingLevel): { min: number; max: number } {
+  return level === 'beginner' ? { min: 5, max: 8 } : { min: 4, max: 6 };
+}
+
+function styledRange(
+  exercise: Exercise,
+  role: SlotRole,
+  goals: readonly TrainingGoal[],
+  level: TrainingLevel,
+  heavySlot: boolean,
+  style: RepStyle,
+): { min: number; max: number } {
+  const strong = role === 'primary' && isStrengthLift(exercise);
+  switch (style) {
+    case 'moderate':
+      return repRangeForGoals(role, ['hypertrophy']);
+    case 'light':
+      if (role === 'isolation') return { min: 12, max: 20 };
+      if (role === 'accessory') return { min: 12, max: 15 };
+      return { min: 10, max: 15 };
+    case 'heavy':
+      if (role === 'isolation') return { min: 8, max: 12 };
+      if (role === 'accessory') return { min: 6, max: 10 };
+      return strong ? heavyRange(level) : { min: 6, max: 10 };
+    case 'mixed':
+      if (role === 'isolation') return { min: 10, max: 15 };
+      if (role === 'accessory') return { min: 8, max: 12 };
+      return strong && heavySlot ? heavyRange(level) : { min: 8, max: 12 };
+    default: {
+      const plan = planGoals(goals);
+      const range = repRangeForGoals(role, goals);
+      if (role !== 'primary' || !plan.goals.includes('strength')) return range;
+      const mixed = plan.goals.includes('hypertrophy');
+      if (!strong || (mixed && !heavySlot)) return { min: 6, max: 10 };
+      return heavyRange(level);
+    }
   }
+}
+
+/**
+ * 데드리프트류는 한 칸 낮게 — 허리 부담과 기술 때문이다. 고반복 스타일이어도
+ * 데드리프트를 15회까지 하지는 않는다(뒤로 갈수록 허리가 먼저 풀린다).
+ */
+export function heavyPullRange(exercise: Exercise, range: { min: number; max: number }): { min: number; max: number } {
   if (!HEAVY_PULLS.has(exercise.id)) return range;
-  return range.max <= 6 ? { min: 3, max: 5 } : { min: 4, max: 6 };
+  if (range.max <= 6) return { min: 3, max: 5 };
+  if (range.min >= 10) return { min: 6, max: 10 };
+  return { min: 4, max: 6 };
 }
 
 /** 처음 설문의 통증으로 프로그램에서 뺄 종목인가 — 오늘이라면 대체하거나 멈출 종목. */

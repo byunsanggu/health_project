@@ -107,8 +107,10 @@ export function prescribeLoad(
     targetRir: rule.targetRir,
   };
 
-  const attempts = (lastSession ?? []).filter((set) => set.exerciseId === exercise.id && !set.warmup);
-  const last = lastSession ? topWorkingSet(lastSession, exercise.id) : undefined;
+  // 주 1회 무거운 세트(1~3회)는 근거에서 뺀다 — 그날의 처방 범위는 백오프 세트다
+  const regular = (lastSession ?? []).filter((set) => !set.top);
+  const attempts = regular.filter((set) => set.exerciseId === exercise.id && !set.warmup);
+  const last = lastSession ? topWorkingSet(regular, exercise.id) : undefined;
   if (!last) {
     // 했는데 한 개도 못 했다 — 처음이 아니라 실패다. 처음으로 되돌리면 같은 무게를 또 권한다
     const tried = attempts.filter((set) => set.reps <= 0).sort((a, b) => b.weightKg - a.weightKg)[0];

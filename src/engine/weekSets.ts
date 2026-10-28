@@ -219,7 +219,8 @@ function startingSets(
   const done = new Map<string, number>();
   for (const session of lastWeek) {
     for (const set of session.sets) {
-      if (set.warmup || set.reps <= 0) continue;
+      // 주 1회 무거운 세트는 덤으로 붙은 한 세트다 — 다음 주 세트 수의 출발점에 넣지 않는다
+      if (set.warmup || set.top || set.reps <= 0) continue;
       done.set(set.exerciseId, (done.get(set.exerciseId) ?? 0) + 1);
     }
   }

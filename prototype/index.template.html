@@ -1151,6 +1151,12 @@ input[type="search"] {
 .gym-here .notice { margin: 4px 0 0; }
 .gym-here-actions { margin-top: 2px; }
 .gym-here-actions .finish { flex: 1; margin: 0; }
+.top-tag { font-size: 11.5px; font-weight: 700; color: var(--zone-over); border: 1px solid currentColor; border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+.rep-custom { display: flex; align-items: center; gap: 8px; }
+.rep-custom .text-input { width: 80px; text-align: center; }
+.rep-style { display: grid; gap: 6px; }
+.rep-suggest .chip-row { margin-top: 8px; }
+.top-set-row { margin-top: 10px; }
 .gym-link-nudge {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 12px; margin-bottom: 12px;
@@ -1287,7 +1293,7 @@ input[type="search"] {
 .now-head { display: grid; gap: 1px; }
 /* 이 세트 약 45초 → 1분 30초 쉬고 3세트 */
 .now-head .set-timing { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.now-line { display: flex; align-items: center; gap: 7px; }
+.now-line { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 /* 세트 칸 한 줄 — 몇 세트 했는지 세어 보지 않고 본다 */
 .set-strip-wrap { padding: 0 0 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
 .set-strip-head { font-size: 13px; }

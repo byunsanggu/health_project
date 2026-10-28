@@ -35,7 +35,7 @@ export const BACKUP_SETTING_KEYS: readonly string[] = [
   'style', 'blockHistory', 'block', 'startedOn', 'promise', 'timeBudget', 'coach',
   'restBand', 'restOverrides', 'restAlerts', 'voiceOn', 'voiceRate', 'autoCount', 'nudgeOn',
   'tempo', 'tempoByExercise', 'tempoVersion', 'machineSettings', 'machineKnown', 'machinePound',
-  'mistakeFlags', 'diet', 'customRoutine',
+  'mistakeFlags', 'diet', 'customRoutine', 'repOverrides', 'topSet',
 ];
 
 export interface Backup {
@@ -104,6 +104,7 @@ function readSet(raw: unknown): SetLog | null {
   if (!isNumber(raw.weightKg, 0, 1000) || !isNumber(raw.reps, 0, 500) || !isNumber(raw.rir, 0, 10)) return null;
   const set: SetLog = { exerciseId: raw.exerciseId, weightKg: raw.weightKg, reps: Math.round(raw.reps), rir: raw.rir };
   if (raw.warmup === true) set.warmup = true;
+  if (raw.top === true) set.top = true;
   if (isText(raw.machine, 80)) set.machine = raw.machine;
   return set;
 }
@@ -179,6 +180,9 @@ function readAnswers(raw: unknown): OnboardingAnswers | null {
   if (SEXES.includes(raw.sex as string)) answers.sex = raw.sex as OnboardingAnswers['sex'];
   const pain = readPain(raw.pain);
   if (pain.length > 0) answers.pain = pain;
+  if (['auto', 'heavy', 'moderate', 'light', 'mixed'].includes(raw.repStyle as string)) {
+    answers.repStyle = raw.repStyle as OnboardingAnswers['repStyle'];
+  }
   if (isTexts(raw.priorities)) answers.priorities = raw.priorities.slice(0, 2) as OnboardingAnswers['priorities'];
   if (isPlain(raw.mainLifts) && Object.values(raw.mainLifts).every((id) => typeof id === 'string' && EXERCISE_IDS.has(id))) {
     answers.mainLifts = { ...(raw.mainLifts as OnboardingAnswers['mainLifts']) };
@@ -257,6 +261,9 @@ const SETTING_CHECKS: Record<string, (value: unknown) => boolean> = {
   machineSettings: (value) => isPlain(value) && Object.values(value).every((text) => typeof text === 'string'),
   machineKnown: (value) => isPlain(value) && Object.values(value).every(isTexts),
   machinePound: (value) => isPlain(value) && Object.values(value).every((flag) => typeof flag === 'boolean'),
+  repOverrides: (value) => isPlain(value) && Object.values(value).every((range) =>
+    isPlain(range) && isInteger(range.min, 1, 30) && isInteger(range.max, 1, 30) && range.min <= range.max),
+  topSet: (value) => typeof value === 'boolean',
   mistakeFlags: (value) => isPlain(value) && Object.values(value).every(isTexts),
   // 앱이 normalizeDiet로 다시 고른다
   diet: isPlain,

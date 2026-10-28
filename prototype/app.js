@@ -273,6 +273,9 @@
         restAlerts: state.restAlerts,
         restSound: state.restSound,
         repRule: REP_RULE,
+        repOverrides: state.repOverrides,
+        topSet: state.topSet,
+        repSuggestSkip: state.repSuggestSkip,
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
@@ -333,7 +336,7 @@
       if (settings.repRule !== REP_RULE && state.program && state.program.templates) {
         state.program = Object.assign({}, state.program, {
           templates: E.assignRepRanges(state.program.templates, (saved.answers.goals || []),
-            (state.lifter && state.lifter.level) || saved.answers.selfReportedLevel),
+            (state.lifter && state.lifter.level) || saved.answers.selfReportedLevel, saved.answers.repStyle),
         });
       }
       state.gym = E.gymFromCatalog(saved.answers.gym);
@@ -365,6 +368,9 @@
       state.nudgeOn = Boolean(settings.nudgeOn);
       state.restAlerts = settings.restAlerts !== false;
       state.restSound = settings.restSound !== false;
+      state.repOverrides = settings.repOverrides || {};
+      state.topSet = Boolean(settings.topSet);
+      state.repSuggestSkip = settings.repSuggestSkip || {};
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
       state.voiceRate = settings.voiceRate || 1;
@@ -748,6 +754,9 @@
     // 휴식 끝 알림 — 처음 설문에서 정하고 내 정보에서 바꾼다
     restAlerts: true,
     restSound: true,
+    repOverrides: {},
+    topSet: false,
+    repSuggestSkip: {},
     friendName: null,
     friendCode: null,
     friends: [],
@@ -1381,6 +1390,41 @@
     return Math.max(1, Math.min(range.max + 5, then.reps));
   }
 
+  /**
+   * 주 1회 무거운 세트 — 켠 사람에게만, 중급 이상만.
+   *
+   * 이번 주 차례인 바벨 메인 종목(E.topSetPick)이 오늘 있으면 그 앞에 1~3회
+   * 무거운 세트 하나를 붙인다. 덜어내는 주 · 한계 돌파(이미 무겁다) · 컨디셔닝 ·
+   * 쉬었다 돌아온 주 · 내 루틴에는 붙이지 않는다. 그 종목 기록이 없으면 안 붙인다.
+   */
+  function topSetToday() {
+    if (!state.topSet || !state.program || state.customRoutine) return null;
+    if (!state.lifter || state.lifter.level === 'beginner') return null;
+    if (state.plan && state.plan.phase === 'deload') return null;
+    if (state.style === 'peak' || state.style === 'conditioning') return null;
+    if (activeComeback()) return null;
+    var pick = E.topSetPick(state.program.templates, state.todayDate);
+    if (!pick || pick.templateIndex !== currentTemplateIndex()) return null;
+    return pick;
+  }
+
+  function withWeeklyTopSet(built) {
+    var pick = topSetToday();
+    if (!pick) return built;
+    var load = E.topSetLoad(state.history, pick.exerciseId, state.todayDate);
+    if (!load) return built;
+    return Object.assign({}, built, {
+      exercises: built.exercises.map(function (item) {
+        if (item.exercise.id !== pick.exerciseId) return item;
+        return E.withTopSet(item, load, function (kg) {
+          return item.loading
+            ? E.nearestLoadable(kg, item.loading, 'down')
+            : Math.floor(kg / item.exercise.increment) * item.exercise.increment;
+        });
+      }),
+    });
+  }
+
   function rebuildSession() {
     // 통증이 바뀌어 세션을 다시 짜도, 이미 끝낸 세트까지 되돌리면 안 된다.
     var previous = {};
@@ -1443,6 +1487,11 @@
      * 등이 안 크는지 모르게 된다. 대체가 없을 때만 슬롯이 빠진다.
      */
     template = withExclusions(template);
+    /*
+     * 반복 범위 — 사람이 종목에 정한 반복 > 블록 유형의 반복 > 프로그램의 반복.
+     * 블록을 바꾸면 쉬는 시간만이 아니라 처방 횟수도 실제로 바뀐다.
+     */
+    template = E.applyRepRules(template, { style: state.style, overrides: state.repOverrides });
 
     var built = E.buildSession({
       template: template,
@@ -1475,6 +1524,8 @@
      * 짧아져서 시간 예산이 더 깎을 일이 없어진다. 순서가 반대면 같은
      * 종목을 두 번 깎는다.
      */
+    built = withWeeklyTopSet(built);
+
     var comeback = activeComeback();
     if (comeback) {
       var factor = E.loadFactorAt(comeback.plan, comeback.week);
@@ -1580,8 +1631,9 @@
         decision: null,
         note: item.note,
         ruling: item.painRuling,
-        repRange: item.sets[0].targetReps,
-        targetRir: item.sets[0].targetRir,
+        // 무거운 세트(1~3회)는 이 종목의 처방 범위가 아니다 — 그 뒤 세트가 기준이다
+        repRange: (item.sets.filter(function (set) { return !set.top; })[0] || item.sets[0]).targetReps,
+        targetRir: (item.sets.filter(function (set) { return !set.top; })[0] || item.sets[0]).targetRir,
         sets: item.sets.map(function (set, order) {
           var kept = (previous[item.exercise.id] || [])[order];
           if (kept && kept.done) return kept;
@@ -1605,6 +1657,7 @@
             rir: null,
             done: false,
             adjustment: null,
+            top: Boolean(set.top),
           };
         }),
       };
@@ -1670,13 +1723,16 @@
      */
     var pickedMachine = state.machinePick[lift.exercise.id];
     if (pickedMachine) logged.machine = pickedMachine;
+    // 주 1회 무거운 세트 — 다음 무게 처방의 근거에서 빠진다(prescribeLoad)
+    if (set.top) logged.top = true;
     state.todaySets.push(logged);
     // 되돌릴 때 이 항목만 정확히 빼려고 붙여 둔다. 같은 중량·반복이 여러 번
     // 나오므로 값으로 찾으면 엉뚱한 세트가 지워진다.
     set.logged = logged;
 
     var next = lift.sets[setIndex + 1];
-    if (next && !next.done) {
+    // 무거운 세트 뒤는 원래 무게의 백오프다 — 2회 했다고 다음 세트를 깎지 않는다
+    if (next && !next.done && !set.top) {
       var adjustment = E.adjustWithinSession(lift.exercise, logged, rule);
       next.weightKg = lift.loading
         ? E.nearestLoadable(adjustment.weightKg, lift.loading, adjustment.deltaKg > 0 ? 'up' : adjustment.deltaKg < 0 ? 'down' : 'nearest')
@@ -1754,11 +1810,14 @@
 
   /** 수행을 보고 세트를 더 할지 여기서 멈출지 정한다. */
   function updateDecision(lift) {
+    // 무거운 세트(1~3회)로 "한 세트 더 / 그만"을 판단하면 백오프 범위와 안 맞는다
     var completed = lift.sets
-      .filter(function (set) { return set.done; })
+      .filter(function (set) { return set.done && !set.top; })
       .map(function (set) {
         return { exerciseId: lift.exercise.id, weightKg: set.weightKg, reps: set.reps, rir: set.rir };
       });
+    if (completed.length === 0) { lift.decision = null; return; }
+    var planned = lift.sets.filter(function (set) { return !set.top; }).length;
 
     var muscle = E.primaryMuscle(lift.exercise);
     var report = E.volumeReport(weekSessions(), state.landmarks, index);
@@ -1767,7 +1826,7 @@
 
     lift.decision = E.decideNextSet({
       completed: completed,
-      plannedSets: lift.sets.length,
+      plannedSets: planned,
       rule: {
         repRange: lift.repRange,
         targetRir: lift.targetRir,
@@ -1776,9 +1835,9 @@
       zone: status ? status.zone : undefined,
     });
 
-    if (lift.decision.verdict === 'stop' && completed.length < lift.sets.length) {
+    if (lift.decision.verdict === 'stop' && completed.length < planned) {
       pushLog('세트 조정', '<b>' + lift.exercise.name + '</b> — ' + lift.decision.reason);
-    } else if (lift.decision.verdict === 'continue' && completed.length >= lift.sets.length) {
+    } else if (lift.decision.verdict === 'continue' && completed.length >= planned) {
       pushLog('세트 조정', '<b>' + lift.exercise.name + '</b> — ' + lift.decision.reason);
     }
   }
@@ -3943,7 +4002,182 @@
   }
 
   /** 종목 한 줄 요약 — "4세트 × 65kg × 8회". 목록에서는 이것만 있으면 된다. */
+  /* ── 반복 수를 사람에게 맞추기 ───────────────────── */
+
+  /**
+   * 이 종목 반복 수 — 사람이 정하면 그 숫자대로 한다(블록 · 프로그램보다 먼저).
+   * 무게는 그 반복에 맞게 기록에서 다시 잡힌다.
+   */
+  function openRepOverride(exercise) {
+    var own = state.repOverrides[exercise.id] || null;
+    var lift = state.lifts.filter(function (item) { return item.exercise.id === exercise.id; })[0];
+    var current = own || (lift && lift.repRange) || { min: 8, max: 12 };
+    var draft = { min: current.min, max: current.max };
+    var draw = function () {
+      var body = [];
+      body.push(el('p', { class: 'asset-note', text:
+        '평소 이 종목을 몇 회로 하시는지 고르세요. 정하면 그 숫자대로 처방하고, 무게는 그 횟수에 맞게 기록에서 다시 잡습니다. ' +
+        '범위 위쪽까지 다 채우면 다음번에 무게가 오릅니다.' }));
+      body.push(el('div', { class: 'chip-row rep-presets' }, E.REP_PRESETS.map(function (range) {
+        return el('button', {
+          type: 'button', class: 'pick', 'aria-pressed': String(E.sameRange(range, draft)),
+          text: E.repLabel(range),
+          onclick: function () { draft = { min: range.min, max: range.max }; draw(); },
+        });
+      })));
+      body.push(el('div', { class: 'list-label', text: '직접 (최소 ~ 최대)' }));
+      body.push(el('div', { class: 'rep-custom' }, [
+        el('input', { type: 'number', class: 'text-input rep-min', inputmode: 'numeric', min: '1', max: '30', value: String(draft.min),
+          oninput: function (event) { draft.min = parseInt(event.target.value, 10); } }),
+        el('span', { text: '~' }),
+        el('input', { type: 'number', class: 'text-input rep-max', inputmode: 'numeric', min: '1', max: '30', value: String(draft.max),
+          oninput: function (event) { draft.max = parseInt(event.target.value, 10); } }),
+        el('span', { text: '회' }),
+      ]));
+      var bad = el('p', { class: 'hint-line warn', text: '' });
+      body.push(bad);
+      body.push(el('button', {
+        type: 'button', class: 'finish rep-save', text: '이 횟수로 하기',
+        onclick: function () {
+          var clean = E.cleanRange(draft);
+          if (!clean) { bad.textContent = '1~30회 사이로, 최소가 최대보다 크지 않게 적어 주세요.'; return; }
+          setRepOverride(exercise, clean);
+          modal.close();
+        },
+      }));
+      if (own) {
+        body.push(el('button', {
+          type: 'button', class: 'finish quiet rep-reset', text: '프로그램대로 되돌리기',
+          onclick: function () { setRepOverride(exercise, null); modal.close(); },
+        }));
+      }
+      openModal(exercise.name, '반복 수', body);
+    };
+    draw();
+  }
+
+  function setRepOverride(exercise, range) {
+    var next = Object.assign({}, state.repOverrides);
+    if (range) next[exercise.id] = range;
+    else delete next[exercise.id];
+    state.repOverrides = next;
+    pushLog('반복 수', '<b>' + exercise.name + '</b> — ' + (range ? E.repLabel(range) + '로 합니다.' : '프로그램대로 돌아갑니다.'));
+    rebuildSession();
+    persist();
+    render();
+  }
+
+  /** 평소 반복 스타일 — 설문과 내 정보 › 프로그램에서 같이 쓴다. */
+  function repStyleControls(onPick) {
+    var current = (state.answers && state.answers.repStyle) || 'auto';
+    var picked = E.REP_STYLES.filter(function (item) { return item.id === current; })[0] || E.REP_STYLES[0];
+    // 다섯 칸을 세로로 늘어놓으면 화면 하나를 다 먹는다 — 칩 한 줄에 고른 것의 설명만
+    return el('div', { class: 'rep-style' }, [
+      el('div', { class: 'chip-row' }, E.REP_STYLES.map(function (item) {
+        return el('button', {
+          type: 'button', class: 'pick rep-style-pick', 'aria-pressed': String(current === item.id),
+          text: item.label,
+          onclick: function () { onPick(item.id); },
+        });
+      })),
+      el('p', { class: 'hint-line rep-style-hint', text: picked.hint }),
+    ]);
+  }
+
+  /** 내 정보에서 스타일을 바꾸면 지금 프로그램의 반복만 다시 매긴다 — 종목 · 세트는 그대로. */
+  function changeRepStyle(id) {
+    state.answers = Object.assign({}, state.answers, { repStyle: id });
+    if (!state.customRoutine && state.program) {
+      state.program = Object.assign({}, state.program, {
+        templates: E.assignRepRanges(state.program.templates, state.answers.goals || [], state.lifter.level, id),
+      });
+    }
+    var label = (E.REP_STYLES.filter(function (item) { return item.id === id; })[0] || {}).label;
+    pushLog('반복 스타일', '<b>' + label + '</b>으로 바꿨습니다. 종목마다 직접 정한 반복은 그대로입니다.');
+    rebuildSession();
+    persist();
+    render();
+  }
+
+  /** 주 1회 무거운 세트 켜기 — 중급 이상만. */
+  function topSetRow() {
+    var beginner = !state.lifter || state.lifter.level === 'beginner';
+    var on = Boolean(state.topSet) && !beginner;
+    var pick = state.program ? E.topSetPick(state.program.templates, state.todayDate) : null;
+    var pickName = pick && index.get(pick.exerciseId) ? index.get(pick.exerciseId).name : null;
+    return el('button', {
+      type: 'button', class: 'nudge-row top-set-row', 'aria-pressed': String(on),
+      disabled: beginner ? '' : null,
+      onclick: function () {
+        state.topSet = !on;
+        pushLog('무거운 세트', state.topSet ? '주 1회 무거운 세트를 켰습니다.' : '주 1회 무거운 세트를 껐습니다.');
+        rebuildSession();
+        persist();
+        render();
+      },
+    }, [
+      el('span', {}, [
+        el('b', { text: '주 1회 무거운 세트' }),
+        el('span', { class: 'hint-line', text: beginner
+          ? '자세가 잡힌 뒤(중급부터) 켤 수 있습니다. 처음에는 무겁게 몇 개보다 여러 번 반복하는 쪽이 힘도 잘 늘고 덜 다칩니다.'
+          : '바벨 메인 종목 하나를 주마다 돌아가며 1~3회로 무겁게 — 최대 도전은 아니고 두어 개 남깁니다.' +
+            (on && pickName ? ' 이번 주: ' + pickName : '') }),
+      ]),
+      el('span', { class: 'count-tempo', text: on ? '켜짐' : '꺼짐' }),
+    ]);
+  }
+
+  /**
+   * "바꿀까요?" — 처방보다 두 번 연속 많이 한 종목.
+   *
+   * 묻기만 한다. 안 누르면 아무것도 안 바뀐다. "그대로 두기"를 누르면 그 제안은
+   * 다시 안 띄운다(다른 칸을 권할 때만 다시 묻는다).
+   */
+  function repSuggestionCard() {
+    if (state.started || state.customRoutine) return null;
+    for (var i = 0; i < state.lifts.length; i += 1) {
+      var lift = state.lifts[i];
+      if (state.repOverrides[lift.exercise.id]) continue;
+      var tip = E.suggestRepRange(state.history, lift.exercise.id, lift.repRange, state.todayDate);
+      if (!tip) continue;
+      var key = tip.suggested.min + '-' + tip.suggested.max;
+      if (state.repSuggestSkip[lift.exercise.id] === key) continue;
+      return renderRepSuggestion(lift.exercise, tip, key);
+    }
+    return null;
+  }
+
+  function renderRepSuggestion(exercise, tip, key) {
+    return el('div', { class: 'notice rep-suggest' }, [
+      el('div', { class: 'label', text: '반복 수' }),
+      el('div', { text: exercise.name + ' — 처방은 ' + E.repLabel(tip.current) + '인데 지난 ' +
+        (['', '한', '두', '세'][tip.sessions] || tip.sessions) + ' 번 ' + E.repLabel(tip.did) +
+        '로 하셨어요. 이 종목을 ' + E.repLabel(tip.suggested) + '로 바꿀까요?' }),
+      el('div', { class: 'chip-row' }, [
+        el('button', {
+          type: 'button', class: 'pick rep-suggest-yes', text: E.repLabel(tip.suggested) + '로 바꾸기',
+          onclick: function () { setRepOverride(exercise, tip.suggested); },
+        }),
+        el('button', {
+          type: 'button', class: 'pick rep-suggest-no', text: '그대로 두기',
+          onclick: function () {
+            state.repSuggestSkip = Object.assign({}, state.repSuggestSkip);
+            state.repSuggestSkip[exercise.id] = key;
+            persist();
+            render();
+          },
+        }),
+      ]),
+    ]);
+  }
+
   function liftSummaryLine(lift) {
+    // 무거운 세트가 앞에 붙은 날은 "무거운 1세트 + 원래 세트"로 따로 적는다
+    if (lift.sets[0] && lift.sets[0].top && lift.sets.length > 1) {
+      var heavy = lift.sets[0];
+      return '무거운 1세트 ' + heavy.weightKg + 'kg × 1–3회 + ' +
+        liftSummaryLine(Object.assign({}, lift, { sets: lift.sets.slice(1) }));
+    }
     var sets = lift.sets.length;
     var first = lift.sets[0];
     if (!first) return sets + '세트';
@@ -4676,6 +4910,9 @@
     var shortNote = shortDayNote();
     if (shortNote) screen.appendChild(shortNote);
 
+    var repTip = repSuggestionCard();
+    if (repTip) screen.appendChild(repTip);
+
     /*
      * 설문을 막 마친 사람은 자기 헬스장이 앱 어디에 있는지 모른다. 연결
      * 전이면 한 줄로 알려 주고, 거기서 바로 간다. 닫으면 다시 안 띄운다 —
@@ -5382,6 +5619,12 @@
         run: function () { modal.close(); removeExtraLift(extraIdFor(lift)); },
       });
     }
+    options.push({
+      label: '이 종목 반복 수',
+      hint: (state.repOverrides[lift.exercise.id] ? '직접 정함 · ' : '') + E.repLabel(lift.repRange) +
+        ' — 평소 하시는 횟수로 바꿉니다',
+      run: function () { openRepOverride(lift.exercise); },
+    });
     options.push({
       label: '이 종목 휴식 시간',
       hint: restOverrideHint(lift),
@@ -8496,6 +8739,8 @@
     body.push(el('div', { class: 'now-head' }, [
       el('div', { class: 'now-line' }, [
         el('b', { text: (setIndex + 1) + '세트 진행중' }),
+        // 주 1회 무거운 세트 — 최대 도전이 아니다. 두어 개 남기고 멈춘다
+        set.top ? el('span', { class: 'top-tag', text: '무거운 세트 · 두어 개 남기고' }) : null,
         el('span', { class: 'of', text: '/ ' + lift.sets.length + '세트' }),
       ]),
       el('div', { class: 'plan', text: setPlanLine(set, pounds) }),
@@ -10092,7 +10337,7 @@
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
     'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
-    'mistakeFlags', 'customRoutine',
+    'mistakeFlags', 'customRoutine', 'repOverrides', 'topSet',
   ];
 
   function sharedSettings() {
@@ -12403,6 +12648,9 @@
           pushLog('블록 전환', '<b>' + option.profile.label + '</b> 블록으로 바꿨습니다 — ' +
             option.profile.repRanges.primary.min + '-' + option.profile.repRanges.primary.max +
             '회 · 휴식 ×' + option.profile.restMultiplier + ' · ' + option.profile.blockWeeks + '주');
+          // 처방 횟수도 실제로 바꾼다 — 전에는 적기만 하고 오늘 세트는 그대로였다
+          rebuildSession();
+          persist();
           render();
         },
       }, [
@@ -14156,6 +14404,15 @@
       ]));
       body.push(el('p', { class: 'hint-line', text:
         '하던 루틴이 있으면 그대로 넣을 수 있습니다. 종목 · 세트는 정한 대로 두고 무게만 앱이 올립니다.' }));
+    }
+    if (!state.customRoutine) {
+      body.push(el('div', { class: 'list-label', text: '평소 반복 스타일' }));
+      body.push(repStyleControls(changeRepStyle));
+      body.push(el('p', { class: 'hint-line', text:
+        '근육을 키우는 데는 6회든 15회든 한계 가까이 가면 효과가 비슷합니다. 꾸준히 하실 수 있는 쪽을 고르세요. ' +
+        '종목마다 다르게 하려면 오늘 목록의 ⋯ › "이 종목 반복 수"에서 정합니다.' }));
+      // 알림 줄과 같은 꼴로 — 제목 · 설명이 세로로 쌓이게
+      body.push(el('div', { class: 'alert-controls' }, [topSetRow()]));
     }
 
     return el('div', { class: 'sheet' }, [
@@ -17680,6 +17937,20 @@
         el('span', { class: 'meta', text: '여러 개 고를 수 있습니다' }),
       ]),
       goals,
+    ]));
+
+    // 평소 몇 회로 하는지 — 목표와 별개다. 10~15회가 편한 사람은 그렇게 하는 게 맞다.
+    screen.appendChild(el('div', { class: 'sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '평소 반복 스타일' }),
+        el('span', { class: 'meta', text: '나중에 바꿀 수 있습니다' }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        repStyleControls(function (id) {
+          state.answers = Object.assign({}, state.answers, { repStyle: id });
+          render();
+        }),
+      ]),
     ]));
   }
 

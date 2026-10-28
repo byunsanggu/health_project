@@ -60,6 +60,8 @@ export interface PlannedSet {
   weightKg: number | null;
   targetReps: RepRange;
   targetRir: number;
+  /** 주 1회 무거운 세트(withTopSet) */
+  top?: boolean;
 }
 
 export type SwapReason = 'pain' | 'unavailable' | 'occupied' | 'ability';
