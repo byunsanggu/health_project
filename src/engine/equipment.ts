@@ -185,6 +185,7 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'pike-push-up': ['floor'],
   'glute-bridge': ['floor'],
   'bodyweight-reverse-lunge': ['floor'],
+  'reverse-crunch': ['floor'],
   'cable-fly': ['cable-station'],
   'pec-deck': ['pec-deck-machine'],
 

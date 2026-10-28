@@ -85,6 +85,13 @@ export const EXERCISES: readonly Exercise[] = [
     jointStress: { lowBack: 0.15, knee: 0.1 },
   },
   {
+    id: 'reverse-crunch',
+    name: '리버스 크런치', nameEn: 'Reverse Crunch',
+    equipment: 'bodyweight', pattern: 'core', increment: 0,
+    contribution: { abs: 0.9 },
+    jointStress: { lowBack: 0.15 },
+  },
+  {
     id: 'bodyweight-reverse-lunge',
     name: '맨몸 리버스 런지', nameEn: 'Bodyweight Reverse Lunge',
     equipment: 'bodyweight', pattern: 'lunge', increment: 0, unilateral: true,

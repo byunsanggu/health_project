@@ -277,6 +277,8 @@ const FULL_A: DayBlueprint = {
     { muscle: 'back', role: 'primary', patterns: ['verticalPull'] },
     { muscle: 'sideDelt', role: 'isolation' },
     { muscle: 'triceps', role: 'isolation' },
+    // 전신 분할에는 복근 자리가 없어서 맨몸 종목이 한 번도 안 들어갔다 — 짧게 하나.
+    { muscle: 'abs', role: 'isolation' },
   ],
 };
 
@@ -427,7 +429,8 @@ const LOADABLE_PULLS: ReadonlySet<string> = new Set(['lat-pulldown', 'neutral-gr
 
 /** 무게를 못 다루는 사람도 있는 맨몸 당기기. 할 수 있는지 모르는 처음에는 랫풀다운이 먼저다. */
 const BODYWEIGHT_PULLS: ReadonlySet<string> = new Set(['pull-up', 'chin-up']);
-const HARD_BODYWEIGHT: ReadonlySet<string> = new Set(['chest-dip', 'triceps-dip']);
+const HOLDS: ReadonlySet<string> = new Set(['plank', 'side-plank']);
+const HARD_BODYWEIGHT: ReadonlySet<string> = new Set(['chest-dip', 'triceps-dip', 'hanging-leg-raise']);
 const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge']);
 
 interface PickContext {
@@ -436,6 +439,8 @@ interface PickContext {
   introduced?: readonly string[];
   /** 오늘 이미 고른 종목 */
   today: readonly Exercise[];
+  /** 이번 주(앞선 날들 포함)에 이미 넣은 맨몸 종목 수 */
+  weekBodyweight: number;
   /** 다음 날이 무거운 힌지(데드리프트) 날 */
   beforeHeavyHinge: boolean;
   /** 이 헬스장에 랫풀다운 · 어시스트 풀업이 있다 */
@@ -469,12 +474,16 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
   if (sameKit >= 2) score -= 1.5 * (sameKit - 1);
   if (slot.role !== 'primary' && exercise.equipment === 'bodyweight' && !BODYWEIGHT_PULLS.has(exercise.id)) {
     const bodyweightToday = context.today.filter((item) => item.equipment === 'bodyweight').length;
-    if (bodyweightToday === 0) score += 3;
+    // 주에 하나도 없으면 더 앞으로 — 주 3회 전신처럼 자리가 적어도 한 번은 들어가게.
+    if (bodyweightToday === 0) score += context.weekBodyweight === 0 ? 5 : 3;
   }
 
   // 딥스는 맨몸이어도 쉽지 않다 — 처음 시작하는 사람은 체중을 다 받아 내려가기 어렵고
-  // 어깨 앞쪽이 먼저 아프다. 초보에게는 푸시업 · 머신 쪽을 먼저 둔다.
+  // 어깨 앞쪽이 먼저 아프다. 행잉 레그레이즈도 매달려 버틸 악력부터 필요하다.
+  // 초보에게는 푸시업 · 데드버그 · 머신 쪽을 먼저 둔다.
   if (level === 'beginner' && HARD_BODYWEIGHT.has(exercise.id)) score -= 4;
+  // 플랭크처럼 버티는 동작은 "몇 회"로 세기 어색하다 — 세트 기록이 횟수라 뒤로.
+  if (HOLDS.has(exercise.id)) score -= 3;
   // 거꾸로 맨몸 런지 · 브릿지는 하체가 이미 강한 사람에게 자극이 모자란다 — 덤벨 쪽을 먼저.
   if (level !== 'beginner' && LIGHT_BODYWEIGHT.has(exercise.id)) score -= 3;
 
@@ -784,6 +793,7 @@ export function buildProgram(
 
   const weeklyTargets: Partial<Record<MuscleGroup, number>> = {};
   const usedThisWeek = new Set<string>();
+  let weekBodyweight = 0;
 
   // 1단계 — 종목부터 전부 고른다. 세트 수는 주 전체를 본 뒤에 정해야
   // 로우가 이두에, 프레스가 삼두에 이미 준 볼륨을 뺄 수 있다.
@@ -796,6 +806,7 @@ export function buildProgram(
     const context: PickContext = {
       level, sessionLoad, introduced,
       today: [],
+      weekBodyweight: 0,
       loadablePull: pool.some((exercise) => LOADABLE_PULLS.has(exercise.id)),
       beforeHeavyHinge: Boolean(next?.slots.some((slot) => slot.role === 'primary' && slot.patterns?.[0] === 'hinge')),
     };
@@ -812,6 +823,7 @@ export function buildProgram(
         const base = new Set([...usedToday, ...usedThisWeek, ...reserved]);
         const fresh = slot.role === 'primary' ? base : new Set([...base, ...rotateOut]);
         context.today = picked.map((item) => item.exercise);
+        context.weekBodyweight = weekBodyweight;
         exercise =
           pickExercise(slot, pool, fresh, context) ??
           pickExercise(slot, pool, base, context) ??
@@ -821,6 +833,7 @@ export function buildProgram(
 
       usedToday.add(exercise.id);
       usedThisWeek.add(exercise.id);
+      if (exercise.equipment === 'bodyweight') weekBodyweight += 1;
       addJointLoad(sessionLoad, exercise);
       picked.push({ slot, exercise, sets: 0 });
     });
@@ -1173,6 +1186,7 @@ function repRangeFor(
  */
 const BODYWEIGHT_REPS: Readonly<Record<string, { min: number; max: number }>> = {
   'push-up': { min: 12, max: 20 },
+  'reverse-crunch': { min: 12, max: 20 },
   'glute-bridge': { min: 12, max: 20 },
   'back-extension': { min: 12, max: 20 },
   'bodyweight-reverse-lunge': { min: 10, max: 15 },

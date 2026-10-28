@@ -564,11 +564,11 @@ describe('근력 목표의 반복 범위', () => {
 describe('기구 골고루 · 맨몸 섞기', () => {
   const kitOf = (id: string) => (exerciseById(id) as Exercise).equipment;
 
-  it('주 4회 이상이면 맨몸 종목이 들어가고, 하루를 한 가지 기구로 채우지 않는다', () => {
-    for (const daysPerWeek of [4, 5]) for (const level of ['beginner', 'intermediate'] as const) {
+  it('주 3회부터 맨몸 종목이 들어가고, 하루를 한 가지 기구로 채우지 않는다', () => {
+    for (const daysPerWeek of [3, 4, 5]) for (const level of ['beginner', 'intermediate'] as const) {
       const { program } = runOnboarding(answers({ daysPerWeek, selfReportedLevel: level }));
       const kits = exercisesOf(program).map((exercise) => exercise.equipment);
-      assert.ok(kits.filter((kit) => kit === 'bodyweight').length >= 2, `${daysPerWeek}회 ${level}`);
+      assert.ok(kits.filter((kit) => kit === 'bodyweight').length >= (daysPerWeek >= 4 ? 2 : 1), `${daysPerWeek}회 ${level}`);
       for (const template of program.templates) {
         const counts = new Map<string, number>();
         for (const slot of template.slots) counts.set(kitOf(slot.exerciseId), (counts.get(kitOf(slot.exerciseId)) ?? 0) + 1);
@@ -577,11 +577,13 @@ describe('기구 골고루 · 맨몸 섞기', () => {
     }
   });
 
-  it('초보에게는 딥스를 먼저 넣지 않는다', () => {
+  it('초보에게는 딥스 · 행잉 레그레이즈를 먼저 넣지 않고, 플랭크처럼 버티는 동작은 횟수 칸에 넣지 않는다', () => {
     for (const daysPerWeek of [3, 4, 5]) {
       const { program } = runOnboarding(answers({ daysPerWeek, selfReportedLevel: 'beginner', monthsTraining: 2 }));
       const ids = program.templates.flatMap((template) => template.slots.map((slot) => slot.exerciseId));
-      assert.ok(!ids.includes('chest-dip') && !ids.includes('triceps-dip'), `${daysPerWeek}회: ${ids}`);
+      for (const hard of ['chest-dip', 'triceps-dip', 'hanging-leg-raise', 'plank', 'side-plank']) {
+        assert.ok(!ids.includes(hard), `${daysPerWeek}회: ${hard}`);
+      }
     }
   });
 

@@ -252,6 +252,7 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'decline-sit-up': [NECK_PULL],
   'ab-wheel-rollout': [ROLLOUT_SAG],
   'dead-bug': [DEADBUG_BACK],
+  'reverse-crunch': [LEG_RAISE_HIPS, LEG_RAISE_SWING],
   'torso-rotation': [ROTATE_SWING],
   'farmers-walk': [CARRY_LEAN],
   // 덤벨만 있는 곳
