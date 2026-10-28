@@ -427,6 +427,8 @@ const LOADABLE_PULLS: ReadonlySet<string> = new Set(['lat-pulldown', 'neutral-gr
 
 /** 무게를 못 다루는 사람도 있는 맨몸 당기기. 할 수 있는지 모르는 처음에는 랫풀다운이 먼저다. */
 const BODYWEIGHT_PULLS: ReadonlySet<string> = new Set(['pull-up', 'chin-up']);
+const HARD_BODYWEIGHT: ReadonlySet<string> = new Set(['chest-dip', 'triceps-dip']);
+const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge']);
 
 interface PickContext {
   level: TrainingLevel;
@@ -454,6 +456,27 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
   if (slot.role === 'primary' && exercise.pattern !== 'isolation' && FREE_WEIGHT.includes(exercise.equipment)) {
     score += 3;
   }
+
+  /*
+   * 골고루 — 하루를 한 가지 기구로 채우지 않는다.
+   *
+   * 점수만 보면 그날 보조 · 고립이 전부 케이블 · 머신으로 몰렸다(초보 주 4회는
+   * 머신 8 · 케이블 7에 맨몸 0). 같은 기구가 이미 둘 이상이면 조금씩 뒤로 민다.
+   * 맨몸 종목(딥스 · 푸시업 · 친업 · 행잉 레그레이즈 · 플랭크 …)은 보조 · 고립
+   * 자리에서 먼저 — 기구를 기다릴 일도 없고, 몸을 다루는 힘이 따로 는다.
+   */
+  const sameKit = context.today.filter((item) => item.equipment === exercise.equipment).length;
+  if (sameKit >= 2) score -= 1.5 * (sameKit - 1);
+  if (slot.role !== 'primary' && exercise.equipment === 'bodyweight' && !BODYWEIGHT_PULLS.has(exercise.id)) {
+    const bodyweightToday = context.today.filter((item) => item.equipment === 'bodyweight').length;
+    if (bodyweightToday === 0) score += 3;
+  }
+
+  // 딥스는 맨몸이어도 쉽지 않다 — 처음 시작하는 사람은 체중을 다 받아 내려가기 어렵고
+  // 어깨 앞쪽이 먼저 아프다. 초보에게는 푸시업 · 머신 쪽을 먼저 둔다.
+  if (level === 'beginner' && HARD_BODYWEIGHT.has(exercise.id)) score -= 4;
+  // 거꾸로 맨몸 런지 · 브릿지는 하체가 이미 강한 사람에게 자극이 모자란다 — 덤벨 쪽을 먼저.
+  if (level !== 'beginner' && LIGHT_BODYWEIGHT.has(exercise.id)) score -= 3;
 
   // 초보자에게는 같은 값이면 관절 부담이 적은 쪽을 고른다.
   // 기본 동작을 밀어낼 만큼 크게 주지는 않는다 — 초보일수록 기본을 배워야 한다.
@@ -1140,8 +1163,22 @@ function repRangeFor(
   heavySlot = true,
   style: RepStyle = 'auto',
 ): { min: number; max: number } {
-  return heavyPullRange(exercise, styledRange(exercise, role, goals, level, heavySlot, style));
+  return BODYWEIGHT_REPS[exercise.id] ?? heavyPullRange(exercise, styledRange(exercise, role, goals, level, heavySlot, style));
 }
+
+/*
+ * 무게를 못 올리는 맨몸 종목은 횟수로 올린다. 푸시업 8~12회는 금방 쉬워지고,
+ * 그 뒤로 할 게 없다 — 처음부터 넓게 잡아 두고 위 끝에 닿으면 자세 · 템포로 어렵게 한다.
+ * 딥스 · 풀업처럼 체중이 곧 무거운 종목, 플랭크처럼 버티는 종목은 여기 넣지 않는다.
+ */
+const BODYWEIGHT_REPS: Readonly<Record<string, { min: number; max: number }>> = {
+  'push-up': { min: 12, max: 20 },
+  'glute-bridge': { min: 12, max: 20 },
+  'back-extension': { min: 12, max: 20 },
+  'bodyweight-reverse-lunge': { min: 10, max: 15 },
+  'inverted-row': { min: 8, max: 12 },
+  'pike-push-up': { min: 8, max: 12 },
+};
 
 /** 무겁게 드는 칸의 범위 — 초보는 5~8회. */
 function heavyRange(level: TrainingLevel): { min: number; max: number } {

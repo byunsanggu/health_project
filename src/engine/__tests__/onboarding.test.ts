@@ -560,3 +560,41 @@ describe('근력 목표의 반복 범위', () => {
     assert.deepEqual(assignRepRanges(mine, ['strength', 'hypertrophy'], 'intermediate'), mine);
   });
 });
+
+describe('기구 골고루 · 맨몸 섞기', () => {
+  const kitOf = (id: string) => (exerciseById(id) as Exercise).equipment;
+
+  it('주 4회 이상이면 맨몸 종목이 들어가고, 하루를 한 가지 기구로 채우지 않는다', () => {
+    for (const daysPerWeek of [4, 5]) for (const level of ['beginner', 'intermediate'] as const) {
+      const { program } = runOnboarding(answers({ daysPerWeek, selfReportedLevel: level }));
+      const kits = exercisesOf(program).map((exercise) => exercise.equipment);
+      assert.ok(kits.filter((kit) => kit === 'bodyweight').length >= 2, `${daysPerWeek}회 ${level}`);
+      for (const template of program.templates) {
+        const counts = new Map<string, number>();
+        for (const slot of template.slots) counts.set(kitOf(slot.exerciseId), (counts.get(kitOf(slot.exerciseId)) ?? 0) + 1);
+        assert.ok(Math.max(...counts.values()) <= Math.ceil(template.slots.length / 2), `${template.name}: ${[...counts]}`);
+      }
+    }
+  });
+
+  it('초보에게는 딥스를 먼저 넣지 않는다', () => {
+    for (const daysPerWeek of [3, 4, 5]) {
+      const { program } = runOnboarding(answers({ daysPerWeek, selfReportedLevel: 'beginner', monthsTraining: 2 }));
+      const ids = program.templates.flatMap((template) => template.slots.map((slot) => slot.exerciseId));
+      assert.ok(!ids.includes('chest-dip') && !ids.includes('triceps-dip'), `${daysPerWeek}회: ${ids}`);
+    }
+  });
+
+  it('무게를 못 올리는 맨몸 종목은 횟수를 넓게 잡는다', () => {
+    let seen = 0;
+    for (const daysPerWeek of [4, 5]) {
+      const { program } = runOnboarding(answers({ daysPerWeek }));
+      for (const slot of program.templates.flatMap((template) => template.slots)) {
+        if (slot.exerciseId !== 'push-up') continue;
+        assert.deepEqual(slot.repRange, { min: 12, max: 20 });
+        seen += 1;
+      }
+    }
+    assert.ok(seen > 0);
+  });
+});

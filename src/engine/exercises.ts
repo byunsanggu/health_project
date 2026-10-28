@@ -59,6 +59,38 @@ export const EXERCISES: readonly Exercise[] = [
     contribution: { chest: 0.8, triceps: 0.5, frontDelt: 0.4, abs: 0.25 },
     jointStress: { shoulder: 0.45, elbow: 0.3, wrist: 0.6 },
   },
+  /*
+   * 맨몸 종목 — 헬스장 한가운데서 기구를 기다리지 않고 하는 것들. 보조 · 고립
+   * 자리에 섞어서, 머신으로만 채운 하루가 되지 않게 한다.
+   */
+  {
+    id: 'inverted-row',
+    name: '인버티드 로우', nameEn: 'Inverted Row',
+    equipment: 'bodyweight', pattern: 'horizontalPull', increment: 0,
+    contribution: { back: 0.85, biceps: 0.5, rearDelt: 0.45, abs: 0.25 },
+    jointStress: { shoulder: 0.3, elbow: 0.3 },
+  },
+  {
+    id: 'pike-push-up',
+    name: '파이크 푸시업', nameEn: 'Pike Push-Up',
+    equipment: 'bodyweight', pattern: 'verticalPush', increment: 0,
+    contribution: { frontDelt: 0.85, triceps: 0.5, sideDelt: 0.3, chest: 0.25 },
+    jointStress: { shoulder: 0.55, elbow: 0.3, wrist: 0.6 },
+  },
+  {
+    id: 'glute-bridge',
+    name: '글루트 브릿지', nameEn: 'Glute Bridge',
+    equipment: 'bodyweight', pattern: 'isolation', increment: 0,
+    contribution: { glutes: 0.9, hamstrings: 0.35 },
+    jointStress: { lowBack: 0.15, knee: 0.1 },
+  },
+  {
+    id: 'bodyweight-reverse-lunge',
+    name: '맨몸 리버스 런지', nameEn: 'Bodyweight Reverse Lunge',
+    equipment: 'bodyweight', pattern: 'lunge', increment: 0, unilateral: true,
+    contribution: { quads: 0.75, glutes: 0.7, hamstrings: 0.3 },
+    jointStress: { knee: 0.35, hip: 0.25 },
+  },
   {
     id: 'cable-fly',
     name: '케이블 플라이', nameEn: 'Cable Fly',

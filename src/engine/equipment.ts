@@ -181,6 +181,10 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'incline-dumbbell-press': ['dumbbells', 'bench-incline'],
   'machine-chest-press': ['chest-press-machine'],
   'push-up': ['floor'],
+  'inverted-row': ['power-rack'],
+  'pike-push-up': ['floor'],
+  'glute-bridge': ['floor'],
+  'bodyweight-reverse-lunge': ['floor'],
   'cable-fly': ['cable-station'],
   'pec-deck': ['pec-deck-machine'],
 
