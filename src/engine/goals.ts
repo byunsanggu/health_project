@@ -62,9 +62,9 @@ export function planGoals(input: readonly TrainingGoal[]): GoalPlan {
    * 것이고, 그건 중량을 유지할 때 된다.
    */
   if (has('strength') && has('hypertrophy')) {
-    notes.push('메인 복합 동작은 저반복(4~6회)으로 힘을, 보조·고립은 중반복으로 크기를 가져갑니다.');
+    notes.push('바벨 메인 동작(스쿼트 · 벤치 · 데드 · 프레스 · 로우)은 한 주에 한 번 무겁게(4~6회), 다른 날과 나머지 종목은 6~10회 이상으로 크기를 가져갑니다.');
   } else if (has('strength')) {
-    notes.push('메인 복합 동작을 저반복(4~6회)으로 가져갑니다.');
+    notes.push('바벨 메인 동작(스쿼트 · 벤치 · 데드 · 프레스 · 로우)은 4~6회(처음이면 5~8회)로, 덤벨 · 머신 주 종목은 6~10회로 가져갑니다.');
   } else if (has('hypertrophy')) {
     notes.push('근비대 구간인 6~12회를 중심으로 짭니다.');
   }

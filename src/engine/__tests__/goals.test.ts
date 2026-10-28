@@ -41,7 +41,7 @@ describe('planGoals', () => {
 
   it('잘 맞는 조합은 어떻게 가는지 알려준다', () => {
     const plan = planGoals(['strength', 'hypertrophy']);
-    assert.match(plan.notes.join(' '), /메인.*저반복.*보조/);
+    assert.match(plan.notes.join(' '), /메인 동작.*한 주에 한 번 무겁게.*6~10회/);
   });
 
   it('아무것도 안 고르면 건강 유지로 본다', () => {

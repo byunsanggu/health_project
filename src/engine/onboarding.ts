@@ -1,4 +1,4 @@
-import { EXERCISES, HEAVY_PULLS } from './exercises.ts';
+import { EXERCISES, HEAVY_PULLS, exerciseById } from './exercises.ts';
 import { availableExercises, coverageReport, gymFromCatalog, type GymSelection } from './equipment.ts';
 import { assessLevel, levelProfile, type LevelAssessment } from './levels.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO, landmarksFor } from './muscles.ts';
@@ -894,11 +894,13 @@ export function buildProgram(
     };
   });
 
+  const ranged = assignRepRanges(templates, answers.goals, level);
+
   return {
     name: SPLIT_NAMES[days] ?? `주 ${days}회 분할`,
     daysPerWeek: days,
-    caution: cautionFor(days, templates, landmarks, answers.gym.equipmentIds),
-    templates,
+    caution: cautionFor(days, ranged, landmarks, answers.gym.equipmentIds),
+    templates: ranged,
     weeklyTargets,
   };
 }
@@ -1037,8 +1039,93 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
  * 종목의 반복 범위. 목표와 자리(메인 · 보조 · 고립)가 정하고, 데드리프트만 따로 —
  * 근비대 메인 6~10회로 데드리프트를 하면 뒤 반복에서 허리가 먼저 무너진다. 4~6회(근력 3~5회).
  */
-function repRangeFor(exercise: Exercise, role: SlotRole, goals: readonly TrainingGoal[]): { min: number; max: number } {
-  const range = repRangeForGoals(role, goals);
+/**
+ * 근력용 저반복(4~6회)이 맞는 종목 — 양손으로 드는 바벨 복합 운동.
+ *
+ * 고블릿 스쿼트 4~6회는 덤벨이 모자라서 못 하고, 불가리안 스플릿 스쿼트 ·
+ * 원암 로우 · 랫 풀다운을 4~6회로 하면 무게보다 자세와 균형이 먼저 무너진다.
+ * 근력 프로그램이 저반복을 거는 곳은 스쿼트 · 벤치 · 데드 · 프레스 · 로우 같은
+ * 바벨 종목이다. 나머지 주 종목은 근력이 목표여도 6~10회가 맞다.
+ */
+function isStrengthLift(exercise: Exercise): boolean {
+  return exercise.equipment === 'barbell' && !exercise.unilateral &&
+    exercise.pattern !== 'isolation' && !NOT_LOW_REP.has(exercise.id);
+}
+
+/*
+ * 바벨이어도 저반복으로 하지 않는 것 — 루마니안 · 스티프 레그 데드와 굿모닝은
+ * 햄스트링을 늘이는 보조 힌지라 무겁게 몇 개보다 6~10회가 맞고, 힙 쓰러스트와
+ * 랜드마인 프레스도 근력 프로그램에서 저반복을 거는 자리가 아니다.
+ */
+const NOT_LOW_REP = new Set(['romanian-deadlift', 'stiff-leg-deadlift', 'good-morning', 'hip-thrust', 'landmine-press']);
+
+/** 근력 + 근비대일 때 하루에 무겁게 하는 종목 수. 셋이 넘으면 그날은 근력 날이 된다. */
+const HEAVY_PER_DAY = 2;
+
+/**
+ * 한 주 전체를 보고 반복 범위를 매긴다.
+ *
+ * 근력 + 근비대는 "이 동작을 이번 주에 이미 무겁게 했나"를 알아야 해서 종목
+ * 하나만 보고는 못 정한다. 날 순서대로 훑으며 동작마다 첫 번째 바벨 주 종목만
+ * 무겁게 하고(하루 최대 HEAVY_PER_DAY), 나머지는 볼륨으로 둔다.
+ *
+ * 이미 저장된 프로그램에도 쓴다 — 규칙이 바뀌면 설문을 다시 하지 않아도
+ * 반복 범위만 새 규칙으로 맞춘다. 종목 · 세트 수는 건드리지 않는다.
+ */
+export function assignRepRanges(
+  templates: readonly SessionTemplate[],
+  goals: readonly TrainingGoal[],
+  level: TrainingLevel,
+): SessionTemplate[] {
+  const heavyPatterns = new Set<string>();
+  return templates.map((template) => {
+    // 내 루틴은 사용자가 정한 반복 그대로 둔다
+    if (template.fixed) return template;
+    let heavyToday = 0;
+    return {
+      ...template,
+      slots: template.slots.map((slot) => {
+        const exercise = exerciseById(slot.exerciseId);
+        if (!exercise || !slot.role) return slot;
+        const heavy = slot.role === 'primary' && isStrengthLift(exercise) &&
+          !heavyPatterns.has(exercise.pattern) && heavyToday < HEAVY_PER_DAY;
+        if (heavy) {
+          heavyPatterns.add(exercise.pattern);
+          heavyToday += 1;
+        }
+        return { ...slot, repRange: repRangeFor(exercise, slot.role, goals, level, heavy) };
+      }),
+    };
+  });
+}
+
+/**
+ * 반복 범위.
+ *
+ * 근력 목표의 저반복은 바벨 주 종목에만 건다(isStrengthLift).
+ *   · 근력만        — 바벨 주 종목 전부 4~6회
+ *   · 근력 + 근비대 — 동작(스쿼트 · 힌지 · 벤치 · 프레스 · 로우)마다 한 주에 한 번만
+ *                     무겁게(4~6회), 같은 동작의 다른 날은 6~10회(무거운 날 · 볼륨 날).
+ *                     둘 다 고른 사람에게 전부 4~6회를 주면 근비대를 고른 의미가 없다.
+ *   · 초보          — 4~6회 대신 5~8회. 자세가 자리 잡기 전에 최대 근처 무게로
+ *                     몇 개만 하는 것보다, 조금 가볍게 더 많이 반복하는 쪽이 근력도
+ *                     충분히 오르고(초보는 어느 범위로 해도 근력이 는다) 덜 다친다.
+ * 데드리프트류는 이보다 한 칸 낮다(허리 부담 · 기술).
+ */
+function repRangeFor(
+  exercise: Exercise,
+  role: SlotRole,
+  goals: readonly TrainingGoal[],
+  level: TrainingLevel = 'intermediate',
+  heavySlot = true,
+): { min: number; max: number } {
+  let range = repRangeForGoals(role, goals);
+  const plan = planGoals(goals);
+  if (role === 'primary' && plan.goals.includes('strength')) {
+    const mixed = plan.goals.includes('hypertrophy');
+    if (!isStrengthLift(exercise) || (mixed && !heavySlot)) range = { min: 6, max: 10 };
+    else if (level === 'beginner') range = { min: 5, max: 8 };
+  }
   if (!HEAVY_PULLS.has(exercise.id)) return range;
   return range.max <= 6 ? { min: 3, max: 5 } : { min: 4, max: 6 };
 }

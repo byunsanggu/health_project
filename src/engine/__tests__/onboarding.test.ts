@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { buildProgram, runOnboarding, type OnboardingAnswers } from '../onboarding.ts';
+import { assignRepRanges, buildProgram, runOnboarding, type OnboardingAnswers } from '../onboarding.ts';
 import { buildSession } from '../session.ts';
 import { HEAVY_PULLS } from '../exercises.ts';
 import { COMMON_EQUIPMENT_IDS, EQUIPMENT_CATALOG } from '../equipment.ts';
@@ -499,5 +499,64 @@ describe('buildProgram — 약점 부위 · 메인 종목', () => {
     const minimal = ['floor', 'barbell-set', 'power-rack', 'bench-flat'];
     const program = buildProgram(answers({ gym: { equipmentIds: minimal }, mainLifts: { squat: 'hack-squat' } }), 'intermediate');
     assert.ok(!exercisesOf(program).some((exercise) => exercise.id === 'hack-squat'));
+  });
+});
+
+describe('근력 목표의 반복 범위', () => {
+  const primaries = (program: ReturnType<typeof buildProgram>) => program.templates.flatMap((template) =>
+    template.slots.filter((slot) => slot.role === 'primary').map((slot) => ({ slot, exercise: exerciseById(slot.exerciseId)!, day: template.name })));
+  const lowRep = (slot: { repRange: { max: number } }) => slot.repRange.max <= 6;
+
+  it('4~6회는 양손 바벨 주 종목에만 — 덤벨 · 머신 · 한쪽씩 · 루마니안은 근력이어도 6~10회', () => {
+    for (const days of [3, 4]) {
+      const program = buildProgram(answers({ daysPerWeek: days, goals: ['strength'] }), 'intermediate');
+      for (const { slot, exercise } of primaries(program)) {
+        const barbell = exercise.equipment === 'barbell' && !exercise.unilateral &&
+          !['romanian-deadlift', 'stiff-leg-deadlift', 'good-morning', 'hip-thrust', 'landmine-press'].includes(exercise.id);
+        if (!barbell) assert.deepEqual(slot.repRange, { min: 6, max: 10 }, exercise.name);
+        else assert.ok(lowRep(slot), `${exercise.name} ${slot.repRange.min}-${slot.repRange.max}`);
+      }
+    }
+  });
+
+  it('근력 + 근비대면 동작마다 한 주에 한 번만 무겁게 — 같은 동작의 다른 날은 볼륨', () => {
+    for (const days of [3, 4, 5]) {
+      const program = buildProgram(answers({ daysPerWeek: days, goals: ['strength', 'hypertrophy'] }), 'intermediate');
+      const heavy = primaries(program).filter(({ slot }) => lowRep(slot));
+      const patterns = heavy.map(({ exercise }) => exercise.pattern);
+      assert.equal(new Set(patterns).size, patterns.length, `${days}회 무거운 동작이 겹칩니다: ${heavy.map((h) => h.exercise.name).join(', ')}`);
+      assert.ok(heavy.length >= 2, `${days}회 무거운 종목이 너무 적습니다`);
+      for (const template of program.templates) {
+        assert.ok(template.slots.filter((slot) => slot.role === 'primary' && lowRep(slot)).length <= 2, template.name);
+      }
+    }
+  });
+
+  it('초보가 근력을 고르면 바벨 주 종목도 5~8회 — 자세가 잡히기 전에 최대 근처로 몇 개만 하지 않는다', () => {
+    const program = buildProgram(answers({ daysPerWeek: 3, goals: ['strength'] }), 'beginner');
+    for (const { slot, exercise } of primaries(program)) {
+      assert.ok(slot.repRange.min >= 4 && slot.repRange.max >= 6, `${exercise.name} ${slot.repRange.min}-${slot.repRange.max}`);
+      if (!HEAVY_PULLS.has(exercise.id)) assert.ok(slot.repRange.min >= 5, `${exercise.name} ${slot.repRange.min}-${slot.repRange.max}`);
+    }
+  });
+
+  it('근비대만이면 바뀐 게 없다 — 주 종목 6~10회', () => {
+    const program = buildProgram(answers({ daysPerWeek: 4, goals: ['hypertrophy'] }), 'intermediate');
+    for (const { slot, exercise } of primaries(program)) {
+      if (HEAVY_PULLS.has(exercise.id)) continue;
+      assert.deepEqual(slot.repRange, { min: 6, max: 10 }, exercise.name);
+    }
+  });
+
+  it('이미 저장된 예전 프로그램도 반복 범위만 새 규칙으로 — 종목 · 세트는 그대로, 내 루틴은 손대지 않는다', () => {
+    const fresh = buildProgram(answers({ daysPerWeek: 3, goals: ['strength', 'hypertrophy'] }), 'intermediate');
+    const old = fresh.templates.map((template) => ({
+      ...template,
+      slots: template.slots.map((slot) => (slot.role === 'primary' ? { ...slot, repRange: { min: 4, max: 6 } } : slot)),
+    }));
+    const fixed = assignRepRanges(old, ['strength', 'hypertrophy'], 'intermediate');
+    assert.deepEqual(fixed, fresh.templates);
+    const mine = [{ ...old[0]!, fixed: true }];
+    assert.deepEqual(assignRepRanges(mine, ['strength', 'hypertrophy'], 'intermediate'), mine);
   });
 });

@@ -272,6 +272,7 @@
         nudgeOn: state.nudgeOn,
         restAlerts: state.restAlerts,
         restSound: state.restSound,
+        repRule: REP_RULE,
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
@@ -302,6 +303,12 @@
    * 시드 이력은 시나리오에서 다시 만들지만, 사용자가 고른 것과 오늘 기록한
    * 세트는 되살려야 한다 — 앱을 껐다 켰다고 오늘 한 운동이 사라지면 안 된다.
    */
+  /*
+   * 반복 범위 규칙의 판. 근력 목표의 4~6회를 바벨 주 종목에만 걸고, 근력 +
+   * 근비대는 동작마다 한 주에 한 번만 무겁게 하도록 바꾼 판이 2다.
+   */
+  var REP_RULE = 2;
+
   function restore() {
     var saved = storage.load();
     var settings = saved.settings || {};
@@ -319,6 +326,16 @@
       state.answers = saved.answers;
       state.program = saved.program;
       state.lifter = saved.lifter || state.lifter;
+      /*
+       * 반복 범위 규칙이 바뀌면(REP_RULE) 저장된 프로그램에도 한 번 맞춘다 —
+       * 종목 · 세트는 그대로 두고 반복 범위만. 설문을 다시 하라고 하지 않는다.
+       */
+      if (settings.repRule !== REP_RULE && state.program && state.program.templates) {
+        state.program = Object.assign({}, state.program, {
+          templates: E.assignRepRanges(state.program.templates, (saved.answers.goals || []),
+            (state.lifter && state.lifter.level) || saved.answers.selfReportedLevel),
+        });
+      }
       state.gym = E.gymFromCatalog(saved.answers.gym);
       state.onboarding = { active: false, step: 0 };
       state.scenario = settings.scenario || 'normal';
