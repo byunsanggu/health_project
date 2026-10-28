@@ -102,6 +102,36 @@ export function normalizeGymName(raw: string): ParsedGymName {
   return { raw, normalized, core, brand, branch, hasBranchMarker, facility };
 }
 
+/* ── 구분어 ─────────────────────────────────────────────── */
+
+/**
+ * 같은 브랜드의 다른 곳을 가르는 말 — "바우짐"과 "바우짐 여성점"은 같은 건물에
+ * 있어도 기구가 다르다. 이런 말이 한쪽에만 있으면 다른 헬스장이다(합치지 않는다).
+ * 긴 것부터 — '여성전용'을 '여성'으로 먼저 잡으면 표시가 달라진다.
+ */
+const QUALIFIERS: readonly { words: readonly string[]; label: string }[] = [
+  { words: ['여성전용', '여성', '레이디스', '레이디', 'ladies', 'lady', 'women', '우먼'], label: '여성 전용' },
+  { words: ['남성전용', '남성', 'men'], label: '남성 전용' },
+  { words: ['키즈', 'kids'], label: '키즈' },
+  { words: ['시니어'], label: '시니어' },
+  { words: ['프리미엄', 'premium'], label: '프리미엄' },
+];
+
+/**
+ * 이름에 든 구분어(여성 전용 · 2호점 …). 목록에서 같은 브랜드끼리 갈라 보이게
+ * 하는 표시이자, 같은 곳 판정에서 "다르다"의 근거다.
+ */
+export function gymQualifiers(name: string): string[] {
+  const text = normalizeGymName(name).normalized;
+  const out: string[] = [];
+  for (const group of QUALIFIERS) {
+    if (group.words.some((word) => text.includes(word))) out.push(group.label);
+  }
+  const numbered = text.match(/(\d+)호/);
+  if (numbered) out.push(`${numbered[1]}호점`);
+  return out;
+}
+
 /* ── 층 ────────────────────────────────────────────────── */
 
 /**
@@ -267,7 +297,20 @@ export function matchGym(
     };
   }
 
-  // 2) 지점이 다르면 브랜드가 같아도 다른 헬스장이다.
+  // 2) 여성 전용 · 2호점 같은 구분어가 다르면 이름이 비슷해도 다른 헬스장이다.
+  const qualA = gymQualifiers(a.name).join(',');
+  const qualB = gymQualifiers(b.name).join(',');
+  if (qualA !== qualB) {
+    const which = qualA || qualB;
+    return {
+      verdict: 'different',
+      nameScore,
+      distanceM,
+      reason: `한쪽은 ${which}입니다. 같은 브랜드 · 같은 건물이어도 다른 곳이고 기구도 따로입니다.`,
+    };
+  }
+
+  // 3) 지점이 다르면 브랜드가 같아도 다른 헬스장이다.
   const branchVerdict = compareBranch(left, right);
   if (branchVerdict === 'different') {
     return {
@@ -367,6 +410,8 @@ function compareBranch(a: ParsedGymName, b: ParsedGymName): 'same' | 'different'
   }
 
   if (a.hasBranchMarker !== b.hasBranchMarker) return 'unknown';
+  // 한쪽에만 뒤에 붙은 말이 있으면("바우짐" · "바우짐역삼") 같은 곳인지 모른다 — 묻는다
+  if (Boolean(a.branch) !== Boolean(b.branch)) return 'unknown';
   return 'same';
 }
 

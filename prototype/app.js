@@ -277,6 +277,7 @@
         topSet: state.topSet,
         repSuggestSkip: state.repSuggestSkip,
         mobility: state.mobility,
+        skipToday: state.skipToday,
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
@@ -373,6 +374,7 @@
       state.topSet = Boolean(settings.topSet);
       state.repSuggestSkip = settings.repSuggestSkip || {};
       state.mobility = settings.mobility || null;
+      state.skipToday = settings.skipToday || null;
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
       state.voiceRate = settings.voiceRate || 1;
@@ -1280,20 +1282,33 @@
     state.plan = plan;
   }
 
-  /**
-   * 이 헬스장에서 할 수 있는 종목.
-   *
-   * 기구 id 목록을 대체 찾기에 그대로 넘기면 안 된다 — 헬스장 기구는
-   * 'leg-press-machine' 같은 id이고 종목의 equipment는 'machine' 같은
-   * 갈래라 서로 안 맞는다. 그러면 "대체가 없습니다"가 늘 뜬다.
-   */
-  function gymPool(entry) {
-    return entry ? E.availableExercises(entry.equipmentIds) : undefined;
-  }
-
   /** 지금 빠져 있는 종목 id. */
   function excludedSet() {
-    return E.excludedIds(state.exclusions, state.todayDate);
+    var set = E.excludedIds(state.exclusions, state.todayDate);
+    todaySkips().forEach(function (id) { set.add(id); });
+    return set;
+  }
+
+  /** 오늘만 뺀 종목 — 날이 바뀌면 저절로 돌아온다. */
+  function todaySkips() {
+    return state.skipToday && state.skipToday.date === state.todayDate ? state.skipToday.ids : [];
+  }
+
+  function skipForToday(exercise) {
+    state.skipToday = { date: state.todayDate, ids: todaySkips().concat([exercise.id]) };
+    modal.close();
+    rebuildSession();
+    persist();
+    pushLog('오늘만 빼기', '<b>' + exercise.name + '</b>' + particleOf(exercise.name, '을/를') +
+      ' 오늘만 뺐습니다. 다음 번엔 다시 나옵니다.');
+    render();
+  }
+
+  function unskipForToday(id) {
+    state.skipToday = { date: state.todayDate, ids: todaySkips().filter(function (item) { return item !== id; }) };
+    rebuildSession();
+    persist();
+    render();
   }
 
   /** 지금 가벼운 무게로 배우는 중인 종목 id. */
@@ -1312,43 +1327,25 @@
    * 같은 종목이 두 번 나오거나, 빼 달라고 한 종목이 대체로 다시 들어오면
    * 사용자는 앱이 말을 안 듣는다고 느낀다.
    */
+  /*
+   * 뺀 종목은 그냥 뺀다 — 그 자리에 다른 종목을 끼워 넣지 않는다.
+   *
+   * 예전에는 볼륨을 지키려고 비슷한 종목을 대신 넣었다. 그런데 사람은 "뺐는데
+   * 왜 다른 게 생기지?"로 읽었다 — 뺀 사람이 원한 건 하나 줄이는 것이다.
+   * 더 하고 싶으면 "종목 추가"로 직접 넣는다. 아픈 관절은 통증 판정이 따로
+   * 무거운 종목을 바꾼다(그건 빼기가 아니라 안전이다).
+   */
   function withExclusions(template) {
     var excluded = excludedSet();
     if (excluded.size === 0) return template;
-
-    var entry = currentGymEntry();
-    var taken = {};
-    template.slots.forEach(function (slot) { taken[slot.exerciseId] = true; });
-
-    var slots = [];
-    template.slots.forEach(function (slot) {
-      if (!excluded.has(slot.exerciseId)) { slots.push(slot); return; }
-
-      var exercise = index.get(slot.exerciseId);
-      if (!exercise) return;
-
-      var banned = new Set(excluded);
-      Object.keys(taken).forEach(function (id) { banned.add(id); });
-
-      var replacement = E.replacementFor(exercise, {
-        excluded: banned,
-        pool: gymPool(entry),
-        limit: 1,
-      });
-      var pick = replacement.substitutes[0];
-      if (!pick) return;   // 대체가 없으면 그 자리는 빈다
-
-      taken[pick.id] = true;
-      slots.push({
-        exerciseId: pick.id,
-        sets: slot.sets,
-        repRange: slot.repRange,
-        replacedFrom: slot.exerciseId,
-      });
-    });
-
-    return { name: template.name, slots: slots, setCap: template.setCap, fixed: template.fixed };
+    return {
+      name: template.name,
+      slots: template.slots.filter(function (slot) { return !excluded.has(slot.exerciseId); }),
+      setCap: template.setCap,
+      fixed: template.fixed,
+    };
   }
+
 
   /**
    * 실제 판에서는 단계의 시작 RIR부터 한 주에 하나씩 조인다.
@@ -5227,6 +5224,19 @@
       ]),
     ]));
 
+    // 오늘만 뺀 종목 — 목록에서 사라졌다고 잊히지 않게, 되돌릴 수 있게
+    var skipped = todaySkips().map(function (id) { return index.get(id); }).filter(Boolean);
+    if (skipped.length) {
+      screen.appendChild(el('div', { class: 'skip-today-line' }, [
+        el('span', { class: 'skip-today-label', text: '오늘만 뺌' }),
+      ].concat(skipped.map(function (exercise) {
+        return el('button', {
+          type: 'button', class: 'pick skip-undo', text: exercise.name + ' 되돌리기',
+          onclick: function () { unskipForToday(exercise.id); },
+        });
+      }))));
+    }
+
     renderMaxTest();
     // 유산소 · 컨디셔닝은 한 줄로 접어 둔다 — 고른 게 있으면 펼친 채로
     var extrasPicked = (state.cardioToday && state.cardioToday.length > 0) || Boolean(state.cardioDraft) || Boolean(state.conditioning);
@@ -5808,6 +5818,22 @@
   function openExclude(exercise) {
     var body = [];
 
+    /*
+     * 오늘만 — 이유를 묻지 않는다. 기구에 사람이 많거나, 오늘 컨디션이거나,
+     * 시간이 없거나. 다음 번엔 그대로 다시 나온다.
+     */
+    body.push(el('button', {
+      type: 'button', class: 'menu-row skip-today',
+      onclick: function () { skipForToday(exercise); },
+    }, [
+      el('span', { class: 'plan-main' }, [
+        el('span', { class: 'name', text: '오늘만 빼기' }),
+        el('span', { class: 'plan-sets', text: '이유는 안 묻습니다. 다음 번엔 그대로 다시 나옵니다' }),
+      ]),
+      el('span', { class: 'detail', text: '›' }),
+    ]));
+
+    body.push(el('div', { class: 'list-label', text: '앞으로도 빼기 — 왜 빼시나요?' }));
     body.push(el('p', { class: 'asset-note', text:
       '왜 빼려고 하시는지에 따라 하는 일이 다릅니다. 아파서 빼는 것과 ' +
       '기구가 없어서 빼는 것은 같은 문제가 아닙니다.' }));
@@ -6028,16 +6054,10 @@
    * 프로그램에 영영 남는다.
    */
   function openExcludeConfirm(exercise) {
-    var entry = currentGymEntry();
-    var replacement = E.replacementFor(exercise, {
-      excluded: excludedSet(),
-      pool: gymPool(entry),
-    });
-
     var body = [];
     body.push(el('div', { class: 'notice' }, [
-      el('div', { class: 'label', text: '빠진 자리는 이렇게 채웁니다' }),
-      el('div', { text: replacement.text }),
+      el('div', { class: 'label', text: '빈자리는 비워 둡니다' }),
+      el('div', { text: '다른 종목을 대신 넣지 않습니다. 더 하고 싶으면 "편집 › 종목 추가"로 직접 넣으세요.' }),
     ]));
 
     var commit = function (forever) {
@@ -9386,7 +9406,12 @@
 
   /** 종목 카드 하나. 목록 화면에서는 안 쓰고 진행 화면에서만 쓴다. */
   function buildLiftCard(lift, liftIndex) {
-    var nameRow = el('div', { class: 'lift-name' }, [el('span', { text: lift.exercise.name })]);
+    /*
+     * 종목 이름은 위 머리띠에 크게 한 번만. 카드에도 쓰면 같은 글자가 위아래로
+     * 두 번 읽히고, 버튼 줄이 두 줄로 넘어가 완료 버튼이 그만큼 밀린다.
+     * 화면 읽기에는 이름이 남는다.
+     */
+    var nameRow = el('div', { class: 'lift-name' }, [el('span', { class: 'sr-only', text: lift.exercise.name })]);
     if (lift.substitutedFrom) {
       nameRow.appendChild(el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name }));
     }
@@ -15785,6 +15810,11 @@
     render();
   }
 
+  /** 이름에서 읽은 구분어(여성 전용 · 2호점) 표시 — 같은 브랜드끼리 한눈에 갈리게. */
+  function gymTagNodes(name) {
+    return E.gymQualifiers(name).map(function (label) { return el('span', { class: 'gym-tag', text: label }); });
+  }
+
   function currentGymEntry() {
     return state.gymBook ? E.activeGym(state.gymBook) : null;
   }
@@ -16112,7 +16142,7 @@
         : active.note || '';
       var placeholder = active.id === PLACEHOLDER_GYM_ID;
       var hereBody = [
-        el('div', { class: 'gym-here-name', text: active.name }),
+        el('div', { class: 'gym-here-name' }, [document.createTextNode(active.name)].concat(gymTagNodes(active.name))),
         el('div', { class: 'gym-here-where' + (placeholder ? ' unset' : ''), text: placeholder
           ? '위치 · 주소: 아직 연결 안 됨'
           : (where || '직접 등록한 곳') }),
@@ -16161,8 +16191,10 @@
         type: 'button', class: 'gym-row', 'aria-pressed': String(isActive),
         onclick: function () { if (!isActive) useGym(entry); },
       }, [
-        el('span', { class: 'gym-name', text: entry.name }),
-        el('span', { class: 'gym-meta', text: (entry.note ? entry.note + ' · ' : '') + '종목 ' + count + '개' }),
+        el('span', { class: 'gym-name' }, [document.createTextNode(entry.name)].concat(gymTagNodes(entry.name))),
+        // 같은 브랜드의 두 곳(바우짐 · 바우짐 여성점)은 기구가 다르다 — 수를 같이 보여 준다
+        el('span', { class: 'gym-meta', text: (entry.note ? entry.note + ' · ' : '') +
+          '기구 ' + (entry.equipmentIds || []).length + '개 · 종목 ' + count + '개' }),
       ]);
       if (isActive) row.appendChild(el('span', { class: 'gym-badge', text: '사용 중' }));
 
@@ -17256,6 +17288,14 @@
         ' 이미 등록된 곳이라 그대로 씁니다.');
     } else {
       state.myDirectory = state.myDirectory.concat([result.entry]);
+      // 같은 브랜드가 이미 있으면(바우짐 ↔ 바우짐 여성점) 다른 곳으로 따로 둔다고 말한다
+      var sibling = state.gymBook.gyms.filter(function (gym) {
+        return gym.id !== result.entry.id && E.normalizeGymName(gym.name).brand === E.normalizeGymName(result.entry.name).brand;
+      })[0];
+      if (sibling) {
+        pushLog('헬스장', '<b>' + result.entry.name + '</b>' + particleOf(result.entry.name, '은/는') + ' <b>' +
+          sibling.name + '</b>' + particleOf(sibling.name, '과/와') + ' 다른 곳으로 따로 등록합니다. 기구 목록도 따로입니다.');
+      }
       pushLog('헬스장', '<b>' + result.entry.name + '</b>' + particleOf(result.entry.name, '을/를') +
         ' 새로 등록했습니다. ' +
         '기구 ' + result.entry.equipmentIds.length + '개로 시작합니다.' +

@@ -68,7 +68,7 @@ export const EXCLUDE_REASONS: readonly ReasonSpec[] = [
   {
     reason: 'dislike',
     label: '그냥 하기 싫어요',
-    hint: '뺍니다. 빠진 볼륨은 비슷한 종목으로 채웁니다',
+    hint: '뺍니다. 그 자리에 다른 종목을 넣지 않습니다',
     route: 'exclude',
     shareable: true,
   },

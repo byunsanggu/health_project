@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   findDuplicates,
   gymKey,
+  gymQualifiers,
   matchGym,
   nameSimilarity,
   normalizeGymName,
@@ -294,5 +295,34 @@ describe('주소와 층을 붙이면 안 된다', () => {
     });
     assert.equal(result.outcome, 'created');
     assert.equal(result.entry?.floor, 3);
+  });
+});
+
+describe('같은 브랜드의 다른 곳 — 여성 전용 · 2호점', () => {
+  const here = { lat: 37.5, lng: 127.03 };
+
+  it('"바우짐"과 "바우짐 여성점"은 같은 건물이어도 다른 헬스장이다', () => {
+    const verdict = matchGym({ name: '바우짐', location: here }, { name: '바우짐 여성점', location: here });
+    assert.equal(verdict.verdict, 'different');
+    assert.match(verdict.reason, /여성 전용/);
+  });
+
+  it('띄어쓰기 · 점 없이 "바우짐 여성"이어도 합치지 않는다', () => {
+    assert.equal(matchGym({ name: '바우짐', location: here }, { name: '바우짐여성', location: here }).verdict, 'different');
+    assert.equal(matchGym({ name: '바우짐 2호점', location: here }, { name: '바우짐', location: here }).verdict, 'different');
+  });
+
+  it('구분어가 같으면 원래대로 같은 곳', () => {
+    assert.equal(matchGym({ name: '바우짐 여성점', location: here }, { name: '바우짐여성점', location: here }).verdict, 'same');
+  });
+
+  it('구분어를 이름에서 읽는다', () => {
+    assert.deepEqual(gymQualifiers('바우짐 여성점'), ['여성 전용']);
+    assert.deepEqual(gymQualifiers('바우짐 2호점'), ['2호점']);
+    assert.deepEqual(gymQualifiers('바우짐'), []);
+  });
+
+  it('한쪽에만 뒤에 말이 붙으면 같은 곳인지 묻는다(바로 합치지 않는다)', () => {
+    assert.notEqual(matchGym({ name: '바우짐', location: here }, { name: '바우짐역삼', location: here }).verdict, 'same');
   });
 });
