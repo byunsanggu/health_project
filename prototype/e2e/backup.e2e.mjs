@@ -2,7 +2,7 @@
 //   내 정보에서 불러오면 빠진 날만 채운다. 통증 · 식단은 지금 그 항목에 동의했을 때만 들어온다.
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { check, choosePt, onboard, tab } from './lib.mjs';
+import { check, choosePt, onboard, tab, startWorkout } from './lib.mjs';
 
 async function chooseFile(page, button, path) {
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), button.click()]);
@@ -26,7 +26,7 @@ export default async function ({ page, url, shot, out }) {
   await page.locator('.coach-line').click();
   await page.locator('dialog .coach-mode', { hasText: '혼자' }).click();
   await page.locator('dialog .modal-close').click();
-  await page.click('.start-cta');
+  await startWorkout(page);
   await page.locator('.now-done').click();
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
   await page.locator('.now-done').click();

@@ -20,7 +20,7 @@ export default async function ({ page, url, shot }) {
   await dialog.locator('.modal-close').click();
 
   // 종목 줄을 누르면 그 종목 반복 수
-  const name = (await page.locator('.plan-row .name > span:first-child').nth(1).textContent()).trim();
+  const name = (await page.locator('.plan-row .name > span:first-child').nth(0).textContent()).trim();
   await page.locator('.plan-sets-btn').first().click();
   check((await dialog.locator('#modal-title').textContent()).includes(name), '누른 종목의 반복 수 창이 아닙니다');
   await dialog.locator('.rep-presets .pick', { hasText: /^10~15회$/ }).click();

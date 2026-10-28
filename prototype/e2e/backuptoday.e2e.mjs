@@ -1,13 +1,13 @@
 // 폰을 바꾸는 날 — 오늘 운동한 뒤 내려받아 바로 불러오면, 오늘 한 세트가 오늘 종목에 다시 붙는다
 //   (안 붙으면 다음 세트를 칠 때 오늘 기록이 그 한 세트로 덮인다)
 import { join } from 'node:path';
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, startWorkout } from './lib.mjs';
 
 export default async function ({ page, url, out }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
-  await page.click('.start-cta');
+  await startWorkout(page);
   await page.locator('.now-done').click();
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
   await page.locator('.now-done').click();
@@ -49,7 +49,7 @@ export default async function ({ page, url, out }) {
 
   // 다시 켜도, 다음 세트를 쳐도 오늘 기록은 두 세트 위에 쌓인다
   await page.reload();
-  await page.click('.start-cta');
+  await startWorkout(page);
   await page.locator('.now-done').click();
   await tab(page, '진행');
   const after = await page.locator('.history-row').first().textContent();

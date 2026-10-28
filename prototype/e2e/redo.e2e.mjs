@@ -1,6 +1,6 @@
 // 헬스장 › 초기 설정 다시 하기 — 확인을 받고, 그만둘 수 있고, 다시 짜도 운동 기록이 남는다
 // (전에는 확인 없이 저장소를 통째로 지웠다)
-import { check, finishWizard, onboard, tab } from './lib.mjs';
+import { check, finishWizard, onboard, tab, startWorkout } from './lib.mjs';
 
 async function weekSets(page) {
   await tab(page, '볼륨');
@@ -11,7 +11,7 @@ async function weekSets(page) {
 export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
-  await page.click('.start-cta');
+  await startWorkout(page);
   await page.locator('.now-done').click();
   const before = await weekSets(page);
   check(before > 0, '세트를 했는데 볼륨이 비었습니다');

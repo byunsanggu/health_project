@@ -1,12 +1,12 @@
 // 혼자 모드 — 시작 → 남은 횟수 눌러 세트 기록 → 휴식 → 종목을 다 하면 다음 종목으로
 //   → 앱을 다시 켜도 이어진다 → 운동 끝내기는 요약을 연다
-import { check, onboard } from './lib.mjs';
+import { check, onboard, startWorkout } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
-  await page.click('.start-cta');
+  await startWorkout(page);
   check(await page.locator('.progress-count b').textContent() === '1', '첫 종목이 아닙니다');
 
   // 첫 종목을 끝까지 — 세트마다 "완료" 누르고, 쉬는 시간은 건너뛴다

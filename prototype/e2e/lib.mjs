@@ -179,3 +179,9 @@ export async function runUntil(page, phases, { stepMs = 1000, maxMs = 300000 } =
   }
   throw new Error(`${maxMs / 1000}초를 돌려도 ${want.join('/')} 단계가 안 나왔습니다 (지금 ${await focusPhase(page)})`);
 }
+
+/** 시작하기 — 혼자 모드는 몸 풀기 단계가 먼저 뜬다. 종목을 보려는 시험은 건너뛴다. */
+export async function startWorkout(page) {
+  await page.locator('.start-cta').click();
+  if (await page.locator('.warm-skip').count()) await page.locator('.warm-skip').click();
+}

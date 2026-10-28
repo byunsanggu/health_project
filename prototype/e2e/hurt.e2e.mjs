@@ -1,11 +1,11 @@
 // 혼자 모드 "아픈 데 있어요" — 무엇을 뺐는지 말하고, 어디가 아픈지 바로 묻는다
 // (전에는 말없이 종목이 사라지고 아무것도 묻지 않았다)
-import { check, onboard } from './lib.mjs';
+import { check, onboard, startWorkout } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
-  await page.click('.start-cta');
+  await startWorkout(page);
   const first = (await page.locator('.progress-head').textContent()).trim();
   // 세트마다 묻지는 않지만, 아플 때 누르는 자리는 늘 있다
   await page.locator('.hurt-link').click();

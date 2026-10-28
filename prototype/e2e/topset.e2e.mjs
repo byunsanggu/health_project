@@ -1,6 +1,6 @@
 // 주 1회 무거운 세트 — 중급이 켜면 이번 주 차례인 바벨 메인 종목 앞에 1~3회 무거운 세트가 하나 붙는다.
 //   그 뒤 원래 세트(백오프)는 무게가 그대로고(2회 했다고 깎지 않는다), 기록에는 무거운 세트로 남는다.
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, startWorkout } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -46,7 +46,7 @@ export default async function ({ page, url, shot }) {
   check(all.filter((line) => line.includes('무거운 1세트')).length === 1, '무거운 세트가 둘 이상입니다');
 
   // 그 종목으로 가서 무거운 세트를 한다
-  await page.locator('.start-cta').click();
+  await startWorkout(page);
   for (let i = 0; i < 12; i += 1) {
     if ((await page.locator('.progress-name > span').first().textContent()).trim() === pick.name) break;
     await page.locator('.now-done').click();

@@ -276,6 +276,7 @@
         repOverrides: state.repOverrides,
         topSet: state.topSet,
         repSuggestSkip: state.repSuggestSkip,
+        mobility: state.mobility,
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
@@ -371,6 +372,7 @@
       state.repOverrides = settings.repOverrides || {};
       state.topSet = Boolean(settings.topSet);
       state.repSuggestSkip = settings.repSuggestSkip || {};
+      state.mobility = settings.mobility || null;
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
       state.voiceRate = settings.voiceRate || 1;
@@ -5062,14 +5064,11 @@
      * 시작은 몸 풀기 5분(움직이는 스트레칭). 종목마다 워밍업 세트를 밟는 대신이다 —
      * 워밍업 세트는 오늘 처음 하는 복합 동작에만 남는다.
      */
-    var moves = E.mobilityFor(plannedMusclesToday(), { equipment: warmupEquipment(), budgetSeconds: mobilitySeconds() });
-    rows.push(el('div', { class: 'plan-row warm-row' }, [
-      el('span', { class: 'lift-thumb warm', 'aria-hidden': 'true', text: '↗' }),
-      el('span', { class: 'plan-main' }, [
-        el('span', { class: 'name' }, [el('span', { text: '몸 풀기 ' + E.mobilityMinutes(moves) + '분' })]),
-        el('span', { class: 'plan-sets', text: moves.slice(0, 3).map(function (move) { return move.name; }).join(' · ') }),
-      ]),
-    ]));
+    /*
+     * 몸 풀기는 종목 목록에 섞지 않고 따로 둔다. 목록 첫 줄에 있으니 종목
+     * 하나처럼 읽혔다 — "오늘 할 것"은 종목만, 몸 풀기는 그 위에 "시작 전"으로.
+     */
+    var moves = todayMobility();
 
     /*
      * 순서 바꾸기는 목록 위에서 바로 한다.
@@ -5110,7 +5109,7 @@
       rows.push(el('div', { class: 'plan-row' + (reordering ? ' reordering' : '') + (flagged ? ' flagged' : '') }, [
         liftThumb(lift.exercise),
         el('span', { class: 'plan-main' }, [
-          el('span', { class: 'name' }, [
+          el('span', { class: 'name lift-name-big' }, [
             el('span', { text: lift.exercise.name }),
             // 프로그램이 짜 준 것과 끼워 넣은 것은 구분돼야 한다
             isExtraLift(lift.exercise.id, lift)
@@ -5150,6 +5149,8 @@
      */
     var review = excludeReviewCard();
     if (review) screen.appendChild(review);
+
+    screen.appendChild(mobilitySheet(moves));
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       /*
@@ -5251,6 +5252,13 @@
       onclick: function () {
         state.started = true;
         state.focusHidden = false;
+        /*
+         * 혼자 모드도 몸 풀기부터 — 종목 1번이 아니라 "몸 풀기" 단계가 먼저 뜬다.
+         * PT는 코치가 몸 풀기를 이끄는 단계가 따로 있다.
+         */
+        if (!ptOn() && doneSets === 0 && !mobilityDone() && !mobilityActive()) {
+          state.mobility = { date: state.todayDate, active: true, done: false, checked: [] };
+        }
         // 목록에 다녀온 것이면 멈춘 자리(몸 풀기 · 워밍업 · 세던 개수)에서 잇는다
         var resuming = Boolean(ptOn() && state.ptRun && state.ptRun.paused);
         if (ptOn() && !resuming) {
@@ -7462,7 +7470,136 @@
   }
 
   /** 시작한 뒤 — 지금 할 종목 하나. */
+  /* ── 몸 풀기 — 종목 앞의 따로 된 단계 ───────────────── */
+
+  function todayMobility() {
+    return E.mobilityFor(plannedMusclesToday(), { equipment: warmupEquipment(), budgetSeconds: mobilitySeconds() });
+  }
+
+  function mobilityDone() {
+    return Boolean(state.mobility && state.mobility.date === state.todayDate && state.mobility.done);
+  }
+
+  function mobilityActive() {
+    return Boolean(state.mobility && state.mobility.date === state.todayDate && state.mobility.active && !state.mobility.done);
+  }
+
+  function moveTime(seconds) {
+    return seconds >= 60 ? (Math.floor(seconds / 60) + '분' + (seconds % 60 ? ' ' + (seconds % 60) + '초' : '')) : seconds + '초';
+  }
+
+  /** 오늘 목록 위 — "시작 전 몸 풀기". 종목이 아니라 준비라는 걸 제목이 말한다. */
+  function mobilitySheet(moves) {
+    var done = mobilityDone();
+    return el('div', { class: 'sheet warm-sheet' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '몸 풀기' }),
+        el('span', { class: 'meta', text: done ? '오늘 했음' : '시작 전 · ' + E.mobilityMinutes(moves) + '분' }),
+      ]),
+      /*
+       * 접어 둔다 — 동작 일곱 줄을 다 펴 두면 정작 "오늘 할 것"이 화면 밖으로
+       * 밀린다. 한 줄로 무엇을 하는지만 보이고, 누르면 펼친다.
+       */
+      el('div', { class: 'sheet-body' }, state.warmListOpen ? [
+        el('ol', { class: 'warm-moves' }, moves.map(function (move) {
+          return el('li', {}, [
+            el('span', { class: 'warm-move-name', text: move.name }),
+            el('span', { class: 'warm-move-time', text: moveTime(move.seconds) }),
+          ]);
+        })),
+        el('p', { class: 'hint-line', text: '시작하기를 누르면 몸 풀기부터 합니다. 무게 워밍업 세트는 종목마다 따로 나옵니다.' }),
+        el('button', { type: 'button', class: 'link-btn warm-toggle', text: '접기',
+          onclick: function () { state.warmListOpen = false; render(); } }),
+      ] : [
+        el('button', {
+          type: 'button', class: 'warm-summary', 'aria-expanded': 'false',
+          onclick: function () { state.warmListOpen = true; render(); },
+        }, [
+          el('span', { text: moves.slice(0, 2).map(function (move) { return move.name; }).join(' · ') +
+            (moves.length > 2 ? ' 외 ' + (moves.length - 2) + '개' : '') }),
+          el('span', { class: 'warm-toggle-label', text: '동작 보기' }),
+        ]),
+      ]),
+    ]);
+  }
+
+  /**
+   * 혼자 모드의 몸 풀기 화면. 머리띠에 "종목 1/6 · 바벨 벤치프레스"가 아니라
+   * "몸 풀기"가 뜬다 — 지금 하는 게 종목이 아니라는 걸 화면이 말한다.
+   * 동작을 누르면 ✓ — 다 하면 "첫 종목으로".
+   */
+  function renderMobilityStage() {
+    var moves = todayMobility();
+    var checked = state.mobility.checked || [];
+    var first = state.lifts.filter(function (lift) { return lift.sets.some(function (set) { return !set.done; }); })[0];
+    screen.appendChild(el('div', { class: 'progress-head' }, [
+      el('div', { class: 'progress-top' }, [
+        el('button', { type: 'button', class: 'demo-open', text: '목록', 'aria-label': '오늘 할 것 목록으로', onclick: leaveToList }),
+        el('span', { class: 'progress-count' }, [el('i', { text: '준비' })]),
+        el('span', { class: 'progress-bar' }, [el('i', { style: 'width:0%' })]),
+        el('span', { class: 'elapsed' }, [
+          el('i', { text: '운동' }),
+          el('span', { id: 'session-elapsed', text: elapsedText() }),
+        ]),
+      ]),
+      el('div', { class: 'progress-name' }, [
+        el('span', { text: '몸 풀기 ' + E.mobilityMinutes(moves) + '분' }),
+        el('button', { type: 'button', class: 'end-workout', text: '운동 끝내기', onclick: endWorkout }),
+      ]),
+    ]));
+
+    screen.appendChild(el('div', { class: 'sheet warm-stage' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '종목 전에 몸부터' }),
+        el('span', { class: 'meta', text: checked.length + ' / ' + moves.length }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        el('p', { class: 'hint-line', text: '하나씩 하고 눌러서 ✓ 하세요. 땀이 살짝 나고 관절이 부드러우면 충분합니다.' }),
+        el('div', { class: 'summary-list' }, moves.map(function (move) {
+          var on = checked.indexOf(move.id) >= 0;
+          return el('button', {
+            type: 'button', class: 'warm-step', 'aria-pressed': String(on),
+            onclick: function () {
+              state.mobility.checked = on
+                ? checked.filter(function (id) { return id !== move.id; })
+                : checked.concat([move.id]);
+              persist();
+              render();
+            },
+          }, [
+            el('span', { class: 'mark', 'aria-hidden': 'true', text: on ? '✓' : '' }),
+            el('span', { class: 'plan-main' }, [
+              el('span', { class: 'name' }, [
+                el('span', { text: move.name }),
+                el('span', { class: 'warm-move-time', text: moveTime(move.seconds) }),
+              ]),
+              move.cue ? el('span', { class: 'plan-sets', text: move.cue }) : null,
+            ]),
+          ]);
+        })),
+      ]),
+    ]));
+
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish warm-done',
+      text: '몸 풀기 끝' + (first ? ' — 첫 종목: ' + first.exercise.name : ''),
+      onclick: function () { finishMobility(); },
+    }));
+    screen.appendChild(el('button', {
+      type: 'button', class: 'finish quiet warm-skip', text: '건너뛰기 (이미 풀었어요)',
+      onclick: function () { finishMobility(true); },
+    }));
+  }
+
+  function finishMobility(skipped) {
+    state.mobility = Object.assign({}, state.mobility, { active: false, done: true });
+    pushLog('몸 풀기', skipped ? '몸 풀기를 건너뛰었습니다.' : '몸 풀기를 마쳤습니다.');
+    persist();
+    render();
+  }
+
   function renderActiveLift() {
+    if (!ptOn() && mobilityActive()) { renderMobilityStage(); return; }
     // 시간 예산을 바꾸면 종목이 줄어든다. 커서가 밖으로 나가지 않게 잡아둔다.
     if (state.liftCursor >= state.lifts.length) state.liftCursor = Math.max(0, state.lifts.length - 1);
     var lift = state.lifts[state.liftCursor];

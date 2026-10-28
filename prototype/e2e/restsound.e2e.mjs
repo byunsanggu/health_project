@@ -1,6 +1,6 @@
 // 화면 꺼도 휴식 끝 소리 — 세트를 끝내면 "휴식 길이만큼 무음 + 알림음" 소리 파일을 틀어 둔다
 //   (잠금 화면에서도 재생은 계속되므로 끝에서 울린다). 건너뛰면 멈추고, 설정에서 끄면 틀지 않는다.
-import { check, onboard } from './lib.mjs';
+import { check, onboard, startWorkout } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -15,7 +15,7 @@ export default async function ({ page, url, shot }) {
   });
   await page.goto(url);
   await onboard(page);
-  await page.click('.start-cta');
+  await startWorkout(page);
 
   const plays = () => page.evaluate(() => window.__plays.slice());
   const before = (await plays()).length;   // 첫 터치 때 재생기를 깨운 것

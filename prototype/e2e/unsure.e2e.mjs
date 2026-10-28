@@ -7,7 +7,7 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
 
-  const name = (await page.locator('.plan-row .name').nth(1).textContent()).trim();
+  const name = (await page.locator('.plan-row .name').nth(0).textContent()).trim();
   await page.locator('.plan-row .row-menu').first().click();
   await page.locator('dialog .menu-row', { hasText: '이 종목 빼기' }).click();
   await page.locator('dialog .menu-row', { hasText: '동작이 자신 없어요' }).click();

@@ -1,11 +1,11 @@
 // 목요일에 시작한 사람 — 이번 주 칸 · 첫 주 약속 · 리포트가 서로 같은 말을 한다
 // (전에는 표가 "목 휴식 · 금 전신 C", 오늘 화면은 "내일 · 전신 B", 금요일 운동 전에 리포트,
 //  목 · 금을 다 해도 다음 주 "0주 연속")
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, startWorkout } from './lib.mjs';
 
 async function trainOneSet(page) {
   await tab(page, '오늘');
-  await page.click('.start-cta');
+  await startWorkout(page);
   await page.locator('.now-done').click();
   await page.locator('button', { hasText: '운동 끝내기' }).first().click();
   await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();

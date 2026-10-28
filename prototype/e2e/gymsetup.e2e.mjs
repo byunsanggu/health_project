@@ -65,7 +65,7 @@ export default async function ({ page, url, shot }) {
   // 오늘 — 연결 안내, 바로 순서 바꾸기
   const nudge = await page.locator('.gym-link-nudge').textContent();
   check(nudge.includes('역삼 튼튼짐') && nudge.includes('연결 전'), '오늘 화면 안내: ' + nudge);
-  const names = async () => (await page.locator('.plan-row .plan-main .name > span:first-child').allTextContents()).slice(1);
+  const names = async () => (await page.locator('.plan-row .plan-main .name > span:first-child').allTextContents());
   const first = await names();
   await page.locator('.list-order').click();
   check(await page.locator('.plan-row.reordering').count() === first.length, '순서 바꾸기를 눌러도 ↑↓가 안 붙습니다');

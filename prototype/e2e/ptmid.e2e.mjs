@@ -1,13 +1,13 @@
 // 운동 중에 PT 켜기 — 혼자 하다가 머리띠의 "PT 켜기"를 누르면 그 자리부터 오늘 남은 운동을 끝까지 이끈다.
 //   세트마다 묻지 않고, 화면을 안 만져도 멈추지 않는다(예전에는 세 세트 안 만지면 멈춰서 세트마다 다시 켜는 꼴이었다).
 //   "PT 끄기"로 언제든 혼자 모드로 돌아간다.
-import { check, focusPhase, onboard, runUntil } from './lib.mjs';
+import { check, focusPhase, onboard, runUntil, startWorkout } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
-  await page.click('.start-cta');
+  await startWorkout(page);
   check(await focusPhase(page) === null, '혼자 모드인데 PT 화면이 떴습니다');
 
   // 혼자 한 세트

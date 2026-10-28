@@ -1,6 +1,6 @@
 // 전부 삭제 — 식단(민감정보)도 남지 않는다. 다시 설정하고 식단에 다시 동의해도 옛 기록이 돌아오지 않는다
 //   (전에는 저장소만 비우고 화면이 들고 있던 칸들을 다음 저장 때 그대로 다시 썼다)
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, startWorkout } from './lib.mjs';
 
 export default async function ({ page, url }) {
   await page.clock.install({ time: new Date('2026-10-22T12:30:00+09:00') });
@@ -15,7 +15,7 @@ export default async function ({ page, url }) {
 
   // 운동도 한 세트 하고 마친다 — 오늘 마친 상태도 남으면 안 된다
   await tab(page, '오늘');
-  await page.click('.start-cta');
+  await startWorkout(page);
   await page.locator('.now-done').click();
   await page.locator('button', { hasText: '운동 끝내기' }).first().click();
   await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();

@@ -2260,6 +2260,21 @@ input[type="search"] {
 .plan-main { display: grid; gap: 3px; min-width: 0; }
 /* 목록에서 제일 먼저 읽는 건 종목 이름이다. 버튼보다 크게 둔다. */
 .plan-main .name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 15px; font-weight: 600; }
+/* 오늘 할 것의 종목 이름 — 목록에서 제일 먼저, 제일 크게 읽힌다 */
+.plan-main .name.lift-name-big { font-size: 17.5px; font-weight: 700; letter-spacing: -.01em; }
+/* 몸 풀기 — 종목 목록과 따로, "시작 전" */
+.warm-sheet .sheet-head h3::before { content: '↗ '; color: var(--accent); }
+.warm-moves { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; }
+.warm-moves li { display: flex; justify-content: space-between; gap: 10px; }
+.warm-move-time { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.warm-step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; width: 100%; padding: 12px; border: 0; border-top: 1px solid var(--line-soft); background: var(--surface); text-align: left; }
+.warm-step:first-child { border-top: 0; }
+.warm-step[aria-pressed="true"] { background: var(--accent-soft); }
+.warm-step .mark { font-weight: 700; color: var(--accent); line-height: 1.6; }
+.warm-step .name { justify-content: space-between; }
+.warm-skip { margin-top: 8px; }
+.warm-summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; border: 0; background: none; padding: 0; text-align: left; font-size: 13.5px; color: var(--ink); }
+.warm-toggle-label, .warm-toggle { font-size: 12.5px; font-weight: 600; color: var(--accent); white-space: nowrap; border: 0; background: none; padding: 4px 0; }
 .plan-sets { font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .plan-done {
   font-family: var(--mono); font-size: 10.5px; color: var(--zone-ok);
@@ -2269,7 +2284,7 @@ input[type="search"] {
  * 시작 버튼은 화면에서 제일 크고 유일한 다음 행동이어야 한다.
  * 스크롤해야 보이면 그 역할을 못 하므로 화면 아래에 붙여 둔다.
  */
-.start-cta {
+.start-cta, .warm-done {
   position: sticky;
   bottom: -24px;
   padding: 14px;
@@ -2560,7 +2575,7 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .speed-big .speed-value { font-size: 30px; }
 .speed-big .speed-row { grid-template-columns: 1fr 56px 110px 56px; }
 .speed-detail-toggle, .speed-preview { justify-self: start; margin-top: 6px; }
-.progress-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-top: 6px; }
+.progress-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 20px; letter-spacing: -.01em; margin-top: 8px; }
 .progress-name > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .end-workout { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .pt-toggle { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }

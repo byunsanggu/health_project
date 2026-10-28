@@ -34,11 +34,11 @@ export default async function ({ page, url, shot }) {
   await page.waitForSelector('.tabbar [role="tab"]');
 
   // 가볍게 많이 — 주 종목도 10–15회
-  const lines = (await page.locator('.plan-row .plan-sets').allTextContents()).slice(1);
+  const lines = await page.locator('.plan-row .plan-sets').allTextContents();
   check(lines.some((line) => /10–15회/.test(line)), '가볍게 많이를 골랐는데 10–15회가 없습니다: ' + lines.join(' / '));
   check(!lines.some((line) => /[456]–[68]회/.test(line)), '가볍게 많이인데 저반복이 있습니다: ' + lines.join(' / '));
-  const first = (await page.locator('.plan-row .name > span:first-child').allTextContents())[1].trim();
-  const second = (await page.locator('.plan-row .name > span:first-child').allTextContents())[2].trim();
+  const first = (await page.locator('.plan-row .name > span:first-child').allTextContents())[0].trim();
+  const second = (await page.locator('.plan-row .name > span:first-child').allTextContents())[1].trim();
 
   // 종목마다 — 첫 종목만 6~10회로
   await page.locator('.plan-row .row-menu').first().click();

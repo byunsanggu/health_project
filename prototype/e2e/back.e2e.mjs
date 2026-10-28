@@ -1,6 +1,6 @@
 // 안드로이드 뒤로가기 — 맨 위 층만 닫는다 (창 → 운동 화면 → 다른 탭 → 설정 단계)
 // (전에는 창을 연 채 뒤로가기를 누르면 앱이 통째로 닫혔다)
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, startWorkout } from './lib.mjs';
 
 const back = async (page) => {
   await page.goBack({ waitUntil: 'commit' }).catch(() => null);
@@ -37,7 +37,7 @@ export default async function ({ page, url }) {
   check(await page.locator('.start-cta').count() === 1, '창을 닫았는데 오늘 화면이 아닙니다');
 
   // 운동 화면 위의 창 → 창만 닫히고, 한 번 더 누르면 목록으로
-  await page.click('.start-cta');
+  await startWorkout(page);
   await page.locator('button', { hasText: '운동 끝내기' }).first().click();
   await page.locator('dialog[open]').waitFor();
   await back(page);

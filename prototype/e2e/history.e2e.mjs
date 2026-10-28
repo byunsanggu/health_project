@@ -1,11 +1,11 @@
 // 방금 적은 세트 5초 되돌리기 · 진행 탭의 운동 기록(누르면 그날 세트 · 지난날은 지우기)
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, startWorkout } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
-  await page.click('.start-cta');
+  await startWorkout(page);
 
   // 잘못 누른 세트 — 바로 되돌린다
   await page.locator('.now-done').click();

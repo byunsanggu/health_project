@@ -1,6 +1,6 @@
 // 화면에 나가는 말 — 현장 용어(RIR · 1RM · 축적 · 디로드)와 2026-10-22 같은 날짜를 쓰지 않는다.
 //   좁은 폰(320px)에서 편집 버튼 줄이 카드 밖으로 잘리지 않고, "원래대로"가 두 줄로 쪼개지지 않는다.
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, startWorkout } from './lib.mjs';
 
 const JARGON = /RIR|1RM|축적|디로드|템플릿|기준선/;
 const ISO = /\d{4}-\d{2}-\d{2}/;
@@ -44,7 +44,7 @@ export default async function ({ page, url, shot }) {
   check(!JARGON.test(head), '오늘 머리에 현장 용어: ' + head);
 
   // 두 세트 하고 마친 뒤 요약
-  await page.click('.start-cta');
+  await startWorkout(page);
   await page.locator('.now-done').click();
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
   await page.locator('.now-done').click();
