@@ -157,6 +157,19 @@
     } catch (err) { /* 데스크톱에는 진동이 없다 */ }
   }
 
+  /* 화면 꺼도 휴식 끝 소리 (restSound.js) — 켜 둔 사람만 */
+  function restSoundOn() {
+    return state.restSound !== false && typeof RestSound !== 'undefined';
+  }
+
+  /*
+   * 첫 터치 때 재생기를 깨운다. 브라우저는 손으로 누른 순간에만 소리를 틀게
+   * 하는데, PT의 휴식은 세기가 끝나면 저절로 시작된다 — 그때도 울리게.
+   */
+  document.addEventListener('pointerdown', function () {
+    if (restSoundOn()) RestSound.wake();
+  }, true);
+
   /**
    * 실제 사용자 판인가.
    *
@@ -258,6 +271,7 @@
         autoCount: state.autoCount,
         nudgeOn: state.nudgeOn,
         restAlerts: state.restAlerts,
+        restSound: state.restSound,
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
@@ -333,6 +347,7 @@
       state.autoCount = Boolean(settings.autoCount);
       state.nudgeOn = Boolean(settings.nudgeOn);
       state.restAlerts = settings.restAlerts !== false;
+      state.restSound = settings.restSound !== false;
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
       state.voiceRate = settings.voiceRate || 1;
@@ -715,6 +730,7 @@
     foodBack: 0,
     // 휴식 끝 알림 — 처음 설문에서 정하고 내 정보에서 바꾼다
     restAlerts: true,
+    restSound: true,
     friendName: null,
     friendCode: null,
     friends: [],
@@ -1893,6 +1909,8 @@
 
     // 화면은 켜두고, 알림은 워커에 맡긴다 — 주머니에 넣어도 손목까지 간다.
     acquireWakeLock();
+    // 폰을 잠가도 휴식 끝에 울린다 — 무음 + 알림음을 틀어 둔다
+    if (restSoundOn()) RestSound.start(seconds, '다음 · ' + nextText);
     if (state.restAlerts !== false) notifyWorker({
       type: 'rest:start',
       endsAt: state.rest.endsAt,
@@ -1920,6 +1938,7 @@
     state.rest.endsAt += seconds * 1000;
     // 진행 막대가 100%를 넘지 않게 총량도 같이 줄인다.
     state.rest.total = Math.max(restRemaining(), state.rest.total + seconds);
+    if (restSoundOn()) RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
     // 알림을 끈 사람에게는 늘린 휴식 알림도 보내지 않는다
     if (state.restAlerts !== false) notifyWorker({
       type: 'rest:start',
@@ -1998,12 +2017,15 @@
       pushLog('휴식 완료', '<b>' + state.rest.exerciseName + '</b> ' + state.rest.setNumber +
         '세트 후 휴식이 끝났습니다. 다음 세트를 시작하세요.');
       buzz([220, 120, 220]);
-      stopRest();
+      // 알림음이 지금 울리는 중이다 — 끊지 않는다
+      stopRest(true);
       renderLog();
     }
   }
 
-  function stopRest() {
+  function stopRest(finished) {
+    // 건너뛰거나 지운 휴식은 울리면 안 된다. 다 쉰 휴식은 지금 울리는 중이다.
+    if (finished !== true && typeof RestSound !== 'undefined') RestSound.stop();
     if (state.restTicker) clearInterval(state.restTicker);
     state.restTicker = null;
     state.rest = null;
@@ -6212,6 +6234,26 @@
       el('span', { class: 'count-tempo', text: restOn ? '켜짐' : unasked ? '켜기' : '꺼짐' }),
     ]));
     if (denied) box.appendChild(el('p', { class: 'hint-line', text: '알림이 막혀 있습니다. 브라우저 설정에서 이 사이트의 알림을 허용해 주세요.' }));
+    /*
+     * 알림은 권한이 있어야 오고, 아이폰은 홈 화면에 설치해야 온다. 소리는
+     * 권한 없이도 된다 — 휴식 길이만큼 무음을 틀어 두다가 끝에서 울린다.
+     */
+    var soundOn = state.restSound !== false;
+    box.appendChild(el('button', {
+      type: 'button', class: 'nudge-row rest-sound-row', 'aria-pressed': String(soundOn),
+      onclick: function () {
+        state.restSound = !soundOn;
+        if (!state.restSound && typeof RestSound !== 'undefined') RestSound.stop();
+        persist();
+        onChange();
+      },
+    }, [
+      el('span', {}, [
+        el('b', { text: '화면 꺼도 휴식 끝 소리' }),
+        el('span', { class: 'hint-line', text: '폰을 잠가도 휴식이 끝나면 띵 하고 울립니다. 듣던 음악이 잠깐 멈추거나 작아질 수 있어요' }),
+      ]),
+      el('span', { class: 'count-tempo', text: soundOn ? '켜짐' : '꺼짐' }),
+    ]));
     var why = nudgeAvailability();
     box.appendChild(el('button', {
       type: 'button', class: 'nudge-row', 'aria-pressed': String(Boolean(state.nudgeOn)),

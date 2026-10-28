@@ -76,6 +76,7 @@ export * from './weekSets.ts';
 export * from './shortSession.ts';
 export * from './schedule.ts';
 export * from './rest.ts';
+export * from './restSound.ts';
 export * from './warmup.ts';
 export * from './autoregulation.ts';
 export * from './timeBudget.ts';

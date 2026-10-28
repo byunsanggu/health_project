@@ -41,6 +41,7 @@ const demoClips = await readFile(new URL('demoClips.js', root), 'utf8');
 const remote = await readFile(new URL('remote.js', root), 'utf8');
 const gymSearch = await readFile(new URL('gymSearch.js', root), 'utf8');
 const push = await readFile(new URL('push.js', root), 'utf8');
+const restSound = await readFile(new URL('restSound.js', root), 'utf8');
 const template = await readFile(new URL('index.template.html', root), 'utf8');
 
 /*
@@ -121,6 +122,7 @@ const page = template
   .replace('/*REMOTE_SCRIPT*/', () => remote)
   .replace('/*GYM_SEARCH_SCRIPT*/', () => gymSearch)
   .replace('/*PUSH_SCRIPT*/', () => push)
+  .replace('/*REST_SOUND_SCRIPT*/', () => restSound)
   .replace('/*DEMO3D_SCRIPT*/', () => demo3d)
   .replace('/*APP_SCRIPT*/', () => app);
 
