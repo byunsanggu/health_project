@@ -1151,6 +1151,15 @@ input[type="search"] {
 .gym-here .notice { margin: 4px 0 0; }
 .gym-here-actions { margin-top: 2px; }
 .gym-here-actions .finish { flex: 1; margin: 0; }
+.own-tag { font-size: 11px; font-weight: 600; color: var(--accent); border: 1px solid currentColor; border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+/* 세트 · 무게 · 반복 줄 — 누르면 반복 수. 글자처럼 보이되 점선으로 눌린다는 걸 알린다 */
+.plan-sets-btn { border: 0; background: none; padding: 2px 0; text-align: left; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 4px; }
+.plan-sets-btn:hover { color: var(--accent); }
+.rep-line { margin-top: 8px; }
+.rep-own-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--line-soft); }
+.rep-own-row:first-child { border-top: 0; }
+.rep-own-row .name { font-size: 14px; font-weight: 600; }
+.top-notice .label { color: var(--zone-over); }
 .top-tag { font-size: 11.5px; font-weight: 700; color: var(--zone-over); border: 1px solid currentColor; border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
 .rep-custom { display: flex; align-items: center; gap: 8px; }
 .rep-custom .text-input { width: 80px; text-align: center; }
@@ -2624,9 +2633,9 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .order-help .notice { margin: 0; }
 .order-done { display: grid; gap: 8px; border-top: 1px solid var(--line-soft); }
 .list-edit { margin-left: auto; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--accent); }
-.coach-line { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; }
+.coach-line, .rep-line { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; }
 .coach-line-key { font-size: 12px; color: var(--muted); }
-.coach-line b { flex: 1; font-size: 15px; }
+.coach-line b, .rep-line b { flex: 1; font-size: 15px; }
 .coach-line-go { font-size: 13px; font-weight: 600; color: var(--accent); }
 .coach-controls { display: grid; gap: 10px; }
 .alert-controls { display: grid; gap: 8px; }

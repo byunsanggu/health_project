@@ -6,7 +6,7 @@ import { exerciseById } from '../exercises.ts';
 import { buildProgram, type OnboardingAnswers } from '../onboarding.ts';
 import { COMMON_EQUIPMENT_IDS } from '../equipment.ts';
 import {
-  applyRepRules, cleanRange, suggestRepRange, topSetLoad, topSetPick, withTopSet,
+  applyRepRules, cleanRange, suggestRepRange, suggestRepStyle, topSetLoad, topSetPick, withTopSet,
 } from '../repRules.ts';
 import type { PlannedExercise, SessionTemplate } from '../session.ts';
 import type { SessionLog } from '../types.ts';
@@ -107,6 +107,38 @@ describe('바꿀까요? — 처방보다 늘 많이 할 때만 묻는다', () =>
     assert.equal(suggestRepRange([day('2026-10-23', [14, 14, 14])], 'barbell-bench-press', { min: 6, max: 10 }, '2026-10-27'), null);
     const near = [day('2026-10-20', [11, 10, 10]), day('2026-10-23', [11, 11, 10])];
     assert.equal(suggestRepRange(near, 'barbell-bench-press', { min: 6, max: 10 }, '2026-10-27'), null);
+  });
+
+  it('칸보다 더 많이(25회) 하면 제일 높은 칸을 권한다', () => {
+    const history = [day('2026-10-20', [25, 24]), day('2026-10-23', [25, 25])];
+    assert.deepEqual(suggestRepRange(history, 'barbell-bench-press', { min: 6, max: 10 }, '2026-10-27')?.suggested, { min: 12, max: 20 });
+  });
+
+  it('늘 적게 해도 묻는다 — 일부러 무겁게 드는 사람', () => {
+    const history = [day('2026-10-20', [7, 6, 6], 80), day('2026-10-23', [7, 7, 6], 80)];
+    const tip = suggestRepRange(history, 'barbell-bench-press', { min: 10, max: 15 }, '2026-10-27');
+    assert.ok(tip);
+    assert.equal(tip!.direction, 'fewer');
+    assert.deepEqual(tip!.suggested, { min: 6, max: 10 });
+  });
+
+  it('1~3회는 평소 반복으로 권하지 않는다', () => {
+    const history = [day('2026-10-20', [2, 2, 2], 100), day('2026-10-23', [2, 2, 1], 100)];
+    const tip = suggestRepRange(history, 'barbell-bench-press', { min: 6, max: 10 }, '2026-10-27');
+    assert.ok(!tip || tip.suggested.min > 1);
+  });
+
+  it('종목 셋 이상이 같은 쪽이면 평소 반복 스타일을 묻는다 — 직접 정한 종목은 세지 않는다', () => {
+    const ids = ['barbell-bench-press', 'lat-pulldown', 'cable-lateral-raise', 'leg-press'];
+    const templates: SessionTemplate[] = [{ name: 'A', slots: ids.map((exerciseId) => ({ exerciseId, sets: 3, repRange: { min: 6, max: 10 }, role: 'primary' as const })) }];
+    const history = ids.flatMap((id) => [day('2026-10-20', [15, 14, 14], 30, id), day('2026-10-23', [14, 14, 13], 30, id)])
+      .map((session, i) => ({ ...session, id: 'h' + i }));
+    const tip = suggestRepStyle(history, templates, {}, 'auto', '2026-10-27');
+    assert.equal(tip?.style, 'light');
+    assert.equal(tip?.exerciseIds.length, 4);
+    assert.equal(suggestRepStyle(history, templates, {}, 'light', '2026-10-27'), null, '이미 가볍게 많이면 묻지 않는다');
+    const two = { 'barbell-bench-press': { min: 10, max: 15 }, 'lat-pulldown': { min: 10, max: 15 } };
+    assert.equal(suggestRepStyle(history, templates, two, 'auto', '2026-10-27'), null, '직접 정한 둘을 빼면 둘뿐');
   });
 
   it('오늘 기록과 무거운 세트는 보지 않는다', () => {

@@ -97,6 +97,8 @@ export interface RepSuggestion {
   /** 최근에 실제로 한 반복 — 가장 적게 · 가장 많이 */
   did: RepRange;
   sessions: number;
+  /** 처방보다 많이 했나(more) 적게 했나(fewer) */
+  direction: 'more' | 'fewer';
 }
 
 /** 이만큼 넘게 해야 "평소 더 많이 하신다"로 본다 — 한두 개 넘친 건 그냥 잘된 날이다. */
@@ -129,13 +131,24 @@ export function suggestRepRange(
   if (sessions.length < LOOK_BACK) return null;
 
   const medians = sessions.map((session) => median(session.sets.map((set) => set.reps)));
-  if (!medians.every((value) => value >= current.max + OVER_BY)) return null;
+  const more = medians.every((value) => value >= current.max + OVER_BY);
+  /*
+   * 적게 한 쪽도 묻는다 — 일부러 무겁게 드는 사람이 있다. 다만 무거워서 못 채운
+   * 날일 수도 있으니(그러면 다음번에 무게가 저절로 내려간다) 묻기만 한다.
+   */
+  const fewer = medians.every((value) => value <= current.min - OVER_BY);
+  if (!more && !fewer) return null;
 
   const all = sessions.flatMap((session) => session.sets.map((set) => set.reps));
   const typical = median(all);
-  const suggested = REP_PRESETS
-    .filter((range) => range.min <= typical && typical <= range.max && range.max > current.max)
-    .sort((a, b) => Math.abs((a.min + a.max) / 2 - typical) - Math.abs((b.min + b.max) / 2 - typical))[0];
+  // 1~3회는 무거운 세트 칸이다 — 그걸 평소 반복으로 권하지 않는다
+  const usable = REP_PRESETS.filter((range) => range.min > 1 &&
+    (more ? range.max > current.max : range.min < current.min));
+  const suggested = usable
+    .filter((range) => range.min <= typical && typical <= range.max)
+    .sort((a, b) => Math.abs((a.min + a.max) / 2 - typical) - Math.abs((b.min + b.max) / 2 - typical))[0]
+    // 칸 밖(20회 넘게 · 3회 아래)이면 그쪽 끝 칸
+    ?? (more ? usable[usable.length - 1] : usable[0]);
   if (!suggested || sameRange(suggested, current)) return null;
   return {
     exerciseId,
@@ -143,7 +156,48 @@ export function suggestRepRange(
     suggested,
     did: { min: Math.min(...all), max: Math.max(...all) },
     sessions: sessions.length,
+    direction: more ? 'more' : 'fewer',
   };
+}
+
+export interface RepStyleSuggestion {
+  /** 바꾸자고 할 평소 반복 스타일 */
+  style: 'light' | 'heavy';
+  /** 그렇게 한 종목들 */
+  exerciseIds: string[];
+}
+
+/** 종목 하나가 아니라 여러 종목이 같은 쪽이면 "평소 반복 스타일"을 묻는다. */
+const STYLE_MIN_EXERCISES = 3;
+
+/**
+ * 종목마다 따로 물으면 종목 수만큼 묻게 된다. 프로그램의 종목 셋 이상이 같은
+ * 쪽(늘 많이 · 늘 적게)이면 그건 종목 탓이 아니라 그 사람의 방식이다 — 스타일
+ * 하나를 바꾸자고 한 번 묻는다. 직접 반복을 정한 종목은 세지 않는다.
+ */
+export function suggestRepStyle(
+  history: readonly SessionLog[],
+  templates: readonly SessionTemplate[],
+  overrides: RepOverrides,
+  currentStyle: string | undefined,
+  beforeDate: string,
+): RepStyleSuggestion | null {
+  const seen = new Set<string>();
+  const more: string[] = [];
+  const fewer: string[] = [];
+  for (const template of templates) {
+    if (template.fixed) continue;
+    for (const slot of template.slots) {
+      if (seen.has(slot.exerciseId) || overrides[slot.exerciseId]) continue;
+      seen.add(slot.exerciseId);
+      const tip = suggestRepRange(history, slot.exerciseId, slot.repRange, beforeDate);
+      if (!tip) continue;
+      (tip.direction === 'more' ? more : fewer).push(slot.exerciseId);
+    }
+  }
+  if (more.length >= STYLE_MIN_EXERCISES && currentStyle !== 'light') return { style: 'light', exerciseIds: more };
+  if (fewer.length >= STYLE_MIN_EXERCISES && currentStyle !== 'heavy') return { style: 'heavy', exerciseIds: fewer };
+  return null;
 }
 
 function median(values: readonly number[]): number {

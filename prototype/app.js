@@ -4100,7 +4100,7 @@
   }
 
   /** 주 1회 무거운 세트 켜기 — 중급 이상만. */
-  function topSetRow() {
+  function topSetRow(redraw) {
     var beginner = !state.lifter || state.lifter.level === 'beginner';
     var on = Boolean(state.topSet) && !beginner;
     var pick = state.program ? E.topSetPick(state.program.templates, state.todayDate) : null;
@@ -4114,6 +4114,7 @@
         rebuildSession();
         persist();
         render();
+        if (redraw) redraw();
       },
     }, [
       el('span', {}, [
@@ -4135,6 +4136,13 @@
    */
   function repSuggestionCard() {
     if (state.started || state.customRoutine) return null;
+    /*
+     * 여러 종목이 같은 쪽이면 종목마다 묻지 않고 평소 스타일을 한 번 묻는다 —
+     * 종목 다섯 개를 하나씩 바꾸게 하는 건 일이다.
+     */
+    var currentStyle = (state.answers && state.answers.repStyle) || 'auto';
+    var styleTip = E.suggestRepStyle(state.history, state.program.templates, state.repOverrides, currentStyle, state.todayDate);
+    if (styleTip && state.repSuggestSkip.__style !== styleTip.style) return renderStyleSuggestion(styleTip);
     for (var i = 0; i < state.lifts.length; i += 1) {
       var lift = state.lifts[i];
       if (state.repOverrides[lift.exercise.id]) continue;
@@ -4153,6 +4161,9 @@
       el('div', { text: exercise.name + ' — 처방은 ' + E.repLabel(tip.current) + '인데 지난 ' +
         (['', '한', '두', '세'][tip.sessions] || tip.sessions) + ' 번 ' + E.repLabel(tip.did) +
         '로 하셨어요. 이 종목을 ' + E.repLabel(tip.suggested) + '로 바꿀까요?' }),
+      tip.direction === 'fewer' ? el('p', { class: 'hint-line', text:
+        '무거워서 못 채운 거라면 그대로 두세요 — 다음번에 무게가 저절로 내려갑니다.' }) : null,
+      el('p', { class: 'hint-line', text: '안 누르면 아무것도 바뀌지 않습니다.' }),
       el('div', { class: 'chip-row' }, [
         el('button', {
           type: 'button', class: 'pick rep-suggest-yes', text: E.repLabel(tip.suggested) + '로 바꾸기',
@@ -4168,6 +4179,105 @@
           },
         }),
       ]),
+    ]);
+  }
+
+  function renderStyleSuggestion(tip) {
+    var target = E.REP_STYLES.filter(function (item) { return item.id === tip.style; })[0];
+    var names = tip.exerciseIds.map(function (id) { return index.get(id) ? index.get(id).name : id; });
+    return el('div', { class: 'notice rep-suggest rep-suggest-style' }, [
+      el('div', { class: 'label', text: '평소 반복 스타일' }),
+      el('div', { text: '최근 종목 ' + names.length + '개를 처방보다 ' + (tip.style === 'light' ? '많이' : '적게') +
+        ' 하셨어요(' + names.slice(0, 3).join(', ') + (names.length > 3 ? ' 외' : '') + '). 평소 반복 스타일을 "' +
+        target.label + '"(' + target.hint + ')로 바꿀까요?' }),
+      el('p', { class: 'hint-line', text: '종목마다 직접 정한 반복은 그대로입니다. 안 누르면 아무것도 바뀌지 않습니다.' }),
+      el('div', { class: 'chip-row' }, [
+        el('button', {
+          type: 'button', class: 'pick rep-suggest-yes', text: '"' + target.label + '"로 바꾸기',
+          onclick: function () { changeRepStyle(tip.style); },
+        }),
+        el('button', {
+          type: 'button', class: 'pick rep-suggest-no', text: '그대로 두기',
+          onclick: function () {
+            state.repSuggestSkip = Object.assign({}, state.repSuggestSkip, { __style: tip.style });
+            persist();
+            render();
+          },
+        }),
+      ]),
+    ]);
+  }
+
+  /**
+   * 반복 · 강도 설정을 한 곳에 — 오늘 화면의 "반복 방식" 줄과 내 정보가 같이 쓴다.
+   * 평소 스타일, 주 1회 무거운 세트, 지금 블록, 종목마다 직접 정한 반복을 한눈에.
+   */
+  function repSettingsBody(redraw) {
+    var body = [];
+    body.push(el('div', { class: 'list-label', text: '평소 반복 스타일' }));
+    body.push(repStyleControls(function (id) { changeRepStyle(id); redraw(); }));
+    body.push(el('p', { class: 'hint-line', text:
+      '근육을 키우는 데는 6회든 15회든 한계 가까이 가면 효과가 비슷합니다. 꾸준히 하실 수 있는 쪽을 고르세요.' }));
+    body.push(el('div', { class: 'alert-controls' }, [topSetRow(redraw)]));
+
+    var profile = E.styleProfile(state.style);
+    body.push(el('div', { class: 'list-label', text: '지금 블록' }));
+    body.push(el('p', { class: 'hint-line', text: profile.label + ' 블록 — ' + (state.style === 'hypertrophy'
+      ? '위의 평소 스타일대로 합니다.'
+      : '이 블록 동안은 메인 ' + E.repLabel(profile.repRanges.primary) + '로 합니다(종목마다 직접 정한 반복이 먼저).') +
+      ' 블록은 주간 탭에서 바꿉니다.' }));
+
+    var own = Object.keys(state.repOverrides || {});
+    body.push(el('div', { class: 'list-label', text: '종목마다 직접 정한 반복 ' + own.length + '개' }));
+    if (own.length === 0) {
+      body.push(el('p', { class: 'hint-line', text: '오늘 목록에서 종목의 "세트 · 무게 · 반복" 줄을 누르면 그 종목만 따로 정할 수 있습니다.' }));
+    } else {
+      body.push(el('div', { class: 'summary-list rep-own-list' }, own.map(function (id) {
+        var exercise = index.get(id);
+        return el('div', { class: 'rep-own-row' }, [
+          el('span', { class: 'name', text: exercise ? exercise.name : id }),
+          el('span', { class: 'plan-sets', text: E.repLabel(state.repOverrides[id]) }),
+          el('button', {
+            type: 'button', class: 'pick', text: '되돌리기',
+            onclick: function () { if (exercise) setRepOverride(exercise, null); redraw(); },
+          }),
+        ]);
+      })));
+    }
+    return body;
+  }
+
+  function openRepSettings() {
+    var draw = function () { openModal('반복 · 강도', null, repSettingsBody(draw)); };
+    draw();
+  }
+
+  /** 오늘 화면 — "운동 방식" 줄 옆에 "반복 방식" 줄. 무엇으로 하는지 늘 보이게. */
+  function repLine() {
+    var style = (state.answers && state.answers.repStyle) || 'auto';
+    var label = (E.REP_STYLES.filter(function (item) { return item.id === style; })[0] || {}).label;
+    var bits = [label];
+    if (state.style !== 'hypertrophy') bits.push(E.styleProfile(state.style).label + ' 블록');
+    if (state.topSet && state.lifter && state.lifter.level !== 'beginner') bits.push('무거운 세트');
+    var own = Object.keys(state.repOverrides || {}).length;
+    if (own) bits.push('직접 ' + own);
+    return el('button', { type: 'button', class: 'rep-line', onclick: openRepSettings }, [
+      el('span', { class: 'coach-line-key', text: '반복 방식' }),
+      el('b', { text: bits.join(' · ') }),
+      el('span', { class: 'coach-line-go', text: '바꾸기' }),
+    ]);
+  }
+
+  /** 오늘 무거운 세트가 있으면 목록 위에 한 줄 — 모르고 시작하면 놀란다. */
+  function topSetNotice() {
+    if (state.started) return null;
+    var lift = state.lifts.filter(function (item) { return item.sets[0] && item.sets[0].top; })[0];
+    if (!lift) return null;
+    var heavy = lift.sets[0];
+    return el('div', { class: 'notice top-notice' }, [
+      el('div', { class: 'label', text: '오늘 무거운 세트' }),
+      el('div', { text: lift.exercise.name + ' ' + heavy.weightKg + 'kg × 1~3회 — 최대 도전이 아닙니다. 두어 개 남기고 멈추세요. ' +
+        '그다음은 원래 세트를 원래 무게로 합니다.' }),
     ]);
   }
 
@@ -4912,6 +5022,8 @@
 
     var repTip = repSuggestionCard();
     if (repTip) screen.appendChild(repTip);
+    var topNote = topSetNotice();
+    if (topNote) screen.appendChild(topNote);
 
     /*
      * 설문을 막 마친 사람은 자기 헬스장이 앱 어디에 있는지 모른다. 연결
@@ -5006,8 +5118,21 @@
             lift.substitutedFrom
               ? el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name })
               : null,
+            // 내가 정한 반복 · 이번 주 무거운 세트는 목록에서 바로 보여야 한다
+            lift.sets[0] && lift.sets[0].top ? el('span', { class: 'top-tag', text: '무거운 세트' }) : null,
+            state.repOverrides[lift.exercise.id] ? el('span', { class: 'own-tag', text: '반복 직접' }) : null,
           ]),
-          el('span', { class: 'plan-sets', text: liftSummaryLine(lift) }),
+          /*
+           * 세트 · 무게 · 반복 줄을 누르면 이 종목 반복 수로 간다. ⋯ 안에 있으면
+           * 거기 있는 줄 모른다 — 바꾸고 싶은 숫자가 보이는 그 자리를 누르게 한다.
+           */
+          reordering
+            ? el('span', { class: 'plan-sets', text: liftSummaryLine(lift) })
+            : el('button', {
+              type: 'button', class: 'plan-sets plan-sets-btn',
+              'aria-label': lift.exercise.name + ' ' + liftSummaryLine(lift) + ' — 눌러서 반복 수 바꾸기',
+              onclick: function () { openRepOverride(lift.exercise); },
+            }, [document.createTextNode(liftSummaryLine(lift))]),
         ]),
         done > 0 ? el('span', { class: 'plan-done', text: done + '/' + lift.sets.length }) : null,
         tail,
@@ -5119,6 +5244,7 @@
 
     var doneSets = state.todaySets.length;
     screen.appendChild(coachLine());
+    if (!state.customRoutine) screen.appendChild(repLine());
     screen.appendChild(el('button', {
       type: 'button', class: 'finish start-cta',
       text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : '시작하기',
@@ -14405,15 +14531,6 @@
       body.push(el('p', { class: 'hint-line', text:
         '하던 루틴이 있으면 그대로 넣을 수 있습니다. 종목 · 세트는 정한 대로 두고 무게만 앱이 올립니다.' }));
     }
-    if (!state.customRoutine) {
-      body.push(el('div', { class: 'list-label', text: '평소 반복 스타일' }));
-      body.push(repStyleControls(changeRepStyle));
-      body.push(el('p', { class: 'hint-line', text:
-        '근육을 키우는 데는 6회든 15회든 한계 가까이 가면 효과가 비슷합니다. 꾸준히 하실 수 있는 쪽을 고르세요. ' +
-        '종목마다 다르게 하려면 오늘 목록의 ⋯ › "이 종목 반복 수"에서 정합니다.' }));
-      // 알림 줄과 같은 꼴로 — 제목 · 설명이 세로로 쌓이게
-      body.push(el('div', { class: 'alert-controls' }, [topSetRow()]));
-    }
 
     return el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [el('h3', { text: '프로그램' })]),
@@ -14864,6 +14981,16 @@
     var account = accountCard();
     if (account) screen.appendChild(account);
     screen.appendChild(programCard());
+    // 반복 · 강도는 프로그램 칸 안에 묻어 두지 않고 따로 — 제목만 보고 찾게
+    if (!state.customRoutine) {
+      screen.appendChild(el('div', { class: 'sheet rep-settings' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: '반복 · 강도' }),
+          el('span', { class: 'meta', text: '몇 회로 할지' }),
+        ]),
+        el('div', { class: 'sheet-body' }, repSettingsBody(render)),
+      ]));
+    }
     screen.appendChild(coachSettingsCard());
     renderAppStatus();
     renderPrivacy();
