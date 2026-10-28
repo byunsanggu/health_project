@@ -7,8 +7,8 @@ export default async function ({ page, url, shot }) {
   await onboard(page);
   await page.click('.start-cta');
   const first = (await page.locator('.progress-head').textContent()).trim();
-  await page.click('.input-mode');   // "무게 어땠어요?"로 묻기
-  await page.locator('.feel-row button', { hasText: '아픈 데 있어요' }).click();
+  // 세트마다 묻지는 않지만, 아플 때 누르는 자리는 늘 있다
+  await page.locator('.hurt-link').click();
 
   const dialog = page.locator('dialog');
   await dialog.waitFor();

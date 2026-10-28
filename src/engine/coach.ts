@@ -98,6 +98,27 @@ export function feelToRir(feel: Feel, targetRir: number): number {
   return target;
 }
 
+/**
+ * 남은 힘을 묻지 않고 횟수로 짐작한다.
+ *
+ * 세트마다 "몇 개 더 할 수 있었나요?"를 누르게 하면 운동이 설문이 된다.
+ * 사람은 세트를 끝내고 숨을 고르지, 버튼을 고르지 않는다. 그래서 기본은
+ * "완료" 하나이고, 남은 힘은 실제로 한 횟수에서 읽는다.
+ *
+ *   · 목표 범위 안 — 계획한 만큼 힘을 썼다고 본다(그 주의 목표 남은 횟수).
+ *   · 범위 아래    — 계획한 횟수를 못 채웠다. 한계까지 갔다고 본다(0).
+ *   · 범위 위      — 시킨 것보다 더 했다. 가벼웠다고 본다(목표 + 2, 최대 5).
+ *
+ * 짐작이라 정확하지 않다. 정확히 적고 싶은 사람은 설정에서 묻게 할 수 있다.
+ */
+export function rirFromReps(reps: number, target: { min: number; max: number }, targetRir: number): number {
+  const planned = Math.max(0, Math.min(4, Math.round(targetRir)));
+  if (!Number.isFinite(reps) || reps <= 0) return 0;
+  if (reps < target.min) return 0;
+  if (reps > target.max) return Math.min(5, planned + 2);
+  return planned;
+}
+
 /* ── 지난번 ────────────────────────────────────── */
 
 export interface LastTime {

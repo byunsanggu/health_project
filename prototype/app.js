@@ -227,7 +227,7 @@
         machineSettings: state.machineSettings,
         gymLinkHidden: state.gymLinkHidden,
         mistakeFlags: state.mistakeFlags,
-        inputMode: state.inputMode,
+        askEffort: state.askEffort,
         diet: state.diet,
         comeback: state.comeback,
         comebackDeclined: state.comebackDeclined,
@@ -407,7 +407,11 @@
       state.machineSettings = settings.machineSettings || {};
       state.gymLinkHidden = Boolean(settings.gymLinkHidden);
       state.mistakeFlags = settings.mistakeFlags || {};
-      state.inputMode = settings.inputMode || null;
+      /*
+       * 예전 inputMode는 읽지 않는다. 그때는 남은 힘을 꼭 물었고(기본이 묻기),
+       * 이제 기본은 "완료" 하나다. 예전 값을 이어받으면 아무도 단순해지지 않는다.
+       */
+      state.askEffort = settings.askEffort === 'feel' || settings.askEffort === 'rir' ? settings.askEffort : null;
       state.diet = E.normalizeDiet(settings.diet);
       var sameAnswer = settings.machineSame;
       state.machineSame = sameAnswer && sameAnswer.date === state.todayDate
@@ -827,7 +831,7 @@
     /* 회원이 "나도 이래요"를 누른 흔한 실수. { 종목id: [실수id] } — 코치가 그걸 먼저 짚는다 */
     mistakeFlags: {},
     /* 혼자 모드에서 세트를 마칠 때 묻는 방식 — 'feel' | 'rir' | null(단계대로) */
-    inputMode: null,
+    askEffort: null,
     /* 세어 주기 설정 줄을 펼쳤는가 — 이 화면에서만 */
     countMoreOpen: false,
     /* 종목마다 정한 박자. { 종목id: Tempo } — 스쿼트와 카프레이즈는 한 개 길이가 다르다 */
@@ -1419,6 +1423,12 @@
       gymId: state.gymBook ? state.gymBook.activeId : undefined,
       // 같은 헬스장에 같은 기계가 둘 있으면 오늘 선 쪽의 기록만 본다.
       machines: state.machinePick,
+      /*
+       * 남은 힘을 묻지 않으면 기록의 RIR은 횟수로 짐작한 값이다. 그걸로
+       * "이 사람은 남은 힘을 부풀려 말한다"를 역산하면 짐작 위에 짐작을 얹는다.
+       * 묻지 않는 동안은 보정을 하지 않는다.
+       */
+      rirCalibration: inputMode() === 'none' ? E.NO_CALIBRATION : undefined,
       lifter: state.lifter,
       // 세트 수는 한 주를 통째로 보고 나눈다 — 날마다 따로 정하면 주마다 흔들린다
       week: { templates: state.program.templates, day: currentTemplateIndex() },
@@ -2576,7 +2586,7 @@
    * 그래서 모자란 만큼만 내린다. 10px 모자라면 10px만 내려간다.
    */
   function ensureActionVisible() {
-    var rir = screen.querySelector('.now-rir');
+    var rir = screen.querySelector('.now-done') || screen.querySelector('.now-rir');
     if (!rir) return;
     var over = rir.getBoundingClientRect().bottom + 10 - screen.getBoundingClientRect().bottom;
     if (over > 0) screen.scrollTop += over;
@@ -5908,6 +5918,15 @@
    * 체감을 남은 횟수로 바꿔 기존 completeSet에 넘긴다 — 기록 형식도
    * 다음 무게 계산도 혼자 모드와 똑같다. 말만 다르다.
    */
+  /** "완료" 하나로 끝낼 때 — 남은 힘은 한 횟수로 짐작한다. */
+  function finishSimple(liftIndex, setIndex) {
+    var lift = state.lifts[liftIndex];
+    var set = lift.sets[setIndex];
+    var target = typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir;
+    completeSet(liftIndex, setIndex, E.rirFromReps(set.reps, set.targetReps, target));
+    offerUndo(liftIndex, setIndex);
+  }
+
   function finishByFeel(liftIndex, setIndex, feel) {
     var lift = state.lifts[liftIndex];
     var set = lift.sets[setIndex];
@@ -6226,6 +6245,22 @@
   function coachSettingsCard() {
     var body = el('div', { class: 'sheet-body' }, [
       coachModeControls(render),
+      el('div', { class: 'list-label', text: '세트 끝낼 때' }),
+      segmented([
+        { id: null, label: '완료만' },
+        { id: 'feel', label: '무게 어땠는지' },
+        { id: 'rir', label: '남은 횟수' },
+      ].map(function (option) {
+        return {
+          label: option.label,
+          active: (state.askEffort || null) === option.id,
+          onSelect: function () { state.askEffort = option.id; persist(); render(); },
+        };
+      })),
+      el('p', { class: 'hint-line', text: (state.askEffort
+        ? '세트마다 한 번 더 누릅니다. 다음 무게가 더 정확해집니다.'
+        : '세트가 끝나면 "완료" 하나만 누릅니다. 얼마나 힘들었는지는 한 횟수로 짐작합니다.') +
+        ' PT 모드는 코치가 "무게 어땠어요?"로 묻습니다.' }),
       el('div', { class: 'list-label', text: '알림' }),
       alertControls(render),
     ]);
@@ -7215,15 +7250,18 @@
         value: String(draft.reps),
         oninput: function (event) { draft.reps = parseInt(event.target.value, 10); },
       }));
-      body.push(el('div', { class: 'list-label', text: '몇 개 더 할 수 있었나요?' }));
-      body.push(el('div', { class: 'rir-row' }, [0, 1, 2, 3, 4].map(function (rir) {
-        return el('button', {
-          type: 'button', class: 'chip' + (rir === 0 ? ' fail' : ''),
-          'aria-pressed': String(draft.rir === rir),
-          text: rirLabel(rir),
-          onclick: function () { draft.rir = rir; draw(); },
-        });
-      })));
+      // 남은 힘을 묻지 않는 사람에게는 여기서도 묻지 않는다 — 횟수로 다시 짐작한다.
+      if (inputMode() !== 'none') {
+        body.push(el('div', { class: 'list-label', text: '몇 개 더 할 수 있었나요?' }));
+        body.push(el('div', { class: 'rir-row' }, [0, 1, 2, 3, 4].map(function (rir) {
+          return el('button', {
+            type: 'button', class: 'chip' + (rir === 0 ? ' fail' : ''),
+            'aria-pressed': String(draft.rir === rir),
+            text: rirLabel(rir),
+            onclick: function () { draft.rir = rir; draw(); },
+          });
+        })));
+      }
       body.push(el('button', {
         type: 'button', class: 'finish set-edit-save', text: '고친 대로 저장',
         onclick: function () { saveSetEdit(liftIndex, setIndex, draft, pounds); },
@@ -7248,6 +7286,10 @@
       ? (pounds ? E.lbToKg(Math.min(2200, draft.weight)) : Math.min(999, draft.weight))
       : set.weightKg;
     var reps = Number.isFinite(draft.reps) && draft.reps >= 0 ? Math.min(100, draft.reps) : set.reps;
+    if (inputMode() === 'none') {
+      var target = typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir;
+      draft.rir = E.rirFromReps(reps, set.targetReps, target);
+    }
     set.weightKg = weight;
     set.reps = reps;
     set.rir = draft.rir;
@@ -7259,7 +7301,7 @@
     updateDecision(lift);
     modal.close();
     pushLog('기록 고침', '<b>' + lift.exercise.name + '</b> ' + (setIndex + 1) + '세트 — ' +
-      (weight > 0 ? weight + 'kg' : '맨몸') + ' × ' + reps + '회 · 여유 ' + draft.rir + '개');
+      (weight > 0 ? weight + 'kg' : '맨몸') + ' × ' + reps + '회');
     persist();
     render();
   }
@@ -8567,6 +8609,38 @@
       ]),
     ]));
 
+    /*
+     * 기본은 "완료" 하나.
+     *
+     * 세트마다 "몇 개 더 할 수 있었나요?"를 고르게 했더니 운동이 설문이
+     * 됐다. 숨찬 사람은 버튼을 고르지 않는다 — 무게와 횟수는 이미 칸에
+     * 있고(처방대로면 손댈 것도 없다), 남은 힘은 한 횟수로 짐작한다
+     * (rirFromReps). 묻기를 원하는 사람은 내 정보 › 코치 · 알림에서 켠다.
+     */
+    if (!ptOn() && inputMode() === 'none') {
+      var leftAfter = lift.sets.filter(function (item) { return !item.done; }).length - 1;
+      body.push(el('button', {
+        type: 'button', class: 'finish now-done',
+        'aria-label': (setIndex + 1) + '세트 완료 — 기록하고 ' +
+          (leftAfter > 0 ? '쉬기' : '이 종목 마치기'),
+        onclick: function () { finishSimple(liftIndex, setIndex); },
+      }, [
+        el('span', { text: '✓ ' + (setIndex + 1) + '세트 완료' }),
+        el('span', { class: 'now-done-sub', text: leftAfter > 0 ? leftAfter + '세트 남음' : '마지막 세트' }),
+      ]));
+      body.push(countPanel(liftIndex, setIndex));
+      /*
+       * 아픈 건 묻지 않아도 말할 수 있어야 한다. 매 세트 고르는 버튼이 아니라
+       * 아플 때만 누르는 작은 글자로 둔다.
+       */
+      body.push(el('button', {
+        type: 'button', class: 'link-btn hurt-link', text: '아픈 데 있어요',
+        'aria-label': '아픈 데 있어요 — 이 종목 남은 세트를 빼고 어디가 아픈지 묻습니다',
+        onclick: function () { finishByFeel(liftIndex, setIndex, 'hurt'); },
+      }));
+      return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
+    }
+
     body.push(countPanel(liftIndex, setIndex));
 
     /*
@@ -8677,14 +8751,6 @@
      */
     body.push(el('p', { class: 'hint-line', text:
       '누르면 기록되고 ' + nextLabel + '. 이 답으로 다음 세트와 다음 주 무게가 정해집니다.' }));
-    // 혼자 모드에서 묻는 방식을 바꾸는 자리. PT 모드는 늘 체감으로 묻는다.
-    if (!ptOn()) {
-      body.push(el('button', {
-        type: 'button', class: 'link-btn input-mode',
-        text: byFeel ? '남은 횟수로만 묻기' : '"무게 어땠어요?"로 묻기',
-        onclick: function () { state.inputMode = byFeel ? 'rir' : 'feel'; persist(); render(); },
-      }));
-    }
 
     return el('div', { class: 'set-now' }, [
       el('div', { class: 'now-body' }, body),
@@ -8694,13 +8760,12 @@
   /**
    * 혼자 모드에서 세트를 마칠 때 묻는 방식.
    *
-   * "몇 회 더 할 수 있었나요?"는 정확하지만 초보는 답을 모른다. 초보에게는
-   * "무게 어땠어요?"(가벼웠어요 · 딱 좋았어요 · 무거웠어요)로 묻고, 그 답을
-   * 그 주의 목표에 맞춰 남은 횟수로 바꿔 적는다. 직접 바꿀 수 있다.
+   * 기본은 묻지 않는다('none') — "완료" 하나. 원하는 사람만 내 정보에서
+   * "무게 어땠어요?"(feel)나 "몇 개 더?"(rir)를 켠다.
    */
   function inputMode() {
-    if (state.inputMode === 'feel' || state.inputMode === 'rir') return state.inputMode;
-    return state.lifter && state.lifter.level === 'beginner' ? 'feel' : 'rir';
+    if (state.askEffort === 'feel' || state.askEffort === 'rir') return state.askEffort;
+    return 'none';
   }
 
   /**
@@ -12376,7 +12441,8 @@
       }));
     }
 
-    screen.appendChild(el('div', { class: 'sheet' }, [
+    // 묻지 않는 사람에게 "답 정확도"를 보여 줄 이유가 없다 — 답한 적이 없다.
+    if (inputMode() !== 'none') screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '"몇 회 더" 답 정확도' }),
         el('span', { class: 'meta', text: { none: '아직 판단 전', low: '낮음', medium: '보통', high: '높음' }[calibration.confidence] || calibration.confidence }),

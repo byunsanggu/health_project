@@ -24,6 +24,7 @@ import {
   speechSeconds,
   wrapUpLines,
   feelToRir,
+  rirFromReps,
   type BeforeSetInput,
   type CoachStyle,
 } from '../coach.ts';
@@ -486,5 +487,21 @@ describe('마무리 말이 겹치지 않는다', () => {
         }
       }
     }
+  });
+});
+
+describe('남은 힘을 묻지 않을 때', () => {
+  const range = { min: 6, max: 10 };
+  it('목표 범위 안이면 그 주의 목표 남은 횟수', () => {
+    assert.equal(rirFromReps(6, range, 2), 2);
+    assert.equal(rirFromReps(10, range, 3), 3);
+  });
+  it('범위를 못 채우면 한계까지 간 것', () => {
+    assert.equal(rirFromReps(4, range, 2), 0);
+    assert.equal(rirFromReps(0, range, 2), 0);
+  });
+  it('범위보다 더 하면 가벼웠던 것 — 무거움보다 크고 5를 넘지 않는다', () => {
+    assert.equal(rirFromReps(12, range, 2), 4);
+    assert.equal(rirFromReps(15, range, 4), 5);
   });
 });

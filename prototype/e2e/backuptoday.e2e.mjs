@@ -8,9 +8,9 @@ export default async function ({ page, url, out }) {
   await page.goto(url);
   await onboard(page);
   await page.click('.start-cta');
-  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
+  await page.locator('.now-done').click();
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
-  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
+  await page.locator('.now-done').click();
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
   await tab(page, '오늘');
   await page.locator('button', { hasText: '운동 끝내기' }).first().click();
@@ -50,7 +50,7 @@ export default async function ({ page, url, out }) {
   // 다시 켜도, 다음 세트를 쳐도 오늘 기록은 두 세트 위에 쌓인다
   await page.reload();
   await page.click('.start-cta');
-  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
+  await page.locator('.now-done').click();
   await tab(page, '진행');
   const after = await page.locator('.history-row').first().textContent();
   check(after.includes('3세트'), '불러온 오늘 기록이 덮였습니다: ' + after);

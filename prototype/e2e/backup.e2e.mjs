@@ -27,9 +27,9 @@ export default async function ({ page, url, shot, out }) {
   await page.locator('dialog .coach-mode', { hasText: '혼자' }).click();
   await page.locator('dialog .modal-close').click();
   await page.click('.start-cta');
-  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
+  await page.locator('.now-done').click();
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
-  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
+  await page.locator('.now-done').click();
   await page.locator('button', { hasText: '운동 끝내기' }).first().click();
   await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();
 

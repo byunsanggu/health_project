@@ -16,7 +16,7 @@ export default async function ({ page, url }) {
   // 운동도 한 세트 하고 마친다 — 오늘 마친 상태도 남으면 안 된다
   await tab(page, '오늘');
   await page.click('.start-cta');
-  await page.locator('.now-rir .chip', { hasText: '2개 더' }).click();
+  await page.locator('.now-done').click();
   await page.locator('button', { hasText: '운동 끝내기' }).first().click();
   await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();
 

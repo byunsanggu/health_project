@@ -9,10 +9,10 @@ export default async function ({ page, url, shot }) {
   await page.click('.start-cta');
   check(await page.locator('.progress-count b').textContent() === '1', '첫 종목이 아닙니다');
 
-  // 첫 종목을 끝까지 — 세트마다 "2회" 누르고, 쉬는 시간은 건너뛴다
+  // 첫 종목을 끝까지 — 세트마다 "완료" 누르고, 쉬는 시간은 건너뛴다
   for (let i = 0; i < 12; i += 1) {
     if (await page.locator('.progress-count b').textContent() !== '1') break;
-    const chip = page.locator('.now-rir .chip', { hasText: '2개 더' });
+    const chip = page.locator('.now-done');
     if (!await chip.count()) break;
     await chip.click();
     check(await page.locator('#rest-host').isVisible(), '세트를 기록했는데 휴식이 안 뜹니다');
