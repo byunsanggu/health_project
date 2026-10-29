@@ -33,7 +33,7 @@ export const BACKUP_FORMAT = 2;
  */
 export const BACKUP_SETTING_KEYS: readonly string[] = [
   'style', 'blockHistory', 'block', 'startedOn', 'promise', 'timeBudget', 'coach',
-  'restBand', 'restOverrides', 'restAlerts', 'voiceOn', 'voiceRate', 'autoCount', 'nudgeOn',
+  'restBand', 'restOverrides', 'restAlerts', 'voiceOn', 'voiceRate', 'voicePitch', 'voiceName', 'autoCount', 'nudgeOn',
   'tempo', 'tempoByExercise', 'tempoVersion', 'machineSettings', 'machineKnown', 'machinePound',
   'mistakeFlags', 'diet', 'customRoutine', 'repOverrides', 'topSet',
 ];
@@ -253,6 +253,9 @@ const SETTING_CHECKS: Record<string, (value: unknown) => boolean> = {
   restAlerts: (value) => typeof value === 'boolean',
   voiceOn: (value) => typeof value === 'boolean',
   voiceRate: (value) => isNumber(value, 0.5, 2),
+  voicePitch: (value) => isNumber(value, 0.5, 2),
+  // 고른 기기 목소리 이름 — 같은 목소리가 없는 폰에서는 앱이 제일 자연스러운 것으로 바꾼다
+  voiceName: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
   autoCount: (value) => typeof value === 'boolean',
   nudgeOn: (value) => typeof value === 'boolean',
   tempo: isPlain,

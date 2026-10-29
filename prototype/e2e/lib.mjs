@@ -63,15 +63,21 @@ export async function chromium() {
 /**
  * 말하기를 가짜로 바꾼다. 소리를 내는 대신 window.__said에 적고, 잠깐 뒤
  * 끝났다고 알린다 — 앱이 "말 끝나면 다음"을 기다리는 곳이 있다.
+ * 어떤 목소리 · 빠르기 · 높이로 읽었는지는 window.__spoken에 같이 적는다.
  */
 export const FAKE_SPEECH = () => {
   window.__said = [];
+  window.__spoken = [];
   const voices = [{ name: 'Test Korean', lang: 'ko-KR', localService: true, default: true, voiceURI: 'test-ko' }];
   const synth = {
     speaking: false, pending: false, paused: false, onvoiceschanged: null,
     getVoices: () => voices,
     speak(utterance) {
       window.__said.push(utterance.text);
+      window.__spoken.push({
+        text: utterance.text, voice: utterance.voice ? utterance.voice.name : null,
+        rate: utterance.rate, pitch: utterance.pitch,
+      });
       synth.speaking = true;
       setTimeout(() => {
         synth.speaking = false;

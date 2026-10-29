@@ -58,7 +58,7 @@ function exported(over: Record<string, unknown> = {}): Record<string, unknown> {
     설정: {
       style: 'hypertrophy', blockHistory: ['hypertrophy'], startedOn: '2026-08-01',
       block: { number: 2, startedOn: '2026-09-29', level: 'intermediate', transition: null, technicalIntroduced: null, deloadOn: null, firstStartedOn: '2026-07-28', monthsAtStart: 18 },
-      coach: { mode: 'pt', style: 'fired' }, restAlerts: false, voiceRate: 1.2,
+      coach: { mode: 'pt', style: 'fired' }, restAlerts: false, voiceRate: 1.2, voicePitch: 0.86, voiceName: 'Yuna (향상됨)',
       // 하루치 · 이 폰에 묶인 것은 실려 와도 들이지 않는다
       todaySets: [{ exerciseId: 'back-squat' }], friendCode: 'ABCD-1234',
     },
@@ -100,12 +100,15 @@ describe('백업 파일을 읽는다', () => {
     assert.equal(settings.startedOn, '2026-08-01');
     assert.deepEqual(settings.coach, { mode: 'pt', style: 'fired' });
     assert.equal(settings.restAlerts, false);
+    // PT 목소리 — 고른 목소리 · 높이도 돌아온다
+    assert.equal(settings.voicePitch, 0.86);
+    assert.equal(settings.voiceName, 'Yuna (향상됨)');
     assert.ok(settings.block);
     assert.equal(settings.todaySets, undefined, '하루치는 다른 날 불러오면 틀린 값이다');
     assert.equal(settings.friendCode, undefined, '이 폰 · 이 계정에 묶인 것');
     assert.ok(!BACKUP_SETTING_KEYS.includes('todaySets'));
 
-    const odd = read(exported({ 설정: { coach: { mode: 'pt', style: 'shouty' }, voiceRate: 9, block: { number: 1 }, startedOn: '2026-02-30' } })).settings;
+    const odd = read(exported({ 설정: { coach: { mode: 'pt', style: 'shouty' }, voiceRate: 9, voicePitch: 0, voiceName: 7, block: { number: 1 }, startedOn: '2026-02-30' } })).settings;
     assert.deepEqual(odd, {});
   });
 

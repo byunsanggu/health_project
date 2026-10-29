@@ -283,6 +283,9 @@
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
+        voicePitch: state.voicePitch,
+        // 목소리 이름은 이 폰 것 — 다른 기기와 나누지 않는다(SHARED_SETTINGS에 없다)
+        voiceName: state.voiceName,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
         settingsUpdatedAt: state.settingsUpdatedAt,
@@ -381,6 +384,8 @@
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
       state.voiceRate = settings.voiceRate || 1;
+      state.voicePitch = settings.voicePitch || 1;
+      state.voiceName = settings.voiceName || null;
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
       state.settingsUpdatedAt = settings.settingsUpdatedAt || null;
@@ -770,6 +775,9 @@
     cheersIn: [],
     autoCountedFor: null,
     voiceRate: 1,
+    /* 목소리 높이(1 = 보통)와 고른 기기 목소리 이름(null = 제일 자연스러운 것) */
+    voicePitch: 1,
+    voiceName: null,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
     reportSeenWeek: null,
     /* 오늘 한 유산소. [{exerciseId, minutes, zone, distanceKm, before}] */
@@ -6304,32 +6312,55 @@
    * 멈추면 안 된다. 박자는 화면이 들고 있다.
    */
   var voiceCache = null;
+  var voiceCacheFor = null;
+  /* 목소리 목록을 기다리는 화면 — 목록이 오면 한 번 다시 그린다 */
+  var voicesArrived = null;
 
   function koreanVoice() {
     if (!('speechSynthesis' in window)) return null;
-    if (voiceCache !== null) return voiceCache;
+    var wanted = state.voiceName || '';
+    if (voiceCache !== null && voiceCacheFor === wanted) return voiceCache;
     var voices = window.speechSynthesis.getVoices() || [];
-    // 목록 맨 앞이 아니라 제일 자연스러운 목소리(Natural · 향상됨 · 구글 온라인)
-    voiceCache = E.pickKoreanVoice(voices);
+    // 고른 목소리가 이 폰에 있으면 그것, 아니면 목록 맨 앞이 아니라 제일 자연스러운 목소리
+    // (Natural · 향상됨 · 구글 온라인)
+    voiceCache = E.pickKoreanVoice(voices, state.voiceName);
+    voiceCacheFor = wanted;
     return voiceCache;
   }
 
   // 목소리 목록은 늦게 온다(크롬 · 안드로이드). 오면 다시 고른다.
   if ('speechSynthesis' in window && window.speechSynthesis.addEventListener) {
-    try { window.speechSynthesis.addEventListener('voiceschanged', function () { voiceCache = null; }); } catch (err) { void err; }
+    try {
+      window.speechSynthesis.addEventListener('voiceschanged', function () {
+        voiceCache = null;
+        var redraw = voicesArrived;
+        voicesArrived = null;
+        if (redraw) redraw();
+      });
+    } catch (err) { void err; }
+  }
+
+  /**
+   * 읽을 말 하나 — 고른 목소리로, 말투의 결 위에 고른 빠르기 · 높이를 얹어서.
+   * 빡세게는 조금 빠르고 힘 있게, 차분하게는 천천히. 혼자 모드 카운트는 고른 값 그대로.
+   */
+  function utterance(text) {
+    var utter = new SpeechSynthesisUtterance(text);
+    var voice = koreanVoice();
+    if (voice) utter.voice = voice;
+    utter.lang = 'ko-KR';
+    // 카운트는 조금 빨라야 박자에 맞는다. 설명하듯 읽으면 늦는다.
+    var tune = E.voiceTuning(ptOn() ? state.coach.style : null, state.voiceRate, state.voicePitch);
+    utter.rate = tune.rate;
+    utter.pitch = tune.pitch;
+    return utter;
   }
 
   function speak(text) {
     // PT 모드는 말하는 모드다. 소리 스위치를 따로 켜게 하면 켠 사람이 또 켜야 한다.
     if ((!state.voiceOn && !ptOn()) || !('speechSynthesis' in window)) return;
     try {
-      var utter = new SpeechSynthesisUtterance(text);
-      var voice = koreanVoice();
-      if (voice) utter.voice = voice;
-      utter.lang = 'ko-KR';
-      // 카운트는 조금 빨라야 박자에 맞는다. 설명하듯 읽으면 늦는다.
-      utter.rate = clamp(state.voiceRate || 1, 0.5, 2);
-      window.speechSynthesis.speak(utter);
+      window.speechSynthesis.speak(utterance(text));
     } catch (err) {
       void err;
     }
@@ -6718,6 +6749,80 @@
   }
 
   /**
+   * 목소리 — 이 폰에 깔린 한국어 목소리 중에서 고르고 높이 · 빠르기를 맞춘다. 누르면 그
+   * 목소리로 바로 한마디 들려준다(아이폰은 손으로 누른 순간에만 소리를 낸다).
+   *
+   * 목소리 이름은 폰마다 달라서 다른 기기와 나누지 않는다 — 높이 · 빠르기만 같이 간다.
+   * 요즘 AI 드라마 같은 목소리는 기기 목소리로는 안 나온다. 그건 음성 합성 서비스를
+   * 서버(Edge Function)에 붙여 열쇠를 서버에만 두고 받아 와야 한다.
+   */
+  function voiceControls(onChange) {
+    var box = el('div', { class: 'voice-controls' }, []);
+    if (!('speechSynthesis' in window)) {
+      box.appendChild(el('p', { class: 'hint-line', text: '이 브라우저는 말하기를 지원하지 않습니다. 화면 글씨로 안내합니다.' }));
+      return box;
+    }
+    var listen = function () {
+      // 연달아 눌러도 밀리지 않게 하던 말은 끊고
+      try { window.speechSynthesis.cancel(); } catch (err) { void err; }
+      sayNow(E.forSpeech(ptOn() ? E.coachStyleInfo(state.coach.style).sample : '하나, 둘, 셋, 넷'));
+    };
+    box.appendChild(el('div', { class: 'voice-head' }, [
+      el('div', { class: 'list-label', text: '목소리' }),
+      el('button', { type: 'button', class: 'pick voice-listen', text: '들어 보기', onclick: listen }),
+    ]));
+
+    var choices = E.voiceChoices(window.speechSynthesis.getVoices() || []);
+    if (!choices.length) {
+      // 목록이 늦게 오는 브라우저 — 오면 다시 그린다 (그사이 창을 닫았으면 그대로 둔다)
+      voicesArrived = function () { if (box.isConnected) onChange(); };
+      box.appendChild(el('p', { class: 'hint-line', text: '이 폰에서 한국어 목소리를 아직 못 찾았습니다. ' +
+        '설정 › 접근성(안드로이드는 텍스트 음성 변환)에서 한국어 목소리를 받으면 여기에 나옵니다.' }));
+    } else {
+      var chosen = choices.some(function (choice) { return choice.voice.name === state.voiceName; }) ? state.voiceName : null;
+      var pick = function (name) {
+        state.voiceName = name;
+        persist();
+        listen();
+        onChange();
+      };
+      var rows = [el('button', {
+        type: 'button', class: 'voice-pick', 'aria-pressed': String(!chosen),
+        onclick: function () { pick(null); },
+      }, [el('b', { text: '자동' }), el('span', { text: '제일 자연스러운 것' })])];
+      choices.forEach(function (choice) {
+        var tags = [];
+        if (choice.natural && !/프리미엄|향상됨/.test(choice.label)) tags.push('자연스러움');
+        if (choice.online) tags.push('인터넷');
+        rows.push(el('button', {
+          type: 'button', class: 'voice-pick', 'aria-pressed': String(chosen === choice.voice.name),
+          onclick: function () { pick(choice.voice.name); },
+        }, [el('b', { text: choice.label }), el('span', { text: tags.join(' · ') || '기기에 저장됨' })]));
+      });
+      box.appendChild(el('div', { class: 'voice-list' }, rows));
+    }
+
+    var tune = function (label, options, value, set) {
+      return el('div', { class: 'voice-tune' }, [
+        el('span', { class: 'voice-tune-label', text: label }),
+        segmented(options.map(function (option) {
+          return {
+            label: option.label,
+            active: Math.abs((value || 1) - option.value) < 0.01,
+            onSelect: function () { set(option.value); persist(); listen(); onChange(); },
+          };
+        })),
+      ]);
+    };
+    box.appendChild(tune('높이', E.VOICE_PITCHES, state.voicePitch, function (value) { state.voicePitch = value; }));
+    box.appendChild(tune('빠르기', E.VOICE_RATES, state.voiceRate, function (value) { state.voiceRate = value; }));
+    box.appendChild(el('p', { class: 'hint-line', text: (ptOn()
+      ? '말투마다 결이 다릅니다(빡세게는 빠르고 힘 있게). 고른 높이 · 빠르기는 그 위에 얹힙니다. '
+      : '이 폰에 깔린 목소리에서 고릅니다. ') + '인터넷 목소리는 신호가 없으면 기본 목소리로 바뀔 수 있어요.' }));
+    return box;
+  }
+
+  /**
    * 알림 두 가지 — 휴식 끝, 빠진 주에 불러 주기. 켜는 순간에 권한을 묻는다.
    *
    * asking은 처음 설문이다. 거기서는 "다음"을 누를 때 권한을 묻기 때문에 켜 둔
@@ -6793,8 +6898,11 @@
   }
 
   function openCoachModal() {
+    var redraw = function () { openCoachModal(); render(); };
     openModal('운동 방식', null, [
-      coachModeControls(function () { openCoachModal(); render(); }),
+      coachModeControls(redraw),
+      // PT는 말로 이끄니 목소리도 여기서 — 고르면 바로 들어 본다
+      ptOn() ? voiceControls(redraw) : null,
       el('p', { class: 'hint-line', text: '알림은 내 정보 › 코치 · 알림에서 바꿉니다.' }),
     ]);
   }
@@ -6819,6 +6927,8 @@
   function coachSettingsCard() {
     var body = el('div', { class: 'sheet-body' }, [
       coachModeControls(render),
+      // 말하는 쪽(PT · 소리로 세기)을 쓸 때만 목소리 설정
+      ptOn() || state.voiceOn ? voiceControls(render) : null,
       el('div', { class: 'list-label', text: '세트 끝낼 때' }),
       segmented([
         { id: null, label: '완료만' },
@@ -6997,12 +7107,7 @@
   function sayNow(text) {
     if (!('speechSynthesis' in window)) return;
     try {
-      var utter = new SpeechSynthesisUtterance(text);
-      var voice = koreanVoice();
-      if (voice) utter.voice = voice;
-      utter.lang = 'ko-KR';
-      utter.rate = clamp(state.voiceRate || 1, 0.5, 2);
-      window.speechSynthesis.speak(utter);
+      window.speechSynthesis.speak(utterance(text));
     } catch (err) { void err; }
   }
 
@@ -7425,24 +7530,8 @@
       body.push(el('p', { class: 'hint-line', text:
         '반복 하나에 ' + seconds + '초 · 10회면 ' + Math.round(seconds * 10) + '초짜리 세트입니다.' }));
 
-      body.push(el('div', { class: 'list-label', text: '말 속도' }));
-      body.push(el('div', { class: 'chip-row' }, [
-        { label: '느리게', rate: 0.85 },
-        { label: '보통', rate: 1 },
-        { label: '빠르게', rate: 1.2 },
-      ].map(function (option) {
-        return el('button', {
-          type: 'button', class: 'pick',
-          'aria-pressed': String(Math.abs((state.voiceRate || 1) - option.rate) < 0.01),
-          text: option.label,
-          onclick: function () {
-            state.voiceRate = option.rate;
-            speak('하나, 둘, 셋');
-            persist();
-            draw();
-          },
-        });
-      })));
+      // 세는 목소리 — 고르기 · 높이 · 빠르기 (PT 설정과 같은 값)
+      body.push(voiceControls(draw));
 
       body.push(el('button', {
         type: 'button', class: 'finish', text: '이대로 하기',
@@ -10743,7 +10832,7 @@
    */
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
-    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'autoCount',
+    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'voicePitch', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
     'mistakeFlags', 'customRoutine', 'repOverrides', 'topSet',
   ];
