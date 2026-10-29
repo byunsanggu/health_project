@@ -2464,6 +2464,19 @@ input[type="search"] {
   color: var(--accent-ink);
   font-weight: 600;
 }
+/* 전체 동의 — 맨 위 큰 버튼 하나 */
+.consent-all {
+  width: 100%;
+  margin: 12px 0 4px;
+  padding: 14px;
+  border: 1.5px solid var(--accent);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+.consent-all[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .pick.danger { color: var(--zone-over); border-color: currentColor; }
 .pain-note { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); font-size: 13px; line-height: 1.55; }
 .finish.danger { background: var(--zone-over); border-color: var(--zone-over); color: #fff; }

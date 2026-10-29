@@ -278,6 +278,8 @@
         repSuggestSkip: state.repSuggestSkip,
         mobility: state.mobility,
         skipToday: state.skipToday,
+        // 오늘 컨디션 — 이 폰에만, 하루짜리
+        dayFeel: state.dayFeel,
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
@@ -375,6 +377,7 @@
       state.repSuggestSkip = settings.repSuggestSkip || {};
       state.mobility = settings.mobility || null;
       state.skipToday = settings.skipToday || null;
+      state.dayFeel = settings.dayFeel || null;
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
       state.voiceRate = settings.voiceRate || 1;
@@ -1523,7 +1526,7 @@
      * 짧아져서 시간 예산이 더 깎을 일이 없어진다. 순서가 반대면 같은
      * 종목을 두 번 깎는다.
      */
-    built = withWeeklyTopSet(built);
+    if (todayFeel() !== 'low') built = withWeeklyTopSet(built);
 
     var comeback = activeComeback();
     if (comeback) {
@@ -1546,6 +1549,20 @@
               return Object.assign({}, set, { weightKg: scaled });
             }),
           });
+        }),
+      });
+    }
+
+    // 별로인 날 — 한 세트 덜, 무게 조금 덜. 이미 끝낸 세트는 지우지 않는다.
+    if (todayFeel() === 'low') {
+      built = Object.assign({}, built, {
+        exercises: E.lightenForLowDay(built.exercises, function (kg, item) {
+          return item.loading
+            ? E.nearestLoadable(kg, item.loading, 'down')
+            // 아래로 맞춘다 — 반올림하면 20kg이 도로 20kg이 된다
+            : item.exercise.increment > 0 ? Math.floor(kg / item.exercise.increment) * item.exercise.increment : kg;
+        }, function (item) {
+          return (previous[item.exercise.id] || []).filter(function (set) { return set.done; }).length;
         }),
       });
     }
@@ -4426,11 +4443,31 @@
     return card;
   }
 
-  /** 컨디션 — 피로 점수를 뒤집어 보여준다. 지어낸 숫자가 아니다. */
-  function conditionPercent() {
+  /** 기록으로 본 컨디션 — 피로 점수를 뒤집어 보여준다. 지어낸 숫자가 아니다. */
+  function recordedCondition() {
     var f = state.plan.fatigue;
     if (!f || !f.threshold) return 100;
     return Math.max(0, Math.min(100, Math.round((1 - f.score / f.threshold) * 100)));
+  }
+
+  /** 오늘 직접 고른 컨디션. 어제 고른 것은 오늘 것이 아니다. */
+  function todayFeel() {
+    return state.dayFeel && state.dayFeel.date === state.todayDate ? state.dayFeel.feel : null;
+  }
+
+  /** 판단에 쓰는 컨디션 — 직접 고른 것이 기록보다 먼저다. */
+  function conditionPercent() {
+    return E.effectiveCondition(todayFeel(), recordedCondition());
+  }
+
+  function setDayFeel(feel) {
+    state.dayFeel = feel === 'ok' ? null : { date: state.todayDate, feel: feel };
+    rebuildSession();
+    persist();
+    if (feel === 'low') {
+      pushLog('오늘 컨디션', '별로인 날 — 종목마다 한 세트 덜, 무게는 조금 가볍게 바꿨습니다. 끝낸 세트는 그대로입니다.');
+    }
+    render();
   }
 
   /** 시작 전 — 오늘 할 것 목록. */
@@ -4987,13 +5024,13 @@
     screen.appendChild(head.node);
 
     var estimate = head.estimate;
-    var condition = conditionPercent();
+    var feel = todayFeel();
 
     screen.appendChild(el('div', { class: 'stat-row' }, [
       statCard('time', '운동 시간',
         String(shortBudget() || state.timeBudget || estimate.totalMinutes), '분',
         function () { return timeBudgetControls(estimate); }),
-      statCard('condition', '컨디션', String(condition), '%',
+      statCard('condition', '컨디션', feel ? E.dayFeelLabel(feel) : String(recordedCondition()), feel ? '' : '%',
         function () { return conditionDetail(); }),
     ]));
 
@@ -6706,6 +6743,13 @@
       '운동할 때 어떻게 도와드릴까요? 나중에 내 정보에서 언제든 바꿀 수 있습니다.' }));
     screen.appendChild(coachModeControls(render));
     screen.appendChild(el('div', { class: 'list-label', text: '알림' }));
+    // 동의 화면에서 이미 정했으면 또 묻지 않는다
+    if (state.onboarding.alertsAsked) {
+      screen.appendChild(el('p', { class: 'hint-line', text: (state.onboarding.alerts
+        ? '알림은 앞에서 받기로 하셨습니다.'
+        : '알림은 앞에서 받지 않기로 하셨습니다.') + ' 내 정보 › 코치 · 알림에서 언제든 바꿉니다.' }));
+      return;
+    }
     screen.appendChild(alertControls(render, true));
   }
 
@@ -10351,8 +10395,22 @@
    */
   function conditionDetail() {
     var f = state.plan.fatigue;
-    var out = [el('p', { class: 'hint-line', text:
-      '피로 점수 ' + f.score + ' / 덜어내는 주 기준 ' + f.threshold + '. 낮을수록 좋습니다.' })];
+    var feel = todayFeel() || 'ok';
+    var picked = E.DAY_FEELS.filter(function (item) { return item.id === feel; })[0];
+    var out = [
+      el('div', { class: 'list-label', text: '오늘 몸은 어때요?' }),
+      segmented(E.DAY_FEELS.map(function (item) {
+        return {
+          label: item.label,
+          active: feel === item.id,
+          onSelect: function () { setDayFeel(item.id); },
+        };
+      })),
+      el('p', { class: 'hint-line', text: picked.hint + ' 내일이 되면 다시 기록대로 봅니다.' }),
+      el('div', { class: 'list-label', text: '기록으로 본 컨디션 ' + recordedCondition() + '%' }),
+      el('p', { class: 'hint-line', text:
+        '피로 점수 ' + f.score + ' / 덜어내는 주 기준 ' + f.threshold + '. 낮을수록 좋습니다.' }),
+    ];
 
     if (!f.signals || f.signals.length === 0) {
       out.push(el('p', { class: 'hint-line', text: '잡힌 피로 신호가 없습니다.' }));
@@ -15644,12 +15702,14 @@
       return;
     }
     if (!state.startedOn) state.startedOn = todayISO();
+    var wantNudge = state.onboarding.alerts === true;
     state.onboarding = { active: false, step: 0 };
     state.tab = 'today';
     rebuildAfterImport();
     reviveTodayFromStorage();
     persist();
     if (Remote.configured() && Remote.signedIn()) syncNow();
+    startNudgeIfWanted(wantNudge);
     render();
     showBackupReport(done);
   }
@@ -17888,6 +17948,7 @@
     state.blockNews = null;
     // 설문 답 없는 백업으로 시작했으면 기록은 지금 들어간다
     var restored = state.onboarding.restore ? applyBackup(state.onboarding.restore, false) : null;
+    var wantNudge = state.onboarding.alerts === true;
     state.onboarding = { active: false, step: 0, result: result };
     state.tab = 'today';
     loadScenario('normal');
@@ -17898,6 +17959,7 @@
      * 바꿨을 때 되살릴 것이 없다 — 8초를 기다릴 이유가 없는 순간이다.
      */
     if (Remote.configured() && Remote.signedIn()) syncNow();
+    startNudgeIfWanted(wantNudge);
     render();
     if (restored) showBackupReport(restored);
   }
@@ -17971,9 +18033,10 @@
         text: (step.id === 'result' || isLast) ? '이 프로그램으로 시작' : resuming ? '동의하고 이어 하기' : '다음',
         onclick: function () {
           if (blocked) return;
+          if (step.id === 'consent') applyAlertConsent();
           if (resuming) { finishBackupOnboarding(); return; }
-          // 코치 · 알림 단계: 휴식 끝 알림을 켜 뒀으면 지금(누른 순간) 권한을 묻는다
-          if (step.id === 'coach' && state.restAlerts !== false && notificationState() === 'default') {
+          // 코치 · 알림 단계(동의 화면을 안 거친 다시 설정): 휴식 끝 알림을 켜 뒀으면 지금 권한을 묻는다
+          if (step.id === 'coach' && !state.onboarding.alertsAsked && state.restAlerts !== false && notificationState() === 'default') {
             try { Notification.requestPermission().then(function () { render(); }); } catch (err) { void err; }
           }
           if (isLast) completeOnboarding();
@@ -18008,6 +18071,25 @@
         '무엇을 왜 받고 얼마나 갖고 있는지 아래에 그대로 적었습니다. ' +
         '선택 항목은 거부해도 앱을 쓰는 데 지장이 없습니다.' }),
     ]));
+
+    /*
+     * 전체 동의 — 동의할 것과 알림을 한 번에.
+     *
+     * 알림 권한을 기능마다 따로 물으면(휴식 끝 알림은 코치 단계에서, 다시 부르기는 연속 카드에서)
+     * 사람은 몇 번째 묻는지 세다가 거절한다. 처음 한 번에 다 받고, 브라우저 권한 창도 한 번만 띄운다.
+     * 항목은 아래에 하나씩 그대로 보인다 — 따로 끄고 켤 수 있어야 동의다.
+     */
+    var everything = E.CONSENT_ITEMS.every(function (item) { return state.consent.indexOf(item.id) >= 0; }) &&
+      state.onboarding.alerts === true;
+    screen.appendChild(el('button', {
+      type: 'button', class: 'consent-all', 'aria-pressed': String(everything),
+      text: everything ? '전체 동의함 (선택 · 알림 포함)' : '전체 동의하기 (선택 · 알림 포함)',
+      onclick: function () {
+        state.consent = everything ? [] : E.CONSENT_ITEMS.map(function (item) { return item.id; });
+        state.onboarding.alerts = !everything;
+        render();
+      },
+    }));
 
     E.CONSENT_ITEMS.forEach(function (item) {
       var on = state.consent.indexOf(item.id) >= 0;
@@ -18046,6 +18128,8 @@
       ]));
     });
 
+    screen.appendChild(alertConsentCard());
+
     var missing = E.missingRequired(state.consent);
     if (missing.length > 0) {
       screen.appendChild(el('p', { class: 'hint-line warn', text:
@@ -18066,6 +18150,54 @@
 
     // 다시 설정할 때는 동의 단계를 안 거친다 — 이 문은 처음 설정에만 뜬다
     screen.appendChild(restoreDoor());
+  }
+
+  /** 동의 화면의 알림 카드 — 받을 알림을 다 적고, 한 번에 켠다. */
+  function alertConsentCard() {
+    var on = state.onboarding.alerts === true;
+    var items = ['휴식 끝 알림 — 폰을 넣어 둬도 진동으로, 시계가 있으면 손목까지'];
+    if (typeof FitPush !== 'undefined' && FitPush.configured()) {
+      items.push('운동 빠진 주에 한 번 불러 주기 — 아프다고 적은 날은 부르지 않습니다');
+    }
+    var denied = notificationState() === 'denied';
+    return el('div', { class: 'consent-card alert-consent' }, [
+      el('div', { class: 'consent-head' }, [
+        el('span', { class: 'consent-title', text: '알림 받기' }),
+        el('span', { class: 'consent-tag opt', text: '선택' }),
+      ]),
+      el('div', { class: 'consent-body' }, [
+        consentRow('받는 알림', items.join(' / ')),
+        consentRow('언제 묻나', '"다음"을 누르면 폰이 알림 허용을 한 번 묻습니다. 그 뒤로는 따로 묻지 않습니다.'),
+        consentRow('거부하면', '알림만 안 옵니다. 휴식 끝 소리는 알림 없이도 울립니다. 내 정보 › 코치 · 알림에서 언제든 바꿉니다.'),
+      ]),
+      denied ? el('p', { class: 'hint-line warn', text: '이 브라우저에서 알림이 막혀 있습니다. 브라우저 설정에서 허용해야 옵니다.' }) : null,
+      el('button', {
+        type: 'button', class: 'consent-toggle', 'aria-pressed': String(on),
+        text: on ? '받음' : '받기',
+        onclick: function () { state.onboarding.alerts = !on; render(); },
+      }),
+    ]);
+  }
+
+  /**
+   * 동의 화면에서 "다음"을 누른 순간 — 알림 답을 적용하고, 받겠다면 권한을 **한 번** 묻는다.
+   * 권한 창은 사람이 누른 그 순간에만 뜬다(iOS · 크롬). 다시 부르기는 계정 · 프로그램이
+   * 생긴 뒤(설정을 마친 뒤) 켠다 — 권한은 이미 받았으니 또 묻지 않는다.
+   */
+  function applyAlertConsent() {
+    var want = state.onboarding.alerts === true;
+    state.onboarding.alertsAsked = true;
+    state.restAlerts = want;
+    if (want && notificationState() === 'default') {
+      try { Notification.requestPermission().then(function () { render(); }); } catch (err) { void err; }
+    }
+  }
+
+  /** 설정을 마친 뒤 — 알림을 받겠다고 했으면 다시 부르기도 켠다. */
+  function startNudgeIfWanted(wanted) {
+    if (!wanted || state.nudgeOn || nudgeAvailability()) return;
+    if (notificationState() !== 'granted') return;
+    setNudge(true);
   }
 
   function consentRow(label, value) {
