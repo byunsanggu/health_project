@@ -791,8 +791,35 @@ input[type="search"] {
 .modal-close:hover { border-color: var(--accent); color: var(--accent); }
 .modal-body { display: grid; gap: 12px; padding: 13px 14px 16px; }
 
-.demo-stage { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
-.demo-canvas { display: block; width: 100%; aspect-ratio: 4 / 3; }
+/* 실수 동작 보기를 누르면 무대로 스크롤한다 — 위에 붙어 있는 창 제목 줄에 실수 띠가 가리지 않게 */
+.demo-stage { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface-2); scroll-margin-top: 64px; }
+.demo-stage.fault { border-color: var(--zone-over); box-shadow: 0 0 0 1px var(--zone-over); }
+.demo-canvas { display: block; width: 100%; aspect-ratio: 1 / 1; cursor: grab; touch-action: none; }
+.demo-canvas:active { cursor: grabbing; }
+/* 흔한 실수 동작을 보는 중 — 위에 붉은 띠, 바른 동작으로 돌아가는 버튼은 띠 안에 */
+.demo-fault {
+  position: absolute; left: 8px; right: 8px; top: 8px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px 7px 10px; border-radius: 9px;
+  background: var(--zone-over); color: #fff; font-size: 12.5px; line-height: 1.35;
+}
+.demo-fault[hidden] { display: none; }
+.demo-fault-text { display: grid; gap: 1px; flex: 1; min-width: 0; }
+.demo-fault-text b { font-size: 10.5px; letter-spacing: .04em; opacity: .85; }
+.demo-fault-back {
+  flex: none; border: 1px solid rgba(255, 255, 255, .7); background: transparent; color: #fff;
+  border-radius: 7px; padding: 5px 9px; font-size: 12px; font-weight: 600;
+}
+.demo-hint {
+  position: absolute; right: 9px; bottom: 9px;
+  font-size: 10.5px; color: var(--muted); background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: 6px; padding: 3px 7px; transition: opacity .4s;
+}
+.demo-hint.gone { opacity: 0; pointer-events: none; }
+.demo-views { gap: 5px; }
+.demo-views .chip { padding-left: 9px; padding-right: 9px; }
+.demo-views-label { font-size: 11.5px; color: var(--muted); margin-right: 2px; }
+.mistake-show { justify-self: start; margin-top: 3px; color: var(--zone-over); border-color: currentColor; }
 .demo-caption {
   position: absolute;
   left: 9px;
@@ -2935,12 +2962,13 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
   <div class="disclaimer">
     <p>동의 문구는 프로토타입용 예시입니다. 실제 서비스에 쓰기 전에는 법률 검토가 필요합니다.</p>
     <p>이 페이지는 제품 프로토타입이며 의료기기가 아닙니다. 제공하는 정보는 의학적 진단·처방·치료를 대신하지 않습니다. 통증이 지속되면 전문의 진료를 받으세요.</p>
-    <p>동작 시연은 관절 각도 키프레임으로 그린 예시이며, 실제 촬영 영상이나 구매한 3D 에셋이 들어갈 자리를 대신합니다. 특정 앱의 에셋을 쓰거나 본뜬 것이 아닙니다.</p>
+    <p>동작 시연은 직접 만든 3D 모형을 관절 각도 키프레임으로 움직인 예시이며, 실제 촬영 영상이 들어갈 자리를 대신합니다. 특정 앱의 에셋을 쓰거나 본뜬 것이 아닙니다.</p>
     <p>표시된 훈련 기록은 엔진 동작을 보여주기 위해 생성한 예시 데이터입니다. 운동 명칭은 일반 명칭이며, 부위 기여도·관절 스트레스·볼륨 랜드마크는 공개 문헌과 코칭 판단으로 직접 작성했습니다.</p>
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- 입체 시연용. integrity로 CDN 파일이 바뀌면 받지 않는다(그때는 평면 그림). crossorigin이라야 서비스 워커가 캐시에 넣어 오프라인에서도 뜬다 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" integrity="sha512-dLxUelApnYxpLt6K2iomGngnHO83iUvZytA3YjDUCjT0HDOHKXnVYdf3hU4JjM8uEhxf9nD1/ey98U3t2vZ0qQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>/*ENGINE_BUNDLE*/</script>
 <script>/*EQUIPMENT_ART*/</script>
 <script>/*BODY_MAP*/</script>

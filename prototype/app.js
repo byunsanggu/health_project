@@ -3621,78 +3621,127 @@
   }
 
   function openDemo(exercise) {
-    var demo = E.demoFor(exercise);
     var body = [];
 
     var filmed = filmedStage(exercise);
     if (filmed) {
       body.push(filmed.stage);
       body.push(filmed.controls);
-      buildDemoBody(exercise, demo, body, true);
-      openModal(exercise.name, E.PATTERN_LABELS_KO[demo.pattern] || demo.pattern, body);
+      buildDemoBody(exercise, body, true, null);
+      openModal(exercise.name, E.PATTERN_LABELS_KO[exercise.pattern] || exercise.pattern, body);
       return;
     }
 
+    /*
+     * 직접 빚은 3D 모형 — 종목마다 자기 동작과 기구가 있다. 끌어서 돌려 보고, 정면 · 옆 · 사선 ·
+     * 뒤를 골라 볼 수 있다. 아래 "흔한 실수"에서 동작 보기를 누르면 그 실수를 하는 모습이 빨갛게 나온다.
+     */
+    var clip = E.motionFor(exercise);
     var caption = el('div', { class: 'demo-caption', text: '' });
+    var banner = el('div', { class: 'demo-fault', hidden: '' }, []);
+    var hint = el('div', { class: 'demo-hint', text: '끌어서 돌려 보기' });
     var fill = el('div', { class: 'demo-track-fill' });
     var track = el('div', { class: 'demo-track' }, [fill]);
-    var canvas = el('canvas', { class: 'demo-canvas' });
-    var supported = window.FitDemo3D && window.FitDemo3D.available();
+    var canvas = el('canvas', { class: 'demo-canvas', 'aria-label': exercise.name + ' 동작 시연' });
+    var supported = Boolean(clip && window.FitDemo3D && window.FitDemo3D.available());
 
     var stage = el('div', { class: 'demo-stage' }, supported
-      ? [canvas, caption]
+      ? [canvas, banner, hint, caption]
       : [el('div', {
           class: 'demo-fallback',
           text: '이 브라우저에서는 시연을 띄울 수 없습니다. 아래 수행 큐를 참고하세요.',
         })]);
     body.push(stage);
 
+    var showFault = null;
     if (supported) {
       body.push(track);
 
       var playButton = el('button', { type: 'button', class: 'chip', text: '일시정지' });
       var controls = el('div', { class: 'demo-controls' }, [playButton]);
-
-      var speedChips = [0.5, 1, 1.5].map(function (speed) {
+      var speeds = [0.5, 1, 1.5];
+      var speedChips = speeds.map(function (speed) {
         return el('button', {
-          type: 'button',
-          class: 'chip',
-          'aria-pressed': String(speed === 1),
-          text: speed + '\u00d7',
+          type: 'button', class: 'chip', 'aria-pressed': String(speed === 1), text: speed + '\u00d7',
           onclick: function () {
             if (state.demo) state.demo.setSpeed(speed);
-            speedChips.forEach(function (chip, i) {
-              chip.setAttribute('aria-pressed', String([0.5, 1, 1.5][i] === speed));
-            });
+            speedChips.forEach(function (chip, i) { chip.setAttribute('aria-pressed', String(speeds[i] === speed)); });
           },
         });
       });
       speedChips.forEach(function (chip) { controls.appendChild(chip); });
-      controls.appendChild(el('span', {
-        class: 'spacer',
-        text: '1회 ' + demo.cycleSeconds + '초 · ' +
-          (window.FitDemo3D.is3d() ? (demo.view === 'front' ? '정면' : demo.view === 'side' ? '측면' : '사선') : '측면 2D'),
-      }));
+      controls.appendChild(el('span', { class: 'spacer', text: '1회 ' + clip.cycle + '초' }));
       body.push(controls);
+
+      // 보는 쪽 — 처음 각도는 그 종목이 제일 잘 보이는 쪽
+      var views = [['auto', '처음'], ['front', '정면'], ['side', '옆'], ['diag', '사선'], ['back', '뒤']];
+      var viewChips = views.map(function (view) {
+        return el('button', {
+          type: 'button', class: 'chip demo-view', 'aria-pressed': String(view[0] === 'auto'), text: view[1],
+          onclick: function () {
+            if (state.demo) state.demo.view(view[0] === 'auto' ? null : view[0]);
+            viewChips.forEach(function (chip, i) { chip.setAttribute('aria-pressed', String(views[i][0] === view[0])); });
+          },
+        });
+      });
+      body.push(el('div', { class: 'demo-controls demo-views' }, [el('span', { class: 'demo-views-label', text: '보는 쪽' })].concat(viewChips)));
 
       playButton.addEventListener('click', function () {
         if (!state.demo) return;
         playButton.textContent = state.demo.toggle() ? '일시정지' : '재생';
       });
+
+      /*
+       * 흔한 실수를 동작으로. 근육이 빨갛게 바뀌고 위에 "이렇게 하면 안 돼요"가 뜬다.
+       * 바른 동작으로 돌아가는 버튼은 그 띠 안에 — 찾으러 다니지 않게.
+       */
+      showFault = function (mistake) {
+        if (!state.demo) return;
+        var faulty = mistake ? E.motionFor(exercise, mistake.id) : null;
+        state.demo.setClip(faulty || clip, Boolean(faulty));
+        banner.textContent = '';
+        if (faulty) {
+          banner.appendChild(el('span', { class: 'demo-fault-text' }, [
+            el('b', { text: '흔한 실수' }),
+            el('span', { text: mistake.sign }),
+          ]));
+          banner.appendChild(el('button', {
+            type: 'button', class: 'demo-fault-back', text: '바른 동작',
+            onclick: function () { showFault(null); },
+          }));
+          banner.hidden = false;
+          stage.classList.add('fault');
+          stage.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else {
+          banner.hidden = true;
+          stage.classList.remove('fault');
+        }
+        playButton.textContent = '일시정지';
+        state.demo.play();
+      };
     }
 
-    buildDemoBody(exercise, demo, body, false);
-    openModal(exercise.name, E.PATTERN_LABELS_KO[demo.pattern], body);
+    buildDemoBody(exercise, body, false, showFault);
+    openModal(exercise.name, E.PATTERN_LABELS_KO[exercise.pattern] || exercise.pattern, body);
 
     if (!supported) return;
 
-    state.demo = window.FitDemo3D.mount(canvas, demo, {
+    state.demo = window.FitDemo3D.mount(canvas, clip, {
       dark: prefersDark(),
+      contribution: exercise.contribution,
+      pattern: exercise.pattern,
+      onTouch: function () { hint.classList.add('gone'); },
       onProgress: function (t, label) {
         fill.style.width = (t * 100).toFixed(1) + '%';
-        if (label && caption.textContent !== label) caption.textContent = label;
+        if ((label || '') !== caption.textContent) caption.textContent = label || '';
       },
     });
+    // three.js는 받았지만 WebGL을 못 연 기기 — 평면으로 돌고 있다고 바로 알린다
+    if (!state.demo.three) {
+      var note = document.querySelector('dialog[open] .demo-note');
+      if (note) note.textContent = demoNote(false);
+      hint.classList.add('gone');
+    }
   }
 
   /**
@@ -3701,7 +3750,9 @@
    * 순서가 중요하다 — 동작을 본 다음 큐, 그 다음 실수, 근육은 맨 뒤다.
    * 초보자가 필요한 건 "어떻게 하는가"이고 "어디에 오는가"는 그 다음이다.
    */
-  function buildDemoBody(exercise, demo, body, filmed) {
+  function buildDemoBody(exercise, body, filmed, showFault) {
+    var demo = E.demoFor(exercise);
+    var faults = showFault ? E.faultsFor(exercise) : [];
     if (demo.cues.length > 0) {
       body.push(el('div', { class: 'list-label', text: '수행 큐' }));
       body.push(el('ul', { class: 'cue-list' }, demo.cues.map(function (cue) {
@@ -3723,10 +3774,15 @@
         var flagged = state.mistakeFlags[exercise.id] || [];
         mistakes.forEach(function (item) {
           var mine = flagged.indexOf(item.id) >= 0;
+          var canShow = faults.indexOf(item.id) >= 0;
           list.appendChild(el('div', { class: 'mistake-row' + (mine ? ' mine' : '') }, [
             el('div', { class: 'mistake-sign', text: item.sign }),
             el('div', { class: 'mistake-fix', text: item.cue + '.' }),
             el('div', { class: 'mistake-why', text: item.why }),
+            canShow ? el('button', {
+              type: 'button', class: 'pick mistake-show', text: '이 실수 동작 보기',
+              onclick: function () { showFault(item); },
+            }) : null,
             el('button', {
               type: 'button', class: 'pick mistake-flag', 'aria-pressed': String(mine),
               text: mine ? '체크함 · 코치가 짚어 줍니다' : '나도 이래요',
@@ -3756,15 +3812,21 @@
     musclePanel(exercise).forEach(function (node) { body.push(node); });
 
     body.push(el('p', {
-      class: 'asset-note',
+      class: 'asset-note demo-note',
       text: filmed
         ? '직접 촬영한 영상입니다. 저작권이 이쪽에 있어 사용에 제약이 없습니다.'
-        : '이 시연은 관절 각도로 그린 예시입니다' +
-          (window.FitDemo3D.is3d() ? '' : ' (입체 그림을 불러오지 못해 평면으로 그렸습니다)') + '.' +
-          // 촬영본 이야기는 만드는 사람에게만
-          (devMode() ? ' 촬영본이 들어오면 이 자리가 영상으로 바뀝니다 — 종목마다 따로 켤 수 있어서 ' +
-            '다 찍을 때까지 기다리지 않아도 됩니다.' : ''),
+        : demoNote(window.FitDemo3D.is3d()),
     }));
+  }
+
+  /** 시연 아래 한 줄 — 입체로 떴는지에 맞춰서. 그림을 띄운 뒤 평면으로 떨어지면 다시 쓴다. */
+  function demoNote(three) {
+    return (three
+      ? '직접 만든 3D 모형으로 그린 시연입니다. 빛나는 곳이 지금 힘쓰는 근육입니다.'
+      : '입체 그림을 불러오지 못해 같은 동작을 평면으로 그렸습니다.') +
+      // 촬영본 이야기는 만드는 사람에게만
+      (devMode() ? ' 촬영본이 들어오면 이 자리가 영상으로 바뀝니다 — 종목마다 따로 켤 수 있어서 ' +
+        '다 찍을 때까지 기다리지 않아도 됩니다.' : '');
   }
 
   function prefersDark() {
