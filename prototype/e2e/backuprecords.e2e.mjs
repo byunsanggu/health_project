@@ -28,7 +28,7 @@ export default async function ({ page, url, out }) {
   await page.locator('dialog .backup-report').first().waitFor();
   check((await page.locator('dialog').textContent()).includes('운동 기록 1일'), '설문을 마쳤는데 기록 알림이 없습니다');
   await page.locator('dialog .modal-close').click();
-  await tab(page, '진행');
+  await tab(page, '기록');
   const rows = await page.locator('.history-row').allTextContents();
   check(rows.length === 1 && rows[0].includes('10월 20일'), '진행 탭: ' + rows.join(' / '));
 }

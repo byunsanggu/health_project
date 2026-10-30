@@ -77,6 +77,7 @@ export * from './knownGyms.ts';
 export * from './strength.ts';
 export * from './session.ts';
 export * from './weekSets.ts';
+export * from './growth.ts';
 export * from './shortSession.ts';
 export * from './schedule.ts';
 export * from './rest.ts';

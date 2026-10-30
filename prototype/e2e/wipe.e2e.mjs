@@ -1,6 +1,6 @@
 // 전부 삭제 — 식단(민감정보)도 남지 않는다. 다시 설정하고 식단에 다시 동의해도 옛 기록이 돌아오지 않는다
 //   (전에는 저장소만 비우고 화면이 들고 있던 칸들을 다음 저장 때 그대로 다시 썼다)
-import { check, onboard, tab, startWorkout } from './lib.mjs';
+import { check, onboard, startWorkout, tab } from './lib.mjs';
 
 export default async function ({ page, url }) {
   await page.clock.install({ time: new Date('2026-10-22T12:30:00+09:00') });
@@ -20,7 +20,7 @@ export default async function ({ page, url }) {
   await page.locator('button', { hasText: '운동 끝내기' }).first().click();
   await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();
 
-  await page.click('#me-btn');
+  await tab(page, '내 정보');
   await page.getByRole('button', { name: '전부 삭제' }).click();
   await page.locator('dialog').getByRole('button', { name: '네, 전부 삭제합니다' }).click();
   await page.waitForSelector('.consent-card');
@@ -36,6 +36,6 @@ export default async function ({ page, url }) {
   await tab(page, '식단');
   await page.locator('.food-log').getByRole('button', { name: '동의하고 적기 시작' }).click();
   check(await page.locator('.food-day .food-entry').count() === 0, '지운 식단이 돌아왔습니다');
-  await tab(page, '진행');
+  await tab(page, '기록');
   check(await page.locator('.history-row').count() === 0, '지운 운동 기록이 돌아왔습니다');
 }

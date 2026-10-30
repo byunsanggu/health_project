@@ -1,6 +1,6 @@
 // PT 한 바퀴 — 몸 풀기(목록에 다녀와도 이어진다) → 세기("운동 끝내기 → 계속하기"는 바로 잇는다)
 //   → 다 세면 묻지 않고 바로 기록 → 휴식(화면을 껐다 켜면 저절로 잇는다) → 다음 세트
-import { check, choosePt, focusPhase, onboard, runUntil, setVisible } from './lib.mjs';
+import { begin, check, choosePt, focusPhase, onboard, runUntil, setVisible } from './lib.mjs';
 
 async function untilRep(page) {
   for (let i = 0; i < 90; i += 1) {
@@ -15,7 +15,7 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
   await choosePt(page);
-  await page.click('.start-cta');
+  await begin(page);
   await runUntil(page, 'prep');
   await shot('1-prep');
 
@@ -23,7 +23,7 @@ export default async function ({ page, url, shot }) {
   await page.click('#focus .focus-more');
   await page.getByRole('button', { name: '오늘 할 것 목록으로' }).click();
   check(await focusPhase(page) === null, '목록인데 집중 화면이 떠 있습니다');
-  await page.click('.start-cta');
+  await begin(page);
   await page.clock.runFor(500);
   check(await focusPhase(page) === 'prep', '목록에서 돌아왔는데 ' + await focusPhase(page));
   await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();

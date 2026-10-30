@@ -1,6 +1,6 @@
 // 검색이 될 때 — 설문에서 적은 이름으로 헬스장 탭 검색이 바로 채워지고, 고른 곳이 이름표 자리를
 //   대신한다(헬스장이 둘로 안 갈라지고, 설문에서 고른 기구가 그대로 간다). 카카오 응답은 가짜로 준다.
-import { check, tab } from './lib.mjs';
+import { check, gymTab, pickMe, tab } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -19,7 +19,7 @@ export default async function ({ page, url, shot }) {
   await page.waitForSelector('.consent-card');
   await onboardWithName(page, '역삼 튼튼짐');
 
-  await tab(page, '헬스장');
+  await gymTab(page);
   const before = await page.locator('.gym-here').textContent();
   const kit = before.match(/기구 (\d+)개/)[1];
   await page.locator('.gym-link').click();
@@ -49,11 +49,8 @@ async function onboardWithName(page, name) {
   }
   for (let i = 0; i < 14; i += 1) {
     const step = (await page.locator('.session-head h2').textContent()).trim();
-    if (await page.locator('.wizard-needs').count()) {
-      if (step === '경력') await page.locator('.choice', { hasText: '중급' }).first().click();
-      else if (step === '내 정보') await page.locator('.segmented button', { hasText: '남성' }).click();
-    }
-    if (step === '헬스장 기구') await page.locator('#onb-gym-name').fill(name);
+    if (step === '나에 대해') await pickMe(page);
+    if (step === '헬스장') await page.locator('#onb-gym-name').fill(name);
     const next = page.locator('.wizard-nav .primary');
     const text = (await next.textContent()).trim();
     await next.click();

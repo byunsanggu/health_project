@@ -1,5 +1,5 @@
 // 방금 적은 세트 5초 되돌리기 · 진행 탭의 운동 기록(누르면 그날 세트 · 지난날은 지우기)
-import { check, onboard, tab, startWorkout } from './lib.mjs';
+import { check, onboard, startWorkout, tab } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -24,7 +24,7 @@ export default async function ({ page, url, shot }) {
   await page.locator('.now-done').click();
 
   // 오늘 기록이 진행 탭 맨 위에
-  await tab(page, '진행');
+  await tab(page, '기록');
   check((await page.locator('.history-row').first().textContent()).includes('오늘'), '진행 탭에 오늘 기록이 없습니다');
   check((await page.locator('.history-row').first().textContent()).includes('2세트'), '오늘 세트 수가 다릅니다');
   await tab(page, '오늘');
@@ -34,7 +34,7 @@ export default async function ({ page, url, shot }) {
   // 다음 날 — 어제 기록을 열고 지운다
   await page.clock.setSystemTime(new Date('2026-10-23T18:00:00+09:00'));
   await page.reload();
-  await tab(page, '진행');
+  await tab(page, '기록');
   const row = page.locator('.history-row').first();
   check((await row.textContent()).includes('10월 22일 (목)'), '어제 기록이 없습니다: ' + await row.textContent());
   await row.click();
@@ -44,6 +44,6 @@ export default async function ({ page, url, shot }) {
   await page.locator('dialog').getByRole('button', { name: '지우기' }).click();
   check(await page.locator('.history-row').count() === 0, '지웠는데 기록이 남았습니다');
   await page.reload();
-  await tab(page, '진행');
+  await tab(page, '기록');
   check(await page.locator('.history-row').count() === 0, '다시 켰더니 지운 기록이 돌아왔습니다');
 }

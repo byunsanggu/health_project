@@ -1,23 +1,22 @@
 // 짧은 날 PT를 끝까지 — 평소 60분 · 오늘 20분에서 −는 15분(평소 값에서 빼면 55분이 됐다)
 //   → 세트마다 묻지 않고 "여기까지"로 바로 적힌다 · 마지막 세트 뒤에 "한 번 더"라고 하지 않는다
 //   → 스트레칭 중 멈춘 채로 끝내도 일시정지 화면이 남지 않는다
-import { check, choosePt, focusPhase, onboard, runUntil, setVisible } from './lib.mjs';
+import { begin, check, choosePt, focusPhase, onboard, runUntil, setVisible } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
 
-  // 평소 60분인 사람이 오늘만 20분 — 그다음 −는 오늘 값(20)에서 움직여야 한다
-  await page.locator('.stat-card .stat-head', { hasText: '운동 시간' }).click();
-  await page.locator('.stat-body .pick', { hasText: '60분' }).click();
-  await page.locator('.stat-body .pick', { hasText: '20분' }).click();
-  await page.locator('.stat-body [aria-label="5분 줄이기"]').click();
-  const minutes = await page.locator('.stat-body input[type="number"]').inputValue();
-  check(minutes === '15', '20분에서 −5분 했는데 ' + minutes);
+  // 오늘만 20분 — 시작 전 한 장에서 고른다. 짧은 날이 되고 목록 위에 한 줄로 남는다
+  await page.locator('.start-cta').click();
+  await page.locator('dialog .segmented button', { hasText: '20분' }).click();
+  await page.locator('dialog .modal-close').click();
+  check((await page.locator('.today-adjust').textContent()).includes('20분'), '오늘 시간이 안 보입니다');
+  check(await page.locator('.short-note').count() === 1, '20분인데 짧은 날이 아닙니다');
 
   await choosePt(page);
-  await page.click('.start-cta');
+  await begin(page);
   let sets = 0;
   let lastLines = [];
   for (let guard = 0; guard < 80; guard += 1) {

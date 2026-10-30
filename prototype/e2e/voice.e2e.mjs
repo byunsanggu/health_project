@@ -3,7 +3,7 @@
 //   활기찬 코치는 남 · 여 목소리를 고른다. 한 번 받으면 이 폰에 남는다.
 import { clipId, speechPieces } from '../../src/engine/speech.ts';
 import { COACH_STYLES } from '../../src/engine/coach.ts';
-import { check, choosePt, onboard } from './lib.mjs';
+import { check, choosePt, onboard, tab } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   const asked = [];
@@ -20,8 +20,8 @@ export default async function ({ page, url, shot }) {
   await choosePt(page);
 
   // 빡센 코치를 고르면 그 목소리로 한마디 — 그 말의 조각 파일을 받는다
-  await page.locator('.coach-line').click();
-  await page.locator('dialog .coach-style', { hasText: '빡세게' }).click();
+  await tab(page, '내 정보');
+  await page.locator('.coach-settings .coach-style', { hasText: '빡세게' }).click();
   const sample = COACH_STYLES.find((item) => item.id === 'tough').sample;
   await page.waitForFunction((text) => window.__said.includes(text), sample);
   const want = speechPieces(sample).map((piece) => 'tough/' + clipId(piece) + '.mp3');
@@ -31,16 +31,16 @@ export default async function ({ page, url, shot }) {
   check(asked.includes('tough/manifest.json'), '목소리 목록을 안 읽었습니다');
 
   // 고른 목소리를 이 폰에 다 받아 둔다 — 다 받으면 "받아 두었습니다"
-  await page.locator('dialog .voice-status', { hasText: '받아 두었습니다' }).waitFor({ timeout: 60000 });
+  await page.locator('#screen .voice-status', { hasText: '받아 두었습니다' }).waitFor({ timeout: 60000 });
   await shot('1-ready');
 
   // 활기찬 코치 — 여자 목소리를 고르면 그 폴더 조각을 받는다
-  await page.locator('dialog .coach-style', { hasText: '활기차게' }).click();
-  await page.locator('dialog .segmented button', { hasText: '여자 목소리' }).click();
+  await page.locator('#screen .coach-settings .coach-style', { hasText: '활기차게' }).click();
+  await page.locator('#screen .coach-settings .segmented button', { hasText: '여자 목소리' }).click();
   await page.waitForFunction(() => window.__said.length > 2);
   for (let i = 0; i < 50 && !asked.some((file) => file.startsWith('energetic-f/') && file.endsWith('.mp3')); i += 1) await page.waitForTimeout(100);
   check(asked.some((file) => file.startsWith('energetic-f/') && file.endsWith('.mp3')), '여자 목소리 조각을 안 받았습니다');
-  await page.locator('dialog .modal-close').click();
+  await tab(page, '오늘');
 
   // 종목 설명을 코치 목소리로
   await page.locator('.plan-row .row-menu').first().click();

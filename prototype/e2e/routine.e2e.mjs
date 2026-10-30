@@ -4,7 +4,7 @@
 import { check, onboard, tab } from './lib.mjs';
 
 async function openMe(page) {
-  await page.locator('#me-btn').click();
+  await tab(page, '내 정보');
   await page.waitForSelector('.routine-start, .routine-edit');
 }
 
@@ -89,9 +89,10 @@ export default async function ({ page, url, shot }) {
   check(/^5세트/.test(sets[0]) && /^3세트/.test(sets[1]) && /12–20회/.test(sets[1]), '세트 · 반복: ' + sets.join(' / '));
   await shot('3-today');
 
-  // 주간 — 처방 대신 루틴 점검
-  await tab(page, '주간');
-  check(await page.locator('.routine-week').count() === 1, '주간 탭에 루틴 점검이 없습니다');
+  // 기록 › 자세히 — 처방 대신 루틴 점검
+  await tab(page, '기록');
+  await page.locator('.record-more').click();
+  check(await page.locator('.routine-week').count() === 1, '기록 탭에 루틴 점검이 없습니다');
   check((await page.locator('.session-head .meta').first().textContent()).includes('내 루틴 그대로'), '주간 머리줄이 처방 문구입니다');
   await page.locator('.routine-week').scrollIntoViewIfNeeded();
   await shot('3b-week');

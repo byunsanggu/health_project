@@ -2,7 +2,7 @@
 //   내 정보에서 불러오면 빠진 날만 채운다. 통증 · 식단은 지금 그 항목에 동의했을 때만 들어온다.
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { check, choosePt, onboard, tab, startWorkout } from './lib.mjs';
+import { check, choosePt, onboard, startWorkout, tab } from './lib.mjs';
 
 async function chooseFile(page, button, path) {
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), button.click()]);
@@ -10,7 +10,7 @@ async function chooseFile(page, button, path) {
 }
 
 async function historyRows(page) {
-  await tab(page, '진행');
+  await tab(page, '기록');
   return page.locator('.history-row').allTextContents();
 }
 
@@ -20,12 +20,10 @@ export default async function ({ page, url, shot, out }) {
   await page.goto(url);
   await onboard(page);
   await choosePt(page);
-  await page.locator('.coach-line').click();
-  await page.locator('dialog .coach-style', { hasText: '빡세게' }).click();
-  await page.locator('dialog .modal-close').click();
-  await page.locator('.coach-line').click();
-  await page.locator('dialog .coach-mode', { hasText: '혼자' }).click();
-  await page.locator('dialog .modal-close').click();
+  await tab(page, '내 정보');
+  await page.locator('.coach-settings .coach-style', { hasText: '빡세게' }).click();
+  await page.locator('.coach-settings .coach-mode', { hasText: '혼자' }).click();
+  await tab(page, '오늘');
   await startWorkout(page);
   await page.locator('.now-done').click();
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
@@ -36,7 +34,7 @@ export default async function ({ page, url, shot, out }) {
   // 다음 날 내려받는다
   await page.clock.setSystemTime(new Date('2026-10-22T18:00:00+09:00'));
   await page.reload();
-  await page.click('#me-btn');
+  await tab(page, '내 정보');
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: '내 데이터 내려받기' }).click(),
@@ -82,7 +80,8 @@ export default async function ({ page, url, shot, out }) {
   check(report.includes('운동 기록 1일'), '알림: ' + report);
   await shot('2-report');
   await page.locator('dialog .modal-close').click();
-  check((await page.locator('.coach-line').textContent()).includes('혼자'), '운동 방식이 백업 때와 다릅니다');
+  await tab(page, '내 정보');
+  check(await page.locator('.coach-settings .coach-mode[aria-pressed="true"]', { hasText: '혼자' }).count() === 1, '운동 방식이 백업 때와 다릅니다');
   let rows = await historyRows(page);
   check(rows.length === 1 && rows[0].includes('10월 21일 (수)') && rows[0].includes('2세트'), '진행 탭: ' + rows.join(' / '));
 
@@ -99,7 +98,7 @@ export default async function ({ page, url, shot, out }) {
   more['식단기록'] = [{ id: 'f1', date: '2026-10-15', meal: 'lunch', name: '제육볶음', grams: 300, amount: '1인분', kcal: 600, protein: 35, fat: 30, carbs: 40 }];
   const merged = join(out, 'backup-more.json');
   await writeFile(merged, JSON.stringify(more));
-  await page.click('#me-btn');
+  await tab(page, '내 정보');
   await chooseFile(page, page.getByRole('button', { name: '백업 불러오기' }), merged);
   // 파일 안의 같은 날(10월 21일 두 번)은 세트가 많은 쪽 — 그래도 이 폰에 있는 날이라 합칠 때는 이 폰 것을 둔다
   const toMerge = await page.locator('dialog .backup-rows').textContent();

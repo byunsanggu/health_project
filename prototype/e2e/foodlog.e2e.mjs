@@ -107,7 +107,7 @@ export default async function ({ page, url, shot }) {
   await page.emulateMedia({ colorScheme: 'light' });
 
   // 동의를 철회하면 기록이 지워진다
-  await page.click('#me-btn');
+  await tab(page, '내 정보');
   const row = page.locator('.status-row', { hasText: '식단 기록' });
   await row.getByRole('button', { name: '철회' }).click();
   await tab(page, '식단');

@@ -1,7 +1,7 @@
 // 처음 쓰는 사람의 헬스장 · 기구 · 순서 — 설문에서 헬스장 이름을 적고, 그림 칸에서 기구를 고르고,
 //   오늘 목록에서 바로 순서를 바꾸고, 헬스장 탭에서 설문이 만든 이름표를 실제 헬스장으로 연결한다.
 //   연결해도 기구와 기록은 그대로 가고, 헬스장이 둘로 갈라지지 않는다.
-import { check, finishWizard, tab } from './lib.mjs';
+import { check, finishWizard, gymTab, pickMe, tab } from './lib.mjs';
 
 async function toGymStep(page) {
   await page.waitForSelector('.consent-card');
@@ -12,14 +12,11 @@ async function toGymStep(page) {
   }
   for (let i = 0; i < 6; i += 1) {
     const step = (await page.locator('.session-head h2').textContent()).trim();
-    if (step === '헬스장 기구') return;
-    if (await page.locator('.wizard-needs').count()) {
-      if (step === '경력') await page.locator('.choice', { hasText: '초보' }).first().click();
-      else if (step === '내 정보') await page.locator('.segmented button', { hasText: '남성' }).click();
-    }
+    if (step === '헬스장') return;
+    if (step === '나에 대해') await pickMe(page, { level: '초보' });
     await page.locator('.wizard-nav .primary').click();
   }
-  throw new Error('헬스장 기구 단계에 못 갔습니다');
+  throw new Error('헬스장 단계에 못 갔습니다');
 }
 
 const tileNamed = (page, name) => page.locator('.equip-tile', { has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) });
@@ -39,6 +36,9 @@ export default async function ({ page, url, shot }) {
   await page.locator('.chip-row .pick', { hasText: '동네 헬스장' }).click();
   check(await page.locator('.chip-row .pick[aria-pressed="true"]', { hasText: '동네 헬스장' }).count() === 1, '고른 유형이 표시되지 않습니다');
   check(await page.locator('#onb-gym-name').inputValue() === '역삼 튼튼짐', '유형을 고르니 이름이 지워졌습니다');
+  // 기구 하나씩 고치기는 접혀 있다 — 펼친다
+  check(await page.locator('.equip-tile').count() === 0, '기구 그림 칸이 처음부터 펼쳐져 있습니다');
+  await page.locator('.equip-toggle').click();
   const tiles = await page.locator('.equip-tile').count();
   check(tiles >= 15 && tiles <= 35, '처음 보이는 그림 칸이 ' + tiles + '개입니다 (흔한 것만 보여야 합니다)');
   await shot('1-gymstep');
@@ -83,7 +83,7 @@ export default async function ({ page, url, shot }) {
   check(pushed[pushed.length - 1] === moved[0], '맨 뒤로가 안 됩니다: ' + pushed.join(', '));
 
   // 헬스장 탭 — 지금 다니는 곳
-  await tab(page, '헬스장');
+  await gymTab(page);
   const here = await page.locator('.gym-here').textContent();
   check(here.includes('역삼 튼튼짐') && here.includes('아직 연결 안 됨'), '헬스장 칸: ' + here);
   check(here.includes('기구 ' + onCount + '개'), '설문에서 고른 기구 수(' + onCount + ')가 안 맞습니다: ' + here);
@@ -119,6 +119,6 @@ export default async function ({ page, url, shot }) {
   await page.waitForSelector('.tabbar [role="tab"]');
   await tab(page, '오늘');
   check(await page.locator('.gym-link-nudge').count() === 0, '연결했는데 오늘 안내가 남았습니다');
-  await tab(page, '헬스장');
+  await gymTab(page);
   check((await page.locator('.gym-here').textContent()).includes('3층'), '다시 켜니 연결이 사라졌습니다');
 }

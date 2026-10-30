@@ -1,6 +1,6 @@
 // 종목 빼기 — "오늘만 빼기"는 이유를 안 묻고 오늘만, 되돌릴 수 있다. 빼면 그 자리에 다른 종목이 생기지 않는다.
 // 운동 중 종목 이름은 머리띠 한 곳만. 같은 브랜드의 다른 곳(바우짐 · 바우짐 여성점)은 따로 등록되고 구분 표시가 붙는다.
-import { check, onboard, tab, startWorkout } from './lib.mjs';
+import { check, gymTab, onboard, startWorkout, tab } from './lib.mjs';
 
 const names = async (page) => (await page.locator('.plan-row .name > span:first-child').allTextContents()).map((t) => t.trim());
 
@@ -42,7 +42,7 @@ export default async function ({ page, url, shot }) {
   await page.locator('.progress-top .demo-open', { hasText: '목록' }).click();
 
   // 바우짐 · 바우짐 여성점 — 따로 등록, 구분 표시
-  await tab(page, '헬스장');
+  await gymTab(page);
   await page.locator('.gym-link').click();
   await page.locator('dialog .choice', { hasText: '동네 헬스장' }).click();
   await page.locator('dialog input[placeholder="헬스장 이름"]').fill('바우짐');

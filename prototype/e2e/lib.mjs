@@ -94,6 +94,8 @@ export const FAKE_SPEECH = () => {
  */
 export async function onboard(page, { consent = 'required', level = '중급', sex = '남성' } = {}) {
   await page.waitForSelector('.consent-card');
+  // 선택 항목은 접혀 있다 — 전부 동의하려면 펼친다
+  if (consent === 'all' && await page.locator('.consent-more[aria-expanded="false"]').count()) await page.locator('.consent-more').click();
   const cards = page.locator('.consent-card');
   for (let i = 0; i < await cards.count(); i += 1) {
     const card = cards.nth(i);
@@ -110,10 +112,7 @@ export async function onboard(page, { consent = 'required', level = '중급', se
 export async function finishWizard(page, { level = '중급', sex = '남성' } = {}) {
   for (let i = 0; i < 14; i += 1) {
     const step = (await page.locator('.session-head h2').textContent()).trim();
-    if (await page.locator('.wizard-needs').count()) {
-      if (step === '경력') await page.locator('.choice', { hasText: level }).first().click();
-      else if (step === '내 정보') await page.locator('.segmented button', { hasText: sex }).click();
-    }
+    if (step === '나에 대해') await pickMe(page, { level, sex });
     const next = page.locator('.wizard-nav .primary');
     const text = (await next.textContent()).trim();
     await next.click();
@@ -122,9 +121,24 @@ export async function finishWizard(page, { level = '중급', sex = '남성' } = 
   await page.waitForSelector('.tabbar [role="tab"]');
 }
 
+/** 처음 설정 "나에 대해" — 경력 단계와 성별을 아직 안 골랐으면 고른다. */
+export async function pickMe(page, { level = '중급', sex = '남성' } = {}) {
+  if (await page.locator('.choice[aria-pressed="true"]', { hasText: /초보|중급|고급|전문가/ }).count() === 0) {
+    await page.locator('.choice', { hasText: level }).first().click();
+  }
+  const male = page.locator('.segmented button', { hasText: sex });
+  if (await male.getAttribute('aria-pressed') !== 'true') await male.click();
+}
+
 /** 아래 탭 하나를 누른다. */
 export async function tab(page, label) {
   await page.locator('.tabbar [role="tab"]', { hasText: label }).click();
+}
+
+/** 내 정보 › 헬스장 */
+export async function gymTab(page) {
+  await tab(page, '내 정보');
+  await page.locator('.me-sections button', { hasText: '헬스장' }).click();
 }
 
 /** 조건이 참이 될 때까지. 실패하면 무엇을 기다렸는지 말한다. */
@@ -141,11 +155,21 @@ export async function setVisible(page, visible) {
   }, visible);
 }
 
-/** 오늘 화면의 "운동 방식"에서 PT를 고른다. */
+/** 내 정보 › 코치에서 PT를 고르고 오늘 화면으로 돌아온다. */
 export async function choosePt(page) {
-  await page.locator('.coach-line').click();
-  await page.locator('dialog .coach-mode', { hasText: 'PT' }).click();
-  await page.locator('dialog .modal-close').click();
+  await tab(page, '내 정보');
+  await page.locator('.coach-settings .coach-mode', { hasText: 'PT' }).click();
+  await tab(page, '오늘');
+}
+
+/**
+ * 시작하기 — 처음이면 "오늘 운동 준비" 한 장이 뜨고 거기서 시작을 누른다.
+ * 이어서 하기(세트를 한 뒤 · PT 멈춘 뒤)는 바로 시작한다.
+ */
+export async function begin(page) {
+  await page.locator('.start-cta').click();
+  const go = page.locator('dialog .start-go');
+  if (await go.count() && await go.isVisible()) await go.click();
 }
 
 /**
@@ -182,6 +206,6 @@ export async function runUntil(page, phases, { stepMs = 1000, maxMs = 300000 } =
 
 /** 시작하기 — 혼자 모드는 몸 풀기 단계가 먼저 뜬다. 종목을 보려는 시험은 건너뛴다. */
 export async function startWorkout(page) {
-  await page.locator('.start-cta').click();
+  await begin(page);
   if (await page.locator('.warm-skip').count()) await page.locator('.warm-skip').click();
 }

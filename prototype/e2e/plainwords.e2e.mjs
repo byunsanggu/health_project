@@ -1,6 +1,6 @@
 // 화면에 나가는 말 — 현장 용어(RIR · 1RM · 축적 · 디로드)와 2026-10-22 같은 날짜를 쓰지 않는다.
 //   좁은 폰(320px)에서 편집 버튼 줄이 카드 밖으로 잘리지 않고, "원래대로"가 두 줄로 쪼개지지 않는다.
-import { check, onboard, tab, startWorkout } from './lib.mjs';
+import { check, onboard, startWorkout, tab } from './lib.mjs';
 
 const JARGON = /RIR|1RM|축적|디로드|템플릿|기준선/;
 const ISO = /\d{4}-\d{2}-\d{2}/;
@@ -33,8 +33,11 @@ export default async function ({ page, url, shot }) {
   await page.locator('.list-edit').click();
 
   // 짧은 날 — "원래대로"는 한 줄
-  await page.locator('button', { hasText: '운동 시간' }).first().click();
-  await page.locator('.chip-row button', { hasText: /^20분$/ }).first().click();
+  await page.locator('.start-cta').click();
+  await page.locator('dialog .segmented button', { hasText: /^20분$/ }).click();
+  await page.locator('dialog .modal-close').click();
+  await page.waitForTimeout(200);
+  await page.locator('.short-note .pick').scrollIntoViewIfNeeded();
   const reset = await page.locator('.short-note .pick').boundingBox();
   check(reset && reset.height < 40, '"원래대로"가 두 줄입니다: ' + JSON.stringify(reset));
   await page.locator('.short-note .pick').click();
@@ -61,12 +64,12 @@ export default async function ({ page, url, shot }) {
   await page.locator('dialog .modal-close').click();
 
   // 주간 머리 · 블록 유형 · 정확도 카드
-  await tab(page, '주간');
+  await tab(page, '기록');
   const week = await visibleText(page, '#screen');
   check(!JARGON.test(week), '주간 탭에 현장 용어: ' + (week.match(new RegExp('.{0,20}(' + JARGON.source + ').{0,20}')) || [''])[0]);
 
   // 내 정보 — 동의한 날
-  await page.click('#me-btn');
+  await tab(page, '내 정보');
   const me = await visibleText(page, '#screen');
   check(!ISO.test(me), '내 정보에 2026-10-22 같은 날짜: ' + (me.match(/.{0,20}\d{4}-\d{2}-\d{2}.{0,20}/) || [''])[0]);
 }

@@ -1,7 +1,7 @@
-// 반복 수를 사람에게 — 설문에서 "가볍게 많이"를 고르면 그대로 처방하고, 종목마다 직접 정한 반복이 블록보다
+// 반복 수를 사람에게 — 내 정보에서 "가볍게 많이"를 고르면 그대로 처방하고, 종목마다 직접 정한 반복이 블록보다
 //   먼저이고, 블록 유형을 바꾸면 처방 횟수가 실제로 바뀐다. 처방보다 두 번 연속 많이 했으면
 //   "바꿀까요?"를 묻고 — 안 누르면 그대로, "그대로 두기"면 다시 안 묻는다.
-import { check, tab } from './lib.mjs';
+import { check, onboard, tab } from './lib.mjs';
 
 const rowReps = async (page, name) => (await page.locator('.plan-row', { has: page.locator('.name', { hasText: name }) })
   .first().locator('.plan-sets').textContent()).trim();
@@ -9,29 +9,13 @@ const rowReps = async (page, name) => (await page.locator('.plan-row', { has: pa
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
-  await page.waitForSelector('.consent-card');
-  const cards = page.locator('.consent-card');
-  for (let i = 0; i < await cards.count(); i += 1) {
-    const card = cards.nth(i);
-    if (await card.locator('.consent-tag.req').count() > 0) await card.locator('.consent-toggle').click();
-  }
-  for (let i = 0; i < 14; i += 1) {
-    const step = (await page.locator('.session-head h2').textContent()).trim();
-    if (await page.locator('.wizard-needs').count()) {
-      if (step === '경력') await page.locator('.choice', { hasText: '중급' }).first().click();
-      else if (step === '내 정보') await page.locator('.segmented button', { hasText: '남성' }).click();
-    }
-    if (step === '내 정보') {
-      await page.locator('.rep-style-pick', { hasText: '가볍게 많이' }).click();
-      check(await page.locator('.rep-style-pick[aria-pressed="true"]', { hasText: '가볍게 많이' }).count() === 1, '스타일이 안 골라집니다');
-      await shot('1-style');
-    }
-    const next = page.locator('.wizard-nav .primary');
-    const text = (await next.textContent()).trim();
-    await next.click();
-    if (text === '이 프로그램으로 시작') break;
-  }
-  await page.waitForSelector('.tabbar [role="tab"]');
+  await onboard(page);
+  // 반복 스타일은 처음 설정에서 묻지 않는다 — 내 정보 › 반복 · 강도에서 고른다
+  await tab(page, '내 정보');
+  await page.locator('.rep-style-pick', { hasText: '가볍게 많이' }).click();
+  check(await page.locator('.rep-style-pick[aria-pressed="true"]', { hasText: '가볍게 많이' }).count() === 1, '스타일이 안 골라집니다');
+  await shot('1-style');
+  await tab(page, '오늘');
 
   // 가볍게 많이 — 주 종목도 10–15회
   const lines = await page.locator('.plan-row .plan-sets').allTextContents();
@@ -48,14 +32,16 @@ export default async function ({ page, url, shot }) {
   await page.locator('dialog .rep-save').click();
   check(/6–10회/.test(await rowReps(page, first)), '직접 정한 반복이 안 들어갔습니다: ' + await rowReps(page, first));
 
-  // 블록 유형 — 고밀도(8~12)로 바꾸면 다른 종목은 바뀌고, 직접 정한 종목은 그대로
-  await tab(page, '주간');
+  // 블록 유형(내 정보) — 고밀도(8~12)로 바꾸면 다른 종목은 바뀌고, 직접 정한 종목은 그대로
+  await tab(page, '내 정보');
+  await page.locator('.block-toggle').click();
   await page.locator('.choice', { hasText: '고밀도' }).click();
   await tab(page, '오늘');
   check(/8–12회/.test(await rowReps(page, second)), '블록을 바꿨는데 처방 횟수가 그대로입니다: ' + await rowReps(page, second));
   check(/6–10회/.test(await rowReps(page, first)), '직접 정한 반복이 블록에 덮였습니다: ' + await rowReps(page, first));
-  await tab(page, '주간');
-  await page.locator('.choice', { hasText: '근비대' }).first().click();
+  await tab(page, '내 정보');
+  if (await page.locator('.block-toggle[aria-expanded="false"]').count()) await page.locator('.block-toggle').click();
+  await page.locator('.block-style .choice', { hasText: '근비대' }).first().click();
   await tab(page, '오늘');
 
   // 바꿀까요? — 지난주 두 번, 두 번째 종목을 처방보다 훨씬 많이 했다(이번 주 순서는 그대로 두려고 지난주로)

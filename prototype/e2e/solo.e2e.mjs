@@ -1,6 +1,6 @@
 // 혼자 모드 — 시작 → 남은 횟수 눌러 세트 기록 → 휴식 → 종목을 다 하면 다음 종목으로
 //   → 앱을 다시 켜도 이어진다 → 운동 끝내기는 요약을 연다
-import { check, onboard, startWorkout } from './lib.mjs';
+import { check, onboard, startWorkout, tab } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -37,7 +37,7 @@ export default async function ({ page, url, shot }) {
   const before = await minutes();
   check(before, '마친 화면에 운동 시간이 없습니다');
   await page.clock.fastForward(90 * 60 * 1000);
-  await page.locator('.tabbar [role="tab"]', { hasText: '주간' }).click();
+  await tab(page, '기록');
   await page.locator('.tabbar [role="tab"]', { hasText: '오늘' }).click();
   check(await minutes() === before, `마친 뒤 시간이 ${before}분 → ${await minutes()}분으로 늘었습니다`);
 }

@@ -1,6 +1,6 @@
 // 화면 꺼도 휴식 끝 소리 — 세트를 끝내면 "휴식 길이만큼 무음 + 알림음" 소리 파일을 틀어 둔다
 //   (잠금 화면에서도 재생은 계속되므로 끝에서 울린다). 건너뛰면 멈추고, 설정에서 끄면 틀지 않는다.
-import { check, onboard, startWorkout } from './lib.mjs';
+import { check, onboard, startWorkout, tab } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -49,13 +49,13 @@ export default async function ({ page, url, shot }) {
   check(await page.evaluate(() => window.__pauses) > paused, '휴식을 건너뛰었는데 소리를 멈추지 않았습니다');
 
   // 설정에서 끄면 틀지 않는다
-  await page.locator('#me-btn').click();
+  await tab(page, '내 정보');
   const row = page.locator('.rest-sound-row');
   check((await row.textContent()).includes('켜짐'), '기본이 켜짐이 아닙니다');
   await shot('1-setting');
   await row.click();
   check((await row.textContent()).includes('꺼짐'), '끄기가 안 됩니다');
-  await page.locator('#me-btn').click();
+  await tab(page, '오늘');
   const count = (await plays()).length;
   await page.locator('.now-done').click();
   check((await plays()).length === count, '꺼 뒀는데 소리를 틀었습니다');

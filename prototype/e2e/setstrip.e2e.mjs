@@ -1,6 +1,6 @@
 // 세트 칸 — 몇 세트 했는지 한눈에 보이고, 세트는 "완료" 하나로 끝내고, 끝낸 세트를 고쳐도 지금 할 세트로 돌아가지 않는다.
 //   예전에는 "고치기"가 그 세트를 안 한 것으로 되돌려서 2세트를 끝냈는데 1세트 화면이 떴다.
-import { check, onboard, startWorkout } from './lib.mjs';
+import { check, onboard, startWorkout, tab } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -46,9 +46,9 @@ export default async function ({ page, url, shot }) {
   await shot('3-after');
 
   // 원하는 사람은 내 정보에서 묻기를 켠다 — 켜면 "몇 개 더" 버튼이 돌아온다
-  await page.locator('#me-btn').click();
+  await tab(page, '내 정보');
   await page.locator('.coach-settings .segmented button', { hasText: '남은 횟수' }).click();
-  await page.locator('#me-btn').click();
+  await tab(page, '오늘');
   await page.locator('.now-rir .chip', { hasText: '2개 더' }).waitFor();
   check(await page.locator('.now-done').count() === 0, '묻기를 켰는데 완료 버튼이 그대로입니다');
 }

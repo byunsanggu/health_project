@@ -16,7 +16,7 @@ export default async function ({ page, url }) {
     if (await cards.nth(i).locator('.consent-tag.req').count()) await cards.nth(i).locator('.consent-toggle').click();
   }
   await page.click('.wizard-nav .primary');
-  check(await page.locator('.session-head h2').textContent() === '경력', '경력 단계가 아닙니다');
+  check(await page.locator('.session-head h2').textContent() === '나에 대해', '나에 대해 단계가 아닙니다');
   await back(page);
   check(await page.locator('.session-head h2').textContent() === '동의', '뒤로가기로 이전 단계에 안 갔습니다');
   await page.reload();
@@ -29,8 +29,8 @@ export default async function ({ page, url }) {
   check(await page.locator('.tabbar [aria-selected="true"]').textContent() === '오늘', '다른 탭에서 뒤로가기가 오늘로 안 갔습니다');
   check(page.url() === home, '앱을 나갔습니다');
 
-  // 창 → 닫힘 (화면은 그대로)
-  await page.locator('.coach-line').click();
+  // 창 → 닫힘 (화면은 그대로) — 시작하기를 누르면 뜨는 "오늘 운동 준비"
+  await page.locator('.start-cta').click();
   await page.locator('dialog[open]').waitFor();
   await back(page);
   check(await page.locator('dialog[open]').count() === 0, '창이 안 닫혔습니다');

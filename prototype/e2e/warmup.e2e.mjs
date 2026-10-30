@@ -1,6 +1,6 @@
 // 몸 풀기는 따로 — 오늘 목록에는 종목만 있고 몸 풀기는 그 위 "시작 전" 칸에. 시작하면 머리띠가
 //   "종목 1"이 아니라 "몸 풀기"로 뜨고, 다 하면 첫 종목으로 간다. 지금 하는 종목 이름은 크게.
-import { check, onboard } from './lib.mjs';
+import { begin, check, onboard } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -22,7 +22,7 @@ export default async function ({ page, url, shot }) {
   await shot('1-list');
 
   // 시작 — 몸 풀기 단계
-  await page.locator('.start-cta').click();
+  await begin(page);
   const head = (await page.locator('.progress-name > span').first().textContent()).trim();
   check(head.startsWith('몸 풀기'), '시작했는데 머리띠가 몸 풀기가 아닙니다: ' + head);
   check((await page.locator('.progress-count').textContent()).includes('준비'), '머리띠가 종목 번호를 말합니다');
@@ -49,6 +49,6 @@ export default async function ({ page, url, shot }) {
   // 목록으로 갔다 다시 시작해도 몸 풀기를 또 하지 않는다
   await page.locator('.progress-top .demo-open', { hasText: '목록' }).click();
   check((await page.locator('.warm-sheet .meta').textContent()).includes('오늘 했음'), '몸 풀기 칸이 했음으로 안 바뀝니다');
-  await page.locator('.start-cta').click();
+  await begin(page);
   check((await page.locator('.progress-name > span').first().textContent()).trim() === names[0], '몸 풀기를 또 합니다');
 }

@@ -348,7 +348,7 @@ input[type="search"] {
 .tabbar {
   flex: none;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   border-top: 1px solid var(--line-soft);
   background: var(--surface);
 }
@@ -1187,7 +1187,6 @@ input[type="search"] {
 /* 세트 · 무게 · 반복 줄 — 누르면 반복 수. 글자처럼 보이되 점선으로 눌린다는 걸 알린다 */
 .plan-sets-btn { border: 0; background: none; padding: 2px 0; text-align: left; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 4px; }
 .plan-sets-btn:hover { color: var(--accent); }
-.rep-line { margin-top: 8px; }
 .rep-own-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--line-soft); }
 .rep-own-row:first-child { border-top: 0; }
 .rep-own-row .name { font-size: 14px; font-weight: 600; }
@@ -1495,42 +1494,6 @@ input[type="search"] {
 .day-note.fresh { color: var(--zone-ok); }
 .day-note.soon { color: var(--zone-hard); }
 .day-note.tired { color: var(--zone-over); }
-
-/* ── 시작 전: 위쪽 요약 카드 ────────────────────── */
-.stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; align-items: start; }
-.stat-card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  overflow: hidden;
-}
-.stat-card.open { grid-column: 1 / -1; border-color: var(--accent); }
-.stat-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 8px;
-  align-items: center;
-  width: 100%;
-  border: 0;
-  background: none;
-  padding: 11px 13px;
-  text-align: left;
-}
-/* 자리를 명시한다 — 자동 배치에 맡기면 캐럿이 앞으로 튀어나간다. */
-.stat-label { grid-column: 1; grid-row: 1; font-size: 11.5px; color: var(--muted); }
-.stat-value { grid-column: 1; grid-row: 2; display: flex; align-items: baseline; gap: 3px; }
-.stat-value b {
-  font-family: var(--mono); font-size: 21px; font-weight: 600;
-  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
-}
-.stat-value span { font-size: 12px; color: var(--muted); }
-.stat-caret { grid-column: 2; grid-row: 1 / 3; justify-self: end; align-self: center; font-size: 11px; color: var(--muted); }
-.stat-card.open .stat-caret { color: var(--accent); }
-.stat-body {
-  display: grid; gap: 10px;
-  padding: 11px 13px 13px;
-  border-top: 1px solid var(--line-soft);
-}
 
 /* ── 시작 전: 종목 줄 ───────────────────────────── */
 /*
@@ -1966,23 +1929,6 @@ input[type="search"] {
 /* 위쪽 모서리의 "내 정보". 매일 여는 곳이 아니라 탭 자리를 주지 않는다. */
 .statusbar { gap: 10px; }
 .statusbar #status-meta { margin-left: auto; }
-.me-btn {
-  margin-left: 8px; padding: 3px 9px; border-radius: 999px;
-  border: 1px solid var(--line); background: transparent; color: var(--muted);
-  font-size: 11.5px; white-space: nowrap;
-}
-.me-btn[hidden] { display: none; }
-
-/* 오늘 탭의 "아픈 데 있나요?" 한 줄 */
-.pain-check {
-  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-  border: 1px solid var(--line); border-radius: 12px;
-  background: var(--surface); color: var(--ink); padding: 11px 13px; font-size: 13.5px;
-}
-.pain-check .pain-now { margin-left: auto; color: var(--muted); font-size: 12.5px; }
-.pain-check.sore { border-color: var(--zone-hard); }
-.pain-check.sore .pain-now { color: var(--zone-hard); font-weight: 600; }
-.pain-check .pain-go { color: var(--muted); }
 
 /* 끼니 예시 */
 .meal-row {
@@ -2704,9 +2650,31 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .order-help .notice { margin: 0; }
 .order-done { display: grid; gap: 8px; border-top: 1px solid var(--line-soft); }
 .list-edit { margin-left: auto; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--accent); }
-.coach-line, .rep-line { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; }
+.today-adjust { display: flex; align-items: center; gap: 10px; width: 100%; margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; }
 .coach-line-key { font-size: 12px; color: var(--muted); }
-.coach-line b, .rep-line b { flex: 1; font-size: 15px; }
+.today-adjust b { flex: 1; font-size: 15px; }
+.start-go { margin-top: 18px; }
+
+/* 기록 탭 — 근성장 체크 */
+.growth-headline { font-size: 15px; font-weight: 600; margin: 0; }
+.growth-list { display: grid; gap: 7px; margin: 4px 0; }
+.growth-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) 64px; align-items: center; gap: 8px; font-size: 13px; }
+.growth-name { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.growth-bar { position: relative; height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.growth-bar i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 5px; }
+.growth-bar .growth-tick { left: auto; width: 2px; margin-left: -1px; border-radius: 0; background: var(--ink); opacity: .55; z-index: 1; }
+.growth-plan { background: var(--zone-ok); opacity: .35; }
+.growth-done { background: var(--zone-ok); }
+.growth-row.short .growth-plan, .growth-row.short .growth-done { background: var(--zone-hard); }
+.growth-row.high .growth-plan, .growth-row.high .growth-done { background: var(--zone-over); }
+.growth-num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--zone-text-ok, var(--zone-ok)); white-space: nowrap; }
+.growth-row.short .growth-num { color: var(--zone-hard); }
+.growth-row.high .growth-num { color: var(--zone-over); }
+.record-more { margin-top: 12px; }
+
+/* 내 정보 — 설정 / 헬스장 */
+.me-sections { margin: 0 0 12px; }
+.me-section-note { margin: 0 0 10px; }
 .coach-line-go { font-size: 13px; font-weight: 600; color: var(--accent); }
 .coach-controls { display: grid; gap: 10px; }
 .alert-controls { display: grid; gap: 8px; }
@@ -2886,7 +2854,6 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
     <div class="statusbar">
       <strong>볼륨 코치</strong>
       <span id="status-meta">—</span>
-      <button type="button" class="me-btn" id="me-btn" aria-label="내 정보 — 계정 · 동의 · 설치">내 정보</button>
     </div>
     <div class="screen" id="screen"></div>
     <div class="rest-host" id="rest-host" hidden></div>
@@ -2924,14 +2891,14 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
           <li>각 종목 위의 <b>워밍업</b>은 본세트 중량에 맞춘 램프입니다. 앞 종목이 이미 데운 부위는 짧게 끝내거나 생략합니다.</li>
           <li>세트를 다 채운 뒤에도 여유가 있으면 <b>한 세트 추가</b>를 권하고, 반복이 무너지면 <b>여기까지</b>라고 알립니다.</li>
           <li>종목 이름 옆의 <b>시연</b>을 눌러 보세요. 관절 각도로 동작을 돌리고, 수행 큐와 흔한 실수를 같이 보여줍니다.</li>
-          <li><b>볼륨</b> 탭 아래 <b>개인 볼륨 랜드마크</b>는 8주 이상의 기록에서 MEV·MRV를 그 사람 값으로 옮긴 결과입니다. 근거가 약한 부위는 옮기지 않고 <b>관측 중</b>으로 둡니다.</li>
+          <li><b>기록</b> 탭 "자세히" 아래 <b>개인 볼륨 랜드마크</b>는 8주 이상의 기록에서 MEV·MRV를 그 사람 값으로 옮긴 결과입니다. 근거가 약한 부위는 옮기지 않고 <b>관측 중</b>으로 둡니다.</li>
           <li><b>오늘 운동 완료</b>는 마지막 세트까지 끝나야 뜹니다 — 운동 중에 제일 큰 버튼이 "완료"면 다음에 뭘 할지 헷갈리니까요. 종목을 다 하면 <b>다음 종목으로 자동으로 넘어갑니다.</b> 중간에 끝내야 하면 <b>목록</b> 화면에 조용한 버튼이 있습니다.</li>
           <li>요약에는 톤수·개인 기록·부위별 볼륨과 함께 <b>지난번·한 달 전과의 비교</b>가 나옵니다. 같은 무게면 "1회 더"라고 말하고, 고반복이라 1RM 환산이 못 미더우면 큰 kg 숫자를 안 내보냅니다.</li>
           <li>종목 옆 <b>사람 있어요</b>를 눌러 보세요. 기구가 막혔을 때 순서를 바꿀지, 대체할지, 기다릴지를 정해줍니다. 랙이 막히면 그 랙을 쓰는 종목이 전부 막히고, 머신 한 대는 그 종목만 막힙니다.</li>
-          <li><b>헬스장</b> 탭에서 검색해 보세요. 결과가 없으면 <b>직접 등록</b>이 뜹니다 — 아파트·회사 헬스장은 원래 검색에 안 나옵니다. 유형만 고르면 기구가 채워지고, 이미 등록된 곳과 겹치면 만들기 전에 물어봅니다.</li>
-          <li><b>헬스장</b> 탭에서 다른 곳을 등록하고 전환해 보세요. 머신·케이블은 <b>그 헬스장 기록만</b> 봅니다 — 기계마다 표기 중량이 달라서, 처음 쓰는 기계면 그렇다고 알려줍니다. 바벨·덤벨은 헬스장이 바뀌어도 그대로입니다.</li>
+          <li><b>내 정보 › 헬스장</b>에서 검색해 보세요. 결과가 없으면 <b>직접 등록</b>이 뜹니다 — 아파트·회사 헬스장은 원래 검색에 안 나옵니다. 유형만 고르면 기구가 채워지고, 이미 등록된 곳과 겹치면 만들기 전에 물어봅니다.</li>
+          <li><b>내 정보 › 헬스장</b>에서 다른 곳을 등록하고 전환해 보세요. 머신·케이블은 <b>그 헬스장 기록만</b> 봅니다 — 기계마다 표기 중량이 달라서, 처음 쓰는 기계면 그렇다고 알려줍니다. 바벨·덤벨은 헬스장이 바뀌어도 그대로입니다.</li>
           <li>초기 설정의 <b>목표</b>는 여러 개 고를 수 있습니다. 근력과 근비대를 같이 고르면 메인은 저반복, 보조는 중반복으로 갑니다. 체지방 감량을 더하면 반복 범위는 그대로 두고 볼륨 상한만 내립니다.</li>
-          <li>이 페이지는 <b>PWA</b>입니다. 브라우저 메뉴에서 설치하면 홈 화면에 깔리고 <b>오프라인</b>에서도 열립니다. 상태는 <b>체크인</b> 탭 아래에서 확인합니다.</li>
+          <li>이 페이지는 <b>PWA</b>입니다. 브라우저 메뉴에서 설치하면 홈 화면에 깔리고 <b>오프라인</b>에서도 열립니다. 상태는 <b>내 정보</b> 탭 아래에서 확인합니다.</li>
           <li>휴식 타이머는 <b>끝나는 시각</b>을 기억합니다. 화면을 껐다 켜도 남은 시간이 틀리지 않고, 알림을 켜두면 <b>애플워치·갤럭시워치</b>로 그대로 전달됩니다.</li>
         </ol>
       </div>

@@ -1,6 +1,6 @@
 // 빡센 코치(반말)의 첫날 — 시작할 때 "무리 안 한다"고 했으면, 세트 앞에서도 세트 중에도
 //   "오늘이 마지막인 것처럼 · 밀어, 끝까지!"를 말하지 않는다
-import { check, onboard, runUntil } from './lib.mjs';
+import { begin, check, choosePt, onboard, runUntil, tab } from './lib.mjs';
 
 // 자세 신호("끝까지 내려와서")나 "횟수는 끝까지 채운다"는 끝까지 밀자는 말이 아니다 — 각오 · 재촉만 본다
 const ALL_OUT = /마지막인 것처럼|갈아 넣|끝까지 간다|밀어, 끝까지|끝까지 버텨|더 할 수 있어|다 쏟고|포기 안 해|버티는 놈/;
@@ -9,13 +9,13 @@ export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
-  await page.locator('.coach-line').click();
-  await page.locator('dialog .coach-mode', { hasText: 'PT' }).click();
-  await page.locator('dialog .coach-style', { hasText: '빡세게' }).click();
-  await page.locator('dialog .modal-close').click();
+  await choosePt(page);
+  await tab(page, '내 정보');
+  await page.locator('.coach-settings .coach-style', { hasText: '빡세게' }).click();
+  await tab(page, '오늘');
   await page.evaluate(() => { window.__said = []; });
 
-  await page.click('.start-cta');
+  await begin(page);
   await runUntil(page, 'prep');
   await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
   if (await runUntil(page, ['warm', 'count']) === 'warm') {
