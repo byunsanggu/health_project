@@ -5339,25 +5339,30 @@ var RestSound = (function () {
     if (onProgress) prefetch.listeners.push(onProgress);
     if (prefetch.running && prefetch.voice === voice) return;
     var want = voice;
-    prefetch = { voice: want, done: 0, total: 0, running: true, listeners: prefetch.listeners };
+    // 받는 중에 목소리를 바꾸면 앞의 것은 멈춘다 — 앞의 것이 끝나며 새 진행을 지우지 않게 이 판만 고친다
+    var run = { voice: want, done: 0, total: 0, running: true, listeners: prefetch.listeners };
+    prefetch = run;
+    var tell = function () {
+      run.listeners.forEach(function (listener) { try { listener(run.done, run.total); } catch (err) { void err; } });
+    };
     loadManifest().then(function (list) {
-      if (!list || voice !== want) { prefetch.running = false; return; }
+      if (!list || voice !== want) { run.running = false; return; }
       var ids = Object.keys(list);
-      prefetch.total = ids.length;
+      run.total = ids.length;
       var next = 0;
-      var tell = function () {
-        prefetch.listeners.forEach(function (listener) { try { listener(prefetch.done, prefetch.total); } catch (err) { void err; } });
-      };
       var worker = function () {
         if (voice !== want || next >= ids.length) return Promise.resolve();
         var url = 'voice/' + want + '/' + ids[next++] + '.mp3';
-        return fetchCached(url).then(function () { prefetch.done += 1; if (prefetch.done % 25 === 0 || prefetch.done === prefetch.total) tell(); }).then(worker);
+        return fetchCached(url).then(function (response) { if (response) run.done += 1; if (run.done % 25 === 0 || run.done === run.total) tell(); }).then(worker);
       };
       Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]).then(function () {
-        prefetch.running = false;
-        if (voice === want) try { localStorage.setItem('coachVoiceReady', want); } catch (err) { void err; }
+        run.running = false;
+        if (voice !== want) return;
+        // 못 받은 조각이 있으면 다 받았다고 하지 않는다 — 다음에 다시 열면 빠진 것만 받는다(나머지는 캐시)
+        if (run.done < run.total) { tell(); return; }
+        try { localStorage.setItem('coachVoiceReady', want); } catch (err) { void err; }
         tell();
-        prefetch.listeners = [];
+        run.listeners = [];
       });
     });
   }
