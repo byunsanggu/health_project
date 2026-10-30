@@ -43,6 +43,8 @@ export default async function ({ page, context, url, shot }) {
   check(await page.locator('.today-adjust').count() === 0, '바꾼 게 없는데 오늘 조정 줄이 있습니다');
   const before = await totals(page);
   await page.locator('.start-cta').click();
+  // 고르지 않으면 좋아요 — 계획대로
+  check(await page.locator('dialog .segmented button[aria-pressed="true"]', { hasText: '좋아요' }).count() === 1, '처음부터 좋아요가 아닙니다');
   await page.locator('dialog .segmented button', { hasText: '별로예요' }).click();
   await shot('2-start-sheet');
   await page.locator('dialog .modal-close').click();
@@ -52,9 +54,9 @@ export default async function ({ page, context, url, shot }) {
   check(after.kg < before.kg, `무게가 안 내려갔습니다: ${before.kg} → ${after.kg}`);
   await shot('3-feel-low');
 
-  // 보통으로 되돌리면 원래대로 — 조정 줄을 눌러 같은 한 장을 연다
+  // 좋아요로 되돌리면 원래대로 — 조정 줄을 눌러 같은 한 장을 연다
   await page.locator('.today-adjust').click();
-  await page.locator('dialog .segmented button', { hasText: '보통' }).click();
+  await page.locator('dialog .segmented button', { hasText: '좋아요' }).click();
   await page.locator('dialog .start-go').click();
   const back = await totals(page);
   check(back.sets === before.sets && back.kg === before.kg, `되돌렸는데 그대로가 아닙니다: ${JSON.stringify(before)} → ${JSON.stringify(back)}`);

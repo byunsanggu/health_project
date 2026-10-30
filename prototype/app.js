@@ -894,8 +894,6 @@
     mistakeFlags: {},
     /* 혼자 모드에서 세트를 마칠 때 묻는 방식 — 'feel' | 'rir' | null(단계대로) */
     askEffort: null,
-    /* 세어 주기 설정 줄을 펼쳤는가 — 이 화면에서만 */
-    countMoreOpen: false,
     /* 종목마다 정한 박자. { 종목id: Tempo } — 스쿼트와 카프레이즈는 한 개 길이가 다르다 */
     tempoByExercise: {},
     /** 지금 코치가 한 말. 소리가 안 나는 기기에서도 읽을 수 있게 화면에 띄운다 */
@@ -1585,7 +1583,7 @@
     var budget = budgetMinutes();
     if (budget) {
       var profile = E.styleProfile(state.style);
-      state.timeFit = E.fitToTimeBudget(built, budget, {
+      var timeOptions = {
         restMultiplier: profile.restMultiplier,
         // 휴식을 2분으로 늘렸는데 "50분이면 6종목"이라고 하면 거짓말이 된다
         restBand: state.restBand || undefined,
@@ -1593,8 +1591,17 @@
         // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
         generalWarmupSeconds: mobilitySeconds(),
         allowShortRest: state.style === 'density',
-      });
-      built = state.timeFit.session;
+      };
+      if (E.estimateSessionTime(built, timeOptions).totalMinutes < budget) {
+        // 평소보다 넉넉한 날 — 이번 주 회복 한계 안에서 세트를 더한다. 덜어내는 주 · 별로인 날 · 내 루틴은 그대로.
+        if (state.plan.phase !== 'deload' && todayFeel() !== 'low' && !state.customRoutine) {
+          state.timeFit = E.extendToTimeBudget(built, budget, Object.assign({ headroom: weekHeadroom() }, timeOptions));
+          built = state.timeFit.session;
+        }
+      } else {
+        state.timeFit = E.fitToTimeBudget(built, budget, timeOptions);
+        built = state.timeFit.session;
+      }
     }
     /*
      * 직접 바꾼 순서를 여기서 적용한다. 워밍업을 계산하기 **전**이어야
@@ -1694,6 +1701,22 @@
   }
 
   /** 신고 RIR에 개인 편향 보정을 실은 집계 옵션. */
+  /**
+   * 부위마다 이번 주에 더 넣어도 되는 유효 세트 — 회복 한계(MRV) − 이번 주 계획(다 했을 때).
+   * 시간이 넉넉한 날 세트를 붙일 때 이 선을 넘지 않는다. 근성장 체크와 같은 셈이다.
+   */
+  function weekHeadroom() {
+    var planned = E.aggregateVolume(E.plannedWeekLogs({
+      templates: state.program.templates, plan: state.plan, index: index, landmarks: state.landmarks,
+      history: state.history, level: state.lifter && state.lifter.level,
+    }), index, rirOptions());
+    var room = {};
+    E.MUSCLE_GROUPS.forEach(function (muscle) {
+      room[muscle] = Math.max(0, state.landmarks[muscle].mrv - planned[muscle].effectiveSets);
+    });
+    return room;
+  }
+
   function rirOptions() {
     var calibration = state.session && state.session.rirCalibration;
     return { rirOffset: calibration && calibration.applied ? calibration.offset : 0 };
@@ -2145,7 +2168,7 @@
      * 세트마다 자동으로 셀 때는 그러면 안 된다. 쉬는 동안 미뤄 둔 시작이
      * 이 순간에 열리는데, 세트 화면을 안 그리면 그 순간이 영영 안 온다.
      */
-    if (state.autoCount || ptOn()) render();
+    if (ptOn()) render();
   }
 
   /*
@@ -4524,11 +4547,12 @@
 
   /** 판단에 쓰는 컨디션 — 직접 고른 것이 기록보다 먼저다. */
   function conditionPercent() {
-    return E.effectiveCondition(todayFeel(), recordedCondition());
+    // 고르지 않은 날은 좋아요 — 계획대로. 기록으로 본 컨디션대로 가려면 보통을 고른다.
+    return E.effectiveCondition(todayFeel() || 'good', recordedCondition());
   }
 
   function setDayFeel(feel) {
-    state.dayFeel = feel === 'ok' ? null : { date: state.todayDate, feel: feel };
+    state.dayFeel = feel === 'good' ? null : { date: state.todayDate, feel: feel };
     rebuildSession();
     persist();
     if (feel === 'low') {
@@ -5308,11 +5332,6 @@
             onclick: openAddLift,
           }),
           el('button', {
-            type: 'button', class: 'demo-open', text: '세어주기',
-            title: '템포와 음성 카운트를 정합니다',
-            onclick: openVoiceSettings,
-          }),
-          el('button', {
             type: 'button', class: 'demo-open', text: '휴식',
             title: '세트 간 휴식 시간을 정합니다',
             onclick: openRestSettings,
@@ -5448,7 +5467,7 @@
    */
   function openStartSheet(editOnly) {
     var draw = function () {
-      var feel = todayFeel() || 'ok';
+      var feel = todayFeel() || 'good';
       var picked = E.DAY_FEELS.filter(function (item) { return item.id === feel; })[0];
       var sore = E.allows(state.consent, 'painGate') ? activePain() : [];
       var budget = budgetMinutes();
@@ -5461,7 +5480,7 @@
         segmented(E.DAY_FEELS.map(function (item) {
           return { label: item.label, active: feel === item.id, onSelect: function () { setDayFeel(item.id); draw(); } };
         })),
-        feel === 'ok' ? null : el('p', { class: 'hint-line', text: picked.hint }),
+        feel === 'good' ? null : el('p', { class: 'hint-line', text: picked.hint }),
         el('div', { class: 'list-label', text: '아픈 데 있어요?' }),
         segmented([
           { label: '없어요', active: sore.length === 0, onSelect: function () { if (sore.length) openPainCheck(); } },
@@ -5473,11 +5492,14 @@
         ]),
         el('div', { class: 'list-label', text: '시간은요?' }),
         segmented([{ label: '평소대로 · 약 ' + usual + '분', active: !budget, onSelect: function () { setDayBudget(null); draw(); } }]
-          .concat([45, 30, 20].filter(function (minutes) { return minutes < usual || budget === minutes; }).map(function (minutes) {
-            return { label: minutes + '분', active: budget === minutes, onSelect: function () { setDayBudget(minutes); draw(); } };
-          }))),
+          .concat([20, 30, 45].filter(function (minutes) { return minutes < usual || budget === minutes; })
+            .concat([60, 90].filter(function (minutes) { return minutes > usual + 5 || budget === minutes; }))
+            .map(function (minutes) {
+              return { label: minutes + '분', active: budget === minutes, onSelect: function () { setDayBudget(minutes); draw(); } };
+            }))),
         budget ? el('p', { class: 'hint-line', text: budget < SHORT_DAY_MINUTES
           ? '오늘만 큰 복합 운동 위주로 줄였습니다.'
+          : budget > usual ? longDayHint()
           : '그 안에 들어오게 고립 운동부터 줄이고, 큰 복합 운동은 지킵니다.' }) : null,
         el('div', { class: 'list-label', text: '누구랑 할까요?' }),
         segmented([
@@ -5501,11 +5523,20 @@
     draw();
   }
 
+  /** 넉넉한 날 무엇을 했는지 — 더한 세트가 없으면 왜 없는지. */
+  function longDayHint() {
+    var fit = state.timeFit;
+    if (state.plan.phase === 'deload') return '이번 주는 덜어내는 주라 세트를 더하지 않습니다. 남는 시간은 천천히 쉬세요.';
+    if (todayFeel() === 'low') return '몸이 별로인 날이라 세트를 더하지 않습니다.';
+    if (state.customRoutine) return '내 루틴은 정한 세트 그대로 합니다. 남는 시간은 천천히 쉬세요.';
+    return fit && fit.notes[0] ? fit.notes.join(' ') : '이번 주 회복 한계 안에서 큰 복합 운동부터 세트를 더합니다.';
+  }
+
   /** 오늘만 바꾼 것(컨디션 · 아픈 데 · 시간)이 있으면 목록 위에 한 줄. 없으면 아무것도. */
   function todayAdjustLine() {
     var bits = [];
     var feel = todayFeel();
-    if (feel && feel !== 'ok') bits.push('몸 ' + E.dayFeelLabel(feel));
+    if (feel && feel !== 'good') bits.push('몸 ' + E.dayFeelLabel(feel));
     if (E.allows(state.consent, 'painGate')) {
       activePain().forEach(function (report) { bits.push(E.JOINT_LABELS_KO[report.joint] + ' ' + report.score); });
     }
@@ -6978,8 +7009,7 @@
    * 종목 없이 부르면 전체 기본이다(세어 주기 설정 화면).
    */
   function tempoOf(exercise) {
-    if (exercise && state.tempoByExercise[exercise.id]) return state.tempoByExercise[exercise.id];
-    if (state.tempo) return state.tempo;
+    // 속도를 고르는 칸은 없앴다 — 예전에 골라 둔 값이 보이지 않게 남아 PT 세기를 바꾸지 않게, 늘 종목 기본으로 센다.
     return exercise ? E.defaultTempoFor(exercise) : E.DEFAULT_TEMPO;
   }
 
@@ -7001,116 +7031,6 @@
       if (tempo) moved[id] = tempo;
     });
     return moved;
-  }
-
-  function setExerciseTempo(exercise, tempo) {
-    state.tempoByExercise = Object.assign({}, state.tempoByExercise);
-    state.tempoByExercise[exercise.id] = tempo;
-    persist();
-  }
-
-  /**
-   * 속도 수정.
-   *
-   * 한 개에 몇 초로 셀지 직접 고친다. 사람마다, 종목마다 한 개 하는 속도가
-   * 다르다 — 정해 둔 "보통"이 어떤 사람에게는 늘 앞서가고 어떤 사람에게는
-   * 늘 기다린다. 큰 숫자 하나(한 개에 몇 초)만 고치면 내리기 · 올리기는
-   * 2:1로 나뉘고, 세부를 펴면 넷을 따로 고칠 수 있다. "들어 보기"로 세
-   * 개를 세어 보고 정한다.
-   */
-  function openSpeedEdit(exercise) {
-    var draft = Object.assign({}, tempoOf(exercise));
-    var detail = false;
-    var previewTimers = [];
-    var stopPreview = function () {
-      previewTimers.forEach(function (id) { clearTimeout(id); });
-      previewTimers = [];
-    };
-    var half = function (value) { return Math.round(value * 2) / 2; };
-    var withTotal = function (total) {
-      var pauses = draft.bottom + draft.top;
-      var moving = Math.max(1, total - pauses);
-      var up = Math.max(0.5, half(moving / 3));
-      return { eccentric: Math.max(0.5, half(moving - up)), bottom: draft.bottom, concentric: up, top: draft.top };
-    };
-    var stepper = function (label, value, onChange, min, max) {
-      return el('div', { class: 'speed-row' }, [
-        el('span', { class: 'speed-label', text: label }),
-        el('button', { type: 'button', class: 'nudge', text: '−', 'aria-label': label + ' 줄이기',
-          disabled: value <= min ? '' : null, onclick: function () { onChange(Math.max(min, half(value - 0.5))); } }),
-        el('span', { class: 'speed-value', text: value + '초' }),
-        el('button', { type: 'button', class: 'nudge', text: '+', 'aria-label': label + ' 늘리기',
-          disabled: value >= max ? '' : null, onclick: function () { onChange(Math.min(max, half(value + 0.5))); } }),
-      ]);
-    };
-    var draw = function () {
-      var total = E.repSeconds(draft);
-      var body = [];
-      body.push(el('div', { class: 'speed-big' }, [
-        stepper('한 개에', total, function (next) { draft = withTotal(next); draw(); }, 1.5, 8),
-      ]));
-      body.push(el('p', { class: 'hint-line', text:
-        '내리는 데 ' + draft.eccentric + '초 · 올리는 데 ' + draft.concentric + '초' +
-        (draft.bottom ? ' · 아래서 ' + draft.bottom + '초 멈춤' : '') +
-        (draft.top ? ' · 위에서 ' + draft.top + '초 멈춤' : '') +
-        ' — 10개면 ' + Math.round(total * 10) + '초' }));
-
-      body.push(el('div', { class: 'chip-row' }, E.TEMPO_SPEEDS.concat([E.TEMPO_PRESETS.filter(function (p) { return p.id === 'pause'; })[0]])
-        .filter(Boolean).map(function (item) {
-          var on = E.tempoLabel(item.tempo) === E.tempoLabel(draft);
-          return el('button', {
-            type: 'button', class: 'pick', 'aria-pressed': String(on), title: item.note, text: item.label,
-            onclick: function () { draft = Object.assign({}, item.tempo); draw(); },
-          });
-        })));
-
-      body.push(el('button', {
-        type: 'button', class: 'pick speed-detail-toggle', 'aria-expanded': String(detail),
-        text: detail ? '세부 접기' : '내리기 · 멈춤 · 올리기 따로 고치기',
-        onclick: function () { detail = !detail; draw(); },
-      }));
-      if (detail) {
-        body.push(stepper('내리기', draft.eccentric, function (v) { draft.eccentric = v; draw(); }, 0.5, 6));
-        body.push(stepper('아래 멈춤', draft.bottom, function (v) { draft.bottom = v; draw(); }, 0, 4));
-        body.push(stepper('올리기', draft.concentric, function (v) { draft.concentric = v; draw(); }, 0.5, 4));
-        body.push(stepper('위 멈춤', draft.top, function (v) { draft.top = v; draw(); }, 0, 4));
-      }
-
-      body.push(el('button', {
-        type: 'button', class: 'pick speed-preview', text: '▶ 들어 보기 (세 개)',
-        onclick: function () {
-          stopPreview();
-          var per = E.repSeconds(draft) * 1000;
-          ['하나', '둘', '셋'].forEach(function (word, i) {
-            previewTimers.push(setTimeout(function () { sayNow(word); }, i * per));
-          });
-        },
-      }));
-      body.push(el('button', {
-        type: 'button', class: 'finish', text: exercise.name + ' 이 속도로',
-        onclick: function () {
-          stopPreview();
-          setExerciseTempo(exercise, Object.assign({}, draft));
-          pushLog('템포', '<b>' + exercise.name + '</b> 한 개 ' + E.repSeconds(draft) + '초 (' + E.tempoLabel(draft) + ')');
-          modal.close();
-          render();
-        },
-      }));
-      body.push(el('button', {
-        type: 'button', class: 'pick', text: '모든 종목을 이 속도로',
-        onclick: function () {
-          stopPreview();
-          state.tempo = Object.assign({}, draft);
-          state.tempoByExercise = {};
-          pushLog('템포', '모든 종목 한 개 ' + E.repSeconds(draft) + '초 (' + E.tempoLabel(draft) + ')');
-          persist();
-          modal.close();
-          render();
-        },
-      }));
-      openModal('속도 수정', exercise.name, body);
-    };
-    draw();
   }
 
   /** 소리 스위치와 상관없이 지금 한 번 읽는다 — 들어 보기용. */
@@ -7270,179 +7190,9 @@
     render();
   }
 
-  /**
-   * 세어 주기 판 — 시작 버튼, 속도, 세트마다 자동.
-   *
-   * 셋 다 여기 둔다. 속도와 자동은 원래 설정 모달 안에 있었는데, 거기
-   * 있다는 걸 아무도 몰랐다. 쓰는 자리에 없는 설정은 없는 설정이다.
-   */
+  /** 운동 중 세트 카드의 세어 주기 칸 — PT만. 혼자 모드는 세어 주지 않는다(세어 주는 건 PT가 한다). */
   function countPanel(liftIndex, setIndex) {
-    // PT는 박자 버튼이 아니라 세션을 이끈다. 혼자 모드만 세어 주기 칸을 쓴다.
-    if (ptOn()) return ptPanel(liftIndex, setIndex);
-    var lifting = state.lifts[liftIndex];
-    var exercise = lifting && lifting.exercise;
-    var tempo = tempoOf(exercise);
-    var speed = E.speedOf(tempo);
-    var box = el('div', { class: 'count-panel' }, []);
-
-    box.appendChild(el('button', {
-      type: 'button', class: 'count-start',
-      title: '한 회에 ' + E.repSeconds(tempo) + '초로 세어 줍니다 (' + E.tempoLabel(tempo) + ')',
-      onclick: function () {
-        // 손으로 시작해도 PT면 세트 전 말을 먼저 하고, 그 길이만큼 기다린다.
-        var said = ptOn() ? coachBefore(liftIndex, setIndex) : '';
-        startCounting(liftIndex, setIndex,
-          said ? Math.max(3, Math.ceil(E.speechSeconds(said)) + 2) : undefined);
-      },
-    }, [
-      el('span', { class: 'count-play', text: '▶', 'aria-hidden': 'true' }),
-      el('span', { text: '박자 맞춰 세어주기' }),
-      el('span', { class: 'count-tempo', text: '한 회 ' + E.repSeconds(tempo) + '초' }),
-    ]));
-
-    /*
-     * 설정은 한 줄로 접어 둔다.
-     *
-     * 세트 카드마다 속도 · 소리 · 자동이 다 펼쳐져 있으면, 정작 매 세트
-     * 고쳐야 하는 무게와 횟수 칸이 그만큼 아래로 밀린다. 한 번 정하면
-     * 거의 안 바꾸는 것들이다. 접어 두되 지금 상태(소리 꺼짐 등)는 줄에
-     * 그대로 보여서, 소리가 왜 안 나는지는 펴지 않아도 안다.
-     */
-    var soundOn = Boolean(state.voiceOn) || ptOn();
-    var summary = el('button', {
-      type: 'button', class: 'count-settings', 'aria-expanded': String(Boolean(state.countMoreOpen)),
-      onclick: function () { state.countMoreOpen = !state.countMoreOpen; render(); },
-    }, [
-      el('span', { text: '속도 ' + E.repSeconds(tempo) + '초 · 소리 ' + (soundOn ? '켜짐' : '꺼짐') +
-        ' · 자동 ' + (state.autoCount ? '켜짐' : '꺼짐') }),
-      el('span', { class: 'count-tempo', text: state.countMoreOpen ? '접기 ▴' : '설정 ▾' }),
-    ]);
-    box.appendChild(summary);
-    if (!state.countMoreOpen) return box;
-
-    /*
-     * 속도는 초로 줄 세운 축이다. 유튜브 배속과 다른 점이 하나 있다 —
-     * 배속은 같은 것을 빨리 돌리는 것이지만, 여기서는 **다른 세트가 된다.**
-     * 그래서 고를 때 그 말을 같이 띄운다.
-     */
-    var speeds = el('div', { class: 'count-speed' }, [
-      el('span', { class: 'rir-label', text: '속도' }),
-    ]);
-    E.TEMPO_SPEEDS.forEach(function (item) {
-      var on = speed === item.id;
-      speeds.appendChild(el('button', {
-        type: 'button', class: 'chip', 'aria-pressed': String(on),
-        title: item.note,
-        text: item.label,
-        onclick: function () {
-          // 속도는 이 종목에만 — 스쿼트를 천천히 한다고 카프레이즈까지 바뀌면 안 된다.
-          if (exercise) setExerciseTempo(exercise, item.tempo);
-          else { state.tempo = item.tempo; persist(); }
-          pushLog('템포', (exercise ? '<b>' + exercise.name + '</b> ' : '') + '<b>' + item.label + '</b> · 한 회 ' +
-            E.repSeconds(item.tempo) + '초 — ' + item.note);
-          render();
-        },
-      }));
-    });
-    if (exercise) {
-      speeds.appendChild(el('button', {
-        type: 'button', class: 'chip speed-edit', text: '속도 수정',
-        title: '한 개에 몇 초로 셀지 직접 고칩니다 — 이 종목만',
-        onclick: function () { openSpeedEdit(exercise); },
-      }));
-    }
-    /*
-     * 어느 속도에도 안 맞으면(멈췄다 같은 것) 아무것도 켜지 않고, 대신
-     * 지금 템포를 적어 둔다. 가까운 것을 켜 주면 사용자가 정한 템포가
-     * 조용히 바뀐 것처럼 보인다.
-     */
-    if (!speed) speeds.appendChild(el('span', { class: 'count-tempo', text: E.tempoLabel(tempo) }));
-    box.appendChild(speeds);
-
-    /*
-     * 세트마다 자동.
-     *
-     * 여섯 세트면 ▶를 여섯 번 누른다. 그 여섯 번이 전부 **바벨을 잡기
-     * 직전**에 온다 — 제일 누르기 싫은 순간이다.
-     *
-     * 켜면 휴식이 끝나고 준비 시간을 준 뒤 저절로 시작한다. 준비 시간을
-     * 길게 잡는 이유는, 저절로 시작하는 카운트는 랙에서 바를 빼기 전에
-     * 이미 "하나"를 세고 있으면 그 세트 내내 박자가 어긋나기 때문이다.
-     */
-    var auto = Boolean(state.autoCount);
-    var toggles = el('div', { class: 'count-toggles' }, []);
-
-    /*
-     * 소리를 여기에 둔다.
-     *
-     * "박자 맞춰 세어주기"를 누른 사람은 **목소리를 기대한다.** 그런데
-     * 소리는 기본이 꺼짐이고, 켜는 자리가 설정 모달 안에 있었다. 화면
-     * 숫자만 올라가는 것을 보고 고장난 줄 안다. 속도와 자동을 여기로
-     * 내리면서 소리만 두고 온 것이 잘못이었다.
-     *
-     * 켜는 순간 한마디 읽는다. 보기 좋으라고가 아니라 **iOS 때문이다** —
-     * 손으로 누른 그 순간에 한 번 소리를 내지 않으면, 그 뒤로는 앱이
-     * 말하려 해도 브라우저가 막는다.
-     */
-    var voice = Boolean(state.voiceOn);
-    var canSpeak = voiceReady();
-    toggles.appendChild(el('button', {
-      type: 'button', class: 'count-auto', 'aria-pressed': String(voice && canSpeak),
-      disabled: canSpeak ? null : '',
-      title: canSpeak
-        ? (voice ? '끄면 화면 숫자로만 셉니다' : '켜면 목소리로 세어 줍니다')
-        : '이 기기는 말하기를 지원하지 않습니다. 화면 숫자로 셉니다.',
-      onclick: function () {
-        state.voiceOn = !voice;
-        if (state.voiceOn) { CoachVoice.unlock(); fetchCoachVoice(); speak('하나'); }
-        persist();
-        render();
-      },
-    }, [
-      el('span', { text: '소리' }),
-      el('span', { class: 'count-tempo', text: !canSpeak ? '안 됨' : voice ? '켜짐' : '꺼짐' }),
-    ]));
-
-    toggles.appendChild(el('button', {
-      type: 'button', class: 'count-auto', 'aria-pressed': String(auto),
-      title: auto ? '끄면 ▶를 누를 때만 셉니다' : '켜면 세트마다 저절로 시작합니다',
-      onclick: function () {
-        state.autoCount = !auto;
-        if (!state.autoCount) stopCounting(false);
-        /*
-         * 켜는 순간 지금 세트를 시작하지 않는다.
-         *
-         * 스위치를 켠 사람은 화면을 보고 있지, 바를 잡고 있지 않다. 켜자마자
-         * 등 뒤에서 카운트가 돌면 그 세트는 버린 세트가 된다. **다음
-         * 세트부터** 적용한다 — 지금 세고 싶으면 ▶가 바로 위에 있다.
-         */
-        state.autoCountedFor = liftIndex + ':' + setIndex;
-        persist();
-        render();
-      },
-    }, [
-      el('span', { text: '세트마다 자동' }),
-      el('span', { class: 'count-tempo', text: auto ? '켜짐' : '꺼짐' }),
-    ]));
-
-    box.appendChild(toggles);
-    /*
-     * 소리가 안 난다는 말은 거의 이 셋이다. 켠 사람에게만 한 줄 보여 준다.
-     * 아이폰은 무음 스위치가 켜져 있으면 말하기도 같이 꺼진다.
-     */
-    if ((voice || ptOn()) && canSpeak) {
-      var tips = [];
-      if (isIOS()) tips.push('무음 모드를 끄고');
-      tips.push('미디어 볼륨을 올려 주세요');
-      if (!CoachVoice.ready(coachVoiceName())) tips.push('(코치 목소리를 처음 받는 중이면 잠깐 기다려 주세요)');
-      box.appendChild(el('p', { class: 'hint-line sound-tip', text: '소리가 안 들리면 ' + tips.join(' ') + '.' }));
-    }
-    if (auto) {
-      box.appendChild(el('p', { class: 'hint-line', text:
-        '휴식이 끝나면 준비 ' + AUTO_LEAD_SECONDS + '초를 세고 저절로 시작합니다.' }));
-    }
-
-    return box;
+    return ptOn() ? ptPanel(liftIndex, setIndex) : null;
   }
 
   /** 지금 세는 중인 세트의 화면. 숫자가 크고, 멈추는 버튼 하나뿐이다. */
@@ -7473,82 +7223,6 @@
             onclick: function () { stopCounting(true); },
           }),
     ]);
-  }
-
-  /**
-   * 음성 카운트 설정.
-   *
-   * 템포를 여기서 정한다. 템포는 같은 10회를 다른 10회로 만드는 값이라
-   * 소리를 끄고 써도 뜻이 있다 — 화면 숫자만으로도 박자는 잡힌다.
-   */
-  function openVoiceSettings() {
-    var draw = function () {
-      var tempo = tempoOf();
-      var body = [];
-
-      body.push(el('p', { class: 'asset-note', text:
-        '옆에서 세어 주는 사람이 하는 일의 절반이 박자입니다. 힘들어지면 저절로 빨라지고, ' +
-        '빨라지면 반동이 붙어서 같은 10회가 다른 10회가 됩니다. ' +
-        '앱은 실제 반복을 보지 못하므로 박자만 주고, 멈춘 자리를 기록으로 제안합니다.' }));
-
-      body.push(el('button', {
-        type: 'button', class: 'pair-row', onclick: function () {
-          state.voiceOn = !state.voiceOn;
-          if (state.voiceOn) { CoachVoice.unlock(); fetchCoachVoice(); speak('하나'); }
-          persist();
-          draw();
-        },
-      }, [
-        el('span', { class: 'pair-mark', text: state.voiceOn ? '켜짐' : '꺼짐' }),
-        el('span', { class: 'plan-main' }, [
-          el('span', { class: 'name', text: '소리로 세어 주기' }),
-          el('span', { class: 'plan-sets', text: voiceStatusLine() }),
-        ]),
-      ]));
-
-      body.push(el('div', { class: 'list-label', text: '템포 — 내리고 · 멈추고 · 올리고 · 멈추고' }));
-      /*
-       * 박자가 같은 것은 하나만 보인다. "폭발적으로"는 기본과 초가 같고 마음가짐만
-       * 다르다 — 칩 둘이 같은 숫자로 같이 켜져 있으면 무엇을 고른 건지 모른다.
-       */
-      var seen = {};
-      var presets = E.TEMPO_PRESETS.filter(function (preset) {
-        var key = E.tempoLabel(preset.tempo);
-        if (seen[key]) return false;
-        seen[key] = true;
-        return true;
-      });
-      body.push(el('div', { class: 'chip-row' }, presets.map(function (preset) {
-        var on = E.tempoLabel(preset.tempo) === E.tempoLabel(tempo);
-        return el('button', {
-          type: 'button', class: 'pick', 'aria-pressed': String(on),
-          title: preset.note,
-          text: preset.label + ' ' + E.tempoLabel(preset.tempo),
-          onclick: function () {
-            state.tempo = preset.tempo;
-            pushLog('템포', '<b>' + preset.label + '</b> ' + E.tempoLabel(preset.tempo) +
-              ' — ' + preset.note);
-            persist();
-            draw();
-          },
-        });
-      })));
-
-      var seconds = E.repSeconds(tempo);
-      body.push(el('p', { class: 'hint-line', text:
-        '반복 하나에 ' + seconds + '초 · 10회면 ' + Math.round(seconds * 10) + '초짜리 세트입니다.' }));
-
-      // 세는 목소리 — 고르기 · 높이 · 빠르기 (PT 설정과 같은 값)
-      body.push(voiceControls(draw));
-
-      body.push(el('button', {
-        type: 'button', class: 'finish', text: '이대로 하기',
-        onclick: function () { modal.close(); render(); },
-      }));
-
-      openModal('세어 주기', state.voiceOn ? '켜짐 · ' + E.tempoLabel(tempo) : E.tempoLabel(tempo), body);
-    };
-    draw();
   }
 
   /** 이 기기에서 소리가 실제로 날지 — 안 되면 미리 말해 준다. */
@@ -8136,46 +7810,13 @@
     if (cursor < 0) wrap.appendChild(setStrip(lift, liftIndex, cursor, doneCount));
 
     if (cursor >= 0) {
+      // 남은 세트는 카드 맨 위 세트 칸(남음)으로 본다 — 아래에 한 줄씩 다시 적지 않는다.
       wrap.appendChild(renderCurrentSet(lift, liftIndex, sets[cursor], cursor));
-
-      /*
-       * 남은 세트도 세트마다 한 줄씩 적는다.
-       *
-       * 세트마다 처방이 다를 수 있고(램프업, 백오프), 다르지 않더라도
-       * "앞으로 몇 kg으로 몇 번씩 몇 세트가 남았는지"는 지금 이 세트를
-       * 어떻게 할지에 영향을 준다. 지금 할 것보다 작고 조용히 둔다.
-       */
-      var ahead = [];
-      sets.forEach(function (set, setIndex) {
-        if (set.done || setIndex <= cursor) return;
-        ahead.push(el('div', { class: 'set-plan' }, [
-          el('span', { class: 'set-no', text: (setIndex + 1) + '세트' }),
-          el('span', { class: 'set-plan-line', text: setPlanLine(set) }),
-        ]));
-      });
-      if (ahead.length > 0) {
-        wrap.appendChild(el('div', { class: 'set-plan-list' }, ahead));
-      }
     } else {
       wrap.appendChild(el('div', { class: 'set-cleared', text: '이 종목은 끝났습니다.' }));
     }
 
     return wrap;
-  }
-
-  /**
-   * 세트 하나의 처방을 한 줄로.
-   *
-   * "40kg × 15회" — 이 세트에 뭘 하기로 했는지다. 친 무게(weightKg)가
-   * 아니라 처방(plannedKg)을 쓴다. 둘이 다른 날이 기록이 중요한 날이다.
-   */
-  function setPlanLine(set, pounds) {
-    var planned = set.plannedKg == null ? set.weightKg : set.plannedKg;
-    var reps = set.targetReps.min === set.targetReps.max
-      ? set.targetReps.max + '회'
-      : set.targetReps.min + '–' + set.targetReps.max + '회';
-    // 숫자칸과 다른 단위를 쓰면 바로 위아래에서 두 숫자가 안 맞아 보인다.
-    return (planned > 0 ? E.weightLabelIn(planned, pounds) : '맨몸') + ' × ' + reps;
   }
 
   /**
@@ -8189,7 +7830,7 @@
    *     세지 말라고 말한 것이다.
    */
   function maybeAutoCount(liftIndex, setIndex) {
-    var auto = state.autoCount || ptOn();
+    var auto = ptOn();
     if (!auto || state.rest || state.counting || !state.started) return;
     // PT가 멈춰 있거나 워밍업 · 스트레칭을 이끄는 중이면 세트를 시작하지 않는다.
     if (ptOn() && state.ptRun && (state.ptRun.paused || state.ptRun.warm || state.ptRun.cool || state.ptRun.prep)) return;
@@ -8198,7 +7839,7 @@
     state.autoCountedFor = key;
     // 그리는 중에 다시 그릴 수 없다. 이번 그리기가 끝난 뒤로 미룬다.
     setTimeout(function () {
-      if (!(state.autoCount || ptOn()) || state.rest || state.counting) return;
+      if (!(ptOn()) || state.rest || state.counting) return;
       var lift = state.lifts[liftIndex];
       var set = lift && lift.sets[setIndex];
       if (!set || set.done) return;
@@ -9117,32 +8758,8 @@
         onclick: function () { state.focusHidden = false; render(); },
       }));
     }
-    if (lifting) {
-      actions.appendChild(el('button', {
-        type: 'button', class: 'pick', text: '속도 ' + E.repSeconds(tempoOf(lifting.exercise)) + '초',
-        onclick: function () { openSpeedEdit(lifting.exercise); },
-      }));
-    }
     box.appendChild(actions);
     return box;
-  }
-
-  /**
-   * 이 세트가 얼마나 걸리고, 끝나면 얼마나 쉬는가.
-   *
-   * "10회"만 보면 얼마나 버텨야 하는지 모른다. "약 45초 → 1분 30초 쉬고
-   * 3세트"를 보고 들어가면 숨을 어떻게 나눌지, 물을 언제 마실지 안다.
-   */
-  function setTimingLine(lift, liftIndex, set, setIndex) {
-    var work = E.setSeconds({ repRange: set.targetReps, tempo: tempoOf(lift.exercise), leadInSeconds: 0 });
-    var line = '이 세트 약 ' + E.restSpoken(work);
-    var isLast = setIndex === lift.sets.length - 1;
-    var next = state.lifts[liftIndex + 1];
-    if (isLast && !next) return line + ' · 오늘 마지막 세트';
-    var rest = E.restFor(restInput(lift, set.reps, isLast)).seconds;
-    if (isLast && ptOn()) rest = Math.max(rest, E.TRANSITION_REST_SECONDS);
-    return line + ' → ' + E.restSpoken(rest) + ' 쉬고 ' +
-      (isLast ? next.exercise.name : (setIndex + 2) + '세트');
   }
 
   /** 쉬는 중에 "아픈 데 있어요". 하지 않은 세트는 적지 않는다. */
@@ -9224,8 +8841,6 @@
         set.top ? el('span', { class: 'top-tag', text: '무거운 세트 · 두어 개 남기고' }) : null,
         el('span', { class: 'of', text: '/ ' + lift.sets.length + '세트' }),
       ]),
-      el('div', { class: 'plan', text: setPlanLine(set, pounds) }),
-      el('div', { class: 'set-timing', text: setTimingLine(lift, liftIndex, set, setIndex) }),
     ]));
 
     /*
@@ -9399,7 +9014,6 @@
         el('span', { text: '✓ ' + (setIndex + 1) + '세트 완료' }),
         el('span', { class: 'now-done-sub', text: leftAfter > 0 ? leftAfter + '세트 남음' : '마지막 세트' }),
       ]));
-      if (!ptOn()) body.push(countPanel(liftIndex, setIndex));
       /*
        * 아픈 건 묻지 않아도 말할 수 있어야 한다. 매 세트 고르는 버튼이 아니라
        * 아플 때만 누르는 작은 글자로 둔다.
@@ -9411,8 +9025,6 @@
       }));
       return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
     }
-
-    body.push(countPanel(liftIndex, setIndex));
 
     /*
      * 세트를 넘기는 버튼이 따로 없다는 게 문제였다. RIR 숫자를 누르면
@@ -9634,13 +9246,6 @@
           : '⇄ ' + (mate ? mate.name : E.groupLabel(pair)) }));
     }
 
-    if (lift.startingLoad && lift.startingLoad.needsCalibration) {
-      nameRow.appendChild(el('span', {
-        class: 'est-tag',
-        text: lift.startingLoad.method === 'related-lift' ? '환산 추정' : '기준선 추정',
-      }));
-    }
-
     // 이름만으로는 동작을 모른다 — 처방 옆에 늘 시연을 붙여둔다.
     nameRow.appendChild(el('button', {
       type: 'button',
@@ -9650,29 +9255,15 @@
       onclick: function () { openDemo(lift.exercise); },
     }));
 
-    // 헬스장에서 계획이 깨지는 가장 흔한 이유 — 기구에 사람이 있다.
-    nameRow.appendChild(el('button', {
-      type: 'button',
-      class: 'demo-open busy',
-      text: '사람 있어요',
-      'aria-label': lift.exercise.name + ' 기구가 사용 중일 때 대안 보기',
-      onclick: function () { openOccupancy(lift.exercise); },
-    }));
-
     /*
-     * 첫 화면에서 기구 31개를 정확히 고르게 할 수는 없다 — "플랫 벤치"와
-     * "인클라인 벤치"가 뭔지 모르는 사람이 훨씬 많다. 대충 시작하고 여기서
-     * 고친다. 지금은 눈앞에 기구가 있으니 틀릴 수가 없다.
+     * 사람 있어요 · 기구 없어요 · 휴식 · 반복 수는 "⋯" 하나에 — 세트 하는 동안 늘 보일 필요는 없다.
+     * 오늘 목록의 ⋯와 같은 메뉴다.
      */
-    if (E.equipmentBehind(lift.exercise, currentGymEntry() || { equipmentIds: [] }).length > 0) {
-      nameRow.appendChild(el('button', {
-        type: 'button',
-        class: 'demo-open missing',
-        text: '없어요',
-        'aria-label': lift.exercise.name + '에 필요한 기구가 헬스장에 없을 때',
-        onclick: function () { openMissingEquipment(lift.exercise); },
-      }));
-    }
+    nameRow.appendChild(el('button', {
+      type: 'button', class: 'demo-open lift-more', text: '⋯',
+      'aria-label': lift.exercise.name + ' — 사람 있어요 · 기구 없어요 · 휴식 · 빼기',
+      onclick: function () { openLiftMenu(lift); },
+    }));
 
     var card = el('div', { class: 'lift' }, [
       el('div', { class: 'lift-head' }, [nameRow]),
@@ -9700,7 +9291,7 @@
      * 값어치가 있지만, 카드 맨 위에 두면 딱 그 높이만큼 중량칸과 RIR을
      * 아래로 민다. 행동 다음에 읽어도 되는 것은 행동 다음에 둔다.
      */
-    if (lift.note) card.appendChild(el('div', { class: 'lift-note below', text: lift.note }));
+    if (lift.note && !anyDone) card.appendChild(el('div', { class: 'lift-note below', text: lift.note }));
 
     // 체크해 둔 실수는 혼자 할 때도 보인다 — 말해 줄 사람이 없으면 화면이 대신한다.
     var flaggedHere = E.mistakesFor(lift.exercise).filter(function (item) {
@@ -9715,8 +9306,11 @@
       })));
     }
 
+    // "계속 — 계획대로"는 말하지 않는다. 멈추라거나 · 마지막이라거나 · 한 세트 더 할 수 있을 때만.
     var decision = renderDecision(lift);
-    if (decision) card.appendChild(decision);
+    if (decision && (lift.decision.verdict !== 'continue' || lift.sets.every(function (set) { return set.done; }))) {
+      card.appendChild(decision);
+    }
 
     /*
      * 강도 기법은 "마지막 세트에 붙일" 것이다. 세트를 다 기록한 뒤에도
@@ -15293,6 +14887,7 @@
       ]));
     }
     screen.appendChild(coachSettingsCard());
+    screen.appendChild(restSettingsCard());
     renderAppStatus();
     renderPrivacy();
     /*
@@ -15302,6 +14897,40 @@
     screen.appendChild(el('p', { class: 'asset-note', text:
       '볼륨 코치는 의료기기가 아니며, 의학적 진단·처방·치료를 대신하지 않습니다. ' +
       '통증이 계속되면 전문의 진료를 받으세요.' }));
+  }
+
+  /**
+   * 휴식 시간 — 내 정보에서 고른다. 운동 중에는 휴식 막대 · 종목 ⋯에서도 바꾼다.
+   * 고르는 것은 범위다. 그 안에서 큰 복합 운동은 길게, 고립 운동은 짧게 앱이 나눈다.
+   */
+  function restSettingsCard() {
+    var band = E.normalizeBand(state.restBand);
+    var picked = E.REST_PRESETS.filter(function (preset) {
+      return preset.band.minSeconds === band.minSeconds && preset.band.maxSeconds === band.maxSeconds;
+    })[0];
+    return el('div', { class: 'sheet rest-settings' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '휴식 시간' }),
+        el('span', { class: 'meta', text: E.describeBand(band) }),
+      ]),
+      el('div', { class: 'sheet-body' }, [
+        segmented(E.REST_PRESETS.map(function (preset) {
+          return {
+            label: preset.label, active: picked === preset,
+            onSelect: function () {
+              state.restBand = preset.id === 'normal' ? null : { minSeconds: preset.band.minSeconds, maxSeconds: preset.band.maxSeconds };
+              rebuildSession();
+              persist();
+              render();
+            },
+          };
+        })),
+        el('p', { class: 'hint-line', text: (picked ? picked.note + ' · ' : '직접 정함 · ') +
+          '이 범위 안에서 큰 복합 운동은 길게, 고립 운동은 짧게 쉽니다.' }),
+        el('button', { type: 'button', class: 'demo-open wide', text: '종목마다 몇 초인지 보기 · 직접 정하기',
+          onclick: function () { openRestSettings(); } }),
+      ]),
+    ]);
   }
 
   /** 동의 하나를 추가로 받는다. 기록도 같이 갱신한다. */

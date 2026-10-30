@@ -181,7 +181,7 @@ export function estimateSessionTime(
   };
 }
 
-export type TimeAction = 'trimSets' | 'drop' | 'shortenRest';
+export type TimeAction = 'trimSets' | 'drop' | 'shortenRest' | 'addSets';
 
 export interface TimeAdjustment {
   exerciseId: string;
@@ -367,4 +367,111 @@ export function fitToTimeBudget(
 
 function roleLabel(role: ExerciseRole): string {
   return role === 'primary' ? '메인 복합 동작' : role === 'accessory' ? '보조 운동' : '고립 운동';
+}
+
+export interface TimeExtendOptions extends TimeOptions {
+  /**
+   * 부위마다 이번 주에 더 넣어도 되는 유효 세트 — 회복 한계(MRV)에서 이번 주 계획을 뺀 값.
+   * 세트를 붙이면 그 종목의 기여도만큼 깎는다. 0 밑으로 가는 세트는 붙이지 않는다.
+   */
+  headroom: Partial<Record<MuscleGroup, number>>;
+  /** 한 종목에 더 붙일 수 있는 세트 (기본 2) */
+  maxExtraPerExercise?: number;
+  /** 한 부위가 이 세션 하루에 받을 세트 상한 (기본 9 — 볼륨 셈의 하루 상한과 같다. 넘는 세트는 반만 센다) */
+  sessionCap?: number;
+}
+
+/** 붙인 세트가 깎는 부위 — 보조 정도(0.25) 밑은 세지 않는다. 볼륨 셈과 같은 문턱. */
+const EXTEND_MIN_CONTRIBUTION = 0.25;
+
+/**
+ * 시간이 평소보다 넉넉한 날 — 남는 시간에 세트를 붙인다.
+ *
+ * "오늘 90분 있어요"를 골랐는데 47분짜리를 그대로 주면 고른 뜻이 없다. 그렇다고 종목을
+ * 마구 늘리면 이번 주 회복 한계를 넘는다. 그래서:
+ *
+ *   - 메인 복합 동작부터 한 세트씩, 다음 보조, 다음 고립 — 한 바퀴에 종목마다 하나씩.
+ *   - 종목마다 최대 +2세트.
+ *   - 그 세트가 이번 주 회복 한계를 넘기는 부위가 있으면 붙이지 않는다(headroom).
+ *   - 한 부위가 하루에 9세트를 넘게 되면 붙이지 않는다 — 그 위는 반만 쳐 주는 세트다.
+ *   - 예산을 넘기면 멈춘다.
+ *
+ * 무거운 세트(top)는 늘리지 않는다 — 붙이는 세트는 그 종목의 마지막 작업 세트와 같다.
+ */
+export function extendToTimeBudget(
+  session: PlannedSession,
+  budgetMinutes: number,
+  options: TimeExtendOptions,
+): TimeFitResult {
+  const budgetSeconds = Math.round(budgetMinutes * 60);
+  const maxExtra = options.maxExtraPerExercise ?? 2;
+  const before = estimateSessionTime(session, options);
+  let working: PlannedSession = { ...session, exercises: session.exercises.map((item) => ({ ...item, sets: item.sets.slice() })) };
+  const room: Partial<Record<MuscleGroup, number>> = { ...options.headroom };
+  const cap = options.sessionCap ?? 9;
+  const today: Partial<Record<MuscleGroup, number>> = {};
+  const count = (item: PlannedExercise, sets: number) => {
+    for (const [muscle, value] of Object.entries(item.exercise.contribution)) {
+      if ((value ?? 0) >= EXTEND_MIN_CONTRIBUTION) today[muscle as MuscleGroup] = (today[muscle as MuscleGroup] ?? 0) + (value ?? 0) * sets;
+    }
+  };
+  for (const item of session.exercises) count(item, item.sets.filter((set) => !set.top).length);
+  const added = new Map<string, number>();
+  let current = before.totalSeconds;
+  let blockedByVolume = false;
+
+  const roles = classifyRoles(working.exercises);
+  const order = (['primary', 'accessory', 'isolation'] as const)
+    .flatMap((role) => working.exercises.map((_, i) => i).filter((i) => roles[i] === role));
+
+  const fitsVolume = (item: PlannedExercise) => Object.entries(item.exercise.contribution)
+    .every(([muscle, value]) => (value ?? 0) < EXTEND_MIN_CONTRIBUTION ||
+      ((room[muscle as MuscleGroup] ?? 0) >= (value ?? 0) && (today[muscle as MuscleGroup] ?? 0) + (value ?? 0) <= cap));
+
+  for (let round = 0; round < maxExtra; round += 1) {
+    let progressed = false;
+    for (const i of order) {
+      const item = working.exercises[i]!;
+      const work = item.sets.filter((set) => !set.top);
+      const last = work[work.length - 1];
+      if (!last || (added.get(item.exercise.id) ?? 0) > round) continue;
+      if (!fitsVolume(item)) { blockedByVolume = true; continue; }
+      const extra = { ...last, setNumber: item.sets.length + 1 };
+      const next = { ...working, exercises: working.exercises.map((one, j) => (j === i ? { ...one, sets: one.sets.concat([extra]) } : one)) };
+      const seconds = estimateSessionTime(next, options).totalSeconds;
+      if (seconds > budgetSeconds) continue;
+      working = next;
+      current = seconds;
+      added.set(item.exercise.id, (added.get(item.exercise.id) ?? 0) + 1);
+      for (const [muscle, value] of Object.entries(item.exercise.contribution)) {
+        if ((value ?? 0) >= EXTEND_MIN_CONTRIBUTION) room[muscle as MuscleGroup] = (room[muscle as MuscleGroup] ?? 0) - (value ?? 0);
+      }
+      count(item, 1);
+      progressed = true;
+    }
+    if (!progressed) break;
+  }
+
+  const adjustments: TimeAdjustment[] = [];
+  for (const item of working.exercises) {
+    const count = added.get(item.exercise.id);
+    if (!count) continue;
+    adjustments.push({
+      exerciseId: item.exercise.id, name: item.exercise.name, action: 'addSets',
+      from: item.sets.length - count, to: item.sets.length, reason: '시간이 넉넉해 세트를 더했습니다',
+    });
+  }
+  const notes: string[] = [];
+  if (adjustments.length > 0) {
+    notes.push(`${Math.round(before.totalSeconds / 60)}분 → ${Math.round(current / 60)}분 — 큰 복합 운동부터 ${adjustments.reduce((sum, item) => sum + item.to - item.from, 0)}세트를 더했습니다.`);
+    if (blockedByVolume) notes.push('하루 · 이번 주 한계에 닿는 부위는 더하지 않았습니다. 남는 시간은 넉넉히 쉬세요.');
+  } else if (blockedByVolume) {
+    notes.push('오늘 · 이번 주 운동량이 이미 한계에 가까워 더하지 않았습니다. 남는 시간은 넉넉히 쉬세요.');
+  } else {
+    notes.push('예산 안에 들어옵니다. 계획대로 수행하세요.');
+  }
+  return {
+    budgetSeconds, beforeSeconds: before.totalSeconds, afterSeconds: current, fits: true,
+    session: working, adjustments, notes,
+  };
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { classifyRoles, estimateSessionTime, fitToTimeBudget } from '../timeBudget.ts';
+import { classifyRoles, estimateSessionTime, extendToTimeBudget, fitToTimeBudget } from '../timeBudget.ts';
 import { decideNextSet, secondsForSet } from '../autoregulation.ts';
 import { buildSession } from '../session.ts';
 import { runOnboarding } from '../onboarding.ts';
@@ -273,5 +273,58 @@ describe('자동 세트 판단', () => {
     });
     assert.equal(naive.verdict, 'continue');
     assert.equal(calibrated.verdict, 'stop');
+  });
+});
+
+describe('시간이 넉넉한 날 — 세트를 더한다', () => {
+  const plenty = { chest: 20, back: 20, quads: 20, hamstrings: 20, glutes: 20, sideDelt: 20, rearDelt: 20, frontDelt: 20, triceps: 20, biceps: 20, calves: 20, abs: 20, forearms: 20, traps: 20 };
+
+  it('메인 복합 동작부터 한 세트씩, 종목마다 최대 두 세트, 예산 안에서', () => {
+    const before = estimateSessionTime(session).totalMinutes;
+    const result = extendToTimeBudget(session, before + 40, { headroom: plenty });
+    assert.ok(result.adjustments.length > 0);
+    assert.ok(result.afterSeconds <= result.budgetSeconds);
+    for (const item of result.adjustments) assert.ok(item.to - item.from <= 2, JSON.stringify(item));
+    const roles = classifyRoles(session.exercises);
+    const firstPrimary = session.exercises[roles.indexOf('primary')]!.exercise.id;
+    assert.ok(result.adjustments.some((item) => item.exerciseId === firstPrimary), '메인에 세트가 안 붙었습니다');
+    assert.match(result.notes[0]!, /큰 복합 운동부터 \d+세트를 더했습니다/);
+  });
+
+  it('조금 넉넉하면 메인에만 붙는다', () => {
+    const before = estimateSessionTime(session).totalSeconds;
+    const result = extendToTimeBudget(session, (before + 200) / 60, { headroom: plenty });
+    const roles = classifyRoles(session.exercises);
+    const ids = new Set(session.exercises.filter((_, i) => roles[i] === 'primary').map((item) => item.exercise.id));
+    assert.ok(result.adjustments.length > 0 && result.adjustments.every((item) => ids.has(item.exerciseId)));
+  });
+
+  it('이번 주 회복 한계에 닿는 부위는 더하지 않는다', () => {
+    const before = estimateSessionTime(session).totalMinutes;
+    const result = extendToTimeBudget(session, before + 60, { headroom: {} });
+    assert.equal(result.adjustments.length, 0);
+    assert.match(result.notes[0]!, /한계에 가까워 더하지 않았습니다/);
+  });
+});
+
+describe('시간이 넉넉한 날 — 하루 상한', () => {
+  it('한 부위가 하루 9세트를 넘게 붙이지 않는다', () => {
+    const plenty = { chest: 99, back: 99, quads: 99, hamstrings: 99, glutes: 99, sideDelt: 99, rearDelt: 99, frontDelt: 99, triceps: 99, biceps: 99, calves: 99, abs: 99, forearms: 99, traps: 99 };
+    const result = extendToTimeBudget(session, 240, { headroom: plenty });
+    const today: Record<string, number> = {};
+    for (const item of result.session.exercises) {
+      for (const [muscle, value] of Object.entries(item.exercise.contribution)) {
+        if ((value ?? 0) >= 0.25) today[muscle] = (today[muscle] ?? 0) + (value ?? 0) * item.sets.length;
+      }
+    }
+    const before: Record<string, number> = {};
+    for (const item of session.exercises) {
+      for (const [muscle, value] of Object.entries(item.exercise.contribution)) {
+        if ((value ?? 0) >= 0.25) before[muscle] = (before[muscle] ?? 0) + (value ?? 0) * item.sets.length;
+      }
+    }
+    for (const muscle of Object.keys(today)) {
+      assert.ok(today[muscle]! <= Math.max(9, before[muscle]!) + 1e-9, `${muscle} ${today[muscle]}`);
+    }
   });
 });
