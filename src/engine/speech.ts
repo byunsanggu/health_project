@@ -174,24 +174,37 @@ function tokens(sentence: string): Token[] {
  * 소리를 만드는 쪽은 has 없이(통째 문장 목록으로) 부르고, 앱은 그 목록으로 부른다.
  */
 export function speechPieces(text: string, has: (piece: string) => boolean = () => false): string[] {
-  const out: string[] = [];
+  return speechSentences(text, has).flat();
+}
+
+/** speechPieces와 같은데 문장마다 묶어서 — 트는 쪽이 문장 사이를 조금 더 띄운다. */
+export function speechSentences(text: string, has: (piece: string) => boolean = () => false): string[][] {
+  const out: string[][] = [];
   for (const sentence of sentences(forSpeech(text))) {
     const found = tokens(sentence);
     if (found.length === 0 || has(sentence)) {
-      out.push(sentence);
+      out.push([sentence]);
       continue;
     }
+    const pieces: string[] = [];
     let at = 0;
     for (const token of found) {
       const before = tidy(sentence.slice(at, token.start));
-      if (before) out.push(before);
-      out.push(...token.pieces);
+      if (before) pieces.push(before);
+      pieces.push(...token.pieces);
       at = token.end;
     }
     const after = tidy(sentence.slice(at));
-    if (after) out.push(after);
+    if (after) pieces.push(after);
+    if (pieces.length > 0) out.push(pieces);
   }
   return out;
+}
+
+/** 코치 목소리 이름 — 활기찬 코치만 남 · 여가 있다. 소리 폴더 이름(prototype/voice/<이름>)이다. */
+export function coachVoiceId(style: string, voice?: string | null): string {
+  if (style === 'energetic') return voice === 'f' ? 'energetic-f' : 'energetic-m';
+  return style;
 }
 
 /**

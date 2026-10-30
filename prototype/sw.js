@@ -29,7 +29,8 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== VERSION).map((key) => caches.delete(key))))
+      // 코치 목소리 캐시(coach-voice-*)는 앱이 관리한다 — 워커가 바뀌어도 지우지 않는다(다시 받으려면 9MB)
+      .then((keys) => Promise.all(keys.filter((key) => key !== VERSION && !key.startsWith('coach-voice')).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });
@@ -73,6 +74,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  // 코치 목소리 조각은 앱(coachVoice.js)이 직접 캐시에 담는다 — 여기서 또 담으면 두 벌이 된다
+  if (url.pathname.includes('/voice/')) return;
 
   event.respondWith(
     caches.match(request).then((hit) => {

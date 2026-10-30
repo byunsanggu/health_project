@@ -3,7 +3,8 @@
  * 엔진을 브라우저용으로 번들링해 템플릿에 인라인한다 (외부 요청 없이 한 파일로 동작).
  */
 import { build } from 'esbuild';
-import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, copyFile, cp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 
 const root = new URL('.', import.meta.url);
 const out = new URL('dist/', root);
@@ -42,6 +43,7 @@ const remote = await readFile(new URL('remote.js', root), 'utf8');
 const gymSearch = await readFile(new URL('gymSearch.js', root), 'utf8');
 const push = await readFile(new URL('push.js', root), 'utf8');
 const restSound = await readFile(new URL('restSound.js', root), 'utf8');
+const coachVoice = await readFile(new URL('coachVoice.js', root), 'utf8');
 const template = await readFile(new URL('index.template.html', root), 'utf8');
 
 /*
@@ -123,6 +125,7 @@ const page = template
   .replace('/*GYM_SEARCH_SCRIPT*/', () => gymSearch)
   .replace('/*PUSH_SCRIPT*/', () => push)
   .replace('/*REST_SOUND_SCRIPT*/', () => restSound)
+  .replace('/*COACH_VOICE_SCRIPT*/', () => coachVoice)
   .replace('/*DEMO3D_SCRIPT*/', () => demo3d)
   .replace('/*APP_SCRIPT*/', () => app);
 
@@ -155,3 +158,14 @@ for (const name of ASSETS) {
 
 console.log(`built ${target.pathname} — ${(page.length / 1024).toFixed(1)} KB`);
 console.log(`       + PWA 부속 ${ASSETS.length}개 (manifest · sw · 아이콘)`);
+
+/*
+ * 코치 목소리 조각(tools/voice가 만든다). 한 파일에 넣기엔 크다(목소리마다 약 9MB) — 따로 두고,
+ * 앱은 고른 목소리 하나만 받는다. dist의 사본은 저장소에 올리지 않는다(.gitignore) — 배포가 다시 빌드한다.
+ */
+const voices = new URL('voice/', root);
+await rm(new URL('dist/voice/', root), { recursive: true, force: true });
+if (existsSync(voices)) {
+  await cp(voices, new URL('dist/voice/', root), { recursive: true });
+  console.log('       + 코치 목소리 조각');
+}

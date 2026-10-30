@@ -1935,23 +1935,17 @@ input[type="search"] {
 }
 .coach-mode[aria-pressed="true"] b, .coach-style[aria-pressed="true"] b { color: var(--accent); }
 .coach-styles { display: grid; gap: 6px; margin-top: 8px; }
-/* 목소리 고르기 — 이 폰에 깔린 한국어 목소리. 누르면 그 목소리로 한마디 들려준다 */
+/* 코치 목소리 — 들어 보기 · 활기찬 코치 남 · 여 · 받아 두었는지 */
 .voice-controls { display: grid; gap: 8px; }
 .voice-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .voice-head .list-label { margin: 0; }
 .voice-listen { padding: 6px 12px; font-size: 12.5px; color: var(--accent); border-color: var(--accent); }
-.voice-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.voice-pick {
-  display: grid; gap: 2px; text-align: left; width: 100%; min-width: 0;
-  border: 1px solid var(--line); border-radius: 10px;
-  background: var(--surface-2); color: var(--ink); padding: 9px 11px;
+.voice-status { margin: 0; }
+/* 종목 설명을 코치 목소리로 — 시연 바로 아래, 눈에 띄게 */
+.guide-listen {
+  display: block; width: 100%; margin: 10px 0 2px; padding: 11px 12px; border-radius: 10px;
+  border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); font-size: 14px; font-weight: 600;
 }
-.voice-pick b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.voice-pick span { font-size: 11px; color: var(--muted); }
-.voice-pick[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
-.voice-pick[aria-pressed="true"] b { color: var(--accent); }
-.voice-tune { display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 8px; }
-.voice-tune-label { font-size: 12.5px; color: var(--muted); }
 .coach-style { grid-template-columns: 72px 1fr; align-items: baseline; gap: 8px; }
 .coach-style b { font-size: 13.5px; }
 
@@ -2996,5 +2990,6 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 <script>/*GYM_SEARCH_SCRIPT*/</script>
 <script>/*PUSH_SCRIPT*/</script>
 <script>/*REST_SOUND_SCRIPT*/</script>
+<script>/*COACH_VOICE_SCRIPT*/</script>
 <script>/*DEMO3D_SCRIPT*/</script>
 <script>/*APP_SCRIPT*/</script>
