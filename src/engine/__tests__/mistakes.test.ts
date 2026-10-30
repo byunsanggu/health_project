@@ -32,16 +32,15 @@ describe('흔한 실수 목록', () => {
     }
   });
 
-  it('세트 중 짧은 말은 숫자 사이에 들어갈 만큼 짧고, 빡세게도 반말이 아니다', () => {
+  it('세트 중 짧은 말은 숫자 사이에 들어갈 만큼 짧다', () => {
     for (const exercise of EXERCISES) {
       const shorts = mistakesFor(exercise).map((item) => item.short);
       for (let at = 0; at < shorts.length; at += 1) {
-        const fired = formCueLine('fired', exercise.pattern, at, shorts)!;
-        const calm = formCueLine('calm', exercise.pattern, at, shorts)!;
-        assert.ok(speechSeconds(fired) < 2.6, fired);
-        assert.ok(speechSeconds(calm) < 2.6, calm);
-        assert.doesNotMatch(fired, /(해|가자|버텨|해라|하자|봐|펴|열어)!/, fired);
-        assert.doesNotMatch(calm, /요요\.|\.요\./, calm);
+        for (const style of ['energetic', 'gentle', 'tough', 'fun'] as const) {
+          const line = formCueLine(style, exercise.pattern, at, shorts)!;
+          assert.ok(speechSeconds(line) < 2.6, line);
+          assert.doesNotMatch(line, /[.!]{2}|요요/, line);
+        }
       }
     }
   });
@@ -82,18 +81,19 @@ describe('이번 세트에 짚을 실수', () => {
 describe('코치가 실수를 짚는 말', () => {
   it('짚을 실수가 있으면 동작 포인트 대신 그걸 말한다 — 한 세트에 한 가지', () => {
     const lines = beforeSetLines({
-      style: 'fired', exerciseName: '백 스쿼트', setIndex: 1, totalSets: 4, weightKg: 100,
+      style: 'tough', exerciseName: '백 스쿼트', setIndex: 1, totalSets: 4, weightKg: 100,
       repsMin: 6, repsMax: 10, targetRir: 2, cues: ['가슴을 펴고'],
       watch: { cue: '무릎을 발끝 방향으로 밀어 주세요', moment: 'heavy' },
     }).join(' ');
-    assert.match(lines, /무거울 때 자세가 먼저 무너집니다\. 무릎을 발끝 방향으로 밀어 주세요!/);
+    assert.match(lines, /무거울 때 자세가 먼저 무너진다\. 무릎을 발끝 방향으로 밀어 주세요!/);
     assert.doesNotMatch(lines, /가슴을 펴고/);
   });
 
   it('왜 지금 말하는지가 앞에 붙는다', () => {
-    assert.match(watchLine('calm', '뒤꿈치로 바닥을 누르세요', 'flagged'), /^체크해 두신 거예요/);
-    assert.match(watchLine('calm', '뒤꿈치로 바닥을 누르세요', 'lastSet'), /지칠 때/);
-    assert.match(watchLine('data', '뒤꿈치로 바닥을 누르세요', 'heavy'), /^고중량 주의/);
-    assert.doesNotMatch(watchLine('fired', '뒤꿈치로 바닥을 누르세요', 'first'), /(해|가자|버텨|해라|하자|봐)!/);
+    assert.match(watchLine('gentle', '뒤꿈치로 바닥을 누르세요', 'flagged'), /^체크해 두신 부분입니다/);
+    for (const style of ['energetic', 'gentle', 'tough', 'fun'] as const) {
+      assert.match(watchLine(style, '뒤꿈치로 바닥을 누르세요', 'lastSet'), /지칠|지치면/, style);
+      assert.match(watchLine(style, '뒤꿈치로 바닥을 누르세요', 'heavy'), /무거울/, style);
+    }
   });
 });

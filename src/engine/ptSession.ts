@@ -1,5 +1,4 @@
-import type { CoachStyle } from './coach.ts';
-import { hasFinalConsonant } from './korean.ts';
+import { screenOnly, type CoachStyle } from './coach.ts';
 import { weightLabelIn } from './units.ts';
 import type { MuscleGroup } from './types.ts';
 
@@ -14,15 +13,11 @@ import type { MuscleGroup } from './types.ts';
  * PT를 받기 싫은 사람은 혼자 모드를 쓴다. 여기 있는 것은 PT 모드에서만 돈다.
  */
 
-/** "레그프레스예요" / "랫 풀다운이에요" — 받침에 따라. */
-function isPolite(word: string): string {
-  return word + (hasFinalConsonant(word) ? '이에요' : '예요');
-}
-
-/** "시트 4번이었어요" / "4였어요" */
-function wasPolite(word: string): string {
-  return word + (hasFinalConsonant(word) ? '이었어요' : '였어요');
-}
+/*
+ * 종목 이름 · 숫자 뒤에는 조사를 붙이지 않는다("레그프레스예요" 대신 "다음 종목, 레그프레스").
+ * 코치 목소리는 미리 만든 조각을 이어 붙여서, 이름 · 숫자는 따로 떨어져 있어야 자연스럽다.
+ */
+type ByStyle<T> = Readonly<Record<CoachStyle, T>>;
 
 function load(weightKg: number, pounds?: boolean): string {
   return weightKg > 0 ? weightLabelIn(weightKg, Boolean(pounds)) : '맨몸';
@@ -45,30 +40,46 @@ export function warmupSetLine(
   pounds?: boolean,
 ): string {
   const step = steps[index]!;
-  const what = `${load(step.weightKg, pounds)} ${step.reps}개`;
+  const what = `${load(step.weightKg, pounds)}, ${step.reps}개`;
   if (index === 0) {
-    if (style === 'data') return `${exerciseName} 워밍업 ${steps.length}세트. 1번, ${what}.`;
-    if (style === 'fired') return `${exerciseName}, 워밍업부터 갑니다. ${steps.length}세트, 첫 번째 ${what}!`;
-    return `${exerciseName} 워밍업 ${steps.length}세트 할게요. 첫 번째, ${what}요.`;
+    const first: ByStyle<string> = {
+      tough: `${exerciseName}. 워밍업부터 간다. ${steps.length}세트. 첫 번째, ${what}!`,
+      energetic: `${exerciseName}! 워밍업부터 가요! ${steps.length}세트. 첫 번째, ${what}!`,
+      gentle: `${exerciseName}. 워밍업 ${steps.length}세트 하겠습니다. 첫 번째, ${what}.`,
+      fun: `${exerciseName}. 워밍업 ${steps.length}세트! 몸한테 예고편 보여 줘요. 첫 번째, ${what}.`,
+    };
+    return first[style];
   }
   const last = index === steps.length - 1;
-  if (style === 'data') return `워밍업 ${index + 1}번, ${what}.`;
-  if (style === 'fired') return `${last ? '마지막 워밍업' : '다음'}, ${what}!`;
-  return `${last ? '마지막 워밍업이에요' : '다음은'}, ${what}요.`;
+  const next: ByStyle<string> = {
+    tough: last ? `마지막 워밍업, ${what}!` : `다음, ${what}!`,
+    energetic: last ? `마지막 워밍업! ${what}!` : `다음! ${what}!`,
+    gentle: last ? `마지막 워밍업입니다. ${what}.` : `다음은, ${what}.`,
+    fun: last ? `마지막 워밍업! ${what}.` : `다음 예고편, ${what}.`,
+  };
+  return next[style];
 }
 
 /** 워밍업 사이 쉬는 말. */
 export function warmupRestLine(style: CoachStyle, seconds: number): string {
-  if (style === 'data') return `${seconds}초 휴식.`;
-  if (style === 'fired') return `좋습니다. ${seconds}초 쉬고 올립니다.`;
-  return `좋아요. ${seconds}초 쉬고 조금 올릴게요.`;
+  const lines: ByStyle<string> = {
+    tough: `좋아. ${seconds}초 쉬고 올린다.`,
+    energetic: `좋아요! ${seconds}초 쉬고 올려요!`,
+    gentle: `좋습니다. ${seconds}초 쉬고, 조금 올리겠습니다.`,
+    fun: `좋아요. ${seconds}초 쉬고, 살짝 올려 볼게요.`,
+  };
+  return lines[style];
 }
 
 /** 워밍업이 끝나고 본세트로. */
 export function warmupDoneLine(style: CoachStyle): string {
-  if (style === 'data') return '워밍업 종료. 본세트.';
-  if (style === 'fired') return '몸 다 풀렸습니다. 이제 본세트 갑니다!';
-  return '워밍업 끝났어요. 이제 본세트 할게요.';
+  const lines: ByStyle<string> = {
+    tough: '몸 다 풀렸다. 이제 본세트 간다!',
+    energetic: '워밍업 끝! 이제 본세트 가요!',
+    gentle: '워밍업 끝났습니다. 이제 본세트 하겠습니다.',
+    fun: '예고편 끝! 이제 본편 시작합니다.',
+  };
+  return lines[style];
 }
 
 /* ── 세트 사이 휴식 ─────────────────────────────── */
@@ -95,14 +106,21 @@ export function restAnnounceLine(
 ): string {
   const time = restSpoken(input.seconds);
   // 슈퍼세트면 다음이 짝 종목이다 — "2세트"만 말하면 같은 종목을 또 하는 줄 안다
-  const what = input.nextName ? `${input.nextName} ${input.nextSet}세트` : `${input.nextSet}세트`;
-  let line: string;
-  if (style === 'data') line = `휴식 ${time}. 다음 ${what}.`;
-  else if (style === 'fired') line = `${time} 쉬고 ${what} 올립니다!`;
-  else line = `${time} 쉬고 ${what} 갈게요.`;
-  if (!input.firstTime) return line;
-  if (style === 'data') return `${line} 연장은 +30초.`;
-  return `${line} 더 쉬고 싶으면 화면에서 +30초 누르세요.`;
+  const what = input.nextName ? `${input.nextName}, ${input.nextSet}세트` : `${input.nextSet}세트`;
+  const lines: ByStyle<string> = {
+    tough: `${time} 쉬고, ${what}. 올린다!`,
+    energetic: `${time} 쉬고, ${what}! 가 봐요!`,
+    gentle: `${time} 쉬고, ${what} 가겠습니다.`,
+    fun: `${time} 쉬고, ${what}. 쉬는 시간은 소중하니까요.`,
+  };
+  if (!input.firstTime) return lines[style];
+  const more: ByStyle<string> = {
+    tough: '더 쉬고 싶으면, 화면에서 30초 추가 눌러.',
+    energetic: '더 쉬고 싶으면, 화면에서 30초 추가 눌러요!',
+    gentle: '더 쉬고 싶으시면, 화면에서 30초 추가를 누르세요.',
+    fun: '더 쉬고 싶으면, 화면에서 30초 추가! 몰래 눌러도 돼요.',
+  };
+  return `${lines[style]} ${more[style]}`;
 }
 
 /* ── 종목 이동 ─────────────────────────────────── */
@@ -112,30 +130,45 @@ export const TRANSITION_REST_SECONDS = 75;
 
 export function transitionLines(style: CoachStyle, input: {
   nextName: string;
-  /** 지난번에 적어 둔 기계 세팅 */
+  /** 지난번에 적어 둔 기계 세팅 — 사람이 적은 글이라 화면에만 */
   machineSetting?: string | null;
   /** 처음 하는 종목이면 세팅을 같이 보자고 한다 */
   firstTime?: boolean;
   seconds: number;
 }): string[] {
-  const time = input.seconds >= 60 && input.seconds % 60 === 0
-    ? `${input.seconds / 60}분`
-    : `${input.seconds}초`;
+  const time = restSpoken(input.seconds);
   const lines: string[] = [];
-  if (style === 'data') {
-    lines.push(`다음 ${input.nextName}. 이동 ${time}.`);
-    if (input.machineSetting) lines.push(`세팅 ${input.machineSetting}.`);
-    return lines;
-  }
-  lines.push(style === 'fired' ? `다음은 ${input.nextName}입니다!` : `다음은 ${isPolite(input.nextName)}.`);
+  const next: ByStyle<string> = {
+    tough: `다음 종목, ${input.nextName}!`,
+    energetic: `다음 종목은, ${input.nextName}!`,
+    gentle: `다음 종목은, ${input.nextName}.`,
+    fun: `다음 손님, ${input.nextName}!`,
+  };
+  lines.push(next[style]);
   if (input.machineSetting) {
-    lines.push(style === 'fired' ? `세팅은 ${input.machineSetting}입니다.` : `세팅은 ${wasPolite(input.machineSetting)}.`);
+    const saved: ByStyle<string> = {
+      tough: '세팅은 화면에 있어.',
+      energetic: '세팅은 화면에 띄워 뒀어요!',
+      gentle: '세팅은 화면에 적어 두었습니다.',
+      fun: '세팅은 화면에! 제가 다 외워 뒀어요.',
+    };
+    lines.push(saved[style] + screenOnly(` (${input.machineSetting})`));
   } else if (input.firstTime) {
-    lines.push(style === 'fired' ? '처음 하는 기구입니다. 가서 세팅부터 봅니다.' : '처음 하시는 기구라 가서 세팅부터 같이 볼게요.');
+    const first: ByStyle<string> = {
+      tough: '처음 하는 기구다. 가서 세팅부터 본다.',
+      energetic: '처음 하는 기구예요! 가서 세팅부터 같이 봐요!',
+      gentle: '처음 하시는 기구라, 가서 세팅부터 같이 보겠습니다.',
+      fun: '처음 만나는 기구예요. 가서 인사하고 세팅부터 봐요.',
+    };
+    lines.push(first[style]);
   }
-  lines.push(style === 'fired'
-    ? `${time} 드립니다. 물 마시고 자리 잡으세요.`
-    : `${time} 드릴게요. 물 한 모금 하고 자리 잡아요.`);
+  const go: ByStyle<string> = {
+    tough: `${time} 준다. 물 마시고 자리 잡아.`,
+    energetic: `${time} 줄게요! 물 한 모금 하고 자리 잡아요!`,
+    gentle: `${time} 드리겠습니다. 물 한 모금 하시고 자리 잡으세요.`,
+    fun: `${time} 드릴게요. 물 마시고, 기구 뺏기기 전에 자리 잡아요.`,
+  };
+  lines.push(go[style]);
   return lines;
 }
 
@@ -200,10 +233,14 @@ export function paceCheck(input: {
 
 /** 줄였을 때 하는 말. */
 export function trimLine(style: CoachStyle, trimmed: readonly { name: string; sets: number }[]): string {
-  const what = trimmed.map((item) => `${item.name} ${item.sets}세트`).join(', ');
-  if (style === 'data') return `시간 초과 예상. 조정: ${what}.`;
-  if (style === 'fired') return `시간이 좀 밀렸습니다. ${what}로 줄이고 그만큼 집중합니다.`;
-  return `시간이 조금 밀렸어요. ${what}만 할게요. 무리하지 말고 가요.`;
+  const what = trimmed.map((item) => `${item.name}, ${item.sets}세트`).join('. ');
+  const lines: ByStyle<string> = {
+    tough: `시간이 좀 밀렸다. ${what}. 줄이고 그만큼 집중한다.`,
+    energetic: `시간이 조금 밀렸어요! ${what}. 대신 집중해서 가요!`,
+    gentle: `시간이 조금 밀렸습니다. ${what}. 이만큼만 하겠습니다.`,
+    fun: `시간이 좀 밀렸어요. ${what}. 짧고 굵게 갑니다.`,
+  };
+  return lines[style];
 }
 
 /** 중간 점검. 이미 한 말은 다시 하지 않도록 열쇠를 같이 돌려준다. */
@@ -215,14 +252,22 @@ export function timeCheck(style: CoachStyle, input: {
   const elapsedMin = Math.floor(input.elapsedSeconds / 60);
   const leftMin = Math.round((input.plannedSeconds - input.elapsedSeconds) / 60);
   if (!input.said.includes('half') && input.elapsedSeconds >= input.plannedSeconds / 2) {
-    if (style === 'data') return { key: 'half', line: `${elapsedMin}분 경과, 절반.` };
-    if (style === 'fired') return { key: 'half', line: `${elapsedMin}분 지났습니다. 절반 왔습니다. 여기서부터 차이가 납니다!` };
-    return { key: 'half', line: `${elapsedMin}분 지났어요. 절반 왔어요.` };
+    const half: ByStyle<string> = {
+      tough: `${elapsedMin}분 지났다. 절반 왔어. 여기서부터 차이가 난다!`,
+      energetic: `${elapsedMin}분 지났어요! 벌써 절반이에요!`,
+      gentle: `${elapsedMin}분 지났습니다. 절반 오셨습니다.`,
+      fun: `${elapsedMin}분 지났어요. 절반! 이제 내리막이에요.`,
+    };
+    return { key: 'half', line: half[style] };
   }
   if (!input.said.includes('last10') && leftMin <= 10 && leftMin > 2 && input.said.includes('half')) {
-    if (style === 'data') return { key: 'last10', line: `잔여 ${leftMin}분.` };
-    if (style === 'fired') return { key: 'last10', line: `${leftMin}분 남았습니다. 다 쏟고 갑니다!` };
-    return { key: 'last10', line: `${leftMin}분 남았어요. 조금만 더 힘내요.` };
+    const last: ByStyle<string> = {
+      tough: `${leftMin}분 남았다. 다 쏟고 간다!`,
+      energetic: `${leftMin}분 남았어요! 조금만 더 힘내요!`,
+      gentle: `${leftMin}분 남았습니다. 조금만 더 힘내시죠.`,
+      fun: `${leftMin}분 남았어요. 광고 한 편 보는 시간이에요.`,
+    };
+    return { key: 'last10', line: last[style] };
   }
   return null;
 }
@@ -288,6 +333,9 @@ const MOVES: readonly MobilityStep[] = [
   { id: 'standing-knee', name: '서서 무릎 · 팔꿈치 닿기', seconds: 30, insteadOf: 'dead-bug', cue: '무릎을 들어 반대 팔꿈치에 닿게, 배에 힘을 주고 천천히', muscles: ['abs'] },
 ];
 
+/** 몸 풀기 동작 전부 — 코치 목소리 조각을 만들 때 이름 · 설명을 모은다. */
+export const MOBILITY_STEPS: readonly MobilityStep[] = [...OPENERS, ...ROLLS, ...MOVES];
+
 /** 몸 풀기에 쓰는 시간. */
 export const MOBILITY_SECONDS = 5 * 60;
 
@@ -352,20 +400,27 @@ export function mobilityMinutes(steps: readonly MobilityStep[]): number {
 }
 
 export function mobilityLine(style: CoachStyle, step: MobilityStep, index: number, total: number, minutes = 5): string {
-  const head = index === 0
-    ? (style === 'fired' ? `몸부터 풉니다. ${minutes}분! ` : style === 'data' ? `몸 풀기 ${minutes}분. ` : `몸부터 풀게요. ${minutes}분이에요. `)
-    : '';
+  void total;
+  const head: ByStyle<string> = {
+    tough: `몸부터 푼다. ${minutes}분! `,
+    energetic: `몸부터 풀어요! ${minutes}분! `,
+    gentle: `몸부터 풀겠습니다. ${minutes}분입니다. `,
+    fun: `몸부터 풀어요. ${minutes}분! 기지개 켜는 시간이에요. `,
+  };
   // "120초"가 아니라 "2분" — 트레이너가 말하는 대로
   const time = restSpoken(step.seconds);
-  if (style === 'data') return `${head}${index + 1}/${total} ${step.name} ${time}.`;
-  const sides = step.sides ? ' 반쯤 지나면 반대쪽이요.' : '';
-  return `${head}${step.name} ${time}. ${step.cue}.${sides}`;
+  const sides: ByStyle<string> = { tough: ' 반쯤 지나면 반대쪽.', energetic: ' 반쯤 지나면 반대쪽이요!', gentle: ' 반쯤 지나면 반대쪽입니다.', fun: ' 반쯤 지나면 반대쪽이요.' };
+  return `${index === 0 ? head[style] : ''}${step.name}, ${time}. ${step.cue}.${step.sides ? sides[style] : ''}`;
 }
 
 export function mobilityDoneLine(style: CoachStyle): string {
-  if (style === 'data') return '몸 풀기 종료. 운동 시작.';
-  if (style === 'fired') return '몸 다 풀렸습니다. 이제 갑니다!';
-  return '몸 다 풀렸어요. 이제 운동 시작할게요.';
+  const lines: ByStyle<string> = {
+    tough: '몸 다 풀렸다. 이제 간다!',
+    energetic: '몸 다 풀렸어요! 이제 운동 시작해요!',
+    gentle: '몸 다 풀렸습니다. 이제 운동 시작하겠습니다.',
+    fun: '몸 다 풀렸어요. 이제 본격적으로 땀 흘려 봐요.',
+  };
+  return lines[style];
 }
 
 /* ── 마무리 스트레칭 ───────────────────────────── */
@@ -398,6 +453,9 @@ const BREATH: CooldownStep = {
   cue: '코로 4초 들이쉬고 입으로 6초 내쉬세요', muscles: [],
 };
 
+/** 마무리 스트레칭 전부 (호흡 포함). */
+export const COOLDOWN_STEPS: readonly CooldownStep[] = [...STRETCHES, BREATH];
+
 /** 마무리 스트레칭에 쓰는 시간. 이보다 길면 안 하고 간다. */
 export const COOLDOWN_SECONDS = 4 * 60;
 
@@ -423,22 +481,28 @@ export function cooldownFor(
 }
 
 export function cooldownLine(style: CoachStyle, step: CooldownStep, index: number, total: number): string {
-  const head = index === 0
-    ? (style === 'fired' ? '수고하셨습니다. 마무리 스트레칭 갑니다. ' : style === 'data' ? '쿨다운. ' : '고생하셨어요. 마무리 스트레칭 할게요. ')
-    : '';
-  if (style === 'data') return `${head}${index + 1}/${total} ${step.name} ${step.seconds}초.`;
-  const sides = step.sides ? ' 반쯤 지나면 반대쪽으로 바꿀게요.' : '';
-  return `${head}${step.name} ${step.seconds}초. ${step.cue}.${sides}`;
+  void total;
+  const head: ByStyle<string> = {
+    tough: '수고했어. 마무리 스트레칭 간다. ',
+    energetic: '수고했어요! 마무리 스트레칭 해요! ',
+    gentle: '고생하셨습니다. 마무리 스트레칭 하겠습니다. ',
+    fun: '수고했어요! 마무리 스트레칭, 근육한테 마사지 해 줘요. ',
+  };
+  const sides: ByStyle<string> = { tough: ' 반쯤 지나면 반대쪽.', energetic: ' 반쯤 지나면 반대쪽으로 바꿔요!', gentle: ' 반쯤 지나면 반대쪽으로 바꾸겠습니다.', fun: ' 반쯤 지나면 반대쪽이요.' };
+  return `${index === 0 ? head[style] : ''}${step.name}, ${step.seconds}초. ${step.cue}.${step.sides ? sides[style] : ''}`;
 }
 
 export function cooldownSwitchLine(style: CoachStyle): string {
-  if (style === 'data') return '반대쪽.';
-  if (style === 'fired') return '반대쪽입니다!';
-  return '반대쪽으로 바꿀게요.';
+  const lines: ByStyle<string> = { tough: '반대쪽!', energetic: '반대쪽이요!', gentle: '반대쪽으로 바꾸겠습니다.', fun: '반대쪽! 공평하게 해 줘야죠.' };
+  return lines[style];
 }
 
 export function cooldownDoneLine(style: CoachStyle): string {
-  if (style === 'data') return '쿨다운 종료.';
-  if (style === 'fired') return '오늘 PT 끝입니다. 잘 버텼습니다!';
-  return '오늘 PT 끝이에요. 정말 수고 많으셨어요.';
+  const lines: ByStyle<string> = {
+    tough: '오늘 PT 끝이다. 잘 버텼어!',
+    energetic: '오늘 PT 끝! 정말 최고였어요!',
+    gentle: '오늘 PT 끝입니다. 정말 수고 많으셨습니다.',
+    fun: '오늘 PT 끝! 집에 가는 길, 계단 조심하세요.',
+  };
+  return lines[style];
 }

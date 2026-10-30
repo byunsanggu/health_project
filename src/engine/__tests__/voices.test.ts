@@ -103,16 +103,14 @@ describe('말투마다 목소리 결', () => {
     assert.deepEqual(voiceTuning(undefined, 0.85, 1.14), { rate: 0.85, pitch: 1.14 });
   });
 
-  it('빡세게는 빠르고 힘 있게, 차분하게는 느리고 낮게, 숫자로는 또박또박 낮게', () => {
-    const calm = voiceTuning('calm');
-    const fired = voiceTuning('fired');
-    const data = voiceTuning('data');
-    assert.ok(fired.rate > data.rate && data.rate > calm.rate);
-    assert.ok(fired.pitch > 1 && calm.pitch < 1 && data.pitch < calm.pitch);
+  it('활기 · 빡센은 빠르게, 젠틀은 느리고 낮게', () => {
+    const gentle = voiceTuning('gentle');
+    assert.ok(voiceTuning('tough').rate > gentle.rate && voiceTuning('energetic').rate > gentle.rate);
+    assert.ok(voiceTuning('energetic').pitch > 1 && gentle.pitch < 1);
   });
 
   it('사람이 고른 빠르기 · 높이는 말투 결 위에 곱한다 — 말투를 바꿔도 "느리게"는 남는다', () => {
-    for (const style of ['calm', 'fired', 'data'] as const) {
+    for (const style of ['energetic', 'gentle', 'tough', 'fun'] as const) {
       const base = voiceTuning(style);
       const slow = voiceTuning(style, 0.85, 1);
       const low = voiceTuning(style, 1, 0.86);
@@ -123,8 +121,8 @@ describe('말투마다 목소리 결', () => {
   });
 
   it('알아듣기 어려운 끝값은 자른다', () => {
-    assert.deepEqual(voiceTuning('fired', 5, 5), { rate: 2, pitch: 1.5 });
-    assert.deepEqual(voiceTuning('calm', 0.1, 0.1), { rate: 0.5, pitch: 0.6 });
+    assert.deepEqual(voiceTuning('tough', 5, 5), { rate: 2, pitch: 1.5 });
+    assert.deepEqual(voiceTuning('gentle', 0.1, 0.1), { rate: 0.5, pitch: 0.6 });
     // 저장된 값이 비었거나 0이면 보통으로
     assert.deepEqual(voiceTuning(null, 0, null), { rate: 1, pitch: 1 });
   });

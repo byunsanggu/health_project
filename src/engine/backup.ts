@@ -68,7 +68,8 @@ const GOALS: readonly string[] = ['hypertrophy', 'strength', 'fatLoss', 'general
 const SEXES: readonly string[] = ['male', 'female', 'unspecified'];
 const JOINTS: readonly Joint[] = ['neck', 'shoulder', 'elbow', 'wrist', 'lowBack', 'hip', 'knee', 'ankle'];
 const COACH_MODES: readonly string[] = ['pt', 'solo'];
-const COACH_STYLE_IDS: readonly string[] = ['calm', 'fired', 'data'];
+// 예전 말투(calm · fired · data)로 내려받은 파일도 읽는다 — 앱이 새 코치로 옮긴다
+const COACH_STYLE_IDS: readonly string[] = ['energetic', 'gentle', 'tough', 'fun', 'calm', 'fired', 'data'];
 const EXERCISE_IDS = new Set(EXERCISES.map((exercise) => exercise.id));
 
 function isPlain(value: unknown): value is Plain {

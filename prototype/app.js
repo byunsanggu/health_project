@@ -451,9 +451,10 @@
       // 오늘 기록한 세트를 되살리고, 해당 세트를 완료 상태로 표시한다.
       state.machineKnown = settings.machineKnown || {};
       state.machinePound = settings.machinePound || {};
+      // 예전 말투(차분하게 · 빡세게 · 숫자로)는 새 코치로 옮긴다. voice는 활기찬 코치의 여자 목소리
       state.coach = settings.coach && settings.coach.mode
-        ? { mode: settings.coach.mode === 'pt' ? 'pt' : 'solo', style: settings.coach.style || 'calm' }
-        : { mode: 'solo', style: 'calm' };
+        ? { mode: settings.coach.mode === 'pt' ? 'pt' : 'solo', style: E.coachStyleOf(settings.coach.style), voice: settings.coach.voice === 'f' ? 'f' : null }
+        : { mode: 'solo', style: 'gentle', voice: null };
       state.machineSettings = settings.machineSettings || {};
       state.gymLinkHidden = Boolean(settings.gymLinkHidden);
       state.mistakeFlags = settings.mistakeFlags || {};
@@ -880,7 +881,7 @@
      * PT 모드. 기본은 혼자다 — 켜지 않았는데 휴대폰이 말을 시작하면
      * 헬스장에서 다들 쳐다본다. 오늘 화면에서 고른다.
      */
-    coach: { mode: 'solo', style: 'calm' },
+    coach: { mode: 'solo', style: 'gentle', voice: null },
     /** 끼니 예시를 사람에 맞추는 것 — 못 먹는 것, 예산, 평일 점심 */
     diet: { avoid: [], budget: 'normal', lunch: 'cook' },
     /** 기계 세팅 ("시트 4 · 등받이 2"). 헬스장|종목|기계 → 글 */
@@ -6713,7 +6714,7 @@
       el('button', {
         type: 'button', class: 'coach-mode', 'aria-pressed': String(!pt),
         onclick: function () {
-          state.coach = { mode: 'solo', style: state.coach.style };
+          state.coach = { mode: 'solo', style: state.coach.style, voice: state.coach.voice || null };
           releaseWakeLock();
           persist();
           onChange();
@@ -6722,7 +6723,7 @@
       el('button', {
         type: 'button', class: 'coach-mode', 'aria-pressed': String(pt),
         onclick: function () {
-          state.coach = { mode: 'pt', style: state.coach.style || 'calm' };
+          state.coach = { mode: 'pt', style: state.coach.style || 'gentle', voice: state.coach.voice || null };
           persist();
           speak(E.forSpeech(E.coachStyleInfo(state.coach.style).sample));
           onChange();
@@ -8234,14 +8235,14 @@
   function togglePtNow() {
     if (ptOn()) {
       pausePt('off');
-      state.coach = { mode: 'solo', style: state.coach.style };
+      state.coach = { mode: 'solo', style: state.coach.style, voice: state.coach.voice || null };
       if (!state.rest) releaseWakeLock();
       pushLog('운동 방식', 'PT를 껐습니다. 혼자 모드로 이어 갑니다.');
       persist();
       render();
       return;
     }
-    state.coach = { mode: 'pt', style: state.coach.style || 'calm' };
+    state.coach = { mode: 'pt', style: state.coach.style || 'gentle', voice: state.coach.voice || null };
     var run = ensurePtRun();
     // 이미 운동 중이면 몸 풀기는 건너뛴다 — 이미 몸이 풀렸다
     run.prepped = true;
@@ -8253,7 +8254,7 @@
     } else {
       // 지금 세트를 세어 주게 한다(쉬는 중이면 휴식이 끝난 뒤)
       state.autoCountedFor = null;
-      speak(state.coach.style === 'data' ? 'PT 시작.' : '지금부터 같이 할게요.');
+      speak(E.forSpeech(E.ptStartLine(state.coach.style)));
     }
     render();
   }
@@ -8718,7 +8719,7 @@
     var at = pt.resume;
     pt.resume = null;
     // 스트레칭 중에 멈췄으면 하던 스트레칭을 다시 한다.
-    if (pt.cool) { speak(state.coach.style === 'fired' ? '다시 갑니다!' : '다시 할게요.'); cooldownStep(pt.cool, Math.max(0, pt.cool.index)); return; }
+    if (pt.cool) { speak(E.resumeLine(state.coach.style)); cooldownStep(pt.cool, Math.max(0, pt.cool.index)); return; }
     // 몸 풀기 중에 멈췄으면 하던 동작부터
     if (pt.prep) { prepStep(pt.prep, Math.max(0, pt.prep.index)); return; }
     var lift = at && state.lifts[at.liftIndex];
@@ -8731,11 +8732,11 @@
     if (set && !set.done && at.rep > 0 && !state.rest) {
       state.autoCountedFor = at.liftIndex + ':' + at.setIndex;
       var next = E.koreanCount(at.rep + 1);
-      speak(state.coach.style === 'data' ? next + '부터.' : '이어서 갈게요. ' + next + '부터요.');
+      speak(E.resumeFromLine(state.coach.style, next));
       startCounting(at.liftIndex, at.setIndex, 4, at.rep);
       return;
     }
-    speak(state.coach.style === 'fired' ? '다시 갑니다!' : '다시 할게요.');
+    speak(E.resumeLine(state.coach.style));
     render();
   }
 

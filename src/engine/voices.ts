@@ -139,9 +139,10 @@ export const VOICE_PITCHES: readonly VoiceOption[] = [
  * "나는 느리게"가 그대로 남는다.
  */
 export const STYLE_TONE: Readonly<Record<CoachStyle, { rate: number; pitch: number }>> = {
-  calm: { rate: 0.94, pitch: 0.97 },
-  fired: { rate: 1.08, pitch: 1.07 },
-  data: { rate: 1.02, pitch: 0.94 },
+  gentle: { rate: 0.94, pitch: 0.97 },
+  tough: { rate: 1.08, pitch: 0.94 },
+  energetic: { rate: 1.08, pitch: 1.07 },
+  fun: { rate: 1.03, pitch: 1.02 },
 };
 
 const clamp = (value: number, low: number, high: number): number => Math.min(high, Math.max(low, value));

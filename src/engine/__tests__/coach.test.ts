@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-
 import {
   COACH_STYLES,
+  CONTROLLED_MIDDLE,
+  CONTROLLED_RESOLVE,
   FEELS,
-  FIRED_RESOLVE,
-  FIRED_MIDDLE,
-  FIRED_CONTROLLED,
-  FIRED_CONTROLLED_MIDDLE,
+  MIDDLE,
+  REST_TIPS,
+  RESOLVE,
   bestWeightBefore,
+  coachStyleOf,
+  ptStartLine,
+  resumeLine,
   sessionStartLines,
   lastCallLine,
   formCueLine,
@@ -32,12 +35,14 @@ import { EXERCISES } from '../exercises.ts';
 import { buildCues } from '../tempo.ts';
 import type { SessionLog } from '../types.ts';
 
-const STYLES: CoachStyle[] = ['calm', 'fired', 'data'];
+const STYLES: CoachStyle[] = ['energetic', 'gentle', 'tough', 'fun'];
+const POLITE: CoachStyle[] = ['energetic', 'gentle', 'fun'];
 const legPress = EXERCISES.find((item) => item.id === 'leg-press')!;
 const bench = EXERCISES.find((item) => item.id === 'barbell-bench-press')!;
 const TODAY = '2026-10-08';
 const ago = (n: number) =>
   new Date(Date.parse(TODAY + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
+const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
 const session = (daysAgo: number, exerciseId: string, kg: number, reps: number[], extra: Partial<SessionLog> = {}): SessionLog =>
   ({
@@ -48,7 +53,7 @@ const session = (daysAgo: number, exerciseId: string, kg: number, reps: number[]
   }) as SessionLog;
 
 const base = (over: Partial<BeforeSetInput> = {}): BeforeSetInput => ({
-  style: 'calm',
+  style: 'gentle',
   exerciseName: '레그프레스',
   setIndex: 0,
   totalSets: 3,
@@ -59,85 +64,116 @@ const base = (over: Partial<BeforeSetInput> = {}): BeforeSetInput => ({
   ...over,
 });
 
-describe('말투는 셋, 모두 존댓말', () => {
-  it('차분 · 빡센 · 숫자 세 가지가 있다', () => {
-    assert.deepEqual(COACH_STYLES.map((item) => item.id), ['calm', 'fired', 'data']);
+/** 한 코치가 하는 말을 거의 다 모은다 — 말투 검사용 */
+function everything(style: CoachStyle): string {
+  const last = { date: ago(4), daysAgo: 4, weightKg: 120, reps: 10, rir: 2, sets: 3 };
+  return [
+    ...range(6).flatMap((liftIndex) => range(3).flatMap((setIndex) =>
+      beforeSetLines(base({ style, liftIndex, totalLifts: 6, setIndex, last, cues: ['무릎은 발끝 방향으로'] })))),
+    // 세팅 설명은 모든 코치가 같이 쓰는 글이라 말투 검사에서 뺀다
+    ...beforeSetLines(base({ style, firstTime: true, setup: ['등은 등받이에'] })),
+    ...range(8).map((at) => pushLine(style, at)),
+    ...range(8).map((at) => askFeelLine(style, at)),
+    ...range(12).map((at) => restTipLine(style, at)),
+    ...range(4).map((at) => readySoonLine(style, at)),
+    ...range(6).flatMap((at) => (['light', 'right', 'heavy'] as const).flatMap((feel) => [
+      ...afterSetLines({ style, feel, lastOfLift: false, nextWeightKg: 100, deltaKg: 2.5, at }),
+      ...afterSetLines({ style, feel, lastOfLift: false, nextWeightKg: 100, deltaKg: -5, at }),
+      ...afterSetLines({ style, feel, lastOfLift: false, nextWeightKg: 100, deltaKg: 0, at }),
+      ...afterSetLines({ style, feel, lastOfLift: true, at }),
+    ])),
+    ...afterSetLines({ style, feel: 'hurt', lastOfLift: false }),
+    ...afterSetLines({ style, feel: 'right', lastOfLift: false, weightPr: true, nextWeightKg: 100 }),
+    ...range(4).flatMap((at) => wrapUpLines({ style, setsDone: 18, liftsDone: 6, at, weekDone: 4, weekTarget: 4, goal: 'strength' })),
+    ...wrapUpLines({ style, setsDone: 12, liftsDone: 5, firstEver: true }),
+    ...sessionStartLines({ style, sessionName: '하체 A', lifts: 5, minutes: 40, phase: 'deload' }),
+    ...sessionStartLines({ style, sessionName: '하체 A', lifts: 5, weekInBlock: 5, accumulationWeeks: 5, streakWeeks: 4 }),
+    lastCallLine(style), resumeLine(style), ptStartLine(style),
+  ].map(forSpeech).join(' ');
+}
+
+describe('코치는 넷 — 빡센 코치만 반말', () => {
+  it('활기 · 젠틀 · 빡센 · 유머', () => {
+    assert.deepEqual(COACH_STYLES.map((item) => item.id), STYLES);
   });
 
-  it('빡센 트레이너도 반말을 하지 않는다', () => {
-    /* 빡세다는 건 반말이 아니라 각오다. 끝이 "~해!" "~가자!"로 떨어지면 안 된다. */
-    const said = [
-      ...beforeSetLines(base({ style: 'fired' })),
-      ...beforeSetLines(base({ style: 'fired', setIndex: 2 })),
-      pushLine('fired'),
-      askFeelLine('fired'),
-      ...afterSetLines({ style: 'fired', feel: 'light', lastOfLift: false, nextWeightKg: 130, deltaKg: 5 }),
-      ...afterSetLines({ style: 'fired', feel: 'right', lastOfLift: true }),
-      restTipLine('fired', 0), restTipLine('fired', 1), restTipLine('fired', 2),
-      readySoonLine('fired'),
-      ...wrapUpLines({ style: 'fired', setsDone: 18, liftsDone: 6 }),
-      ...FIRED_RESOLVE,
-    ].join(' ');
-    assert.doesNotMatch(said, /(해|가자|버텨|해라|하자|봐)!/);
-    assert.doesNotMatch(said, /(^|\s)(야|너)(\s|,)/);
+  it('예전 말투는 새 코치로 옮긴다 — 빡세게는 빡센, 차분 · 숫자는 젠틀', () => {
+    assert.equal(coachStyleOf('fired'), 'tough');
+    assert.equal(coachStyleOf('calm'), 'gentle');
+    assert.equal(coachStyleOf('data'), 'gentle');
+    assert.equal(coachStyleOf('fun'), 'fun');
+    assert.equal(coachStyleOf(undefined), 'gentle');
+  });
+
+  it('빡센 코치는 반말이다 — 존댓말 끝맺음이 없다', () => {
+    assert.doesNotMatch(everything('tough'), /(니다|세요|어요|아요|해요|에요|예요|죠)[.!?]/);
+  });
+
+  it('나머지 셋은 존댓말이다 — 반말 끝맺음이 없다', () => {
+    for (const style of POLITE) {
+      assert.doesNotMatch(everything(style), /(해|가자|버텨|해라|하자|펴|열어|간다|이야|거야|했어)[.!]/, style);
+      assert.doesNotMatch(everything(style), /(^|\s)(야|너)(\s|,)/, style);
+    }
   });
 
   it('각오 한마디는 돌려 쓴다 — 여섯 종목에 같은 말을 여섯 번 하지 않는다', () => {
-    const firsts = [0, 1, 2, 3].map((liftIndex) =>
-      beforeSetLines(base({ style: 'fired', liftIndex })).join(' '));
-    assert.equal(new Set(firsts).size, 4);
+    for (const style of ['tough', 'energetic'] as const) {
+      const firsts = [0, 1, 2, 3].map((liftIndex) => beforeSetLines(base({ style, liftIndex })).join(' '));
+      assert.equal(new Set(firsts).size, 4, style);
+    }
   });
 });
 
 describe('끝까지 밀지 않는 날', () => {
   /*
-   * 첫날 시작할 때 "무리하지 않습니다"라고 해 놓고, 세트 앞에서 "오늘이 마지막인
-   * 것처럼 갑시다"라고 하면 둘 다 안 믿는다. 덜어내는 주 · 컨디션 낮은 날 · 아픈 데
+   * 첫날 시작할 때 "무리하지 않는다"고 해 놓고, 세트 앞에서 "오늘이 마지막인
+   * 것처럼"이라고 하면 둘 다 안 믿는다. 덜어내는 주 · 컨디션 낮은 날 · 아픈 데
    * 있는 날 · 남길 횟수가 3개 이상인 주도 마찬가지다.
    */
-  const ALL_OUT = /마지막인 것처럼|갈아 넣|끝까지|더 할 수 있어요|다 쏟고|포기하지 않습니다|버티는 사람/;
-  const range = (n: number) => Array.from({ length: n }, (_, i) => i);
-  const wholeDay = (over: Partial<BeforeSetInput>) =>
+  const ALL_OUT = /마지막인 것처럼|갈아 넣|끝까지|더 할 수 있어|다 쏟|포기 안|버티는 놈|최고 기록|남은 힘 다|버티면/;
+  const wholeDay = (style: CoachStyle, over: Partial<BeforeSetInput>) =>
     range(6).flatMap((liftIndex) => range(3).flatMap((setIndex) =>
-      beforeSetLines(base({ style: 'fired', liftIndex, totalLifts: 6, setIndex, totalSets: 3, ...over })))).join(' ');
+      beforeSetLines(base({ style, liftIndex, totalLifts: 6, setIndex, totalSets: 3, ...over })))).join(' ');
 
-  it('무리하지 않는 날엔 빡센 코치도 끝까지 가자고 하지 않는다 — 첫 세트 · 중간 · 마지막 세트 · 마지막 종목', () => {
-    const said = wholeDay({ restrained: true });
-    assert.doesNotMatch(said, ALL_OUT);
-    assert.match(said, /정확하게|깔끔하게|자세/);
+  it('무리하지 않는 날엔 밀어붙이는 코치(빡센 · 활기)도 끝까지 가자고 하지 않는다', () => {
+    for (const style of ['tough', 'energetic'] as const) {
+      const said = wholeDay(style, { restrained: true });
+      assert.doesNotMatch(said, ALL_OUT, style);
+      assert.match(said, /정확하게|깔끔하게|자세/, style);
+    }
   });
 
   it('남길 횟수가 3개 이상인 주도 같다', () => {
-    assert.doesNotMatch(wholeDay({ targetRir: 3 }), ALL_OUT);
+    for (const style of ['tough', 'energetic'] as const) assert.doesNotMatch(wholeDay(style, { targetRir: 3 }), ALL_OUT, style);
   });
 
   it('세트 중 재촉도 끝까지 밀지 않는다', () => {
-    assert.doesNotMatch(range(8).map((at) => pushLine('fired', at, true)).join(' '), ALL_OUT);
-    // 차분 · 숫자 말투는 원래 끝까지 가자고 하지 않는다
-    assert.equal(pushLine('calm', 1, true), pushLine('calm', 1));
+    for (const style of ['tough', 'energetic'] as const) {
+      assert.doesNotMatch(range(8).map((at) => pushLine(style, at, true)).join(' '), ALL_OUT, style);
+    }
+    assert.equal(pushLine('gentle', 1, true), pushLine('gentle', 1));
   });
 
   it('여느 날(남길 횟수 2개 이하)엔 원래 각오를 그대로 한다', () => {
-    assert.match(wholeDay({}), /마지막인 것처럼/);
-    assert.match(wholeDay({}), /다 쏟고/);
+    assert.match(wholeDay('tough', {}), /마지막인 것처럼/);
+    assert.match(wholeDay('tough', {}), /다 쏟고/);
   });
 
-  it('그래도 빡센 말투다 — 존댓말, 느낌표', () => {
-    const said = [...FIRED_CONTROLLED, ...FIRED_CONTROLLED_MIDDLE, ...range(4).map((at) => pushLine('fired', at, true))].join(' ');
-    assert.doesNotMatch(said, /(해|가자|버텨|해라|하자|봐|밀어|짜내)!/);
-    assert.ok(FIRED_CONTROLLED.every((line) => line.endsWith('!')));
-    assert.ok(FIRED_CONTROLLED.every((line) => !line.startsWith('오늘')), '앞 줄과 "오늘"이 겹치지 않게');
+  it('그래도 그 코치 말투다', () => {
+    assert.ok(CONTROLLED_RESOLVE.tough.every((line) => line.endsWith('!')));
+    assert.ok([...CONTROLLED_RESOLVE.tough, ...CONTROLLED_MIDDLE.tough].every((line) => !/(니다|세요|요)[.!]$/.test(line)), '빡센은 반말 그대로');
+    assert.ok(CONTROLLED_RESOLVE.tough.every((line) => !line.startsWith('오늘')), '앞 줄과 "오늘"이 겹치지 않게');
   });
 
-  it('차분 · 숫자 말투의 세트 전 말은 그대로다', () => {
-    for (const style of ['calm', 'data'] as const) {
+  it('젠틀 · 유머 코치의 세트 전 말은 그대로다', () => {
+    for (const style of ['gentle', 'fun'] as const) {
       assert.deepEqual(beforeSetLines(base({ style, restrained: true })), beforeSetLines(base({ style })));
     }
   });
 });
 
 describe('말투가 처방을 바꾸지 않는다', () => {
-  it('같은 입력이면 세 말투 모두 같은 무게와 횟수를 말한다', () => {
+  it('같은 입력이면 네 코치 모두 같은 무게와 횟수를 말한다', () => {
     for (const style of STYLES) {
       const said = beforeSetLines(base({ style })).join(' ');
       assert.match(said, /125kg/, style);
@@ -160,10 +196,14 @@ describe('첫 세트에 말하는 것', () => {
     assert.ok(said.some((line) => line.includes('등받이')));
   });
 
-  it('두 번째부터는 사용법 대신 적어 둔 세팅을 말한다', () => {
-    const said = beforeSetLines(base({ setup: ['등을 등받이에 붙입니다'], machineSetting: '시트 4' })).join(' ');
-    assert.doesNotMatch(said, /등받이에 붙입니다/);
-    assert.match(said, /시트 4/);
+  it('두 번째부터는 사용법 대신 적어 둔 세팅을 화면에 보여 준다 — 사람이 적은 글이라 소리로는 안 읽는다', () => {
+    for (const style of STYLES) {
+      const said = beforeSetLines(base({ style, setup: ['등을 등받이에 붙입니다'], machineSetting: '시트 4' })).join(' ');
+      assert.doesNotMatch(said, /등받이에 붙입니다/);
+      assert.match(said, /시트 4/, style);
+      assert.doesNotMatch(forSpeech(said), /시트 4/, style);
+      assert.match(forSpeech(said), /세팅/, style);
+    }
   });
 
   it('지난번 기록을 말한다', () => {
@@ -231,11 +271,12 @@ describe('무게 체감', () => {
     assert.equal(feelToRir('hurt', 2), 2);
   });
 
-  it('아프다고 하면 빡센 트레이너도 밀지 않는다', () => {
-    const calm = afterSetLines({ style: 'calm', feel: 'hurt', lastOfLift: false }).join(' ');
-    const fired = afterSetLines({ style: 'fired', feel: 'hurt', lastOfLift: false }).join(' ');
-    assert.equal(fired, calm);
-    assert.match(fired, /멈출게요/);
+  it('아프다고 하면 어느 코치든 멈춘다 — 다음 무게 말이 없다', () => {
+    for (const style of STYLES) {
+      const said = afterSetLines({ style, feel: 'hurt', lastOfLift: false, nextWeightKg: 130, deltaKg: 5 }).join(' ');
+      assert.match(said, /여기서|여기까지/, style);
+      assert.doesNotMatch(said, /130|올/, style);
+    }
   });
 });
 
@@ -277,8 +318,11 @@ describe('늘었다', () => {
     const history = [session(21, 'leg-press', 120, [8, 8])];
     const growth = growthAt(history, legPress, TODAY, 120, 10);
     assert.deepEqual(growth, { daysAgo: 21, thenReps: 8, nowReps: 10 });
-    const line = afterSetLines({ style: 'calm', feel: 'right', lastOfLift: false, nextWeightKg: 120, deltaKg: 0, growth }).join(' ');
-    assert.match(line, /3주 전엔 이 무게로 8개/);
+    for (const style of STYLES) {
+      const line = afterSetLines({ style, feel: 'right', lastOfLift: false, nextWeightKg: 120, deltaKg: 0, growth }).join(' ');
+      assert.match(line, /3주 전엔 (이 무게로 )?8개/, style);
+      assert.match(line, /10개/, style);
+    }
   });
 
   it('일주일 안쪽은 성장이 아니라 그날 컨디션이다', () => {
@@ -302,7 +346,7 @@ describe('쉬는 동안과 끝', () => {
 
   it('마무리에 늘어난 종목을 말한다', () => {
     for (const style of STYLES) {
-      assert.match(wrapUpLines({ style, setsDone: 12, liftsDone: 4, grew: 2 }).join(' '), /2/, style);
+      assert.match(wrapUpLines({ style, setsDone: 12, liftsDone: 4, grew: 2 }).join(' '), /2종목/, style);
     }
   });
 });
@@ -310,12 +354,13 @@ describe('쉬는 동안과 끝', () => {
 describe('소리로 읽기', () => {
   it('단위를 읽을 수 있는 말로 바꾼다', () => {
     assert.equal(forSpeech('62.5kg'), '62.5킬로');
+    assert.equal(forSpeech('지난번 세팅.\u2068 (시트 4)\u2069'), '지난번 세팅.');
     assert.equal(forSpeech('90lb'), '90파운드');
     assert.equal(forSpeech('8–10회'), '8에서 10회');
   });
 
   it('말 길이를 대략 잰다 — 첫 세트 말은 준비 시간보다 길 수 있다', () => {
-    const long = beforeSetLines(base({ style: 'fired', last: { date: ago(3), daysAgo: 3, weightKg: 120, reps: 10, rir: 2, sets: 3 }, cues: ['무릎이 발끝 방향을 따라 벌어지게'] })).join(' ');
+    const long = beforeSetLines(base({ style: 'tough', last: { date: ago(3), daysAgo: 3, weightKg: 120, reps: 10, rir: 2, sets: 3 }, cues: ['무릎이 발끝 방향을 따라 벌어지게'] })).join(' ');
     assert.ok(speechSeconds(long) > 8);
     assert.ok(speechSeconds('하나') < 1);
   });
@@ -324,33 +369,8 @@ describe('소리로 읽기', () => {
 describe('멘트를 돌려 쓴다', () => {
   const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
-  it('빡센 트레이너의 새 멘트도 전부 존댓말이다', () => {
-    const said = [
-      ...FIRED_MIDDLE,
-      ...range(8).map((at) => pushLine('fired', at)),
-      ...range(8).map((at) => askFeelLine('fired', at)),
-      ...range(8).map((at) => restTipLine('fired', at)),
-      ...range(8).map((at) => readySoonLine('fired', at)),
-      ...range(6).flatMap((at) => (['light', 'right', 'heavy'] as const).flatMap((feel) => [
-        ...afterSetLines({ style: 'fired', feel, lastOfLift: false, nextWeightKg: 100, deltaKg: 2.5, at }),
-        ...afterSetLines({ style: 'fired', feel, lastOfLift: false, nextWeightKg: 100, deltaKg: -5, at }),
-        ...afterSetLines({ style: 'fired', feel, lastOfLift: false, nextWeightKg: 100, deltaKg: 0, at }),
-        ...afterSetLines({ style: 'fired', feel, lastOfLift: true, at }),
-      ])),
-      ...afterSetLines({ style: 'fired', feel: 'right', lastOfLift: false, weightPr: true, nextWeightKg: 100 }),
-      ...range(4).flatMap((at) => wrapUpLines({ style: 'fired', setsDone: 18, liftsDone: 6, at, weekDone: 4, weekTarget: 4 })),
-      ...wrapUpLines({ style: 'fired', setsDone: 12, liftsDone: 5, firstEver: true }),
-      ...sessionStartLines({ style: 'fired', sessionName: '하체 A', lifts: 5, minutes: 40, phase: 'deload' }),
-      ...sessionStartLines({ style: 'fired', sessionName: '하체 A', lifts: 5, weekInBlock: 5, accumulationWeeks: 5, streakWeeks: 4 }),
-      ...beforeSetLines(base({ style: 'fired', liftIndex: 5, totalLifts: 6 })),
-      ...beforeSetLines(base({ style: 'fired', liftIndex: 3, totalLifts: 6 })),
-    ].join(' ');
-    assert.doesNotMatch(said, /(해|가자|버텨|해라|하자|봐|밀어|짜내)!/);
-    assert.doesNotMatch(said, /(^|\s)(야|너)(\s|,)/);
-  });
-
   it('같은 자리의 말이 순번마다 바뀐다', () => {
-    for (const style of ['calm', 'fired'] as const) {
+    for (const style of STYLES) {
       assert.ok(new Set(range(6).map((at) => pushLine(style, at))).size >= 3, `${style} 두 개 전`);
       assert.ok(new Set(range(6).map((at) => restTipLine(style, at))).size >= 5, `${style} 쉬는 동안`);
       const same = range(3).map((at) =>
@@ -368,17 +388,19 @@ describe('멘트를 돌려 쓴다', () => {
   });
 
   it('체감 대답에 대꾸하되 무게는 엔진 숫자대로다', () => {
-    const heavy = afterSetLines({ style: 'calm', feel: 'heavy', lastOfLift: false, nextWeightKg: 95, deltaKg: -5 }).join(' ');
-    assert.match(heavy, /무거웠/);
-    assert.match(heavy, /95kg/);
-    const light = afterSetLines({ style: 'fired', feel: 'light', lastOfLift: false, nextWeightKg: 100, deltaKg: 0 }).join(' ');
-    assert.doesNotMatch(light, /올립니다|올려/);
+    for (const style of STYLES) {
+      const heavy = afterSetLines({ style, feel: 'heavy', lastOfLift: false, nextWeightKg: 95, deltaKg: -5 }).join(' ');
+      assert.match(heavy, /무거/, style);
+      assert.match(heavy, /95kg/, style);
+      const light = afterSetLines({ style, feel: 'light', lastOfLift: false, nextWeightKg: 100, deltaKg: 0 }).join(' ');
+      assert.doesNotMatch(light, /올린다|올려|올립니다/, style);
+    }
   });
 
   it('처음 든 무게는 제일 먼저 축하한다', () => {
     for (const style of STYLES) {
       const lines = afterSetLines({ style, feel: 'right', lastOfLift: false, weightPr: true, nextWeightKg: 100, deltaKg: 0 });
-      assert.match(lines[0]!, /최고|처음 든/, style);
+      assert.match(lines[0]!, /최고|처음 드신/, style);
     }
   });
 
@@ -393,23 +415,32 @@ describe('멘트를 돌려 쓴다', () => {
   });
 
   it('마지막 종목이라고 말한다 — 절반은 PT 세션이 시간으로 말한다', () => {
-    assert.match(beforeSetLines(base({ style: 'calm', liftIndex: 5, totalLifts: 6 })).join(' '), /마지막 종목/);
-    assert.doesNotMatch(beforeSetLines(base({ style: 'calm', liftIndex: 3, totalLifts: 6 })).join(' '), /절반/);
-    assert.doesNotMatch(beforeSetLines(base({ style: 'calm', liftIndex: 1, totalLifts: 6 })).join(' '), /절반|마지막 종목/);
+    for (const style of STYLES) {
+      assert.match(beforeSetLines(base({ style, liftIndex: 5, totalLifts: 6 })).join(' '), /마지막 종목/, style);
+      assert.doesNotMatch(beforeSetLines(base({ style, liftIndex: 3, totalLifts: 6 })).join(' '), /절반/, style);
+      assert.doesNotMatch(beforeSetLines(base({ style, liftIndex: 1, totalLifts: 6 })).join(' '), /절반|마지막 종목/, style);
+    }
   });
 
   it('시작할 때 이번 주가 블록의 어디인지 말한다', () => {
-    assert.match(sessionStartLines({ style: 'calm', sessionName: '상체 A', lifts: 6, minutes: 45 }).join(' '), /상체 A.*6종목.*45분/);
-    assert.match(sessionStartLines({ style: 'calm', sessionName: '상체 A', lifts: 6, phase: 'deload' }).join(' '), /덜어내는/);
-    assert.match(sessionStartLines({ style: 'calm', sessionName: '상체 A', lifts: 6, weekInBlock: 5, accumulationWeeks: 5 }).join(' '), /제일 힘든/);
-    assert.match(sessionStartLines({ style: 'calm', sessionName: '상체 A', lifts: 6, firstEver: true }).join(' '), /첫날/);
-    assert.deepEqual(sessionStartLines({ style: 'calm', sessionName: '상체 A', lifts: 6, resuming: true }), ['이어서 할게요.']);
+    for (const style of STYLES) {
+      const start = sessionStartLines({ style, sessionName: '상체 A', lifts: 6, minutes: 45 }).join(' ');
+      assert.match(start, /상체 A.*6종목.*45분/, style);
+      // 운동 이름은 사람이 붙였을 수 있어 화면에만
+      assert.doesNotMatch(forSpeech(start), /상체 A/, style);
+      assert.match(sessionStartLines({ style, sessionName: '상체 A', lifts: 6, phase: 'deload' }).join(' '), /덜어내는/, style);
+      assert.match(sessionStartLines({ style, sessionName: '상체 A', lifts: 6, weekInBlock: 5, accumulationWeeks: 5 }).join(' '), /제일 힘든|가장 힘든|보스전/, style);
+      assert.match(sessionStartLines({ style, sessionName: '상체 A', lifts: 6, firstEver: true }).join(' '), /첫날/, style);
+      assert.deepEqual(sessionStartLines({ style, sessionName: '상체 A', lifts: 6, resuming: true }), [resumeLine(style)]);
+    }
   });
 
   it('마무리에 이번 주 약속을 말한다', () => {
-    assert.match(wrapUpLines({ style: 'calm', setsDone: 16, liftsDone: 5, weekDone: 3, weekTarget: 3 }).join(' '), /다 채우셨어요/);
-    assert.match(wrapUpLines({ style: 'calm', setsDone: 16, liftsDone: 5, weekDone: 1, weekTarget: 3 }).join(' '), /2번 남았어요/);
-    assert.match(wrapUpLines({ style: 'calm', setsDone: 16, liftsDone: 5, firstEver: true }).join(' '), /첫 운동/);
+    for (const style of STYLES) {
+      assert.match(wrapUpLines({ style, setsDone: 16, liftsDone: 5, weekDone: 3, weekTarget: 3 }).join(' '), /3번, 다/, style);
+      assert.match(wrapUpLines({ style, setsDone: 16, liftsDone: 5, weekDone: 1, weekTarget: 3 }).join(' '), /2번 남았/, style);
+      assert.match(wrapUpLines({ style, setsDone: 16, liftsDone: 5, firstEver: true }).join(' '), /첫 운동/, style);
+    }
   });
 });
 
@@ -433,51 +464,58 @@ describe('이어 붙인 말이 겹치지 않는다', () => {
 
 describe('트레이너가 실제로 하는 말', () => {
   it('마지막 하나 전에는 "하나 더! 마지막!!"', () => {
-    assert.equal(lastCallLine('fired'), '하나 더! 마지막!!');
-    const cues = buildCues({ repRange: { min: 8, max: 10 }, lastCall: lastCallLine('fired') });
+    assert.equal(lastCallLine('tough'), '하나 더! 마지막!!');
+    const cues = buildCues({ repRange: { min: 8, max: 10 }, lastCall: lastCallLine('tough') });
     assert.equal(cues.find((cue) => cue.rep === 9)!.say, '아홉, 하나 더! 마지막!!');
     // 혼자 모드는 그대로
     assert.equal(buildCues({ repRange: { min: 8, max: 10 } }).find((cue) => cue.rep === 9)!.say, '아홉, 하나 남았습니다');
   });
 
   it('세트 중 자세 한마디는 동작에 맞고 짧다', () => {
-    assert.match(formCueLine('fired', 'squat')!, /엉덩이|무릎|가슴/);
-    assert.match(formCueLine('calm', 'hinge')!, /등|엉덩이|바/);
-    assert.equal(formCueLine('data', 'squat'), null, '숫자로 말투는 자세 말을 안 한다');
+    assert.match(formCueLine('tough', 'squat')!, /엉덩이|무릎|가슴/);
+    assert.match(formCueLine('gentle', 'hinge')!, /등|엉덩이|바/);
     for (const pattern of ['squat', 'lunge', 'hinge', 'horizontalPush', 'verticalPush', 'verticalPull', 'horizontalPull', 'isolation', 'core'] as const) {
-      for (const style of ['fired', 'calm'] as const) {
+      for (const style of STYLES) {
         for (let at = 0; at < 3; at += 1) {
           const line = formCueLine(style, pattern, at)!;
-          assert.ok(speechSeconds(line) < 2.4, `${pattern} ${line}`);
-          if (style === 'fired') assert.doesNotMatch(line, /(해|가자|버텨|해라|하자|봐|펴|열어)!/, line);
+          assert.ok(speechSeconds(line) < 2.6, `${pattern} ${line}`);
+          if (style === 'tough') assert.doesNotMatch(line, /요[.!]$/, line);
+          else assert.doesNotMatch(line, /(펴|열어|내려|줘|마)!$/, line);
         }
       }
     }
   });
 
   it('이름이 있으면 부른다', () => {
-    assert.match(sessionStartLines({ style: 'calm', sessionName: '상체 A', lifts: 5, name: '민수' })[0]!, /^민수님, /);
-    assert.match(wrapUpLines({ style: 'fired', setsDone: 12, liftsDone: 4, name: '민수' }).join(' '), /민수님/);
-    assert.match(afterSetLines({ style: 'fired', feel: 'right', lastOfLift: false, weightPr: true, nextWeightKg: 100, name: '민수' })[0]!, /^민수님/);
-    assert.doesNotMatch(sessionStartLines({ style: 'calm', sessionName: '상체 A', lifts: 5 })[0]!, /님,/);
+    const start = sessionStartLines({ style: 'gentle', sessionName: '상체 A', lifts: 5, name: '민수' })[0]!;
+    assert.match(start, /민수님, /);
+    assert.match(wrapUpLines({ style: 'tough', setsDone: 12, liftsDone: 4, name: '민수' }).join(' '), /민수님/);
+    assert.match(afterSetLines({ style: 'tough', feel: 'right', lastOfLift: false, weightPr: true, nextWeightKg: 100, name: '민수' })[0]!, /민수님/);
+    assert.doesNotMatch(sessionStartLines({ style: 'gentle', sessionName: '상체 A', lifts: 5 })[0]!, /님,/);
+    // 이름은 사람이 적은 글 — 화면에는 부르고, 소리로는 안 읽는다
+    assert.doesNotMatch(forSpeech(start), /민수/);
   });
 
   it('컨디션이 낮은 날은 자세를 먼저 말한다', () => {
-    const low = sessionStartLines({ style: 'fired', sessionName: '하체 A', lifts: 5, condition: 50, weekInBlock: 5, accumulationWeeks: 5 }).join(' ');
-    assert.match(low, /컨디션/);
-    assert.doesNotMatch(low, /제일 힘든 주/, '컨디션 낮은 날에 "제일 힘든 주"로 밀지 않는다');
-    assert.doesNotMatch(sessionStartLines({ style: 'fired', sessionName: '하체 A', lifts: 5, condition: 90 }).join(' '), /컨디션/);
+    for (const style of STYLES) {
+      const low = sessionStartLines({ style, sessionName: '하체 A', lifts: 5, condition: 50, weekInBlock: 5, accumulationWeeks: 5 }).join(' ');
+      assert.match(low, /컨디션/, style);
+      assert.doesNotMatch(low, /힘든 주|보스전/, '컨디션 낮은 날에 "제일 힘든 주"로 밀지 않는다');
+      assert.doesNotMatch(sessionStartLines({ style, sessionName: '하체 A', lifts: 5, condition: 90 }).join(' '), /컨디션/, style);
+    }
   });
 
   it('마무리에 목표 한 줄', () => {
-    assert.match(wrapUpLines({ style: 'calm', setsDone: 12, liftsDone: 4, goal: 'fatLoss' }).join(' '), /근육을 지켜/);
-    assert.match(wrapUpLines({ style: 'fired', setsDone: 12, liftsDone: 4, goal: 'hypertrophy' }).join(' '), /잠/);
+    for (const style of STYLES) {
+      assert.match(wrapUpLines({ style, setsDone: 12, liftsDone: 4, goal: 'fatLoss' }).join(' '), /근육/, style);
+      assert.match(wrapUpLines({ style, setsDone: 12, liftsDone: 4, goal: 'hypertrophy' }).join(' '), /잠|자는 동안|밤/, style);
+    }
   });
 });
 
 describe('마무리 말이 겹치지 않는다', () => {
   it('목표 한 줄과 인사에 같은 말("푹", "주무세요")이 두 번 나오지 않는다', () => {
-    for (const style of ['calm', 'fired'] as const) {
+    for (const style of STYLES) {
       for (const goal of ['hypertrophy', 'strength', 'fatLoss', 'general'] as const) {
         for (let at = 0; at < 3; at += 1) {
           const said = wrapUpLines({ style, setsDone: 12, liftsDone: 4, goal, at }).join(' ');

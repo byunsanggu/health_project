@@ -5,44 +5,51 @@ import {
   COOLDOWN_SECONDS, MOBILITY_SECONDS, PACE_TOLERANCE_SECONDS, mobilityDoneLine, mobilityFor, mobilityLine, mobilityMinutes, cooldownDoneLine, cooldownFor, cooldownLine,
   paceCheck, restAnnounceLine, restSpoken, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from '../ptSession.ts';
-import { speechSeconds } from '../coach.ts';
+import { forSpeech, speechSeconds } from '../coach.ts';
 
-const STYLES = ['calm', 'fired', 'data'] as const;
-const BANMAL = /(해|가자|버텨|해라|하자|봐|밀어)!/;
+const STYLES = ['energetic', 'gentle', 'tough', 'fun'] as const;
+/** 빡센 코치만 반말 — 나머지 셋에 반말 끝맺음이 나오면 안 된다 */
+const BANMAL = /(해|가자|버텨|해라|하자|봐|밀어|간다|올린다|본다)[.!]/;
+const POLITE_END = /(니다|세요|어요|아요|해요|에요|예요|죠)[.!?]/;
 
 describe('워밍업 안내', () => {
   const steps = [{ weightKg: 20, reps: 10, restSeconds: 45 }, { weightKg: 40, reps: 5, restSeconds: 60 }];
   it('첫 세트에 몇 세트인지와 무게 · 개수를 말한다', () => {
-    const line = warmupSetLine('calm', '백 스쿼트', 0, steps);
-    assert.match(line, /워밍업 2세트/);
-    assert.match(line, /20kg 10개/);
+    for (const style of STYLES) {
+      const line = warmupSetLine(style, '백 스쿼트', 0, steps);
+      assert.match(line, /2세트/, style);
+      assert.match(line, /20kg, 10개/, style);
+    }
   });
   it('마지막 워밍업이라고 말한다', () => {
-    assert.match(warmupSetLine('calm', '백 스쿼트', 1, steps), /마지막 워밍업/);
+    for (const style of STYLES) assert.match(warmupSetLine(style, '백 스쿼트', 1, steps), /마지막 워밍업/, style);
   });
-  it('빡세게도 존댓말', () => {
-    const said = [warmupSetLine('fired', '백 스쿼트', 0, steps), warmupSetLine('fired', '백 스쿼트', 1, steps),
-      warmupRestLine('fired', 45), warmupDoneLine('fired')].join(' ');
-    assert.doesNotMatch(said, BANMAL);
+  it('빡센 코치만 반말, 나머지는 존댓말', () => {
+    const said = (style: typeof STYLES[number]) => [warmupSetLine(style, '백 스쿼트', 0, steps), warmupSetLine(style, '백 스쿼트', 1, steps),
+      warmupRestLine(style, 45), warmupDoneLine(style)].join(' ');
+    assert.doesNotMatch(said('tough'), POLITE_END);
+    for (const style of ['energetic', 'gentle', 'fun'] as const) assert.doesNotMatch(said(style), BANMAL, style);
   });
 });
 
 describe('종목 이동', () => {
-  it('다음 종목과 적어 둔 세팅, 이동 시간을 말한다', () => {
-    const lines = transitionLines('calm', { nextName: '레그프레스', machineSetting: '시트 4번', seconds: 60 }).join(' ');
-    assert.match(lines, /다음은 레그프레스예요/);
-    assert.match(lines, /시트 4번이었어요/);
-    assert.match(lines, /1분 드릴게요/);
+  it('다음 종목과 이동 시간을 말하고, 적어 둔 세팅은 화면에 보여 준다', () => {
+    for (const style of STYLES) {
+      const lines = transitionLines(style, { nextName: '레그프레스', machineSetting: '시트 4번', seconds: 60 }).join(' ');
+      assert.match(lines, /레그프레스/, style);
+      assert.match(lines, /시트 4번/, style);
+      assert.match(lines, /1분/, style);
+      // 세팅은 사람이 적은 글이라 소리로는 안 읽는다
+      assert.doesNotMatch(forSpeech(lines), /시트 4번/, style);
+    }
   });
-  it('받침에 맞게 말한다', () => {
-    assert.match(transitionLines('calm', { nextName: '랫 풀다운', seconds: 75 }).join(' '), /랫 풀다운이에요/);
-  });
-  it('숫자로 끝나는 세팅도 읽는 소리대로 — 등받이 3(삼)이었어요, 시트 4(사)였어요', () => {
-    assert.match(transitionLines('calm', { nextName: '체스트 프레스', machineSetting: '시트 4 · 등받이 3', seconds: 60 }).join(' '), /등받이 3이었어요/);
-    assert.match(transitionLines('calm', { nextName: '체스트 프레스', machineSetting: '시트 4', seconds: 60 }).join(' '), /시트 4였어요/);
+  it('종목 이름 뒤에 조사를 붙이지 않는다 — 미리 만든 이름 조각을 그대로 쓴다', () => {
+    for (const style of STYLES) {
+      assert.match(transitionLines(style, { nextName: '랫 풀다운', seconds: 75 }).join(' '), /랫 풀다운[!.]/, style);
+    }
   });
   it('처음 하는 기구면 세팅부터 보자고 한다', () => {
-    assert.match(transitionLines('calm', { nextName: '핵 스쿼트', firstTime: true, seconds: 75 }).join(' '), /세팅부터/);
+    for (const style of STYLES) assert.match(transitionLines(style, { nextName: '핵 스쿼트', firstTime: true, seconds: 75 }).join(' '), /세팅부터/, style);
   });
 });
 
@@ -77,18 +84,20 @@ describe('시간 관리', () => {
   });
 
   it('줄였다고 말한다', () => {
-    assert.match(trimLine('calm', [{ name: '카프레이즈', sets: 1 }]), /카프레이즈 1세트만/);
+    for (const style of STYLES) assert.match(trimLine(style, [{ name: '카프레이즈', sets: 1 }]), /카프레이즈, 1세트/, style);
   });
 
   it('절반과 10분 남았을 때 한 번씩만 말한다', () => {
     const planned = 50 * 60;
-    const half = timeCheck('calm', { elapsedSeconds: 26 * 60, plannedSeconds: planned, said: [] })!;
-    assert.equal(half.key, 'half');
-    assert.equal(timeCheck('calm', { elapsedSeconds: 27 * 60, plannedSeconds: planned, said: ['half'] }), null);
-    const last = timeCheck('calm', { elapsedSeconds: 41 * 60, plannedSeconds: planned, said: ['half'] })!;
-    assert.equal(last.key, 'last10');
-    assert.match(last.line, /9분 남았어요/);
-    assert.equal(timeCheck('calm', { elapsedSeconds: 42 * 60, plannedSeconds: planned, said: ['half', 'last10'] }), null);
+    for (const style of STYLES) {
+      const half = timeCheck(style, { elapsedSeconds: 26 * 60, plannedSeconds: planned, said: [] })!;
+      assert.equal(half.key, 'half');
+      assert.equal(timeCheck(style, { elapsedSeconds: 27 * 60, plannedSeconds: planned, said: ['half'] }), null);
+      const last = timeCheck(style, { elapsedSeconds: 41 * 60, plannedSeconds: planned, said: ['half'] })!;
+      assert.equal(last.key, 'last10');
+      assert.match(last.line, /9분 남았/, style);
+      assert.equal(timeCheck(style, { elapsedSeconds: 42 * 60, plannedSeconds: planned, said: ['half', 'last10'] }), null);
+    }
   });
 });
 
@@ -108,16 +117,17 @@ describe('마무리 스트레칭', () => {
     const ids = cooldownFor(['chest', 'frontDelt']).map((s) => s.id);
     assert.equal(new Set(ids).size, ids.length);
   });
-  it('말이 짧고 존댓말이다', () => {
+  it('말이 짧고, 그 코치 말투다', () => {
     for (const style of STYLES) {
       const steps = cooldownFor(['chest', 'quads']);
       steps.forEach((step, i) => {
         const line = cooldownLine(style, step, i, steps.length);
-        assert.ok(speechSeconds(line) < 14, line);
-        if (style === 'fired') assert.doesNotMatch(line, BANMAL);
+        assert.ok(speechSeconds(line) < 16, line);
       });
       assert.ok(cooldownDoneLine(style).length > 0);
     }
+    assert.doesNotMatch(cooldownDoneLine('tough'), POLITE_END);
+    for (const style of ['energetic', 'gentle', 'fun'] as const) assert.doesNotMatch(cooldownDoneLine(style), BANMAL, style);
   });
 });
 
@@ -130,21 +140,21 @@ describe('세트 사이 휴식 안내', () => {
   });
 
   it('몇 초 쉬고 몇 세트인지 말한다 — 처음 한 번만 더 쉬는 법을 붙인다', () => {
-    for (const style of ['calm', 'fired', 'data'] as const) {
+    for (const style of STYLES) {
       const first = restAnnounceLine(style, { seconds: 90, nextSet: 3, firstTime: true });
       const later = restAnnounceLine(style, { seconds: 40, nextSet: 2 });
       assert.match(first, /1분 30초/);
       assert.match(first, /3세트/);
-      assert.match(first, /\+30초/);
+      assert.match(first, /30초 추가/);
       assert.match(later, /40초/);
-      assert.doesNotMatch(later, /\+30초/);
+      assert.doesNotMatch(later, /추가/);
     }
   });
 
-  it('빡센 말투도 존댓말이다', () => {
-    assert.match(restAnnounceLine('fired', { seconds: 60, nextSet: 2 }), /니다/);
-    // 슈퍼세트 — 다음은 짝 종목
-    assert.match(restAnnounceLine('calm', { seconds: 20, nextSet: 1, nextName: '레그 컬' }), /20초 쉬고 레그 컬 1세트 갈게요/);
+  it('빡센 코치만 반말 · 슈퍼세트면 짝 종목을 말한다', () => {
+    assert.doesNotMatch(restAnnounceLine('tough', { seconds: 60, nextSet: 2, firstTime: true }), POLITE_END);
+    assert.match(restAnnounceLine('gentle', { seconds: 60, nextSet: 2 }), /니다/);
+    assert.match(restAnnounceLine('gentle', { seconds: 20, nextSet: 1, nextName: '레그 컬' }), /20초 쉬고, 레그 컬, 1세트/);
   });
 });
 
@@ -191,7 +201,7 @@ describe('몸 풀기', () => {
     const steps = mobilityFor(['quads', 'glutes'], { equipment: [] });
     assert.ok(total(steps) >= 180, String(total(steps)));
     const minutes = mobilityMinutes(steps);
-    assert.match(mobilityLine('calm', steps[0]!, 0, steps.length, minutes), new RegExp(minutes + '분이에요'));
+    assert.match(mobilityLine('gentle', steps[0]!, 0, steps.length, minutes), new RegExp(minutes + '분입니다'));
   });
 
   it('하체 날은 하체 동작, 상체 동작은 넣지 않는다', () => {
@@ -206,10 +216,10 @@ describe('몸 풀기', () => {
     assert.equal(warm.filter((id) => cool.includes(id)).length, 0);
   });
 
-  it('첫 동작에 몇 분인지 말하고, 빡센 말투도 존댓말', () => {
+  it('첫 동작에 몇 분인지 말하고, 그 코치 말투다', () => {
     const steps = mobilityFor(['chest'], { equipment: FULL });
-    assert.match(mobilityLine('calm', steps[0]!, 0, steps.length), /5분/);
-    assert.match(mobilityLine('fired', steps[0]!, 0, steps.length), /니다/);
-    assert.match(mobilityDoneLine('fired'), /니다/);
+    for (const style of STYLES) assert.match(mobilityLine(style, steps[0]!, 0, steps.length), /5분/, style);
+    assert.doesNotMatch(mobilityDoneLine('tough'), POLITE_END);
+    assert.match(mobilityDoneLine('gentle'), /니다/);
   });
 });
