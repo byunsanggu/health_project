@@ -2756,6 +2756,9 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-next-card.single { grid-template-columns: 1fr; }
 .rest-guide { display: grid; gap: 10px; width: 100%; }
 .focus-middle.with-guide { justify-content: flex-start; overflow-y: auto; padding-bottom: 8px; }
+.focus-middle.with-motion { gap: 6px; }
+.focus-middle.with-motion .focus-motion { max-height: 30dvh; width: min(100%, 30dvh, 320px); }
+.focus-middle.with-motion .focus-ring { width: min(44vw, 170px, 22dvh); min-width: 120px; }
 .focus-motion { width: min(100%, 340px); aspect-ratio: 1 / 1; max-height: 34dvh; margin: 0 auto; border-radius: 12px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--line-soft); }
 .live-motion { display: block; width: 100%; height: 100%; }
 .rest-guide-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; text-align: left; }
@@ -7016,6 +7019,7 @@ var RestSound = (function () {
         voiceRate: state.voiceRate,
         ptRateByExercise: state.ptRateByExercise,
         restGuide: state.restGuide,
+        setMotion: state.setMotion,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
         settingsUpdatedAt: state.settingsUpdatedAt,
@@ -7120,6 +7124,7 @@ var RestSound = (function () {
       state.voiceRate = nearestRate(settings.voiceRate || 1);
       state.ptRateByExercise = settings.ptRateByExercise || {};
       state.restGuide = settings.restGuide !== false;
+      state.setMotion = settings.setMotion !== false;
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
       state.settingsUpdatedAt = settings.settingsUpdatedAt || null;
@@ -7525,6 +7530,8 @@ var RestSound = (function () {
     ptRateByExercise: {},
     /* PT — 쉬는 동안 다음 운동 하는 법을 보여 주고 말해 준다 */
     restGuide: true,
+    /* PT — 세트 · 워밍업 하는 동안 그 운동 동작을 화면에 */
+    setMotion: true,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
     reportSeenWeek: null,
     /* 오늘 한 유산소. [{exerciseId, minutes, zone, distanceKm, before}] */
@@ -13916,6 +13923,12 @@ var RestSound = (function () {
       { label: '켜기', active: state.restGuide !== false, onSelect: function () { state.restGuide = true; persist(); onChange(); } },
       { label: '끄기', active: state.restGuide === false, onSelect: function () { state.restGuide = false; persist(); onChange(); } },
     ]));
+    box.appendChild(el('div', { class: 'list-label', text: '운동 중 동작 보기 (PT)' }));
+    box.appendChild(el('p', { class: 'hint-line', text: '세트 · 워밍업 하는 동안 그 운동 동작을 개수 위에 보여 줍니다. 끄면 개수만 크게.' }));
+    box.appendChild(segmented([
+      { label: '켜기', active: state.setMotion !== false, onSelect: function () { state.setMotion = true; persist(); onChange(); } },
+      { label: '끄기', active: state.setMotion === false, onSelect: function () { state.setMotion = false; persist(); onChange(); } },
+    ]));
     var status = el('p', { class: 'hint-line voice-status', text: '' });
     var show = function (done, total) {
       if (CoachVoice.ready(coachVoiceName())) status.textContent = '이 폰에 받아 두었습니다 — 인터넷 없이도 나옵니다.';
@@ -15904,6 +15917,9 @@ var RestSound = (function () {
     if (phase === 'count' && ref) {
       var max = ref.set.targetReps.max;
       var rep = state.counting.rep;
+      // 동작을 위에, 개수는 그 아래 — 개수 원은 조금 작아져도 멀리서 읽히는 크기
+      var countMotion = setMotionBox(ref.lift.exercise);
+      if (countMotion) { middle.classList.add('with-motion'); middle.appendChild(countMotion); }
       middle.appendChild(focusRing(rep / max, 'focus-ring-bar', [
         el('b', { class: 'focus-num' + (rep > 0 ? '' : ' wide'), id: 'focus-num', text: rep > 0 ? String(rep) : '준비' }),
         el('span', { class: 'focus-of', text: '/ ' + max + '회' }),
@@ -16031,6 +16047,8 @@ var RestSound = (function () {
       var warm = pt.warm;
       var step = warm.step || { weightKg: 0, reps: 0 };
       var resting = warm.phase === 'rest';
+      var warmMotion = lift ? setMotionBox(lift.exercise) : null;
+      if (warmMotion) { middle.classList.add('with-motion'); middle.appendChild(warmMotion); }
       middle.appendChild(focusRing(resting ? 1 : (warm.rep || 0) / (warm.reps || 1), 'focus-ring-bar', [
         el('b', { class: 'focus-num' + (warm.rep > 0 && !resting ? '' : ' wide'), id: 'focus-num', text: resting ? '휴식' : (warm.rep > 0 ? String(warm.rep) : '준비') }),
         el('span', { class: 'focus-of', text: resting ? '' : '/ ' + (warm.reps || 0) + '회' }),
@@ -16054,7 +16072,7 @@ var RestSound = (function () {
           return el('div', { class: 'focus-warm-row' + (done ? ' done' : current ? ' now' : '') }, [
             el('span', { text: '워밍업 ' + (i + 1) }),
             el('span', { text: loadText(lift, one.weightKg) + ' × ' + one.reps + '회' }),
-            el('span', { text: done ? '✓' : current ? '지금' : '' }),
+            el('span', { text: done ? '✓' : '' }),
           ]);
         })));
       }
@@ -16126,6 +16144,18 @@ var RestSound = (function () {
     var clip = E.stretchMotionFor(step.id, side);
     var canvas = liveMotion('st:' + step.id + ':' + side, clip, { label: step.name + ' 동작' });
     return canvas ? el('div', { class: 'focus-motion stretch-motion' }, [canvas]) : null;
+  }
+
+  /**
+   * 세트 · 워밍업 하는 동안 그 운동 동작 — 쉬는 동안 보던 것과 같은 캔버스를 그대로 이어 쓴다(새로 띄우지 않는다).
+   * 박자는 맞추지 않는다 — 동작 모양만 옆에서 본다.
+   */
+  function setMotionBox(exercise) {
+    if (!exercise || state.setMotion === false) return null;
+    var canvas = liveMotion('ex:' + exercise.id, E.motionFor(exercise), {
+      contribution: exercise.contribution, pattern: exercise.pattern, label: exercise.name + ' 동작',
+    });
+    return canvas ? el('div', { class: 'focus-motion set-motion' }, [canvas]) : null;
   }
 
   /** 쉬는 동안 다음 운동 — 동작이 바로 돌고, 잡는 법 · 동작 핵심 · 흔한 실수 하나. */
@@ -17610,7 +17640,7 @@ var RestSound = (function () {
    */
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
-    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'ptRateByExercise', 'restGuide', 'autoCount',
+    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'ptRateByExercise', 'restGuide', 'setMotion', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
     'mistakeFlags', 'customRoutine', 'repOverrides', 'topSet',
   ];

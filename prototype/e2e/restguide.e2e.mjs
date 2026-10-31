@@ -20,7 +20,12 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('#focus .stretch-motion canvas').count() === 1, '몸 풀기 동작이 안 보입니다');
   await shot('0-prep');
   await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
-  if (await runUntil(page, ['warm', 'count']) === 'warm') {
+  await runUntil(page, ['warm', 'count']);
+  // 워밍업 · 세트 하는 동안에도 그 운동 동작이 개수 위에(같은 캔버스를 이어 쓴다)
+  check(await page.locator('#focus .set-motion canvas').count() === 1, '운동 중 동작이 안 보입니다');
+  check(await page.locator('#focus .focus-ring').count() === 1, '개수 원이 없습니다');
+  await shot('0-set');
+  if (await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).count()) {
     await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
   }
   // 그날 첫 종목 — 앞에 쉬는 시간이 없으니 첫 세트 앞(또는 첫 워밍업 앞)에서 하는 법을 말했다
