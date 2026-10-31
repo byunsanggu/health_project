@@ -1601,7 +1601,8 @@
       };
       if (E.estimateSessionTime(built, timeOptions).totalMinutes < budget) {
         // 평소보다 넉넉한 날 — 이번 주 회복 한계 안에서 세트를 더한다. 덜어내는 주 · 별로인 날 · 내 루틴은 그대로.
-        if (state.plan.phase !== 'deload' && todayFeel() !== 'low' && !state.customRoutine) {
+        // 쉬다 돌아온 주도 그대로 — 일부러 덜어낸 세트를 다시 채우면 복귀 단계가 없어진다
+        if (state.plan.phase !== 'deload' && todayFeel() !== 'low' && !state.customRoutine && !activeComeback()) {
           state.timeFit = E.extendToTimeBudget(built, budget, Object.assign({ headroom: weekHeadroom(built) }, timeOptions));
           built = state.timeFit.session;
         }
@@ -1802,10 +1803,16 @@
    */
   function weekHeadroom(today) {
     var opts = rirOptions();
-    var planned = E.aggregateVolume(E.plannedWeekLogs({
+    var plannedLogs = E.plannedWeekLogs({
       templates: state.program.templates, plan: state.plan, index: index, landmarks: state.landmarks,
       history: state.history, level: state.lifter && state.lifter.level,
-    }), index, opts);
+    });
+    var planned = E.aggregateVolume(plannedLogs, index, opts);
+    // 이번 주에 아직 남은 날의 계획 — 앞쪽 날에 늘린 만큼 뒤쪽 날 몫까지 다 쓰지 않게
+    var done = weekSessionsDone();
+    var todayAt = currentTemplateIndex();
+    var left = Math.max(0, plannedLogs.length - done - 1);
+    var remaining = E.aggregateVolume(plannedLogs.filter(function (_, i) { return i >= done && i !== todayAt; }).slice(0, left), index, opts);
     var before = E.aggregateVolume(weekSessions().filter(function (session) { return session.date !== state.todayDate; }), index, opts);
     var todayLogs = today ? [{ id: 'today', date: state.todayDate, sets: [].concat.apply([], today.exercises.map(function (item) {
       return item.sets.filter(function (set) { return !set.top; }).map(function (set) {
@@ -1815,7 +1822,8 @@
     var todayPlanned = E.aggregateVolume(todayLogs, index, opts);
     var room = {};
     E.MUSCLE_GROUPS.forEach(function (muscle) {
-      var used = Math.max(planned[muscle].effectiveSets, before[muscle].effectiveSets + todayPlanned[muscle].effectiveSets);
+      var used = Math.max(planned[muscle].effectiveSets,
+        before[muscle].effectiveSets + todayPlanned[muscle].effectiveSets + remaining[muscle].effectiveSets);
       room[muscle] = Math.max(0, state.landmarks[muscle].mav - used);
     });
     return room;

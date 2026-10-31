@@ -78,6 +78,8 @@ export const REST_MAX_SECONDS = 90;
 export const HEAVY_COMPOUND_REST_SECONDS = 120;
 export const BIG_LIFT_REST_SECONDS = 150;
 export const MAX_DEFAULT_REST_SECONDS = 180;
+/** 근력 블록 같은 늘리는 배수를 곱한 뒤의 상한 */
+export const STRENGTH_REST_CAP_SECONDS = 240;
 
 export const DEFAULT_BAND: RestBand = {
   minSeconds: REST_MIN_SECONDS,
@@ -208,19 +210,28 @@ export function restFor(input: RestInput): RestPrescription {
   need = clamp(need, 0, STEPS);
   const span = band.maxSeconds - band.minSeconds;
   let seconds = clamp(toStep(band.minSeconds + (span * need) / STEPS), band.minSeconds, band.maxSeconds);
-  if (!custom && !isIsolation) {
+  /*
+   * 기본보다 길게(또는 살짝 넓게) 잡은 띠도 큰 운동은 기본만큼은 쉰다. 전에 저장된 "길게"(1분 30초~2분 30초)를
+   * 고른 사람이 기본보다 스쿼트를 30초 덜 쉬던 것. 짧게 잡은 띠(짧게 · 직접 친 짧은 값)는 그 뜻대로 둔다.
+   */
+  const notShorter = !custom || (band.minSeconds >= DEFAULT_BAND.minSeconds && band.maxSeconds >= DEFAULT_BAND.maxSeconds);
+  if (notShorter && !isIsolation) {
     const light = reps > 12 || exercise.equipment === 'bodyweight';
     const big = isBigLift(exercise);
     let floor = light && !big ? 90 : big ? BIG_LIFT_REST_SECONDS : HEAVY_COMPOUND_REST_SECONDS;
     if (targetRir <= 1) floor += 30;
-    seconds = Math.min(MAX_DEFAULT_REST_SECONDS, Math.max(seconds, floor));
+    seconds = Math.min(Math.max(MAX_DEFAULT_REST_SECONDS, custom ? band.maxSeconds : 0), Math.max(seconds, floor));
     reason = big ? '큰 복합 동작입니다 — 뒤 세트 반복을 지키려면 충분히 쉽니다'
       : light ? '가벼운 복합 동작입니다'
       : '복합 동작입니다 — 1분 남짓 쉬면 뒤 세트가 무너집니다';
     if (targetRir <= 1) reason += ' · 실패에 가까운 세트라 30초 더';
   }
   // 블록 유형 배수 — 근력 블록은 길게, 고밀도 블록은 짧게
-  if (input.multiplier && input.multiplier > 0 && input.multiplier !== 1) seconds = toStep(seconds * input.multiplier);
+  if (input.multiplier && input.multiplier > 0 && input.multiplier !== 1) {
+    seconds = toStep(seconds * input.multiplier);
+    // 늘리는 배수는 4분에서 멈춘다 — 근력 블록에서 스쿼트 4분 반 · 6분은 아무도 지키지 않는다
+    if (input.multiplier > 1) seconds = Math.min(seconds, Math.max(STRENGTH_REST_CAP_SECONDS, band.maxSeconds));
+  }
 
   /*
    * 마지막 세트는 다음 종목으로 옮겨가는 시간이 곧 휴식이다. 다만 45초

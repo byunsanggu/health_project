@@ -72,7 +72,9 @@ export function screenExercise(
 
     const action = rule(report.score, stress);
     if (action === 'allow') continue;
-    if (!worst || severity(action) > severity(worst.action)) {
+    // 같은 판정이면 더 아픈 쪽으로 — 감량 폭이 점수에 달려 있어 적는 순서로 갈리면 안 된다
+    if (!worst || severity(action) > severity(worst.action) ||
+      (severity(action) === severity(worst.action) && report.score > worst.report.score)) {
       worst = { report, stress, action };
     }
   }

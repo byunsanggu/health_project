@@ -197,3 +197,21 @@ describe('adjustWithinSession', () => {
     assert.equal(result.deltaKg, 0);
   });
 });
+
+describe('맨몸 종목 — 상단을 못 채웠으면 더 어렵게 바꾸지 않는다', () => {
+  const pushUp = exerciseById('push-up') as Exercise;
+  const bodyRule: LoadRule = { repRange: { min: 12, max: 20 }, targetRir: 2 };
+  const logs = (reps: number, rir: number): SetLog[] => [1, 2, 3].map(() => ({ exerciseId: pushUp.id, weightKg: 0, reps, rir }));
+
+  it('12회 · 여유 5개면 횟수를 늘리라고 한다', () => {
+    const result = prescribeLoad(pushUp, logs(12, 5), bodyRule);
+    assert.equal(result.change, 'hold');
+    assert.ok(!/더 어렵게|kg 올립니다/.test(result.reason), result.reason);
+    assert.ok((result.targetReps?.min ?? 0) > 12);
+  });
+
+  it('20회를 채우고 여유가 있으면 더 어렵게 하는 법을 알려 준다', () => {
+    const result = prescribeLoad(pushUp, logs(20, 3), bodyRule);
+    assert.ok(!/0kg/.test(result.reason), result.reason);
+  });
+});

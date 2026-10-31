@@ -108,6 +108,22 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
     : Math.min(SESSION_GROWTH_MAX, SESSION_GROWTH_PER_WEEK * (week - 1));
   const dayCap = base.map((day) => day.reduce((sum, value) => sum + value, 0) + growth);
   /*
+   * 지난주에 넉넉한 날(90분)로 늘렸거나 직접 세트를 더했어도, 출발점은 그 주의 하루 상한을 넘지 않는다.
+   * 그대로 두면 한 번 길게 한 날의 세트가 그다음 주 평범한 날마다 따라와 날이 계속 길어졌다.
+   */
+  sets.forEach((day, d) => {
+    let total = day.reduce((sum, value) => sum + value, 0);
+    while (total > dayCap[d]!) {
+      let at = -1;
+      for (let i = 0; i < day.length; i += 1) {
+        if (day[i]! > base[d]![i]! && (at < 0 || day[i]! - base[d]![i]! > day[at]! - base[d]![at]!)) at = i;
+      }
+      if (at < 0) break;
+      day[at]! -= 1;
+      total -= 1;
+    }
+  });
+  /*
    * 최소선(MEV) 밑인 부위를 채울 때는 천천히 늘리는 상한(감량 · 초보 +1/주) 대신 보통 상한을 쓴다.
    * 감량 주 3회에서 가슴이 8세트(최소 10)에 블록 내내 머물렀다 — 화면은 "주마다 채웁니다"라고 하면서.
    */

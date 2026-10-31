@@ -135,8 +135,20 @@ export function prescribeLoad(
   const sets = atTop.length > 1 ? `${atTop.length}세트 모두 ` : '';
 
   // 0) 무게를 더할 수 없는 맨몸 종목(푸시업 · 파이크 푸시업 · 인버티드 로우)이 가벼워졌다 — "0kg 올립니다"가 아니라 더 어렵게
-  if (step <= 0 && last.weightKg <= 0 && ((reachedTop && rirSurplus >= 0) || rirSurplus >= 2)) {
+  if (step <= 0 && last.weightKg <= 0 && reachedTop && rirSurplus >= 0) {
     return bodyweightHarder(exercise, rule, base);
+  }
+  // 범위 상단은 못 채웠는데 여유가 많았다 — 더 어렵게 바꾸기 전에 횟수부터 채운다("0kg 올립니다"도 아니다)
+  if (step <= 0 && last.weightKg <= 0 && rirSurplus >= 2) {
+    const aim = Math.min(rule.repRange.max, Math.max(rule.repRange.min, fewestReps + 2));
+    return {
+      ...base,
+      weightKg: last.weightKg,
+      targetReps: { min: aim, max: rule.repRange.max },
+      change: 'hold',
+      deltaKg: 0,
+      reason: `여유가 ${describeRir(tightest.rir, observedRir)} 남았습니다. 다음에는 ${aim}회까지 해 보세요.`,
+    };
   }
 
   // 1) 모든 세트가 반복 상단 + 가장 빠듯한 세트도 여유 → 증량. 여유가 2 이상이면 두 칸(무게의 10% 안).

@@ -482,7 +482,9 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
     else if (bodyweightToday === 0) score += context.weekBodyweight === 0 ? 5 : 3;
   }
   // 근력 목표 — 메인 자리에는 바벨 주 종목(스쿼트 · 벤치 · 데드 · 오버헤드 · 로우)
-  if (context.strengthOnly && slot.role === 'primary' && isStrengthLift(exercise)) score += 5;
+  // 그 자리의 동작 갈래에 맞을 때만 — 아니면 세로 당기기 자리에 바벨 로우가 들어가 풀 날이 로우 둘이 된다
+  if (context.strengthOnly && slot.role === 'primary' && isStrengthLift(exercise) &&
+    (!slot.patterns || slot.patterns.includes(exercise.pattern))) score += 5;
 
   // 딥스는 맨몸이어도 쉽지 않다 — 처음 시작하는 사람은 체중을 다 받아 내려가기 어렵고
   // 어깨 앞쪽이 먼저 아프다. 행잉 레그레이즈도 매달려 버틸 악력부터 필요하다.
@@ -989,7 +991,7 @@ export function buildProgram(
   return {
     name: SPLIT_NAMES[days] ?? `주 ${days}회 분할`,
     daysPerWeek: days,
-    caution: cautionFor(days, ranged, landmarks, answers.gym.equipmentIds),
+    caution: cautionFor(days, ranged, landmarks, answers.gym.equipmentIds, levelProfile(level).startingRir),
     templates: ranged,
     weeklyTargets,
   };
@@ -1016,6 +1018,8 @@ function cautionFor(
   templates: readonly SessionTemplate[],
   landmarks: ReturnType<typeof landmarksFor>,
   equipmentIds: readonly string[],
+  // 첫 주에 남기는 개수 — 근성장 체크와 같은 셈으로 재야 둘이 다르게 말하지 않는다(초보 첫 주는 4개)
+  startingRir = 2,
 ): string | undefined {
   if (days === 1) {
     return '주 1회는 근육을 늘리기보다 지키는 일정입니다. 전신을 한 번에 돌려 ' +
@@ -1025,7 +1029,7 @@ function cautionFor(
 
   // 할 종목이 아예 없는 부위만 기구 탓이다 — 한 가지라도 있으면 세트를 늘려 채울 수 있다
   const noGear = new Set(coverageReport(equipmentIds).filter((item) => item.directOptions === 0).map((item) => item.muscle));
-  const short = volumeReport(templateWeekLogs(templates), landmarks, EXERCISE_INDEX)
+  const short = volumeReport(templateWeekLogs(templates, undefined, startingRir), landmarks, EXERCISE_INDEX)
     .filter((line) => line.landmark.mev > 0 && line.effectiveSets < line.landmark.mev * 0.85)
     .filter((line) => !QUIET_WHEN_LOW.has(line.muscle) && !noGear.has(line.muscle))
     .map((line) => line.muscle);
@@ -1169,6 +1173,8 @@ export function assignRepRanges(
   style: RepStyle = 'auto',
 ): SessionTemplate[] {
   const heavyPatterns = new Set<string>();
+  const plan = planGoals(goals);
+  const strengthOnly = plan.goals.includes('strength') && !plan.goals.includes('hypertrophy');
   return templates.map((template) => {
     // 내 루틴은 사용자가 정한 반복 그대로 둔다
     if (template.fixed) return template;
@@ -1178,10 +1184,16 @@ export function assignRepRanges(
       slots: template.slots.map((slot) => {
         const exercise = exerciseById(slot.exerciseId);
         if (!exercise || !slot.role) return slot;
+        /*
+         * 근력만이면 종목마다 그 주 첫 등장이 무거운 날, 두 번째가 가벼운 날이다. 동작 갈래로 세면
+         * 프론트 스쿼트가 무거운 자리를 가져가 백 스쿼트 첫 등장이 6~8회가 됐고, 하루 두 개 한도에
+         * 걸려 주에 한 번뿐인 바벨 로우가 가벼운 날로만 나왔다.
+         */
+        const key = strengthOnly ? exercise.id : exercise.pattern;
         const heavy = slot.role === 'primary' && isStrengthLift(exercise) &&
-          !heavyPatterns.has(exercise.pattern) && heavyToday < HEAVY_PER_DAY;
+          !heavyPatterns.has(key) && (strengthOnly || heavyToday < HEAVY_PER_DAY);
         if (heavy) {
-          heavyPatterns.add(exercise.pattern);
+          heavyPatterns.add(key);
           heavyToday += 1;
         }
         return { ...slot, repRange: repRangeFor(exercise, slot.role, goals, level, heavy, style) };

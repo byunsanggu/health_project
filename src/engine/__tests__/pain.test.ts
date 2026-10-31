@@ -39,6 +39,13 @@ describe('screenExercise', () => {
     assert.equal(ruling.loadMultiplier, 0.85, '4점이면 15% 낮춘다');
   });
 
+  it('두 관절이 같은 감량 판정이면 적은 순서와 상관없이 더 아픈 쪽 폭으로 낮춘다', () => {
+    const a = screenExercise(benchPress, [{ joint: 'shoulder', score: 2 }, { joint: 'elbow', score: 6 }]);
+    const b = screenExercise(benchPress, [{ joint: 'elbow', score: 6 }, { joint: 'shoulder', score: 2 }]);
+    assert.equal(a.loadMultiplier, b.loadMultiplier);
+    assert.equal(a.painScore, b.painScore);
+  });
+
   it('7점 이상이면 중단시키고 진료를 권한다', () => {
     const ruling = screenExercise(ohp, [{ joint: 'shoulder', score: 8 }]);
     assert.equal(ruling.action, 'stop');

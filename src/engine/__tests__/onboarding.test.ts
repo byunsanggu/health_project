@@ -530,6 +530,27 @@ describe('근력 목표의 반복 범위', () => {
     }
   });
 
+  it('근력만 — 종목마다 그 주 첫 등장은 무거운 날, 풀 날에는 세로 당기기가 남는다', () => {
+    for (const days of [2, 3, 5, 6]) {
+      for (const level of ['intermediate', 'advanced'] as const) {
+        const program = buildProgram(answers({ daysPerWeek: days, goals: ['strength'] }), level);
+        const seen = new Set<string>();
+        for (const { slot, exercise, day } of primaries(program)) {
+          if (exercise.equipment !== 'barbell' || exercise.unilateral || seen.has(exercise.id) || !lowRep(slot) && slot.repRange.max > 8) continue;
+          const barbellMain = ['back-squat', 'front-squat', 'barbell-bench-press', 'barbell-overhead-press', 'barbell-row', 'conventional-deadlift'].includes(exercise.id);
+          if (barbellMain) assert.ok(slot.repRange.max <= 6, `${days}일 ${day}: ${exercise.name} 첫 등장인데 ${slot.repRange.min}-${slot.repRange.max}`);
+          seen.add(exercise.id);
+        }
+        const ids = program.templates.flatMap((template) => template.slots.map((item) => exerciseById(item.exerciseId)!));
+        if (days >= 3) assert.ok(ids.some((exercise) => exercise.pattern === 'verticalPull'), `${days}일 ${level}: 세로 당기기가 없다`);
+        for (const template of program.templates) {
+          const rows = template.slots.filter((item) => slotIsPrimaryRow(item.exerciseId, item.role)).length;
+          assert.ok(rows <= 1, `${days}일 ${template.name}: 메인 가로 당기기 ${rows}개`);
+        }
+      }
+    }
+  });
+
   it('근력 + 근비대면 동작마다 한 주에 한 번만 무겁게 — 같은 동작의 다른 날은 볼륨', () => {
     for (const days of [3, 4, 5]) {
       const program = buildProgram(answers({ daysPerWeek: days, goals: ['strength', 'hypertrophy'] }), 'intermediate');
@@ -611,3 +632,7 @@ describe('기구 골고루 · 맨몸 섞기', () => {
     assert.ok(seen > 0);
   });
 });
+
+function slotIsPrimaryRow(id: string, role?: string): boolean {
+  return role === 'primary' && exerciseById(id)?.pattern === 'horizontalPull';
+}

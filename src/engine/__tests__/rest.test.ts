@@ -195,3 +195,24 @@ describe('휴식 띠 — 사용자가 정한다', () => {
     assert.ok(last <= 40, String(last));
   });
 });
+
+describe('restFor — 저장된 띠 · 배수', () => {
+  const squat = exerciseById('back-squat') as Exercise;
+  it('기본보다 긴 띠(예전 "길게" 1분 30초~2분 30초)를 골라도 큰 운동은 기본보다 덜 쉬지 않는다', () => {
+    const base = restFor({ exercise: squat, reps: 5, targetRir: 2 }).seconds;
+    for (const band of [{ minSeconds: 90, maxSeconds: 150 }, { minSeconds: 60, maxSeconds: 100 }, { minSeconds: 120, maxSeconds: 210 }]) {
+      assert.ok(restFor({ exercise: squat, reps: 5, targetRir: 2, band }).seconds >= base, JSON.stringify(band));
+    }
+  });
+
+  it('짧게 고른 띠는 그 뜻대로 짧다', () => {
+    const base = restFor({ exercise: squat, reps: 5, targetRir: 2 }).seconds;
+    assert.ok(restFor({ exercise: squat, reps: 5, targetRir: 2, band: { minSeconds: 45, maxSeconds: 75 } }).seconds < base);
+  });
+
+  it('근력 블록 배수를 곱해도 4분을 넘지 않는다', () => {
+    for (const multiplier of [1.5, 2]) {
+      assert.ok(restFor({ exercise: squat, reps: 5, targetRir: 1, multiplier }).seconds <= 240, String(multiplier));
+    }
+  });
+});
