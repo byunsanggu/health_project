@@ -301,17 +301,7 @@ input[type="search"] {
 .warmup-label { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .warmup-summary { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .warmup-toggle { font-size: 11px; color: var(--accent); }
-.warmup-set {
-  display: grid;
-  grid-template-columns: 26px auto minmax(0, 1fr);
-  gap: 9px;
-  align-items: baseline;
-  padding: 4px 13px;
-}
-.warmup-load { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted); }
-.warmup-pct { font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .warmup-note { padding: 6px 13px 9px; font-size: 11px; color: var(--muted); }
-.warmup-add { display: block; margin: 0 13px 10px; padding: 4px 0; border: 0; background: none; color: var(--accent); font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
 
 .decision {
   display: grid;
@@ -1342,22 +1332,31 @@ input[type="search"] {
 .set-strip-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
 .set-strip-head b { font-size: 13.5px; }
 .set-strip-head .meta { margin-left: auto; font-size: 11.5px; color: var(--muted); }
-.set-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 6px; }
-.set-box {
-  display: grid; justify-items: center; align-content: center; gap: 1px;
-  min-height: 46px; padding: 5px 2px;
-  border: 1px dashed var(--line); border-radius: 10px;
-  background: var(--surface); color: var(--muted);
+.set-strip { display: grid; gap: 4px; }
+/* 세트마다 한 줄 — 1세트 · 35kg × 10회 · ✓/지금. 워밍업 줄은 위에 작게 */
+.set-box, .warmup-set {
+  display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  min-height: 40px; padding: 6px 12px; width: 100%; text-align: left; font: inherit;
+  border: 1px solid var(--line-soft); border-radius: 10px;
+  background: var(--surface); color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.set-box-no { font-size: 13px; font-weight: 700; white-space: nowrap; }
-.set-box-rec { font-family: var(--mono); font-size: 10.5px; line-height: 1.3; white-space: nowrap; }
-.set-box.done { border-style: solid; border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.set-no { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.set-load { font-family: var(--mono); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.set-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.set-box.done { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.set-box.done .set-state { color: inherit; opacity: .85; }
 .set-box.done:hover { filter: brightness(1.08); }
 .set-box.now { border: 2px solid var(--accent); color: var(--accent); background: var(--accent-soft); }
-/* 한 세트 더 — 칸 줄 끝에, 눌러야 할 칸보다 조용하게 */
-.set-box.add { cursor: pointer; border-style: dashed; color: var(--accent); background: none; font: inherit; }
-.set-box.add .set-box-no { font-size: 16px; line-height: 1; }
+.set-box.now .set-state { color: var(--accent); font-weight: 700; }
+.warmup-set { min-height: 32px; padding: 4px 12px; border-style: dashed; color: var(--muted); }
+.warmup-set .set-no { font-size: 12px; font-weight: 600; }
+.warmup-set .set-load { font-size: 12.5px; }
+.warmup-set .set-state { font-size: 10.5px; font-family: var(--mono); }
+.set-box .set-no { color: inherit; }
+/* 지금 세트의 칸 · 완료 버튼 — "지금" 줄 바로 아래 */
+.now-inline { display: grid; gap: 10px; padding: 10px 2px 12px; }
+.set-add { justify-self: start; padding: 4px 6px; border: 0; background: none; color: var(--accent); font-size: 13px; font-weight: 600; }
 .now-head b { font-size: 18px; font-weight: 600; color: var(--accent); letter-spacing: -.01em; }
 .now-head .of { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .now-line .set-dots { margin-left: auto; flex-wrap: nowrap; }

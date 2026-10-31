@@ -25,6 +25,8 @@
   var queueEnd = 0;          // 예약된 마지막 소리가 끝나는 때 (ctx 시각)
   var generation = 0;        // cancel할 때마다 올린다 — 받는 중이던 말은 버린다
   var prefetch = { voice: null, done: 0, total: 0, running: false, listeners: [] };
+  var rate = 1;              // 말 빠르기 — 1이 녹음 그대로
+  var stretched = {};        // id → 그 빠르기로 늘이거나 줄인 소리 (rate가 바뀌면 버린다)
 
   function audio() {
     if (ctx) return ctx;
@@ -106,6 +108,67 @@
     }).catch(function () { return null; });
   }
 
+  /** 지금 빠르기의 소리. 1이 아니면 높이는 그대로 두고 길이만 바꾼다(timeStretch). */
+  function bufferAtRate(id) {
+    var want = rate;
+    return bufferFor(id).then(function (buffer) {
+      if (!buffer || want === 1) return buffer;
+      var key = id + '@' + want;
+      if (!stretched[key]) stretched[key] = timeStretch(buffer, want);
+      return stretched[key];
+    });
+  }
+
+  /**
+   * 말 빠르기를 바꾼다 — 재생 속도를 올리면 목소리가 다람쥐처럼 높아진다. 그래서 짧은 조각(30ms)을
+   * 겹쳐 이어 붙이되, 이음매가 제일 잘 맞는 자리를 찾아 붙인다(WSOLA). 높이는 그대로, 길이만 1/rate.
+   */
+  function timeStretch(buffer, speed) {
+    var c = audio();
+    if (!c) return buffer;
+    var data = buffer.getChannelData(0);
+    var sr = buffer.sampleRate;
+    var frame = Math.round(sr * 0.03);
+    var hop = Math.floor(frame / 2);
+    var search = Math.round(sr * 0.012);
+    var length = Math.ceil(data.length / speed) + frame;
+    var out = new Float32Array(length);
+    var win = new Float32Array(frame);
+    for (var w = 0; w < frame; w += 1) win[w] = 0.5 - 0.5 * Math.cos((2 * Math.PI * w) / frame);
+    var prev = 0;
+    for (var k = 0; k * hop + frame < length; k += 1) {
+      var target = Math.round(k * hop * speed);
+      var pos = target;
+      if (k > 0) {
+        // 앞 조각이 자연스럽게 이어질 자리(prev + hop)와 제일 닮은 곳을 target 근처에서 고른다
+        var natural = prev + hop;
+        var best = -Infinity;
+        for (var d = -search; d <= search; d += 2) {
+          var at = target + d;
+          if (at < 0 || at + hop >= data.length || natural + hop >= data.length) continue;
+          var score = 0;
+          for (var j = 0; j < hop; j += 4) score += data[at + j] * data[natural + j];
+          if (score > best) { best = score; pos = at; }
+        }
+      }
+      if (pos + frame > data.length) break;
+      var base = k * hop;
+      for (var i = 0; i < frame; i += 1) out[base + i] += data[pos + i] * win[i];
+      prev = pos;
+    }
+    var used = Math.min(length, Math.ceil(data.length / speed));
+    var result = c.createBuffer(1, Math.max(1, used), sr);
+    result.getChannelData(0).set(out.subarray(0, Math.max(1, used)));
+    return result;
+  }
+
+  function setRate(next) {
+    var value = Number(next) || 1;
+    if (value === rate) return;
+    rate = value;
+    stretched = {};
+  }
+
   /** 말 하나를 조각으로 나눠 예약한다. 앞 말이 아직 나오는 중이면 그 뒤에 이어 붙는다. */
   function speak(text) {
     if (!text || !voice) return;
@@ -119,7 +182,7 @@
         return sentence.map(function (piece) { return E.clipId(piece); }).filter(function (id) { return list[id]; });
       });
       var flat = [].concat.apply([], ids);
-      return Promise.all(flat.map(bufferFor)).then(function (loaded) {
+      return Promise.all(flat.map(bufferAtRate)).then(function (loaded) {
         if (mine !== generation) return;
         var c = audio();
         if (!c) return;
@@ -158,6 +221,7 @@
     cancel();
     voice = name;
     buffers = {};
+    stretched = {};
     manifest = null;
     manifestFor = null;
     loadManifest();
@@ -230,7 +294,7 @@
       var wanted = {};
       plans.forEach(function (plan) { plan.ids.forEach(function (sentence) { sentence.forEach(function (id) { wanted[id] = true; }); }); });
       var ids = Object.keys(wanted);
-      return Promise.all(ids.map(bufferFor)).then(function (loaded) {
+      return Promise.all(ids.map(bufferAtRate)).then(function (loaded) {
         var byId = {};
         ids.forEach(function (id, i) { byId[id] = loaded[i]; });
         var total = Math.max(1, Math.ceil(seconds * TRACK_RATE));
@@ -309,6 +373,7 @@
     ready: ready,
     progress: progress,
     renderTrack: renderTrack,
+    setRate: setRate,
     available: function () { return Boolean(window.AudioContext || window.webkitAudioContext); },
     /** 지금 무언가 나오고 있는가 */
     speaking: function () { var c = audio(); return Boolean(c && queueEnd > c.currentTime); },

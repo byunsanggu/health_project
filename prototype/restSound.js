@@ -97,5 +97,11 @@ var RestSound = (function () {
     }
   }
 
-  return { wake: wake, start: start, stop: stop, playTrack: playTrack };
+  /** 지금 틀고 있는 소리의 자리 — 시계 · 잠금 화면에서 일시정지했으면 멈춘 자리. 없으면 null. */
+  function position() {
+    if (!audio || !url) return null;
+    return { time: audio.currentTime, paused: audio.paused, ended: audio.ended };
+  }
+
+  return { wake: wake, start: start, stop: stop, playTrack: playTrack, position: position };
 })();

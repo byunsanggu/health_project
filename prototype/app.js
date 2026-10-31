@@ -386,7 +386,8 @@
       state.todayExtras = settings.todayExtras || null;
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
-      state.voiceRate = settings.voiceRate || 1;
+      // 예전 기기 음성 시절 값(0.9 등)은 가장 가까운 칸으로
+      state.voiceRate = nearestRate(settings.voiceRate || 1);
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
       state.settingsUpdatedAt = settings.settingsUpdatedAt || null;
@@ -2570,21 +2571,58 @@
 
   function setReps(liftIndex, setIndex, delta) {
     var set = state.lifts[liftIndex].sets[setIndex];
-    set.reps = clamp(set.reps + delta, 1, 50);
+    carryForward(liftIndex, setIndex, 'reps', clamp(set.reps + delta, 1, 50));
     render();
+  }
+
+  /** 첫 세트 무게를 바꾸면 워밍업도 같은 비율로 — 40kg 기준 워밍업을 35kg 앞에 하면 너무 무겁다. 빈 바는 그대로. */
+  function rescaleWarmup(lift, setIndex, from, to) {
+    if (!lift.warmup || !lift.warmup.sets.length || !(from > 0) || !(to > 0) || from === to) return;
+    if (lift.sets.some(function (one) { return one.done; })) return;
+    var first = lift.sets.findIndex(function (one) { return !one.top; });
+    if (setIndex !== first) return;
+    var ratio = to / from;
+    lift.warmup = Object.assign({}, lift.warmup, {
+      sets: lift.warmup.sets.map(function (one) {
+        if (one.note === '빈 바' || !(one.weightKg > 0)) return one;
+        var raw = one.weightKg * ratio;
+        var kg = lift.loading ? E.nearestLoadable(raw, lift.loading, 'nearest')
+          : lift.exercise.increment > 0 ? Math.round(raw / lift.exercise.increment) * lift.exercise.increment : Math.round(raw);
+        return Object.assign({}, one, { weightKg: kg });
+      }),
+    });
+  }
+
+  /**
+   * 지금 세트의 무게 · 횟수를 바꾸면 뒤 세트도 같이 — 40kg이 무거워 35kg으로 내렸으면 2 · 3세트도 35kg.
+   * 뒤 세트를 따로 정해 둔 것(값이 달랐던 것) · 끝낸 세트 · 무거운 세트는 건드리지 않는다.
+   */
+  function carryForward(liftIndex, setIndex, key, value) {
+    var sets = state.lifts[liftIndex].sets;
+    var old = sets[setIndex][key];
+    sets[setIndex][key] = value;
+    if (sets[setIndex].top) return;
+    for (var k = setIndex + 1; k < sets.length; k += 1) {
+      var later = sets[k];
+      if (later.done || later.top || later[key] !== old) continue;
+      later[key] = value;
+      if (key === 'weightKg') later.estimated = false;
+    }
   }
 
   function typeReps(liftIndex, setIndex, raw) {
     var value = parseInt(raw, 10);
     // 빈칸이나 이상한 값이면 원래 값을 그대로 둔다 — 0회를 기록할 일은 없다.
     if (!Number.isFinite(value) || value < 1) return render();
-    state.lifts[liftIndex].sets[setIndex].reps = clamp(value, 1, 100);
+    carryForward(liftIndex, setIndex, 'reps', clamp(value, 1, 100));
     render();
   }
 
   function setWeight(liftIndex, setIndex, weightKg) {
     var set = state.lifts[liftIndex].sets[setIndex];
-    set.weightKg = Math.round(weightKg * 100) / 100;
+    var before = set.weightKg;
+    carryForward(liftIndex, setIndex, 'weightKg', Math.round(weightKg * 100) / 100);
+    rescaleWarmup(state.lifts[liftIndex], setIndex, before, set.weightKg);
     // 직접 정한 값이므로 더 이상 추정이 아니다. 화면의 "추정" 표시가 사라진다.
     set.estimated = false;
     render();
@@ -3891,7 +3929,7 @@
         state.guideTalking = setTimeout(function () {
           state.guideTalking = null;
           listen.textContent = '▶ 코치 목소리로 설명 듣기';
-        }, (E.speechSeconds(lines.join(' ')) + 4) * 1000);
+        }, (spokenSeconds(lines.join(' ')) + 4) * 1000);
       });
       body.push(listen);
     }
@@ -5520,7 +5558,7 @@
       var run = ensurePtRun();
       acquireWakeLock();
       // 처음 시작이면 몸부터 푼다 — 시작 말이 끝난 뒤에
-      if (doneSets === 0 && !run.prepped) startPrep(Math.ceil(E.speechSeconds(opening || '')) * 1000 + 800);
+      if (doneSets === 0 && !run.prepped) startPrep(Math.ceil(spokenSeconds(opening || '')) * 1000 + 800);
     }
     // 시계는 여기서 돈다. 세트를 기록해야 시작하면 워밍업 시간이 빠진다.
     if (!state.sessionStartedAt) state.sessionStartedAt = Date.now();
@@ -6554,8 +6592,25 @@
   function speak(text) {
     // PT 모드는 말하는 모드다. 소리 스위치를 따로 켜게 하면 켠 사람이 또 켜야 한다.
     if ((!state.voiceOn && !ptOn()) || !voiceReady()) return;
-    CoachVoice.setVoice(coachVoiceName());
+    useCoachVoice();
     CoachVoice.speak(text);
+  }
+
+  function nearestRate(value) {
+    return [0.5, 0.75, 1, 1.25, 1.5].reduce(function (best, item) {
+      return Math.abs(item - value) < Math.abs(best - value) ? item : best;
+    }, 1);
+  }
+
+  /** 고른 목소리 · 말 빠르기로 맞춘다. */
+  function useCoachVoice() {
+    CoachVoice.setVoice(coachVoiceName());
+    CoachVoice.setRate(state.voiceRate || 1);
+  }
+
+  /** 이 말이 나오는 데 걸리는 초 — 말 빠르기만큼 짧거나 길다. 세트 전 준비 시간 · 소리 파일 시간이 이걸 쓴다. */
+  function spokenSeconds(text) {
+    return E.speechSeconds(text) / (state.voiceRate || 1);
   }
 
   /** 하던 말을 끊는다. */
@@ -6566,7 +6621,7 @@
   /** 코치 목소리를 이 폰에 받아 둔다 — 소리를 쓰는 사람만(PT · 소리로 세기). 다 받았으면 아무것도 안 한다. */
   function fetchCoachVoice(onProgress) {
     if (!voiceReady()) return;
-    CoachVoice.setVoice(coachVoiceName());
+    useCoachVoice();
     if (!CoachVoice.ready(coachVoiceName())) CoachVoice.download(onProgress);
   }
 
@@ -6747,7 +6802,7 @@
       lines = lines.concat(coachWrapUp());
       coachSay(lines);
       // 다 했으면 마무리 스트레칭으로 이어 간다. 마무리 말이 끝난 뒤에.
-      startCooldown(Math.ceil(E.speechSeconds(lines.join(' '))) * 1000 + 1500);
+      startCooldown(Math.ceil(spokenSeconds(lines.join(' '))) * 1000 + 1500);
       return;
     }
     lines = lines.concat(ptBetweenLines(liftIndex, remaining === 0));
@@ -6940,6 +6995,9 @@
    *
    * 목소리는 미리 만든 소리라 처음 한 번 받아야 한다(약 9MB). 받아 두면 신호 없는 지하에서도 나온다.
    */
+  /** 말 빠르기 — 0.5배는 또박또박, 1.5배는 빠르게. 0.25배는 말이 늘어져 알아듣기 어려워 두지 않는다. */
+  var VOICE_RATES = [0.5, 0.75, 1, 1.25, 1.5];
+
   function voiceControls(onChange) {
     var box = el('div', { class: 'voice-controls' }, []);
     if (!voiceReady()) {
@@ -6948,7 +7006,7 @@
     }
     var listen = function () {
       CoachVoice.unlock();
-      CoachVoice.setVoice(coachVoiceName());
+      useCoachVoice();
       CoachVoice.cancel();
       CoachVoice.speak(ptOn() ? E.coachStyleInfo(state.coach.style).sample : '하나, 둘, 셋, 넷');
     };
@@ -6971,6 +7029,21 @@
         };
       })));
     }
+    // 말 빠르기 — 사람마다 알아듣기 편한 빠르기가 다르다. 높이는 그대로, 빠르기만.
+    box.appendChild(el('div', { class: 'list-label', text: '말 빠르기' }));
+    box.appendChild(segmented(VOICE_RATES.map(function (value) {
+      return {
+        label: value === 1 ? '보통' : value + '배',
+        active: (state.voiceRate || 1) === value,
+        onSelect: function () {
+          state.voiceRate = value;
+          state.lockTrack = null;
+          persist();
+          listen();
+          onChange();
+        },
+      };
+    })));
     var status = el('p', { class: 'hint-line voice-status', text: '' });
     var show = function (done, total) {
       if (CoachVoice.ready(coachVoiceName())) status.textContent = '이 폰에 받아 두었습니다 — 인터넷 없이도 나옵니다.';
@@ -7119,7 +7192,7 @@
   function sayNow(text) {
     if (!voiceReady()) return;
     CoachVoice.unlock();
-    CoachVoice.setVoice(coachVoiceName());
+    useCoachVoice();
     CoachVoice.speak(text);
   }
 
@@ -7735,43 +7808,64 @@
   function setStrip(lift, liftIndex, cursor, doneCount) {
     var sets = lift.sets;
     var pounds = inPounds(lift.exercise.id);
+    var load = function (kg, reps) {
+      return (kg > 0 ? E.weightLabelIn(kg, pounds) : '맨몸') + ' × ' + reps + '회';
+    };
     /*
-     * 세트 카드 안에서는 머리줄 없이 칸만 둔다. 칸이 높아지면 "몇 개 더"
-     * 버튼이 화면 밖으로 밀린다 — 세트를 끝내는 버튼이 먼저다.
+     * 세트마다 한 줄 — "1세트 35kg × 10회 ✓ / 2세트 35kg × 10회 지금 / 3세트 35kg × 10회".
+     * 칸에 "남음"만 적어 두면 남은 세트를 무엇으로 하는지 모른다. 무게를 바꾸면 뒤 세트도 따라 바뀌어
+     * 여기에 바로 보인다. 끝낸 줄은 눌러서 기록을 고치고, 남은 줄은 눌러서 그 세트만 다르게 정한다.
+     * 본세트 전에는 워밍업 줄이 위에 붙는다 — 1세트 전에 몇 kg으로 몇 번 하는지.
      */
+    var rows = [];
+    var warm = lift.warmup && doneCount === 0 ? lift.warmup.sets : [];
+    warm.forEach(function (set, i) {
+      rows.push(el('div', { class: 'warmup-set' }, [
+        el('span', { class: 'set-no', text: '워밍업 ' + (i + 1) }),
+        el('span', { class: 'set-load', text: load(set.weightKg, set.reps) }),
+        el('span', { class: 'set-state', text: set.note || (set.percent ? Math.round(set.percent * 100) + '%' : '') }),
+      ]));
+    });
+    if (doneCount === 0) {
+      rows.push(el('button', {
+        type: 'button', class: 'set-add warmup-add', text: '+ 워밍업',
+        'aria-label': lift.exercise.name + ' 워밍업 한 세트 더하기',
+        onclick: function () { addWarmup(lift); },
+      }));
+    }
+    sets.forEach(function (set, order) {
+      var now = order === cursor;
+      var cls = 'set-box' + (set.done ? ' done' : now ? ' now' : '');
+      var label = (order + 1) + '세트' + (set.top ? ' · 무거운' : '');
+      var attrs = { type: 'button', class: cls, 'aria-current': now ? 'step' : null };
+      if (set.done) {
+        attrs['aria-label'] = (order + 1) + '세트 끝냄 — ' + load(set.weightKg, set.reps) + '. 눌러서 고치기';
+        attrs.onclick = function () { openSetEdit(liftIndex, order); };
+      } else if (!now) {
+        attrs['aria-label'] = (order + 1) + '세트 — ' + load(set.weightKg, set.reps) + '. 눌러서 이 세트만 바꾸기';
+        attrs.onclick = function () { openSetEdit(liftIndex, order); };
+      }
+      rows.push(el(now ? 'div' : 'button', attrs, [
+        el('span', { class: 'set-no', text: label }),
+        el('span', { class: 'set-load', text: load(set.weightKg, set.reps) }),
+        el('span', { class: 'set-state', text: set.done ? '✓ ✎' : now ? '지금' : '' }),
+      ]));
+    });
+    rows.push(el('button', {
+      type: 'button', class: 'set-add',
+      'aria-label': lift.exercise.name + ' 한 세트 더하기',
+      text: '+ 세트',
+      onclick: function () { addSet(lift); },
+    }));
     return el('div', { class: 'set-strip-wrap' }, [
       cursor >= 0 ? null : el('div', { class: 'set-strip-head' }, [
         el('b', { text: sets.length + '세트 모두 끝' }),
-        doneCount > 0 ? el('span', { class: 'meta', text: '칸을 누르면 고칩니다' }) : null,
+        doneCount > 0 ? el('span', { class: 'meta', text: '줄을 누르면 고칩니다' }) : null,
       ]),
-      el('div', { class: 'set-strip' }, sets.map(function (set, order) {
-        if (set.done) {
-          var load = set.weightKg > 0 ? E.weightLabelIn(set.weightKg, pounds) : '맨몸';
-          return el('button', {
-            type: 'button', class: 'set-box done',
-            'aria-label': (order + 1) + '세트 끝냄 — ' + load + ' ' + set.reps + '회. 눌러서 고치기',
-            onclick: function () { openSetEdit(liftIndex, order); },
-          }, [
-            el('span', { class: 'set-box-no', text: '✓ ' + (order + 1) + '세트' }),
-            // ✎ — 누르면 고친다는 표시. 칸 위에 설명 줄을 두면 끝내기 버튼이 밀린다.
-            el('span', { class: 'set-box-rec', text: load.replace(/kg$/, '') + '×' + set.reps + ' ✎' }),
-          ]);
-        }
-        var now = order === cursor;
-        return el('div', {
-          class: 'set-box' + (now ? ' now' : ''),
-          'aria-current': now ? 'step' : null,
-        }, [
-          el('span', { class: 'set-box-no', text: (order + 1) + '세트' }),
-          el('span', { class: 'set-box-rec', text: now ? '지금' : '남음' }),
-        ]);
-      }).concat([el('button', {
-        type: 'button', class: 'set-box add',
-        'aria-label': lift.exercise.name + ' 한 세트 더하기',
-        onclick: function () { addSet(lift); },
-      }, [el('span', { class: 'set-box-no', text: '+' }), el('span', { class: 'set-box-rec', text: '세트' })])])),
+      el('div', { class: 'set-strip' }, rows),
     ]);
   }
+
 
   /**
    * 끝낸 세트의 숫자를 고친다.
@@ -7783,7 +7877,9 @@
   function openSetEdit(liftIndex, setIndex) {
     var lift = state.lifts[liftIndex];
     var set = lift && lift.sets[setIndex];
-    if (!set || !set.done) return;
+    if (!set) return;
+    // 아직 안 한 세트면 그 세트의 무게 · 횟수만 바꾼다(남은 힘 · 지우기 없음)
+    var planned = !set.done;
     var pounds = inPounds(lift.exercise.id);
     var draft = { weight: pounds ? E.kgToLb(set.weightKg) : set.weightKg, reps: set.reps, rir: set.rir };
 
@@ -7804,7 +7900,7 @@
         oninput: function (event) { draft.reps = parseInt(event.target.value, 10); },
       }));
       // 남은 힘을 묻지 않는 사람에게는 여기서도 묻지 않는다 — 횟수로 다시 짐작한다.
-      if (inputMode() !== 'none') {
+      if (inputMode() !== 'none' && !planned) {
         body.push(el('div', { class: 'list-label', text: '몇 개 더 할 수 있었나요?' }));
         body.push(el('div', { class: 'rir-row' }, [0, 1, 2, 3, 4].map(function (rir) {
           return el('button', {
@@ -7819,7 +7915,7 @@
         type: 'button', class: 'finish set-edit-save', text: '고친 대로 저장',
         onclick: function () { saveSetEdit(liftIndex, setIndex, draft, pounds); },
       }));
-      body.push(el('button', {
+      if (!planned) body.push(el('button', {
         type: 'button', class: 'finish quiet set-edit-drop', text: '이 세트 기록 지우기 (안 한 세트)',
         onclick: function () {
           modal.close();
@@ -7827,7 +7923,7 @@
           undoSet(liftIndex, setIndex);
         },
       }));
-      openModal(lift.exercise.name + ' ' + (setIndex + 1) + '세트', '기록 고치기', body);
+      openModal(lift.exercise.name + ' ' + (setIndex + 1) + '세트', planned ? '이 세트만 바꾸기' : '기록 고치기', body);
     };
     draw();
   }
@@ -7839,6 +7935,15 @@
       ? (pounds ? E.lbToKg(Math.min(2200, draft.weight)) : Math.min(999, draft.weight))
       : set.weightKg;
     var reps = Number.isFinite(draft.reps) && draft.reps >= 0 ? Math.min(100, draft.reps) : set.reps;
+    if (!set.done) {
+      set.weightKg = weight;
+      set.estimated = false;
+      set.reps = Math.max(1, reps);
+      modal.close();
+      persist();
+      render();
+      return;
+    }
     if (inputMode() === 'none') {
       var target = typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir;
       draft.rir = E.rirFromReps(reps, set.targetReps, target);
@@ -7947,7 +8052,7 @@
     var lead = AUTO_LEAD_SECONDS;
     if (ptOn()) {
       var said = coachBefore(liftIndex, setIndex);
-      if (said) lead = Math.max(AUTO_LEAD_SECONDS, Math.ceil(E.speechSeconds(said)) + 3);
+      if (said) lead = Math.max(AUTO_LEAD_SECONDS, Math.ceil(spokenSeconds(said)) + 3);
     }
     startCounting(liftIndex, setIndex, lead);
   }
@@ -8051,7 +8156,7 @@
       var line = E.warmupSetLine(state.coach.style, lift.exercise.name, i, steps, inPounds(lift.exercise.id));
       coachSay([line]);
       render();
-      var lead = Math.ceil(E.speechSeconds(line)) + 2;
+      var lead = Math.ceil(spokenSeconds(line)) + 2;
       var cues = E.buildCues({ repRange: { min: steps[i].reps, max: steps[i].reps }, tempo: tempoOf(lift.exercise), leadInSeconds: lead });
       later(function () { speak('시작'); showCount('시작', ''); }, lead * 1000);
       var end = 0;
@@ -8085,7 +8190,7 @@
     if (lift) lift.warmupDone = true;
     var line = spoken ? E.warmupDoneLine(state.coach.style) : '';
     if (line) coachSay([line]);
-    var wait = line ? Math.ceil(E.speechSeconds(line)) * 1000 + 500 : 0;
+    var wait = line ? Math.ceil(spokenSeconds(line)) * 1000 + 500 : 0;
     /*
      * 말이 끝나면 첫 본세트. 그 사이에 멈추거나 끝내면 시작하지 않는다 —
      * 일시정지 화면 뒤에서 "하나"가 나오면 안 된다. 멈춤이 이 타이머를
@@ -8276,7 +8381,7 @@
     var item = run.steps[i];
     var line = E.mobilityLine(state.coach.style, item, i, run.steps.length, E.mobilityMinutes(run.steps));
     coachSay([line]);
-    var talk = Math.ceil(E.speechSeconds(line)) * 1000;
+    var talk = Math.ceil(spokenSeconds(line)) * 1000;
     run.endsAt = Date.now() + talk + item.seconds * 1000;
     run.talkMs = talk;
     render();
@@ -8331,7 +8436,7 @@
     var item = run.steps[i];
     var line = E.cooldownLine(state.coach.style, item, i, run.steps.length);
     coachSay([line]);
-    var talk = Math.ceil(E.speechSeconds(line)) * 1000;
+    var talk = Math.ceil(spokenSeconds(line)) * 1000;
     run.endsAt = Date.now() + talk + item.seconds * 1000;
     render();
     if (i === 0) screen.scrollTop = 0;
@@ -8480,7 +8585,7 @@
         beforeAt = t;
         var said = beforeText(liftIndex, k);
         if (said) events.push({ at: t, text: E.forSpeech(said) });
-        var lead = said ? Math.max(AUTO_LEAD_SECONDS, Math.ceil(E.speechSeconds(said)) + 3) : AUTO_LEAD_SECONDS;
+        var lead = said ? Math.max(AUTO_LEAD_SECONDS, Math.ceil(spokenSeconds(said)) + 3) : AUTO_LEAD_SECONDS;
         cues = E.buildCues({
           repRange: set.targetReps, tempo: tempoOf(lift.exercise), leadInSeconds: lead,
           lastCall: E.lastCallLine(style), slowdown: true,
@@ -8512,8 +8617,8 @@
       var afterText = E.forSpeech(after.filter(Boolean).join(' '));
       events.push({ at: end, text: afterText });
       blocks.push({ liftIndex: liftIndex, setIndex: k, beforeAt: beforeAt, end: end, reps: reps, rest: rest, repTimes: repTimes });
-      t = end + E.speechSeconds(afterText);
-      restLeft = Math.max(0, rest - E.speechSeconds(afterText));
+      t = end + spokenSeconds(afterText);
+      restLeft = Math.max(0, rest - spokenSeconds(afterText));
     }
     if (!blocks.length) return null;
     return { anchor: anchor, events: events, blocks: blocks, duration: t + 2 };
@@ -8528,7 +8633,7 @@
     if (!plan) { state.lockTrack = null; return; }
     var job = { sig: sig, plan: plan, bytes: null };
     state.lockTrack = job;
-    CoachVoice.setVoice(coachVoiceName());
+    useCoachVoice();
     CoachVoice.renderTrack(plan.events, plan.duration).then(function (bytes) {
       if (state.lockTrack === job) job.bytes = bytes;
     }).catch(function () { /* 못 만들면 예전처럼 멈춘다 */ });
@@ -8542,8 +8647,14 @@
     var pt = state.ptRun;
     var plan = pt.lock;
     pt.lock = null;
+    /*
+     * 시계나 잠금 화면의 "지금 재생 중"에서 일시정지했으면 소리가 멈춘 자리까지만 한 것이다 —
+     * 그 뒤로 흐른 시간을 세트로 적으면 안 한 세트가 기록된다.
+     */
+    var at = RestSound.position ? RestSound.position() : null;
     RestSound.stop();
     var elapsed = (Date.now() - plan.anchor) / 1000;
+    if (at && at.paused && !at.ended && at.time > 0) elapsed = Math.min(elapsed, at.time);
     var here = null;
     plan.blocks.forEach(function (block) {
       var lift = state.lifts[block.liftIndex];
@@ -9092,14 +9203,8 @@
       ptBits.forEach(function (bit) { body.push(bit); });
     }
 
-    body.push(el('div', { class: 'now-head' }, [
-      el('div', { class: 'now-line' }, [
-        el('b', { text: (setIndex + 1) + '세트 진행중' }),
-        // 주 1회 무거운 세트 — 최대 도전이 아니다. 두어 개 남기고 멈춘다
-        set.top ? el('span', { class: 'top-tag', text: '무거운 세트 · 두어 개 남기고' }) : null,
-        el('span', { class: 'of', text: '/ ' + lift.sets.length + '세트' }),
-      ]),
-    ]));
+    // 몇 세트째인지는 목록의 "지금" 줄이 말한다. 무거운 세트만 한 줄 — 최대 도전이 아니다, 두어 개 남기고 멈춘다
+    if (set.top) body.push(el('div', { class: 'now-head' }, [el('span', { class: 'top-tag', text: '무거운 세트 · 두어 개 남기고' })]));
 
     /*
      * 중량과 반복은 직접 친다.
@@ -9189,7 +9294,7 @@
     var live = renderCounting(liftIndex, setIndex);
     if (live) {
       body.push(live);
-      return el('div', { class: 'set-now counting' }, [el('div', { class: 'now-body' }, body)]);
+      return nowCard(body, ' counting');
     }
 
     body.push(el('div', { class: 'now-reps' }, [
@@ -9224,7 +9329,7 @@
       var banner = ptWarmBanner(lift, liftIndex);
       if (banner) body.push(banner);
       body.push(el('p', { class: 'hint-line', text: '워밍업이 끝나면 바로 본세트로 넘어갑니다.' }));
-      return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
+      return nowCard(body);
     }
 
     /*
@@ -9248,7 +9353,7 @@
           onclick: function () { hurtWhileResting(liftIndex, setIndex); },
         }),
       ]));
-      return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
+      return nowCard(body);
     }
 
     /*
@@ -9281,7 +9386,7 @@
         'aria-label': '아픈 데 있어요 — 이 종목 남은 세트를 빼고 어디가 아픈지 묻습니다',
         onclick: function () { finishByFeel(liftIndex, setIndex, 'hurt'); },
       }));
-      return el('div', { class: 'set-now' }, [el('div', { class: 'now-body' }, body)]);
+      return nowCard(body);
     }
 
     /*
@@ -9356,9 +9461,22 @@
     body.push(el('p', { class: 'hint-line', text:
       '누르면 기록되고 ' + nextLabel + '. 이 답으로 다음 세트와 다음 주 무게가 정해집니다.' }));
 
-    return el('div', { class: 'set-now' }, [
-      el('div', { class: 'now-body' }, body),
-    ]);
+    return nowCard(body);
+  }
+
+  /**
+   * 지금 세트 카드 — 세트 목록(body[0]) 안의 "지금" 줄 바로 아래에 무게 · 횟수 칸과 완료 버튼을 끼운다.
+   * 그러면 위는 끝낸 세트, 가운데는 지금 할 것, 아래는 남은 세트로 한 줄에 읽힌다.
+   */
+  function nowCard(body, extra) {
+    var strip = body[0];
+    var row = strip && strip.querySelector ? strip.querySelector('.set-box.now') : null;
+    if (row) {
+      var inline = el('div', { class: 'now-inline' }, body.slice(1));
+      row.parentNode.insertBefore(inline, row.nextSibling);
+      body = [strip];
+    }
+    return el('div', { class: 'set-now' + (extra || '') }, [el('div', { class: 'now-body' }, body)]);
   }
 
   /**
@@ -9541,7 +9659,8 @@
      * 그 줄이 차지한 34px만큼 눌러야 할 RIR이 화면 밖으로 밀린다.
      */
     var anyDone = lift.sets.some(function (set) { return set.done; });
-    if (!anyDone) card.appendChild(renderWarmup(lift));
+    // 워밍업은 세트 목록 맨 위 줄로 들어간다(setStrip). 왜 그만큼 하는지만 여기 한 줄.
+    if (!anyDone && lift.warmup && lift.warmup.note) card.appendChild(el('div', { class: 'warmup-note', text: lift.warmup.note }));
     card.appendChild(renderSetTrack(lift, liftIndex));
 
     /*
@@ -10290,49 +10409,6 @@
 
 
   /** 워밍업 램프 — 본세트 중량에 맞춰 올라간다. 볼륨에는 세지 않는다. */
-  function renderWarmup(lift) {
-    var warmup = lift.warmup;
-    /*
-     * 워밍업은 첫 본세트 전에만 볼 것이다. 4세트짜리 램프가 계속 펼쳐져
-     * 있으면 정작 지금 할 세트가 화면 밖으로 밀린다. 그래서 본세트를
-     * 하나라도 끝내면 접는다 — 사용자가 직접 연 경우는 그대로 둔다.
-     */
-    var started = lift.sets.some(function (set) { return set.done; });
-    var choice = state.warmupOpen[lift.exercise.id];
-    var open = choice === undefined ? !started : choice;
-
-    var head = el('button', {
-      type: 'button', class: 'warmup-head', 'aria-expanded': String(open),
-      onclick: function () {
-        state.warmupOpen[lift.exercise.id] = !open;
-        render();
-      },
-    }, [
-      el('span', { class: 'warmup-label', text: '워밍업' }),
-      el('span', { class: 'warmup-summary', text:
-        warmup.sets.length === 0
-          ? '없음'
-          : warmup.sets.length + '세트 · 약 ' + Math.round(warmup.estimatedSeconds / 60) + '분' }),
-      el('span', { class: 'warmup-toggle', text: open ? '접기' : '펼치기' }),
-    ]);
-
-    var wrap = el('div', { class: 'warmup' }, [head]);
-    if (!open) return wrap;
-
-    warmup.sets.forEach(function (set, i) {
-      wrap.appendChild(el('div', { class: 'warmup-set' }, [
-        el('span', { class: 'set-no', text: 'W' + (i + 1) }),
-        el('span', { class: 'warmup-load', text: (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회' }),
-        el('span', { class: 'warmup-pct', text: Math.round(set.percent * 100) + '%' + (set.note ? ' · ' + set.note : '') }),
-      ]));
-    });
-    if (warmup.note) wrap.appendChild(el('div', { class: 'warmup-note', text: warmup.note }));
-    wrap.appendChild(el('button', {
-      type: 'button', class: 'link-btn warmup-add', text: '+ 워밍업 한 세트 더',
-      onclick: function () { addWarmup(lift); },
-    }));
-    return wrap;
-  }
 
   /** 자동 세트 판단 결과 — 계획보다 잘 나오면 늘리고, 무너지면 멈춘다. */
   function renderDecision(lift) {

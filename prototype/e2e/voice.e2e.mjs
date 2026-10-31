@@ -34,6 +34,16 @@ export default async function ({ page, url, shot }) {
   await page.locator('#screen .voice-status', { hasText: '받아 두었습니다' }).waitFor({ timeout: 60000 });
   await shot('1-ready');
 
+  // 말 빠르기 — 0.5배~1.5배. 고르면 그 빠르기로 한마디 들려주고, 다시 켜도 남는다
+  const rates = await page.locator('#screen .voice-controls .segmented').last().locator('button').allTextContents();
+  check(rates.join(',') === '0.5배,0.75배,보통,1.25배,1.5배', '말 빠르기 칸: ' + rates.join(','));
+  const heard = await page.evaluate(() => window.__said.length);
+  await page.locator('#screen .voice-controls .segmented button', { hasText: '1.5배' }).click();
+  await page.waitForFunction((n) => window.__said.length > n, heard);
+  await page.waitForTimeout(500);
+  check(await page.locator('#screen .voice-controls button[aria-pressed="true"]', { hasText: '1.5배' }).count() === 1, '1.5배가 안 골라집니다');
+  await page.locator('#screen .voice-controls .segmented button', { hasText: '보통' }).click();
+
   // 활기찬 코치 — 여자 목소리를 고르면 그 폴더 조각을 받는다
   await page.locator('#screen .coach-settings .coach-style', { hasText: '활기차게' }).click();
   await page.locator('#screen .coach-settings .segmented button', { hasText: '여자 목소리' }).click();

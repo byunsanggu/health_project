@@ -26,7 +26,7 @@ export default async function ({ page, url, shot }) {
   await page.locator('.now-done').click();
   check((await head()) === total + '세트 중 2세트 끝', '두 세트 뒤 머리줄: ' + await head());
   check(await page.locator('.set-strip').first().locator('.set-box.done').count() === 2, '✓ 칸이 둘이 아닙니다');
-  check((await page.locator('.now-line b').first().textContent()).startsWith('3세트'), '지금 세트: ' + await page.locator('.now-line b').first().textContent());
+  check((await page.locator('.set-box.now .set-no').first().textContent()).startsWith('3세트'), '지금 세트: ' + await page.locator('.set-box.now .set-no').first().textContent());
   await shot('1-strip');
 
   // 1세트 횟수를 고친다 — 지금 할 세트는 그대로 3세트
@@ -36,9 +36,9 @@ export default async function ({ page, url, shot }) {
   await shot('2-edit');
   await page.locator('dialog .set-edit-save').click();
   await page.waitForFunction(() => !document.querySelector('dialog')?.open);
-  check((await page.locator('.set-box.done').first().textContent()).includes('×7'), '고친 횟수가 칸에 없습니다');
+  check(/×\s*7회/.test(await page.locator('.set-box.done').first().textContent()), '고친 횟수가 줄에 없습니다');
   check((await head()) === total + '세트 중 2세트 끝', '고치고 나서 머리줄: ' + await head());
-  check((await page.locator('.now-line b').first().textContent()).startsWith('3세트'), '고쳤더니 지금 세트가 바뀌었습니다');
+  check((await page.locator('.set-box.now .set-no').first().textContent()).startsWith('3세트'), '고쳤더니 지금 세트가 바뀌었습니다');
 
   // 기록에도 고친 값이 들어갔다
   const saved = await page.evaluate(() => localStorage.getItem('volume-coach.proto.state') || '');

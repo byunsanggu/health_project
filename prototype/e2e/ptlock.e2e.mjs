@@ -2,7 +2,11 @@
 //   다시 켜면 꺼져 있던 동안 센 세트가 기록돼 있고, PT는 멈추지 않고 그 자리부터 잇는다.
 import { check, choosePt, focusPhase, onboard, begin, runUntil, setVisible } from './lib.mjs';
 
-const doneSets = (page) => page.locator('.set-box.done').count();
+// 오늘 적힌 본세트 수 — 화면의 칸은 지금 종목 것만이라(다 하면 다음 종목으로 넘어간다) 저장된 기록으로 센다
+const doneSets = (page) => page.evaluate(() => {
+  const saved = JSON.parse(localStorage.getItem('volume-coach.proto.state') || '{}');
+  return ((saved.settings && saved.settings.todaySets) || []).length;
+});
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });

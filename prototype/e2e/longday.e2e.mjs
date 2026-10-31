@@ -30,10 +30,10 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('.lift-more').count() === 1, '종목 ⋯ 메뉴가 없습니다');
   await shot('2-lift');
 
-  // 운동 중에 세트 · 워밍업 더하기 — 세트 칸 끝의 "+ 세트", 워밍업 칸의 "+ 워밍업 한 세트 더"
-  const boxes = async () => page.locator('.set-strip .set-box:not(.add)').count();
+  // 운동 중에 세트 · 워밍업 더하기 — 세트 목록 끝의 "+ 세트", 1세트 위의 "+ 워밍업"
+  const boxes = async () => page.locator('.set-strip .set-box').count();
   const setsBefore = await boxes();
-  await page.locator('.set-box.add').click();
+  await page.locator('.set-add', { hasText: '+ 세트' }).click();
   check(await boxes() === setsBefore + 1, '세트를 더했는데 칸이 그대로입니다');
   const warmBefore = await page.locator('.warmup-set').count();
   await page.locator('.warmup-add').click();
@@ -41,6 +41,13 @@ export default async function ({ page, url, shot }) {
   await page.reload();
   await page.waitForSelector('.set-strip');
   check(await boxes() === setsBefore + 1, '다시 켜니 더한 세트가 사라졌습니다');
+
+  // 무게를 내리면 뒤 세트도 같이 — 세트마다 "35kg × 10회" 줄로 보인다
+  await page.locator('.big-field .nudge[aria-label="중량 줄이기"]').click();
+  const want = (await page.locator('.big-input').first().inputValue()) + 'kg';
+  const lines = await page.locator('.set-strip .set-box .set-load').allTextContents();
+  check(lines.every((line) => line.startsWith(want)), '무게를 내렸는데 뒤 세트가 그대로입니다: ' + lines.join(' / '));
+  check((await page.locator('.warmup-set').count()) > 0, '1세트 위에 워밍업 줄이 없습니다');
   check(await page.locator('.warmup-set').count() === warmBefore + 1, '다시 켜니 더한 워밍업이 사라졌습니다');
 
   // 휴식 시간 — 내 정보에서 고른다
