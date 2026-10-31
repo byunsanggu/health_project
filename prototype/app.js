@@ -1605,7 +1605,10 @@
         // 평소보다 넉넉한 날 — 이번 주 회복 한계 안에서 세트를 더한다. 덜어내는 주 · 별로인 날 · 내 루틴은 그대로.
         // 쉬다 돌아온 주도 그대로 — 일부러 덜어낸 세트를 다시 채우면 복귀 단계가 없어진다
         if (state.plan.phase !== 'deload' && todayFeel() !== 'low' && !state.customRoutine && !activeComeback()) {
-          state.timeFit = E.extendToTimeBudget(built, budget, Object.assign({ headroom: weekHeadroom(built) }, timeOptions));
+          // 초보는 하루에 3세트까지만 더한다 — 주마다 늘리는 폭(+1, 최대 +3)을 90분 하루가 건너뛰지 않게
+          var beginner = state.lifter && state.lifter.level === 'beginner';
+          state.timeFit = E.extendToTimeBudget(built, budget, Object.assign({ headroom: weekHeadroom(built) },
+            beginner ? { maxExtraTotal: 3 } : {}, timeOptions));
           built = state.timeFit.session;
         }
       } else {
@@ -14883,9 +14886,35 @@
     return E.reviewRoutine(routine, index, state.landmarks || E.landmarksFor(state.lifter.level));
   }
 
+  /*
+   * "볼륨 증가: 가슴 +2.4"는 처방이 바란 폭이다 — 하루 상한에 막히면 실제 세트는 그대로인데 주마다 같은 말을 했다.
+   * 실제로 이번 주 계획에 들어간 세트를 첫 주(템플릿)와 비교해 늘어난 부위만 말한다.
+   */
+  function truthfulSummary(plan) {
+    var text = plan.summary || '';
+    if (plan.phase === 'deload' || text.indexOf('볼륨 증가') < 0 || !state.program) return text;
+    try {
+      var planned = E.aggregateVolume(E.plannedWeekLogs({
+        templates: state.program.templates, plan: plan, index: index, landmarks: state.landmarks,
+        history: state.history, level: state.lifter && state.lifter.level,
+      }), index);
+      var base = E.aggregateVolume(E.templateWeekLogs(state.program.templates, undefined, plan.targetRir), index);
+      var grown = E.MUSCLE_GROUPS.map(function (muscle) {
+        return { muscle: muscle, delta: Math.round((planned[muscle].effectiveSets - base[muscle].effectiveSets) * 10) / 10 };
+      }).filter(function (item) { return item.delta >= 0.5; })
+        .sort(function (a, b) { return b.delta - a.delta; }).slice(0, 4);
+      var said = grown.length
+        ? '첫 주보다 세트 늘림: ' + grown.map(function (item) { return E.MUSCLE_LABELS_KO[item.muscle] + ' +' + item.delta; }).join(', ')
+        : '첫 주와 같은 세트';
+      return text.replace(/볼륨 증가: [^·]*/, said + ' ').replace(/\s+·/g, ' ·').trim();
+    } catch (err) {
+      return text;
+    }
+  }
+
   /** 이번 주 머리줄 — 내 루틴은 세트를 늘리거나 줄이지 않으므로 처방 문구 대신 이것. */
   function planLine(plan) {
-    if (!state.customRoutine) return plan.summary;
+    if (!state.customRoutine) return truthfulSummary(plan);
     if (plan.phase === 'deload') return '덜어내는 주입니다. 내 루틴 세트를 절반으로 줄이고 무게는 90%로 둡니다.';
     return plan.weekInBlock + '주차 — 내 루틴 그대로, 세트마다 ' + plan.targetRir + '개쯤 여유를 남깁니다.';
   }

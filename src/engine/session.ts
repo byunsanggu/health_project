@@ -417,7 +417,10 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
       plates: weightKg !== null && loading ? platePlan(weightKg, loading) : null,
       startingLoad,
       gymWeightNote: gymWeight.note,
-      note: buildNote(painHold ? '아픈 동안은 무게를 올리지 않고 같은 무게로 반복을 채웁니다.' : increaseNote ?? prescription.reason, multiplier, ruling, reference, startingLoad),
+      note: buildNote(painHold ? '아픈 동안은 무게를 올리지 않고 같은 무게로 반복을 채웁니다.'
+        // 덜어내는 주에 "같은 중량으로 9회를 노립니다 · 적용 배율 90%"는 앞뒤가 안 맞았다
+        : input.plan.phase === 'deload' && prescription.weightKg !== null ? '덜어내는 주라 지난 무게보다 가볍게, 세트도 줄여서 합니다.'
+        : increaseNote ?? prescription.reason, multiplier, ruling, reference, startingLoad),
       templateSets: slot.sets,
       sets: Array.from({ length: setCount }, (_, i) => ({
         setNumber: i + 1,

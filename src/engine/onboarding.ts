@@ -544,6 +544,22 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
    */
   if (context.beforeHeavyHinge && (exercise.jointStress.lowBack ?? 0) >= 0.7) score -= 3;
 
+  /*
+   * 허리를 무겁게 싣는 종목을 같은 날 겹치지 않는다 — 아래 일반 규칙(−2.4쯤)은 근력 목표 가산점(+5)에 졌다.
+   *   · 데드리프트 날의 바벨 로우 · 펜들레이 로우(근력 2회 B날: 데드 3~5회 + 바벨 로우 4~6회)
+   *   · 같은 갈래의 허리 부담 큰 종목 둘(풀 날 바벨 로우 + 펜들레이 로우)
+   *   · 바벨 스쿼트 둘(백 스쿼트 → RDL → 프론트 스쿼트)
+   * 원암 로우 · 체스트 서포티드 로우 · 레그프레스처럼 허리를 덜 쓰는 종목이 있으면 그쪽으로 간다.
+   */
+  const spine = exercise.jointStress.lowBack ?? 0;
+  if (spine >= 0.7 && exercise.pattern === 'horizontalPull' && context.today.some((one) => HEAVY_PULLS.has(one.id))) score -= 6;
+  if (spine >= 0.7 && context.today.some((one) => one.pattern === exercise.pattern && (one.jointStress.lowBack ?? 0) >= 0.7)) score -= 8;
+  // 루마니안 · 스티프 레그 날의 로우는 허리를 덜 쓰는 쪽(원암 · 가슴 대고 하는 로우)을 먼저
+  else if (spine >= 0.7 && exercise.pattern === 'horizontalPull' &&
+    context.today.some((one) => one.pattern === 'hinge' && (one.jointStress.lowBack ?? 0) >= 0.8)) score -= 4;
+  if (exercise.pattern === 'squat' && exercise.equipment === 'barbell' &&
+    context.today.some((one) => one.pattern === 'squat' && one.equipment === 'barbell')) score -= 6;
+
   // 한 세션에서 같은 관절에 최대 부하를 거듭 싣지 않는다.
   // 스쿼트 · RDL 뒤에 데드리프트를 붙이는 구성이 이 규칙 없이 자주 나온다.
   for (const [joint, stress] of Object.entries(exercise.jointStress) as [Joint, number][]) {

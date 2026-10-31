@@ -119,17 +119,19 @@ export function estimateSessionTime(
     const sets = item.sets.length;
     const reps = item.sets[0]?.targetReps.max ?? 10;
 
-    const rest = Math.round(
-      restFor({
-        exercise: item.exercise,
-        reps,
-        targetRir: session.targetRir,
-        band: config.restBand,
-        overrideSeconds: config.restOverrides?.[item.exercise.id],
-      }).seconds * config.restMultiplier,
-    );
+    // 배수는 restFor 안에서 곱한다 — 타이머와 같은 4분 상한을 받으려고(밖에서 곱하면 270초로 셌다)
+    const rest = restFor({
+      exercise: item.exercise,
+      reps,
+      targetRir: session.targetRir,
+      band: config.restBand,
+      overrideSeconds: config.restOverrides?.[item.exercise.id],
+      multiplier: config.restMultiplier,
+    }).seconds;
 
-    const work = sets * (reps * config.secondsPerRep + config.setupSeconds);
+    // 한쪽씩 하는 종목(불가리안 · 원암 로우 · 런지 · 컨센트레이션 컬)은 양쪽을 다 한다
+    const sides = item.exercise.unilateral ? 2 : 1;
+    const work = sets * (reps * config.secondsPerRep * sides + config.setupSeconds);
     // 마지막 세트 뒤에는 종목 간 전환 시간이 대신 들어간다.
     const restSeconds = Math.max(0, sets - 1) * rest;
 
@@ -316,9 +318,38 @@ export function fitToTimeBudget(
     }
   }
 
+  /*
+   * 순서 — 고립 종목을 통째로 빼기 전에 세트부터 고르게 줄인다.
+   *   1) 이번 주에 처방이 더 얹은 세트(템플릿 넘는 몫) — 뒤 종목부터
+   *   2) 고립 · 보조를 2세트까지, 메인을 3세트까지
+   *   3) 그래도 넘치면 고립 → 보조를 뺀다, 메인은 2세트까지
+   * 전에는 고립부터 줄이고 바로 빼서, 하루 45분이면 몇 주 안에 측면 삼각근 · 종아리가 0세트가 됐다
+   * (복합 종목은 주마다 세트가 늘고 휴식도 길어지는데 그 몫은 그대로였다).
+   */
+  const trimGrowth = () => {
+    let progressed = true;
+    while (current > budgetSeconds && progressed) {
+      progressed = false;
+      for (let i = working.exercises.length - 1; i >= 0 && current > budgetSeconds; i -= 1) {
+        const item = working.exercises[i]!;
+        const work = item.sets.filter((set) => !set.top).length;
+        if (item.templateSets === undefined || work <= item.templateSets) continue;
+        const from = item.sets.length;
+        working.exercises[i] = { ...item, sets: item.sets.slice(0, from - 1) };
+        adjustments.push({
+          exerciseId: item.exercise.id, name: item.exercise.name, action: 'trimSets', from, to: from - 1,
+          reason: '이번 주에 늘린 세트를 덜었습니다',
+        });
+        current = estimate().totalSeconds;
+        progressed = true;
+      }
+    }
+  };
+  trimGrowth();
   trim('isolation', minOther);
-  drop('isolation');
   trim('accessory', minOther);
+  trim('primary', Math.max(minPrimary, 3));
+  drop('isolation');
   drop('accessory');
   trim('primary', minPrimary);
 
@@ -355,7 +386,8 @@ export function fitToTimeBudget(
       `${Math.round(before.totalSeconds / 60)}분 → ${after.totalMinutes}분으로 맞췄습니다` +
         (dropped > 0 ? ` (종목 ${dropped}개 제외)` : '') + '.',
     );
-    notes.push('빠진 볼륨은 주간 처방이 다음 세션에서 메웁니다.');
+    // 다음 세션이 저절로 메우지 않는다 — 그렇다고 하면 거짓말이 된다
+    if (dropped > 0) notes.push('뺀 종목의 부위는 이번 주 세트가 모자랄 수 있습니다. 시간이 넉넉한 날 채우세요.');
   }
 
   return {
@@ -383,6 +415,8 @@ export interface TimeExtendOptions extends TimeOptions {
   maxExtraPerExercise?: number;
   /** 한 부위가 이 세션 하루에 받을 세트 상한 (기본 9 — 볼륨 셈의 하루 상한과 같다. 넘는 세트는 반만 센다) */
   sessionCap?: number;
+  /** 이 세션 전체에 더할 수 있는 세트 (기본 무제한) — 초보는 주마다 늘리는 폭(+3)을 넘지 않게 */
+  maxExtraTotal?: number;
 }
 
 /** 붙인 세트가 깎는 부위 — 보조 정도(0.25) 밑은 세지 않는다. 볼륨 셈과 같은 문턱. */
@@ -440,6 +474,7 @@ export function extendToTimeBudget(
       const work = item.sets.filter((set) => !set.top);
       const last = work[work.length - 1];
       if (!last || (added.get(item.exercise.id) ?? 0) > round || HEAVY_PULLS.has(item.exercise.id)) continue;
+      if (options.maxExtraTotal !== undefined && [...added.values()].reduce((sum, n) => sum + n, 0) >= options.maxExtraTotal) break;
       if (!fitsVolume(item)) { blockedByVolume = true; continue; }
       const extra = { ...last, setNumber: item.sets.length + 1 };
       const next = { ...working, exercises: working.exercises.map((one, j) => (j === i ? { ...one, sets: one.sets.concat([extra]) } : one)) };

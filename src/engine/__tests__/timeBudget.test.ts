@@ -148,7 +148,21 @@ describe('시간 예산에 맞추기', () => {
     assert.equal(result.fits, true);
     assert.ok(result.afterSeconds <= result.budgetSeconds);
     assert.ok(result.afterSeconds < result.beforeSeconds);
-    assert.ok(result.notes.some((note) => note.includes('다음 세션에서 메웁니다')));
+    assert.ok(result.notes.some((note) => note.includes('으로 맞췄습니다')));
+    // 다음 세션이 저절로 메운다고 하지 않는다 — 그런 일은 일어나지 않는다
+    assert.ok(!result.notes.some((note) => note.includes('다음 세션에서 메웁니다')));
+  });
+
+  it('고립 종목을 통째로 빼기 전에 세트를 고르게 줄인다 — 작은 부위가 0세트가 되지 않게', () => {
+    const result = fitToTimeBudget(session, 45);
+    const dropped = result.adjustments.filter((item) => item.action === 'drop').map((item) => item.exerciseId);
+    if (dropped.length > 0) {
+      // 뺀 게 있다면 메인이 이미 3세트 이하로 줄어 있어야 한다
+      result.session.exercises.forEach((item, i) => {
+        const role = classifyRoles(result.session.exercises)[i];
+        if (role === 'primary') assert.ok(item.sets.length <= 3, `${item.exercise.id} ${item.sets.length}세트인데 종목을 뺐다`);
+      });
+    }
   });
 
   it('조정 안내에 조사가 어긋나지 않는다', () => {
@@ -298,6 +312,13 @@ describe('시간이 넉넉한 날 — 세트를 더한다', () => {
     const roles = classifyRoles(session.exercises);
     const ids = new Set(session.exercises.filter((_, i) => roles[i] === 'primary').map((item) => item.exercise.id));
     assert.ok(result.adjustments.length > 0 && result.adjustments.every((item) => ids.has(item.exerciseId)));
+  });
+
+  it('세션 전체에 더할 세트 상한을 넘지 않는다 — 초보 90분 날', () => {
+    const before = estimateSessionTime(session).totalMinutes;
+    const total = (one: typeof session) => one.exercises.reduce((sum, item) => sum + item.sets.length, 0);
+    const result = extendToTimeBudget(session, before + 60, { headroom: plenty, maxExtraTotal: 3 });
+    assert.ok(total(result.session) - total(session) <= 3, `${total(result.session) - total(session)}세트 더함`);
   });
 
   it('이번 주 회복 한계에 닿는 부위는 더하지 않는다', () => {
