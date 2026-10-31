@@ -967,6 +967,7 @@
       var plan = week === 0
         ? coldStartPlan(monday)
         : E.planNextWeek({
+          level: state.lifter && state.lifter.level,
             sessions: history,
             checkIns: checkIns,
             index: index,
@@ -1249,6 +1250,7 @@
   function rebuildPlan() {
     if (LIVE) { rebuildLivePlan(); return; }
     state.plan = E.planNextWeek({
+      level: state.lifter && state.lifter.level,
       sessions: state.history,
       checkIns: state.checkIns,
       index: index,
@@ -1278,6 +1280,7 @@
     }
 
     var plan = E.planNextWeek({
+      level: state.lifter && state.lifter.level,
       sessions: state.history,
       checkIns: state.checkIns,
       index: index,
@@ -1379,7 +1382,7 @@
   function plannedRirFor(week) {
     if (week <= 0) return E.DELOAD_RIR;
     var start = E.levelProfile(state.block.level).startingRir;
-    return Math.max(E.targetRirFor(state.style, week), start - (week - 1));
+    return Math.max(E.targetRirFor(state.style, week, state.lifter && state.lifter.level), start - (week - 1));
   }
 
   /**
@@ -1451,7 +1454,7 @@
     var styled = Object.assign({}, state.plan, {
       targetRir: state.plan.phase === 'deload'
         ? state.plan.targetRir
-        : liveRir(E.targetRirFor(state.style, state.plan.weekInBlock)),
+        : liveRir(E.targetRirFor(state.style, state.plan.weekInBlock, state.lifter && state.lifter.level)),
     });
     state.plan = styled;
 
@@ -12760,7 +12763,7 @@
   /** 이번 주 계획을 다 했을 때 부위마다 근성장 기준을 넘는가 — 한 것도 같이. */
   function growthCard() {
     var planned = state.customRoutine
-      ? E.templateWeekLogs(state.program.templates)
+      ? E.templateWeekLogs(state.program.templates, undefined, state.plan.targetRir)
       : E.plannedWeekLogs({
         templates: state.program.templates, plan: state.plan, index: index, landmarks: state.landmarks,
         history: state.history, level: state.lifter && state.lifter.level,
@@ -17910,6 +17913,14 @@
     state.gym = result.gym;
     state.lifter = result.lifter;
     state.program = result.program;
+    /*
+     * 근력만 고른 중급 이상은 근력 블록으로 시작한다 — 휴식이 길고(×1.5) 볼륨이 적다. 근비대 블록
+     * 그대로면 벤치 4~6회에 2분 30초, 근력을 올리기에는 짧다. 초보는 근비대 블록에서 자세부터.
+     */
+    var goalsNow = (state.answers.goals || []);
+    if (goalsNow.indexOf('strength') >= 0 && goalsNow.indexOf('hypertrophy') < 0 && result.level.level !== 'beginner') {
+      state.style = 'strength';
+    }
     // 새로 짠 프로그램으로 간다 — 내 루틴은 지우지 않고 넣어 둔다
     if (state.customRoutine) state.lastRoutine = state.customRoutine;
     state.customRoutine = null;
@@ -18783,7 +18794,7 @@
 
     // 이 프로그램으로 근육이 크는가 — 부위마다 한 주 세트를 기준선과 맞대어 보여 준다
     var growth = E.growthCheck({
-      planned: E.templateWeekLogs(result.program.templates), done: [],
+      planned: E.templateWeekLogs(result.program.templates, undefined, result.firstWeek.targetRir), done: [],
       landmarks: E.landmarksFor(result.level.level), index: index,
     });
     screen.appendChild(el('div', { class: 'sheet growth-card' }, [

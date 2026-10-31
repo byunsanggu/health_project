@@ -72,11 +72,13 @@ type WeekDay = Pick<SessionTemplate, 'slots'>;
 
 /**
  * 이 세트대로 한 주를 다 했을 때의 기록 — 볼륨을 처방 · 볼륨 탭과 똑같은 셈으로 재려고.
- * 세트를 안 주면 템플릿 세트 그대로. 세트마다 반복 범위 가운데 · 여유 2개로 친다.
+ * 세트를 안 주면 템플릿 세트 그대로. 세트마다 반복 범위 가운데, 여유는 그 주 목표(없으면 2개)로 친다 —
+ * 초보 1주차는 4개 남기니 세트마다 덜 세어진다. 2개로 치면 실제보다 충분하다고 나왔다.
  */
 export function templateWeekLogs(
   templates: readonly WeekDay[],
   sets: readonly (readonly number[])[] = templates.map((template) => template.slots.map((slot) => slot.sets)),
+  rir = 2,
 ): SessionLog[] {
   return templates.map((template, d) => ({
     date: '',
@@ -85,7 +87,7 @@ export function templateWeekLogs(
         exerciseId: slot.exerciseId,
         weightKg: 0,
         reps: Math.round((slot.repRange.min + slot.repRange.max) / 2),
-        rir: 2,
+        rir,
       }))),
   }));
 }
@@ -105,6 +107,12 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
     ? Math.min(SESSION_GROWTH_MAX_GENTLE, SESSION_GROWTH_PER_WEEK_GENTLE * (week - 1))
     : Math.min(SESSION_GROWTH_MAX, SESSION_GROWTH_PER_WEEK * (week - 1));
   const dayCap = base.map((day) => day.reduce((sum, value) => sum + value, 0) + growth);
+  /*
+   * 최소선(MEV) 밑인 부위를 채울 때는 천천히 늘리는 상한(감량 · 초보 +1/주) 대신 보통 상한을 쓴다.
+   * 감량 주 3회에서 가슴이 8세트(최소 10)에 블록 내내 머물렀다 — 화면은 "주마다 채웁니다"라고 하면서.
+   */
+  const fillGrowth = Math.min(SESSION_GROWTH_MAX, SESSION_GROWTH_PER_WEEK * (week - 1));
+  const fillCap = base.map((day) => day.reduce((sum, value) => sum + value, 0) + Math.max(growth, fillGrowth));
   const daySum = (d: number) => sets[d]!.reduce((sum, value) => sum + value, 0);
   const exerciseAt = (d: number, i: number) => index.get(templates[d]!.slots[i]!.exerciseId);
   const volumeOf = () => aggregateVolume(templateWeekLogs(templates, sets), index);
@@ -126,11 +134,11 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
   if (targets.size === 0) return sets;
 
   /** 이 자리에 한 세트를 붙일 수 있는가 — 종목 · 하루 상한, 다른 부위의 한계 */
-  const canAdd = (d: number, i: number, muscle: MuscleGroup, now: ReturnType<typeof volumeOf>): boolean => {
+  const canAdd = (d: number, i: number, muscle: MuscleGroup, now: ReturnType<typeof volumeOf>, underMev = false): boolean => {
     const exercise = exerciseAt(d, i);
     // 그 부위가 주동근인 종목에만. 데드리프트는 무겁게 정한 세트 그대로 둔다
     if (!exercise || (exercise.contribution[muscle] ?? 0) < PRIMARY_MOVER || HEAVY_PULLS.has(exercise.id)) return false;
-    if (sets[d]![i]! >= base[d]![i]! + SLOT_SWING || daySum(d) >= dayCap[d]!) return false;
+    if (sets[d]![i]! >= base[d]![i]! + SLOT_SWING || daySum(d) >= (underMev ? fillCap : dayCap)[d]!) return false;
     return MUSCLE_GROUPS.every((other) => {
       if (other === muscle) return true;
       const value = exercise.contribution[other] ?? 0;
@@ -142,12 +150,12 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
   };
 
   /** 그 부위를 가장 많이 쓰는 자리 — 같으면 덜 늘린 곳, 가벼운 종목, 앞 순서 */
-  const bestSlot = (muscle: MuscleGroup, now: ReturnType<typeof volumeOf>): [number, number] | null => {
+  const bestSlot = (muscle: MuscleGroup, now: ReturnType<typeof volumeOf>, underMev = false): [number, number] | null => {
     let best: [number, number] | null = null;
     let bestScore: number[] = [];
     for (let d = 0; d < templates.length; d += 1) {
       for (let i = 0; i < templates[d]!.slots.length; i += 1) {
-        if (!canAdd(d, i, muscle, now)) continue;
+        if (!canAdd(d, i, muscle, now, underMev)) continue;
         const exercise = exerciseAt(d, i)!;
         const score = [exercise.contribution[muscle] ?? 0, -(sets[d]![i]! - base[d]![i]!), isLight(exercise) ? 1 : 0];
         if (!best || better(score, bestScore)) {
@@ -188,7 +196,7 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
       }))
       .filter((want) => want.gap >= 0.5)
       .sort((a, b) => Number(b.underMev) - Number(a.underMev) || b.gap - a.gap);
-    const pick = wants.map((want) => bestSlot(want.muscle, now)).find((slot) => slot !== null);
+    const pick = wants.map((want) => bestSlot(want.muscle, now, want.underMev)).find((slot) => slot !== null);
     if (pick) {
       sets[pick[0]]![pick[1]]! += 1;
       continue;
@@ -217,20 +225,37 @@ function startingSets(
   lastWeek: readonly SessionLog[],
 ): number[][] {
   const done = new Map<string, number>();
-  for (const session of lastWeek) {
+  // 종목마다 지난주 날짜 순으로 그날 한 세트 수 — 한 주에 여러 번 나오는 종목(사이드 레터럴 넷)을 날마다 맞추려고
+  const perVisit = new Map<string, number[]>();
+  for (const session of [...lastWeek].sort((a, b) => a.date.localeCompare(b.date))) {
+    const today = new Map<string, number>();
     for (const set of session.sets) {
       // 주 1회 무거운 세트는 덤으로 붙은 한 세트다 — 다음 주 세트 수의 출발점에 넣지 않는다
       if (set.warmup || set.top || set.reps <= 0) continue;
       done.set(set.exerciseId, (done.get(set.exerciseId) ?? 0) + 1);
+      today.set(set.exerciseId, (today.get(set.exerciseId) ?? 0) + 1);
     }
+    for (const [id, count] of today) perVisit.set(id, [...(perVisit.get(id) ?? []), count]);
   }
   const planned = new Map<string, number>();
+  const visits = new Map<string, number>();
   templates.forEach((template, d) => template.slots.forEach((slot, i) => {
     planned.set(slot.exerciseId, (planned.get(slot.exerciseId) ?? 0) + base[d]![i]!);
+    visits.set(slot.exerciseId, (visits.get(slot.exerciseId) ?? 0) + 1);
   }));
+  const seen = new Map<string, number>();
   return templates.map((template, d) => template.slots.map((slot, i) => {
     const own = base[d]![i]!;
-    const share = Math.round((done.get(slot.exerciseId) ?? 0) * own / (planned.get(slot.exerciseId) ?? own));
+    const nth = seen.get(slot.exerciseId) ?? 0;
+    seen.set(slot.exerciseId, nth + 1);
+    const days = perVisit.get(slot.exerciseId);
+    /*
+     * 지난주에도 같은 횟수만큼 나왔으면 그 자리의 그날 세트에서 출발한다. 전에는 주 합계를 자리마다
+     * 나눠 반올림해서, 풀 날 레터럴 3세트가 다른 날 2세트와 섞여 2세트로 돌아갔다(블록 안에서 줄었다).
+     */
+    const share = days && days.length === visits.get(slot.exerciseId)
+      ? days[nth]!
+      : Math.round((done.get(slot.exerciseId) ?? 0) * own / (planned.get(slot.exerciseId) ?? own));
     return Math.min(own + SLOT_SWING, Math.max(own, share));
   }));
 }

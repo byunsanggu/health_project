@@ -445,6 +445,8 @@ interface PickContext {
   beforeHeavyHinge: boolean;
   /** 이 헬스장에 랫풀다운 · 어시스트 풀업이 있다 */
   loadablePull: boolean;
+  /** 근력이 목표다(근비대 없이) — 바벨 주 종목을 주 2회, 맨몸 보조는 뒤로 */
+  strengthOnly?: boolean;
 }
 
 function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext): number {
@@ -475,8 +477,12 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
   if (slot.role !== 'primary' && exercise.equipment === 'bodyweight' && !BODYWEIGHT_PULLS.has(exercise.id)) {
     const bodyweightToday = context.today.filter((item) => item.equipment === 'bodyweight').length;
     // 주에 하나도 없으면 더 앞으로 — 주 3회 전신처럼 자리가 적어도 한 번은 들어가게.
-    if (bodyweightToday === 0) score += context.weekBodyweight === 0 ? 5 : 3;
+    // 근력 목표는 예외 — 무게를 못 올리는 푸시업 · 파이크 푸시업은 드는 무게를 올리는 데 도움이 안 된다.
+    if (context.strengthOnly) score -= 2;
+    else if (bodyweightToday === 0) score += context.weekBodyweight === 0 ? 5 : 3;
   }
+  // 근력 목표 — 메인 자리에는 바벨 주 종목(스쿼트 · 벤치 · 데드 · 오버헤드 · 로우)
+  if (context.strengthOnly && slot.role === 'primary' && isStrengthLift(exercise)) score += 5;
 
   // 딥스는 맨몸이어도 쉽지 않다 — 처음 시작하는 사람은 체중을 다 받아 내려가기 어렵고
   // 어깨 앞쪽이 먼저 아프다. 행잉 레그레이즈도 매달려 버틸 악력부터 필요하다.
@@ -503,6 +509,23 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
   if (HOME_FALLBACK.has(exercise.id)) score -= 3;
   // 데드리프트는 메인 자리에서 무겁게 하는 종목이다. 8~12회 보조로 돌리지 않는다.
   if (slot.role !== 'primary' && HEAVY_PULLS.has(exercise.id)) score -= 5;
+  /*
+   * 데드리프트 뒤의 바벨 스쿼트 보조(프론트 · 백 스쿼트 8~12회)는 등 위쪽 · 허리가 먼저 무너진다 —
+   * 이미 데드로 지친 척추에 바를 또 얹는 셈이다. 그날 하체 보조는 핵 스쿼트 · 레그프레스 · 런지 쪽으로.
+   */
+  if (slot.role !== 'primary' && exercise.pattern === 'squat' && (exercise.equipment === 'barbell' || exercise.equipment === 'smith') &&
+      context.today.some((item) => HEAVY_PULLS.has(item.id))) score -= 6;
+  // 고블릿 스쿼트는 들 수 있는 덤벨 하나가 상한 — 중급부터는 보조 자리에서도 금방 모자란다
+  if (exercise.id === 'goblet-squat' && level !== 'beginner') score -= 4;
+  /*
+   * 무게를 못 싣는 맨몸 밀기(푸시업 · 파이크 푸시업)는 상급자에게 모자란다 — 벤치 70kg×10인 사람은
+   * 푸시업을 25개 넘게 해야 두 개 남긴다. 파이크 푸시업은 중급부터 유일한 머리 위 프레스가 되면 안 된다.
+   * 무게를 싣는 종목이 있는 헬스장이면 그쪽을 먼저(홈짐은 대안이 없으니 그대로 남는다).
+   */
+  if (exercise.increment <= 0 && exercise.equipment === 'bodyweight' && !BODYWEIGHT_PULLS.has(exercise.id)) {
+    if (exercise.id === 'pike-push-up' && level !== 'beginner') score -= 4;
+    else if (level === 'advanced' || level === 'expert') score -= 4;
+  }
   const weak = WEAK_MAIN[exercise.id];
   if (slot.role === 'primary' && weak && (weak === 'all' || level !== 'beginner')) score -= 4;
 
@@ -793,6 +816,8 @@ export function buildProgram(
 
   const weeklyTargets: Partial<Record<MuscleGroup, number>> = {};
   const usedThisWeek = new Set<string>();
+  const goalPlan = planGoals(answers.goals);
+  const strengthOnly = goalPlan.goals.includes('strength') && !goalPlan.goals.includes('hypertrophy');
   let weekBodyweight = 0;
 
   // 1단계 — 종목부터 전부 고른다. 세트 수는 주 전체를 본 뒤에 정해야
@@ -809,6 +834,7 @@ export function buildProgram(
       weekBodyweight: 0,
       loadablePull: pool.some((exercise) => LOADABLE_PULLS.has(exercise.id)),
       beforeHeavyHinge: Boolean(next?.slots.some((slot) => slot.role === 'primary' && slot.patterns?.[0] === 'hinge')),
+      strengthOnly,
     };
 
     day.slots.forEach((slot, slotIndex) => {
@@ -820,7 +846,11 @@ export function buildProgram(
       } else {
         // 주 안에서 종목이 겹치지 않게 하되, 후보가 마르면 재사용을 허용한다.
         // 보조 · 고립 자리는 지난 블록 종목을 먼저 피한다.
-        const base = new Set([...usedToday, ...usedThisWeek, ...reserved]);
+        // 근력 목표는 바벨 주 종목을 주 2회 — 메인 자리는 이번 주에 이미 한 종목도 다시 고를 수 있다
+        const repeatable = strengthOnly && slot.role === 'primary'
+          ? [...usedThisWeek].filter((id) => { const item = exerciseById(id); return !item || !isStrengthLift(item); })
+          : [...usedThisWeek];
+        const base = new Set([...usedToday, ...repeatable, ...reserved]);
         const fresh = slot.role === 'primary' ? base : new Set([...base, ...rotateOut]);
         context.today = picked.map((item) => item.exercise);
         context.weekBodyweight = weekBodyweight;
@@ -1229,6 +1259,8 @@ function styledRange(
       if (role !== 'primary' || !plan.goals.includes('strength')) return range;
       const mixed = plan.goals.includes('hypertrophy');
       if (!strong || (mixed && !heavySlot)) return { min: 6, max: 10 };
+      // 근력만 — 같은 동작의 두 번째 날은 가벼운 날(6~8회): 무거운 날 · 가벼운 날
+      if (!heavySlot) return level === 'beginner' ? { min: 6, max: 10 } : { min: 6, max: 8 };
       return heavyRange(level);
     }
   }

@@ -104,7 +104,9 @@ export function groupByRegion<T>(
 const BASE_LANDMARKS: LandmarksByMuscle = {
   chest: { mev: 10, mav: 16, mrv: 22 },
   back: { mev: 10, mav: 18, mrv: 25 },
-  frontDelt: { mev: 0, mav: 8, mrv: 12 },
+  // 앞어깨는 프레스마다 0.5씩 간접으로 찬다 — 한계를 12로 두면 가슴이 적정에도 못 갔는데 앞어깨 "한계 넘음"이
+  // 오버헤드 프레스 세트를 깎았다(상급 주 6회). 간접 볼륨이 대부분인 부위라 한계를 넉넉히.
+  frontDelt: { mev: 0, mav: 10, mrv: 16 },
   sideDelt: { mev: 8, mav: 16, mrv: 26 },
   rearDelt: { mev: 6, mav: 12, mrv: 20 },
   traps: { mev: 4, mav: 12, mrv: 20 },
@@ -113,7 +115,9 @@ const BASE_LANDMARKS: LandmarksByMuscle = {
   forearms: { mev: 2, mav: 8, mrv: 16 },
   quads: { mev: 8, mav: 16, mrv: 20 },
   hamstrings: { mev: 6, mav: 12, mrv: 20 },
-  glutes: { mev: 4, mav: 12, mrv: 16 },
+  // 스쿼트 · 데드 · 런지가 둔근 몫을 많이 채운다 — 한계를 낮게 두면 둔근을 약점으로 고른 사람의
+  // 힙쓰러스트 자리가 1주차부터 "한계 넘음"으로 깎였다. 둔근은 큰 근육이고 회복도 빠른 편이다.
+  glutes: { mev: 4, mav: 16, mrv: 22 },
   calves: { mev: 8, mav: 16, mrv: 20 },
   abs: { mev: 0, mav: 12, mrv: 25 },
 };

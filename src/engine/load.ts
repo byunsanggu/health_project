@@ -134,6 +134,11 @@ export function prescribeLoad(
   const rirSurplus = observedRir - rule.targetRir;
   const sets = atTop.length > 1 ? `${atTop.length}세트 모두 ` : '';
 
+  // 0) 무게를 더할 수 없는 맨몸 종목(푸시업 · 파이크 푸시업 · 인버티드 로우)이 가벼워졌다 — "0kg 올립니다"가 아니라 더 어렵게
+  if (step <= 0 && last.weightKg <= 0 && ((reachedTop && rirSurplus >= 0) || rirSurplus >= 2)) {
+    return bodyweightHarder(exercise, rule, base);
+  }
+
   // 1) 모든 세트가 반복 상단 + 가장 빠듯한 세트도 여유 → 증량. 여유가 2 이상이면 두 칸(무게의 10% 안).
   if (reachedTop && rirSurplus >= 0) {
     const jump = jumpFor(exercise, last.weightKg, rirSurplus);
@@ -210,6 +215,27 @@ function failedOutright(exercise: Exercise, tried: SetLog, rule: LoadRule, base:
 }
 
 /** 맨몸으로 목표 하단을 못 채웠다 — 무게로는 더 낮출 수 없다. */
+/** 맨몸 종목을 더 어렵게 하는 법 — 무게 대신. */
+const HARDER: Record<string, string> = {
+  'push-up': '발을 의자나 벤치에 올린 푸시업',
+  'pike-push-up': '발을 상자에 올린 파이크 푸시업',
+  'inverted-row': '발을 앞으로 더 빼서(몸을 더 눕혀) 하는 인버티드 로우',
+  'chest-dip': '원판이나 덤벨을 다리 사이에 끼운 딥스',
+  'triceps-dip': '발을 벤치에 올린 딥스',
+};
+
+function bodyweightHarder(exercise: Exercise, rule: LoadRule, base: PrescriptionBase): LoadPrescription {
+  const harder = HARDER[exercise.id];
+  return {
+    ...base,
+    weightKg: 0,
+    change: 'hold',
+    deltaKg: 0,
+    reason: `${rule.repRange.max}회를 채우고도 여유가 남았습니다. 맨몸이라 무게를 더할 수 없으니 더 어렵게 하세요 — ` +
+      (harder ? `${harder}, ` : '') + '내려갈 때 3초 천천히, 또는 조끼 · 배낭에 무게를 넣어서. 계속 쉬우면 무게를 싣는 종목으로 바꾸는 게 낫습니다.',
+  };
+}
+
 function bodyweightShort(exercise: Exercise, reps: number, rule: LoadRule, base: PrescriptionBase): LoadPrescription {
   const aim = Math.max(1, reps);
   return {
@@ -245,6 +271,10 @@ export function adjustWithinSession(
   // 다섯 개 넘게 남았으면(RIR 5) 목표가 4여도 가벼운 것이다 — RIR은 5에서 끊기므로 차이가 1로 보일 뿐
   const light = surplus >= 2 || (observedRir >= 5 && surplus >= 1);
 
+  // 무게를 더할 수 없는 맨몸 종목은 세트 사이에 바꿀 무게가 없다
+  if (light && lastSet.reps >= rule.repRange.min && step <= 0) {
+    return { weightKg: lastSet.weightKg, deltaKg: 0, reason: '' };
+  }
   if (light && lastSet.reps >= rule.repRange.min) {
     const jump = step * (surplus >= 3 ? 2 : 1);
     return {

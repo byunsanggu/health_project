@@ -697,7 +697,7 @@ export const EXERCISES: readonly Exercise[] = [
   {
     id: 'kettlebell-swing', name: '케틀벨 스윙', nameEn: 'Kettlebell Swing',
     equipment: 'dumbbell', pattern: 'hinge', increment: 4,
-    contribution: { glutes: 1, hamstrings: 0.6, back: 0.3, abs: 0.3 },
+    contribution: { glutes: 0.6, hamstrings: 0.6, back: 0.3, abs: 0.3 },
     jointStress: { lowBack: 0.6, hip: 0.3, shoulder: 0.2 },
   },
   {
@@ -710,7 +710,7 @@ export const EXERCISES: readonly Exercise[] = [
     id: 'machine-hip-abduction', name: '힙 어브덕션 (아웃타이)', nameEn: 'Hip Abduction Machine',
     equipment: 'machine', pattern: 'isolation', increment: 5,
     // 중둔근이다. 엉덩이 볼륨으로 센다.
-    contribution: { glutes: 1 },
+    contribution: { glutes: 0.6 },
     jointStress: { hip: 0.25 },
   },
   {

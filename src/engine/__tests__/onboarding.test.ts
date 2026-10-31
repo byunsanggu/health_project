@@ -514,7 +514,13 @@ describe('근력 목표의 반복 범위', () => {
         const barbell = exercise.equipment === 'barbell' && !exercise.unilateral &&
           !['romanian-deadlift', 'stiff-leg-deadlift', 'good-morning', 'hip-thrust', 'landmine-press'].includes(exercise.id);
         if (!barbell) assert.deepEqual(slot.repRange, { min: 6, max: 10 }, exercise.name);
-        else assert.ok(lowRep(slot), `${exercise.name} ${slot.repRange.min}-${slot.repRange.max}`);
+        // 근력만이면 같은 동작의 두 번째 날은 가벼운 날(6~8회) — 무거운 날 · 가벼운 날
+        else assert.ok(slot.repRange.max <= 8, `${exercise.name} ${slot.repRange.min}-${slot.repRange.max}`);
+      }
+      // 동작마다 한 번은 무겁게(6회 이하)
+      const patterns = new Set(primaries(program).filter(({ exercise }) => exercise.equipment === 'barbell').map(({ exercise }) => exercise.pattern));
+      for (const pattern of patterns) {
+        assert.ok(primaries(program).some(({ slot, exercise }) => exercise.pattern === pattern && lowRep(slot)), pattern + ' 무거운 날이 없습니다');
       }
     }
   });

@@ -8,6 +8,7 @@ import type {
   LandmarksByMuscle,
   MuscleGroup,
   SessionLog,
+  TrainingLevel,
   VolumeZone,
 } from './types.ts';
 
@@ -54,6 +55,8 @@ export interface WeeklyPlan {
 }
 
 export interface PlanInput {
+  /** 경력 단계 — 초보는 목표 RIR 일정이 한 칸 여유 있다 */
+  level?: TrainingLevel;
   sessions: readonly SessionLog[];
   checkIns?: readonly CheckIn[];
   index: ReadonlyMap<string, Exercise>;
@@ -94,10 +97,10 @@ export const DELOAD_RIR = 4;
  * 블록 초반은 여유 있게 시작해 후반으로 갈수록 실패에 가까워진다.
  * 1주차부터 RIR 0으로 밀면 4주차에 남는 카드가 없다.
  */
-function targetRirFor(weekInBlock: number): number {
-  if (weekInBlock <= 1) return 3;
-  if (weekInBlock <= 3) return 2;
-  return 1;
+function targetRirFor(weekInBlock: number, level?: TrainingLevel): number {
+  const rir = weekInBlock <= 1 ? 3 : weekInBlock <= 3 ? 2 : 1;
+  // 초보는 한 칸 여유 있게(styles.ts BEGINNER_RIR_OFFSET과 같은 규칙)
+  return level === 'beginner' ? Math.min(4, rir + 1) : rir;
 }
 
 /**
@@ -118,7 +121,7 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
     lastWeekPhase: input.lastWeekPhase,
     // 1주차 앞 주는 지난 블록의 덜어내는 주다(여유 4개)
     plannedRir: input.plannedRir ?? (input.weekInBlock >= 1
-      ? { thisWeek: targetRirFor(input.weekInBlock), lastWeek: input.weekInBlock >= 2 ? targetRirFor(input.weekInBlock - 1) : DELOAD_RIR }
+      ? { thisWeek: targetRirFor(input.weekInBlock, input.level), lastWeek: input.weekInBlock >= 2 ? targetRirFor(input.weekInBlock - 1, input.level) : DELOAD_RIR }
       : undefined),
   });
 
@@ -184,7 +187,7 @@ export function planNextWeek(input: PlanInput): WeeklyPlan {
     weekStart: nextWeekStart(input.asOf),
     phase,
     weekInBlock: nextWeekInBlock,
-    targetRir: phase === 'deload' ? DELOAD_RIR : targetRirFor(nextWeekInBlock),
+    targetRir: phase === 'deload' ? DELOAD_RIR : targetRirFor(nextWeekInBlock, input.level),
     intensityMultiplier: phase === 'deload' ? 0.9 : 1,
     fatigue,
     volume,

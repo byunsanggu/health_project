@@ -149,10 +149,17 @@ export function styleProfile(style: TrainingStyle): StyleProfile {
 }
 
 /** 그 주차의 목표 RIR. 블록 길이를 넘어가면 마지막 값을 유지한다. */
-export function targetRirFor(style: TrainingStyle, weekInBlock: number): number {
+export function targetRirFor(style: TrainingStyle, weekInBlock: number, level?: TrainingLevel): number {
   const rirs = STYLE_PROFILES[style].rirByWeek;
-  return rirs[Math.min(Math.max(1, weekInBlock) - 1, rirs.length - 1)]!;
+  const rir = rirs[Math.min(Math.max(1, weekInBlock) - 1, rirs.length - 1)]!;
+  return level === 'beginner' ? Math.min(4, rir + BEGINNER_RIR_OFFSET) : rir;
 }
+
+/**
+ * 초보는 일정 전체를 한 칸 여유 있게 — 4 · 3 · 3 · 2 · 2. 자세가 자리 잡기 전에 "1개 남기고"까지 가면
+ * 마지막 반복에서 자세가 무너지고, 초보는 그렇게까지 안 가도 충분히 큰다.
+ */
+export const BEGINNER_RIR_OFFSET = 1;
 
 const LEVEL_ORDER: Record<TrainingLevel, number> = {
   beginner: 0, intermediate: 1, advanced: 2, expert: 3,

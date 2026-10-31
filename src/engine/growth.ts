@@ -63,7 +63,7 @@ export function plannedWeekLogs(input: PlannedWeekInput): SessionLog[] {
   const sets = planWeekSets({
     templates: input.templates, plan: input.plan, index: input.index, landmarks: input.landmarks, lastWeek, level: input.level,
   });
-  return templateWeekLogs(input.templates, sets);
+  return templateWeekLogs(input.templates, sets, input.plan.targetRir);
 }
 
 export interface GrowthInput {
