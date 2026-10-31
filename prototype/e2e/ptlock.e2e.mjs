@@ -14,7 +14,12 @@ export default async function ({ page, url, shot }) {
   await onboard(page);
   await choosePt(page);
   await page.evaluate(() => {
-    window.RestSound.playTrack = (bytes, anchor) => { window.__track = { bytes: bytes.byteLength, offset: (Date.now() - anchor) / 1000 }; };
+    window.RestSound.playTrack = (bytes, anchor) => { window.__track = { bytes: bytes.byteLength, offset: (Date.now() - anchor) / 1000, anchor }; };
+    // 실제로는 소리 파일이 시계와 같이 흐른다 — 앱은 돌아왔을 때 소리가 간 자리까지만 세트로 적는다
+    const real = window.RestSound.position;
+    window.RestSound.position = () => (window.__track
+      ? { time: (Date.now() - window.__track.anchor) / 1000, paused: false, ended: false }
+      : real());
   });
 
   await begin(page);
