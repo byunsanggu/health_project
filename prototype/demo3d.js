@@ -925,7 +925,10 @@
         canvas.removeEventListener('pointerup', onUp);
         canvas.removeEventListener('pointercancel', onUp);
         canvas.removeEventListener('wheel', onWheel);
+        // 그래픽 문맥을 브라우저에 돌려준다 — dispose만 하면 문맥이 남아, 폰에서 몇 번 열고 닫으면
+        // 개수 한도에 걸려 가장 오래된 3D 그림부터 꺼진다
         renderer.dispose();
+        if (renderer.forceContextLoss) renderer.forceContextLoss();
       },
     };
   }
