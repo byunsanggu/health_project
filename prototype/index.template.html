@@ -2618,6 +2618,10 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .end-workout { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .pt-toggle { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .pt-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.pt-rate { display: grid; gap: 6px; margin: 8px 0 4px; }
+.pt-rate-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.pt-rate .segmented { flex-wrap: nowrap; }
+.pt-rate .segmented button { flex: 1; padding: 8px 4px; font-size: 13.5px; }
 .end-workout:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ── 세어 주기 접힌 줄 · 묻는 방식 ──────────────── */

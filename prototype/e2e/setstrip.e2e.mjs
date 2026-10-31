@@ -15,7 +15,9 @@ export default async function ({ page, url, shot }) {
   const total = await page.locator('.set-strip').first().locator('.set-box').count();
   check(total >= 3, '세트 칸이 ' + total + '개입니다');
   check((await head()) === total + '세트 중 0세트 끝', '처음 머리줄: ' + await head());
-  check((await page.locator('.set-box.now').first().textContent()).includes('지금'), '지금 할 칸 표시가 없습니다');
+  // 지금 할 줄은 테두리 · 색으로 보인다 — "지금" 글자는 뺐다
+  check(await page.locator('.set-box.now').count() >= 1, '지금 할 칸 표시가 없습니다');
+  check(!(await page.locator('.set-box.now').first().textContent()).includes('지금'), '"지금" 글자가 아직 있습니다');
 
   // 세트 끝내기는 버튼 하나 — 남은 힘을 묻지 않는다
   check(await page.locator('.now-rir').count() === 0, '남은 힘 버튼이 아직 있습니다');

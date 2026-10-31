@@ -2618,6 +2618,10 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .end-workout { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .pt-toggle { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .pt-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.pt-rate { display: grid; gap: 6px; margin: 8px 0 4px; }
+.pt-rate-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.pt-rate .segmented { flex-wrap: nowrap; }
+.pt-rate .segmented button { flex: 1; padding: 8px 4px; font-size: 13.5px; }
 .end-workout:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ── 세어 주기 접힌 줄 · 묻는 방식 ──────────────── */
@@ -6983,6 +6987,7 @@ var RestSound = (function () {
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
+        ptRateByExercise: state.ptRateByExercise,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
         settingsUpdatedAt: state.settingsUpdatedAt,
@@ -7085,6 +7090,7 @@ var RestSound = (function () {
       state.friendCode = settings.friendCode || null;
       // 예전 기기 음성 시절 값(0.9 등)은 가장 가까운 칸으로
       state.voiceRate = nearestRate(settings.voiceRate || 1);
+      state.ptRateByExercise = settings.ptRateByExercise || {};
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
       state.settingsUpdatedAt = settings.settingsUpdatedAt || null;
@@ -7486,6 +7492,8 @@ var RestSound = (function () {
     cheersIn: [],
     autoCountedFor: null,
     voiceRate: 1,
+    /* 종목마다 PT 빠르기(말 · 세는 박자) — 없으면 voiceRate */
+    ptRateByExercise: {},
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
     reportSeenWeek: null,
     /* 오늘 한 유산소. [{exerciseId, minutes, zone, distanceKm, before}] */
@@ -13361,15 +13369,59 @@ var RestSound = (function () {
     }, 1);
   }
 
+  /** 이 종목의 PT 빠르기 — 그 종목에서 바꾼 적 있으면 그 값, 아니면 내 정보의 말 빠르기. */
+  function rateFor(exercise) {
+    var own = exercise && state.ptRateByExercise && state.ptRateByExercise[exercise.id];
+    return own || state.voiceRate || 1;
+  }
+
+  /** 지금 PT가 이끄는 종목 — 세는 중이면 그 종목, 아니면 지금 차례. */
+  function ptExercise() {
+    var at = state.counting ? state.counting.liftIndex : state.liftCursor;
+    var lift = state.lifts && state.lifts[at];
+    return lift ? lift.exercise : null;
+  }
+
+  function currentRate() {
+    return rateFor(ptExercise());
+  }
+
   /** 고른 목소리 · 말 빠르기로 맞춘다. */
   function useCoachVoice() {
     CoachVoice.setVoice(coachVoiceName());
-    CoachVoice.setRate(state.voiceRate || 1);
+    CoachVoice.setRate(currentRate());
   }
 
   /** 이 말이 나오는 데 걸리는 초 — 말 빠르기만큼 짧거나 길다. 세트 전 준비 시간 · 소리 파일 시간이 이걸 쓴다. */
   function spokenSeconds(text) {
-    return E.speechSeconds(text) / (state.voiceRate || 1);
+    return E.speechSeconds(text) / currentRate();
+  }
+
+  /** 이 종목 PT 빠르기를 바꾼다 — 그 종목에 저장되어 다음에도 그 빠르기. */
+  function setPtRate(exercise, value) {
+    if (!exercise) return;
+    state.ptRateByExercise = Object.assign({}, state.ptRateByExercise);
+    if (value === (state.voiceRate || 1)) delete state.ptRateByExercise[exercise.id];
+    else state.ptRateByExercise[exercise.id] = value;
+    state.lockTrack = null;
+    persist();
+    render();
+  }
+
+  /** PT 빠르기 줄 — PT를 켜고 운동하는 중에 바로 바꾼다. 종목마다 따로 저장. */
+  function ptRateRow(exercise) {
+    if (!exercise) return null;
+    var now = rateFor(exercise);
+    return el('div', { class: 'pt-rate' }, [
+      el('span', { class: 'pt-rate-label', text: '이 운동 PT 빠르기' }),
+      segmented(VOICE_RATES.map(function (value) {
+        return {
+          label: value === 1 ? '보통' : value + '배',
+          active: now === value,
+          onSelect: function () { setPtRate(exercise, value); },
+        };
+      })),
+    ]);
   }
 
   /** 하던 말을 끊는다. */
@@ -13789,7 +13841,8 @@ var RestSound = (function () {
       })));
     }
     // 말 빠르기 — 사람마다 알아듣기 편한 빠르기가 다르다. 높이는 그대로, 빠르기만.
-    box.appendChild(el('div', { class: 'list-label', text: '말 빠르기' }));
+    box.appendChild(el('div', { class: 'list-label', text: 'PT 빠르기 (기본)' }));
+    box.appendChild(el('p', { class: 'hint-line', text: '말과 세는 박자가 같이 빨라집니다. 운동마다 다르게 하려면 PT를 켜고 운동 화면에서 바꾸세요 — 그 운동에 저장됩니다.' }));
     box.appendChild(segmented(VOICE_RATES.map(function (value) {
       return {
         label: value === 1 ? '보통' : value + '배',
@@ -13924,7 +13977,11 @@ var RestSound = (function () {
    */
   function tempoOf(exercise) {
     // 속도를 고르는 칸은 없앴다 — 예전에 골라 둔 값이 보이지 않게 남아 PT 세기를 바꾸지 않게, 늘 종목 기본으로 센다.
-    return exercise ? E.defaultTempoFor(exercise) : E.DEFAULT_TEMPO;
+    var base = exercise ? E.defaultTempoFor(exercise) : E.DEFAULT_TEMPO;
+    // PT 빠르기만큼 세는 박자도 — 1.25배면 한 개에 걸리는 시간이 0.8배
+    var rate = rateFor(exercise);
+    if (rate === 1) return base;
+    return { eccentric: base.eccentric / rate, bottom: base.bottom / rate, concentric: base.concentric / rate, top: base.top / rate };
   }
 
   /**
@@ -14595,7 +14652,7 @@ var RestSound = (function () {
         }, [
           el('span', { class: 'set-no', text: '워밍업 ' + (i + 1) }),
           el('span', { class: 'set-load', text: load(set.weightKg, set.reps) }),
-          el('span', { class: 'set-state', text: done ? '✓' : now ? '지금' : (set.note || (set.percent ? Math.round(set.percent * 100) + '%' : '')) }),
+          el('span', { class: 'set-state', text: done ? '✓' : now ? '' : (set.note || (set.percent ? Math.round(set.percent * 100) + '%' : '')) }),
         ]));
       });
       // 워밍업도 세트처럼 더하고 뺀다 — 몸이 이미 풀렸거나 하기 싫은 날은 통째로 뺀다
@@ -14649,7 +14706,8 @@ var RestSound = (function () {
         onchange: function (event) { editSetInline(liftIndex, order, 'reps', event.target.value); },
       }), el('span', { class: 'set-unit', text: '회' }));
       cells.push(el('span', { class: 'set-fields' }, fields));
-      cells.push(now ? el('span', { class: 'set-state', text: '지금' }) : set.done
+      // 지금 줄은 테두리 · 색으로 이미 보인다 — 글자 "지금"은 뺐다(빈 칸으로 줄 맞춤만)
+      cells.push(now ? el('span', { class: 'set-state', 'aria-hidden': 'true' }) : set.done
         ? (function () {
             // 한 번 누르면 "지울까요?"로 바뀌고, 한 번 더 눌러야 지운다 — 잘못 스쳐 기록이 사라지지 않게
             var armKey = lift.exercise.id + ':' + order;
@@ -15334,6 +15392,7 @@ var RestSound = (function () {
     var sets = lift ? lift.sets.map(function (set) {
       return (set.done ? 'd' : '') + set.weightKg + 'x' + set.reps + '/' + set.targetReps.min + '-' + set.targetReps.max;
     }).join(',') + (needsWarmup(lift) ? ':w' : '') : '';
+    sets += '@' + currentRate();
     if (state.counting) return 'c:' + state.counting.liftIndex + ':' + state.counting.setIndex + ':' + state.counting.startedAt + ':' + sets;
     if (state.rest) return 'r:' + state.liftCursor + ':' + state.rest.endsAt + ':' + sets;
     return null;
@@ -15761,6 +15820,9 @@ var RestSound = (function () {
       el('b', { text: lift ? lift.exercise.name : '' }),
     ]));
 
+    // PT 빠르기 — 켜고 나서도 그 자리에서, 이 종목에만
+    if (phase !== 'prep' && lift) focusHost.appendChild(ptRateRow(lift.exercise));
+
     var middle = el('div', { class: 'focus-middle' }, []);
     var actions = el('div', { class: 'focus-actions' }, []);
     var pt = state.ptRun;
@@ -16036,6 +16098,7 @@ var RestSound = (function () {
     if (ptOn()) {
       var ptBits = ptSetBits(lift, liftIndex, setIndex);
       ptBits.forEach(function (bit) { body.push(bit); });
+      body.push(ptRateRow(lift.exercise));
     }
 
     // 몇 세트째인지는 목록의 "지금" 줄이 말한다. 무거운 세트만 한 줄 — 최대 도전이 아니다, 두어 개 남기고 멈춘다
@@ -17381,7 +17444,7 @@ var RestSound = (function () {
    */
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
-    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'autoCount',
+    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'ptRateByExercise', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
     'mistakeFlags', 'customRoutine', 'repOverrides', 'topSet',
   ];
