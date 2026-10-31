@@ -74,5 +74,28 @@ var RestSound = (function () {
     release();
   }
 
-  return { wake: wake, start: start, stop: stop };
+  /**
+   * 화면이 꺼질 때 코치 소리 한 줄(coachVoice renderTrack)을 튼다. anchor는 그 소리의 0초가
+   * 가리키는 시각(ms) — 만든 뒤 지난 만큼 건너뛰고 튼다.
+   */
+  function playTrack(bytes, anchor, label) {
+    var el = player();
+    release();
+    url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+    el.src = url;
+    var seek = function () {
+      el.removeEventListener('loadedmetadata', seek);
+      try { el.currentTime = Math.max(0, (Date.now() - anchor) / 1000); } catch (err) { void err; }
+    };
+    el.addEventListener('loadedmetadata', seek);
+    var played = el.play();
+    if (played && played.catch) played.catch(function () { /* 막혔다 — 돌아오면 멈춘 자리부터 */ });
+    if ('mediaSession' in navigator && window.MediaMetadata) {
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: 'PT 진행 중', artist: label || '볼륨 코치', album: '볼륨 코치' });
+      } catch (err) { void err; }
+    }
+  }
+
+  return { wake: wake, start: start, stop: stop, playTrack: playTrack };
 })();

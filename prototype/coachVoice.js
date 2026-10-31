@@ -201,6 +201,101 @@
     try { return localStorage.getItem('coachVoiceReady') === (name || voice); } catch (err) { return false; }
   }
 
+  /*
+   * 화면이 꺼져도 이어지는 코치 소리 — 앞으로 할 말들을 한 소리 파일(WAV)로 미리 만든다.
+   *
+   * 폰을 잠그면 페이지의 타이머가 멈춰서 말을 그때그때 예약할 수 없다. 그런데 이미 틀어 둔
+   * 소리 파일은 잠금 화면에서도 끝까지 나온다(휴식 끝 소리와 같은 길). 그래서 "쉬는 시간 무음 →
+   * 다음 세트 말 → 하나 둘 셋 … → 세트 뒤 말 → 쉬는 시간 …"을 시간대로 한 줄에 깔아 둔다.
+   *
+   * events: [{ at: 초, text } | { at: 초, chime: true }]. 앞 말이 아직 안 끝났으면 그 뒤로 민다.
+   * 16kHz · 16비트 · 모노 — 목소리에는 충분하고, 8분이면 15MB쯤이다.
+   */
+  var TRACK_RATE = 16000;
+
+  function renderTrack(events, seconds) {
+    var E = window.FitEngine;
+    return loadManifest().then(function (list) {
+      if (!list || !E) return null;
+      var plans = events.map(function (event) {
+        if (!event.text) return { event: event, ids: [] };
+        var plan = E.speechSentences(event.text, function (sentence) { return Boolean(list[E.clipId(sentence)]); });
+        return {
+          event: event,
+          ids: plan.map(function (sentence) {
+            return sentence.map(function (piece) { return E.clipId(piece); }).filter(function (id) { return list[id]; });
+          }),
+        };
+      });
+      var wanted = {};
+      plans.forEach(function (plan) { plan.ids.forEach(function (sentence) { sentence.forEach(function (id) { wanted[id] = true; }); }); });
+      var ids = Object.keys(wanted);
+      return Promise.all(ids.map(bufferFor)).then(function (loaded) {
+        var byId = {};
+        ids.forEach(function (id, i) { byId[id] = loaded[i]; });
+        var total = Math.max(1, Math.ceil(seconds * TRACK_RATE));
+        var bytes = new ArrayBuffer(44 + total * 2);
+        var pcm = new Int16Array(bytes, 44, total);
+        var free = 0;
+        plans.forEach(function (plan) {
+          var at = Math.max(plan.event.at, free);
+          if (plan.event.chime) { addChime(pcm, at); free = at + 0.7; return; }
+          plan.ids.forEach(function (sentence, si) {
+            sentence.forEach(function (id, pi) {
+              var buffer = byId[id];
+              if (!buffer) return;
+              addBuffer(pcm, buffer, at);
+              at += buffer.duration + (pi < sentence.length - 1 ? PIECE_GAP : 0);
+            });
+            if (si < plan.ids.length - 1) at += SENTENCE_GAP;
+          });
+          free = at + 0.12;
+        });
+        writeWavHeader(new DataView(bytes), total);
+        return bytes;
+      });
+    });
+  }
+
+  function addBuffer(pcm, buffer, at) {
+    var data = buffer.getChannelData(0);
+    var ratio = buffer.sampleRate / TRACK_RATE;
+    var start = Math.round(at * TRACK_RATE);
+    var length = Math.floor(data.length / ratio);
+    for (var i = 0; i < length && start + i < pcm.length; i += 1) {
+      if (start + i < 0) continue;
+      var src = i * ratio;
+      var k = Math.floor(src);
+      var frac = src - k;
+      var value = data[k] * (1 - frac) + (data[k + 1] || 0) * frac;
+      pcm[start + i] = clamp16(pcm[start + i] + value * 32767);
+    }
+  }
+
+  /** 띵-띵 — 쉬는 시간이 끝나는 자리. 휴식 끝 소리와 같은 높이. */
+  function addChime(pcm, at) {
+    [[0, 880], [0.28, 1175]].forEach(function (tone) {
+      var start = Math.round((at + tone[0]) * TRACK_RATE);
+      var length = Math.round(0.22 * TRACK_RATE);
+      for (var i = 0; i < length && start + i < pcm.length; i += 1) {
+        var fade = Math.min(1, i / 160, (length - i) / 800);
+        pcm[start + i] = clamp16(pcm[start + i] + Math.sin((2 * Math.PI * tone[1] * i) / TRACK_RATE) * 0.35 * fade * 32767);
+      }
+    });
+  }
+
+  function clamp16(value) {
+    return value > 32767 ? 32767 : value < -32768 ? -32768 : value;
+  }
+
+  function writeWavHeader(view, samples) {
+    var text = function (at, word) { for (var i = 0; i < word.length; i += 1) view.setUint8(at + i, word.charCodeAt(i)); };
+    text(0, 'RIFF'); view.setUint32(4, 36 + samples * 2, true); text(8, 'WAVE');
+    text(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, TRACK_RATE, true); view.setUint32(28, TRACK_RATE * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    text(36, 'data'); view.setUint32(40, samples * 2, true);
+  }
+
   function progress() {
     return { done: prefetch.done, total: prefetch.total, running: prefetch.running && prefetch.voice === voice };
   }
@@ -213,6 +308,7 @@
     download: download,
     ready: ready,
     progress: progress,
+    renderTrack: renderTrack,
     available: function () { return Boolean(window.AudioContext || window.webkitAudioContext); },
     /** 지금 무언가 나오고 있는가 */
     speaking: function () { var c = audio(); return Boolean(c && queueEnd > c.currentTime); },

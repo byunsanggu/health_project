@@ -311,6 +311,7 @@ input[type="search"] {
 .warmup-load { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted); }
 .warmup-pct { font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .warmup-note { padding: 6px 13px 9px; font-size: 11px; color: var(--muted); }
+.warmup-add { display: block; margin: 0 13px 10px; padding: 4px 0; border: 0; background: none; color: var(--accent); font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
 
 .decision {
   display: grid;
@@ -1354,6 +1355,9 @@ input[type="search"] {
 .set-box.done { border-style: solid; border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
 .set-box.done:hover { filter: brightness(1.08); }
 .set-box.now { border: 2px solid var(--accent); color: var(--accent); background: var(--accent-soft); }
+/* 한 세트 더 — 칸 줄 끝에, 눌러야 할 칸보다 조용하게 */
+.set-box.add { cursor: pointer; border-style: dashed; color: var(--accent); background: none; font: inherit; }
+.set-box.add .set-box-no { font-size: 16px; line-height: 1; }
 .now-head b { font-size: 18px; font-weight: 600; color: var(--accent); letter-spacing: -.01em; }
 .now-head .of { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .now-line .set-dots { margin-left: auto; flex-wrap: nowrap; }
@@ -5166,7 +5170,30 @@ var RestSound = (function () {
     release();
   }
 
-  return { wake: wake, start: start, stop: stop };
+  /**
+   * 화면이 꺼질 때 코치 소리 한 줄(coachVoice renderTrack)을 튼다. anchor는 그 소리의 0초가
+   * 가리키는 시각(ms) — 만든 뒤 지난 만큼 건너뛰고 튼다.
+   */
+  function playTrack(bytes, anchor, label) {
+    var el = player();
+    release();
+    url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+    el.src = url;
+    var seek = function () {
+      el.removeEventListener('loadedmetadata', seek);
+      try { el.currentTime = Math.max(0, (Date.now() - anchor) / 1000); } catch (err) { void err; }
+    };
+    el.addEventListener('loadedmetadata', seek);
+    var played = el.play();
+    if (played && played.catch) played.catch(function () { /* 막혔다 — 돌아오면 멈춘 자리부터 */ });
+    if ('mediaSession' in navigator && window.MediaMetadata) {
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: 'PT 진행 중', artist: label || '볼륨 코치', album: '볼륨 코치' });
+      } catch (err) { void err; }
+    }
+  }
+
+  return { wake: wake, start: start, stop: stop, playTrack: playTrack };
 })();
 </script>
 <script>/**
@@ -5372,6 +5399,101 @@ var RestSound = (function () {
     try { return localStorage.getItem('coachVoiceReady') === (name || voice); } catch (err) { return false; }
   }
 
+  /*
+   * 화면이 꺼져도 이어지는 코치 소리 — 앞으로 할 말들을 한 소리 파일(WAV)로 미리 만든다.
+   *
+   * 폰을 잠그면 페이지의 타이머가 멈춰서 말을 그때그때 예약할 수 없다. 그런데 이미 틀어 둔
+   * 소리 파일은 잠금 화면에서도 끝까지 나온다(휴식 끝 소리와 같은 길). 그래서 "쉬는 시간 무음 →
+   * 다음 세트 말 → 하나 둘 셋 … → 세트 뒤 말 → 쉬는 시간 …"을 시간대로 한 줄에 깔아 둔다.
+   *
+   * events: [{ at: 초, text } | { at: 초, chime: true }]. 앞 말이 아직 안 끝났으면 그 뒤로 민다.
+   * 16kHz · 16비트 · 모노 — 목소리에는 충분하고, 8분이면 15MB쯤이다.
+   */
+  var TRACK_RATE = 16000;
+
+  function renderTrack(events, seconds) {
+    var E = window.FitEngine;
+    return loadManifest().then(function (list) {
+      if (!list || !E) return null;
+      var plans = events.map(function (event) {
+        if (!event.text) return { event: event, ids: [] };
+        var plan = E.speechSentences(event.text, function (sentence) { return Boolean(list[E.clipId(sentence)]); });
+        return {
+          event: event,
+          ids: plan.map(function (sentence) {
+            return sentence.map(function (piece) { return E.clipId(piece); }).filter(function (id) { return list[id]; });
+          }),
+        };
+      });
+      var wanted = {};
+      plans.forEach(function (plan) { plan.ids.forEach(function (sentence) { sentence.forEach(function (id) { wanted[id] = true; }); }); });
+      var ids = Object.keys(wanted);
+      return Promise.all(ids.map(bufferFor)).then(function (loaded) {
+        var byId = {};
+        ids.forEach(function (id, i) { byId[id] = loaded[i]; });
+        var total = Math.max(1, Math.ceil(seconds * TRACK_RATE));
+        var bytes = new ArrayBuffer(44 + total * 2);
+        var pcm = new Int16Array(bytes, 44, total);
+        var free = 0;
+        plans.forEach(function (plan) {
+          var at = Math.max(plan.event.at, free);
+          if (plan.event.chime) { addChime(pcm, at); free = at + 0.7; return; }
+          plan.ids.forEach(function (sentence, si) {
+            sentence.forEach(function (id, pi) {
+              var buffer = byId[id];
+              if (!buffer) return;
+              addBuffer(pcm, buffer, at);
+              at += buffer.duration + (pi < sentence.length - 1 ? PIECE_GAP : 0);
+            });
+            if (si < plan.ids.length - 1) at += SENTENCE_GAP;
+          });
+          free = at + 0.12;
+        });
+        writeWavHeader(new DataView(bytes), total);
+        return bytes;
+      });
+    });
+  }
+
+  function addBuffer(pcm, buffer, at) {
+    var data = buffer.getChannelData(0);
+    var ratio = buffer.sampleRate / TRACK_RATE;
+    var start = Math.round(at * TRACK_RATE);
+    var length = Math.floor(data.length / ratio);
+    for (var i = 0; i < length && start + i < pcm.length; i += 1) {
+      if (start + i < 0) continue;
+      var src = i * ratio;
+      var k = Math.floor(src);
+      var frac = src - k;
+      var value = data[k] * (1 - frac) + (data[k + 1] || 0) * frac;
+      pcm[start + i] = clamp16(pcm[start + i] + value * 32767);
+    }
+  }
+
+  /** 띵-띵 — 쉬는 시간이 끝나는 자리. 휴식 끝 소리와 같은 높이. */
+  function addChime(pcm, at) {
+    [[0, 880], [0.28, 1175]].forEach(function (tone) {
+      var start = Math.round((at + tone[0]) * TRACK_RATE);
+      var length = Math.round(0.22 * TRACK_RATE);
+      for (var i = 0; i < length && start + i < pcm.length; i += 1) {
+        var fade = Math.min(1, i / 160, (length - i) / 800);
+        pcm[start + i] = clamp16(pcm[start + i] + Math.sin((2 * Math.PI * tone[1] * i) / TRACK_RATE) * 0.35 * fade * 32767);
+      }
+    });
+  }
+
+  function clamp16(value) {
+    return value > 32767 ? 32767 : value < -32768 ? -32768 : value;
+  }
+
+  function writeWavHeader(view, samples) {
+    var text = function (at, word) { for (var i = 0; i < word.length; i += 1) view.setUint8(at + i, word.charCodeAt(i)); };
+    text(0, 'RIFF'); view.setUint32(4, 36 + samples * 2, true); text(8, 'WAVE');
+    text(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, TRACK_RATE, true); view.setUint32(28, TRACK_RATE * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    text(36, 'data'); view.setUint32(40, samples * 2, true);
+  }
+
   function progress() {
     return { done: prefetch.done, total: prefetch.total, running: prefetch.running && prefetch.voice === voice };
   }
@@ -5384,6 +5506,7 @@ var RestSound = (function () {
     download: download,
     ready: ready,
     progress: progress,
+    renderTrack: renderTrack,
     available: function () { return Boolean(window.AudioContext || window.webkitAudioContext); },
     /** 지금 무언가 나오고 있는가 */
     speaking: function () { var c = audio(); return Boolean(c && queueEnd > c.currentTime); },
@@ -6638,7 +6761,8 @@ var RestSound = (function () {
    * 하는데, PT의 휴식은 세기가 끝나면 저절로 시작된다 — 그때도 울리게.
    */
   document.addEventListener('pointerdown', function () {
-    if (restSoundOn()) RestSound.wake();
+    // PT는 화면이 꺼지면 같은 재생기로 코치 소리를 잇는다(lockPlan) — 휴식 끝 소리를 꺼 둬도 깨운다
+    if (restSoundOn() || (ptOn() && typeof RestSound !== 'undefined')) RestSound.wake();
   }, true);
 
   /**
@@ -6752,6 +6876,7 @@ var RestSound = (function () {
         skipToday: state.skipToday,
         // 오늘 컨디션 — 이 폰에만, 하루짜리
         dayFeel: state.dayFeel,
+        todayExtras: state.todayExtras,
         friendName: state.friendName,
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
@@ -6852,6 +6977,7 @@ var RestSound = (function () {
       state.mobility = settings.mobility || null;
       state.skipToday = settings.skipToday || null;
       state.dayFeel = settings.dayFeel || null;
+      state.todayExtras = settings.todayExtras || null;
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
       state.voiceRate = settings.voiceRate || 1;
@@ -8169,9 +8295,73 @@ var RestSound = (function () {
         }),
       };
     });
+    applyTodayExtras(previous);
   }
 
-  /** 신고 RIR에 개인 편향 보정을 실은 집계 옵션. */
+  /** 운동 중에 더한 세트 · 워밍업 — 오늘만. 세션을 다시 짜도(통증 · 시간) 남는다. */
+  function todayExtras() {
+    if (!state.todayExtras || state.todayExtras.date !== state.todayDate) {
+      state.todayExtras = { date: state.todayDate, sets: {}, warmups: {} };
+    }
+    return state.todayExtras;
+  }
+
+  function applyTodayExtras(previous) {
+    var extras = state.todayExtras;
+    if (!extras || extras.date !== state.todayDate) return;
+    state.lifts.forEach(function (lift) {
+      var id = lift.exercise.id;
+      for (var k = 0; k < (extras.sets[id] || 0); k += 1) {
+        var kept = (previous[id] || [])[lift.sets.length];
+        lift.sets.push(kept && kept.done ? kept : extraSet(lift));
+      }
+      for (var w = 0; w < (extras.warmups[id] || 0); w += 1) lift.warmup = withExtraWarmup(lift);
+    });
+  }
+
+  /** 더하는 세트 — 마지막 본세트와 같은 무게 · 반복. */
+  function extraSet(lift) {
+    var work = lift.sets.filter(function (set) { return !set.top; });
+    var last = work[work.length - 1] || lift.sets[lift.sets.length - 1];
+    var kg = last ? last.weightKg : 0;
+    return {
+      weightKg: kg, plannedKg: kg, estimated: false,
+      targetReps: lift.repRange, targetRir: lift.targetRir,
+      reps: last && last.done ? last.reps : lift.repRange.max,
+      rir: null, done: false, adjustment: null, top: false,
+    };
+  }
+
+  /**
+   * 워밍업 한 세트 더 — 없으면 본세트의 절반 무게로 8회, 있으면 마지막 워밍업과 본세트 사이(최대 90%)로
+   * 두 개 덜. 맨몸 종목은 가볍게 한 세트(무게 0).
+   */
+  function withExtraWarmup(lift) {
+    var warmup = lift.warmup || { exerciseId: lift.exercise.id, sets: [], estimatedSeconds: 0, note: '' };
+    var first = lift.sets.filter(function (set) { return !set.top; })[0] || lift.sets[0];
+    var working = first ? (first.plannedKg || first.weightKg || 0) : 0;
+    var last = warmup.sets[warmup.sets.length - 1];
+    var percent = last ? Math.min(0.9, last.percent + 0.15) : 0.5;
+    var raw = working * percent;
+    var kg = working <= 0 ? 0
+      : lift.loading ? E.nearestLoadable(raw, lift.loading, 'down')
+      : lift.exercise.increment > 0 ? Math.floor(raw / lift.exercise.increment) * lift.exercise.increment : Math.round(raw);
+    var added = { weightKg: kg, reps: last ? Math.max(2, last.reps - 2) : 8, restSeconds: 45, percent: working > 0 ? percent : 0, note: '추가' };
+    return Object.assign({}, warmup, {
+      sets: warmup.sets.concat([added]),
+      estimatedSeconds: warmup.estimatedSeconds + added.reps * 3 + added.restSeconds,
+    });
+  }
+
+  function addWarmup(lift) {
+    var extras = todayExtras();
+    extras.warmups[lift.exercise.id] = (extras.warmups[lift.exercise.id] || 0) + 1;
+    lift.warmup = withExtraWarmup(lift);
+    state.warmupOpen[lift.exercise.id] = true;
+    persist();
+    render();
+  }
+
   /**
    * 부위마다 이번 주에 더 넣어도 되는 유효 세트 — 회복 한계(MRV) − 이번 주 계획(다 했을 때).
    * 시간이 넉넉한 날 세트를 붙일 때 이 선을 넘지 않는다. 근성장 체크와 같은 셈이다.
@@ -8188,6 +8378,7 @@ var RestSound = (function () {
     return room;
   }
 
+  /** 신고 RIR에 개인 편향 보정을 실은 집계 옵션. */
   function rirOptions() {
     var calibration = state.session && state.session.rirCalibration;
     return { rirOffset: calibration && calibration.applied ? calibration.offset : 0 };
@@ -8441,19 +8632,11 @@ var RestSound = (function () {
   }
 
   function addSet(lift) {
-    var last = lift.sets[lift.sets.length - 1];
-    lift.sets.push({
-      weightKg: last ? last.weightKg : 0,
-      plannedKg: last ? last.weightKg : 0,
-      estimated: false,
-      targetReps: lift.repRange,
-      targetRir: lift.targetRir,
-      reps: lift.repRange.max,
-      rir: null,
-      done: false,
-      adjustment: null,
-    });
+    var extras = todayExtras();
+    extras.sets[lift.exercise.id] = (extras.sets[lift.exercise.id] || 0) + 1;
+    lift.sets.push(extraSet(lift));
     lift.decision = null;
+    persist();
     render();
   }
 
@@ -8650,11 +8833,26 @@ var RestSound = (function () {
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState !== 'visible') {
       releaseWakeLock();
-      // PT는 화면 밖에서 말을 못 한다. 엉킨 숫자를 세느니 멈춰 둔다.
       if (ptOn() && state.started && state.ptRun && !state.ptRun.cooled) {
+        /*
+         * 화면 밖에서는 말을 예약할 수 없다. 미리 만들어 둔 소리 파일(남은 세기 · 쉬는 시간 · 다음
+         * 세트)이 있으면 그걸 틀고, 돌아오면 지난 시간만큼 기록을 맞춘다. 없으면 멈춰 둔다.
+         */
+        var lock = !state.ptRun.paused && state.lockTrack && state.lockTrack.bytes && state.lockTrack.sig === lockSig()
+          ? state.lockTrack : null;
         pausePt('background');
+        if (lock && Date.now() - lock.plan.anchor < lock.plan.duration * 1000) {
+          state.ptRun.lock = lock.plan;
+          RestSound.playTrack(lock.bytes, lock.plan.anchor, state.lifts[lock.plan.blocks[0].liftIndex].exercise.name);
+        }
         render();
       }
+      return;
+    }
+    if (ptOn() && state.started && state.ptRun && state.ptRun.lock) {
+      catchUpLock();
+      acquireWakeLock();
+      render();
       return;
     }
     if (ptOn() && state.started) {
@@ -8678,6 +8876,8 @@ var RestSound = (function () {
   });
 
   function renderRest() {
+    // +30초 · −30초로 휴식이 바뀌면 화면이 꺼질 때 틀 소리 파일도 다시 만든다
+    if (state.ptRun) prepareLockTrack();
     var host = document.getElementById('rest-host');
     if (!host) return;
     host.textContent = '';
@@ -9243,6 +9443,7 @@ var RestSound = (function () {
 
   function render() {
     if (wiping) return;
+    if (state.ptRun) prepareLockTrack();
     var onboarding = state.onboarding.active;
     /*
      * 로그인은 화면 하나를 통째로 쓴다. 모달 안에 넣어 봤더니 주소·열쇠·
@@ -12464,7 +12665,11 @@ var RestSound = (function () {
     var options = [
       { label: '동작 시연', hint: '수행 큐 · 흔한 실수 · 쓰는 근육', run: function () { openDemo(lift.exercise); } },
       { label: '사람 있어요', hint: '순서 변경 · 대체 · 대기 중에서 고릅니다', run: function () { openOccupancy(lift.exercise); } },
+      { label: '한 세트 더하기', hint: '마지막 세트와 같은 무게 · 반복으로 — 오늘만', run: function () { addSet(lift); } },
     ];
+    if (!lift.sets.some(function (set) { return set.done; })) {
+      options.push({ label: '워밍업 한 세트 더', hint: '본세트 전에 가볍게 한 번 더 — 오늘만', run: function () { addWarmup(lift); } });
+    }
     /*
      * 순서를 바꾸고 싶은 이유는 대개 둘이다 — "이거 먼저 하고 싶다", "이건
      * 나중에". ↑↓를 다섯 번 누르게 하지 않고 한 번에 보낸다.
@@ -13601,7 +13806,8 @@ var RestSound = (function () {
       cues = cues.filter(function (cue) { return cue.rep === 0 || cue.rep > from; })
         .map(function (cue) { return cue.rep === 0 ? cue : { atMs: cue.atMs - shift, say: cue.say, rep: cue.rep }; });
     }
-    var run = { liftIndex: liftIndex, setIndex: setIndex, rep: from, timers: [], startedAt: Date.now() };
+    // cues · lead는 화면이 꺼질 때 남은 세기를 소리 파일로 이어 붙이는 데 쓴다(lockPlan)
+    var run = { liftIndex: liftIndex, setIndex: setIndex, rep: from, timers: [], startedAt: Date.now(), cues: cues, lead: lead };
     state.counting = run;
 
     /*
@@ -14153,7 +14359,11 @@ var RestSound = (function () {
           el('span', { class: 'set-box-no', text: (order + 1) + '세트' }),
           el('span', { class: 'set-box-rec', text: now ? '지금' : '남음' }),
         ]);
-      })),
+      }).concat([el('button', {
+        type: 'button', class: 'set-box add',
+        'aria-label': lift.exercise.name + ' 한 세트 더하기',
+        onclick: function () { addSet(lift); },
+      }, [el('span', { class: 'set-box-no', text: '+' }), el('span', { class: 'set-box-rec', text: '세트' })])])),
     ]);
   }
 
@@ -14795,6 +15005,177 @@ var RestSound = (function () {
    * 그래서 나가는 순간 멈춰 두고, 돌아오면 이어서 한다. 휴식 시간은 끝나는
    * 시각으로 재므로 나가 있는 동안에도 맞게 흐른다.
    */
+  /* ── 화면이 꺼져도 PT 소리 ─────────────────────── */
+
+  /** 소리 파일은 길어야 8분 — 그 뒤는 화면을 켜면 이어 간다. */
+  var LOCK_MAX_SECONDS = 480;
+
+  /** 지금 PT가 어디쯤인지 — 이게 바뀌면 소리 파일을 다시 만든다. 세는 중 · 쉬는 중만. */
+  function lockSig() {
+    var pt = state.ptRun;
+    if (!ptOn() || !state.started || !pt || pt.paused || pt.warm || pt.cool || pt.prep || pt.cooled) return null;
+    if (state.counting) return 'c:' + state.counting.liftIndex + ':' + state.counting.setIndex + ':' + state.counting.startedAt;
+    if (state.rest) return 'r:' + state.liftCursor + ':' + state.rest.endsAt;
+    return null;
+  }
+
+  /** 세트 전 말 — coachBefore와 같은 말을, 했다고 적지 않고 만든다. */
+  function beforeText(liftIndex, setIndex) {
+    if (state.coachSaid[liftIndex + ':' + setIndex + ':before']) return '';
+    var lift = state.lifts[liftIndex];
+    var set = lift.sets[setIndex];
+    var demo = E.demoFor(lift.exercise);
+    var first = !triedBefore(lift.exercise);
+    return E.beforeSetLines({
+      style: state.coach.style, exerciseName: lift.exercise.name, setIndex: setIndex, totalSets: lift.sets.length,
+      weightKg: set.weightKg, pounds: inPounds(lift.exercise.id), repsMin: set.targetReps.min, repsMax: set.targetReps.max,
+      targetRir: typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir,
+      last: E.lastTimeFor(state.history, lift.exercise, state.todayDate, coachScope(lift)),
+      cues: demo ? demo.cues : [], firstTime: first, setup: first ? E.setupFor(lift.exercise) : [],
+      machineSetting: state.machineSettings[settingKeyFor(lift)] || null,
+      liftIndex: liftIndex, totalLifts: state.lifts.length, watch: watchFor(lift, setIndex, first), restrained: holdingBack(),
+    }).filter(Boolean).join(' ');
+  }
+
+  /**
+   * 지금부터 이 종목이 끝날 때까지(길어야 8분) PT가 할 말을 시간대로 늘어놓는다.
+   * 화면이 켜져 있을 때 PT가 하는 것과 같은 순서다 — 쉬고 → 띵 → 세트 전 말 → 준비 → 시작 · 하나 둘 … →
+   * 세트 뒤 말 · 쉬는 시간 안내 → 쉬고 …. blocks는 돌아왔을 때 어디까지 했는지 맞추는 데 쓴다.
+   * 슈퍼세트는 짝을 오가므로 만들지 않는다(그때는 예전처럼 멈춰 둔다).
+   */
+  function lockPlan() {
+    var anchor = Date.now();
+    var run = state.counting;
+    var liftIndex = run ? run.liftIndex : state.liftCursor;
+    var lift = state.lifts[liftIndex];
+    if (!lift || E.groupOf(state.supersets, lift.exercise.id)) return null;
+    var style = state.coach.style;
+    var events = [];
+    var blocks = [];
+    var t = 0;
+    var restLeft = run ? 0 : restRemaining();
+    var doneCount = lift.sets.filter(function (set) { return set.done; }).length;
+    var first = run ? run.setIndex : lift.sets.findIndex(function (set) { return !set.done; });
+    if (first < 0) return null;
+    for (var k = first; k < lift.sets.length && (t < LOCK_MAX_SECONDS || blocks.length === 0); k += 1) {
+      var set = lift.sets[k];
+      if (set.done) continue;
+      var counting = run && k === run.setIndex;
+      var beforeAt, cues;
+      if (counting) {
+        // 세는 중이던 세트 — 같은 박자표(run.cues)를 그 세트가 시작된 시각에 맞춰 놓는다
+        beforeAt = (run.startedAt - anchor) / 1000;
+        cues = run.cues;
+        events.push({ at: beforeAt + run.lead, text: '시작' });
+      } else {
+        t += restLeft;
+        events.push({ at: t, chime: true });
+        t += 0.8;
+        beforeAt = t;
+        var said = beforeText(liftIndex, k);
+        if (said) events.push({ at: t, text: E.forSpeech(said) });
+        var lead = said ? Math.max(AUTO_LEAD_SECONDS, Math.ceil(E.speechSeconds(said)) + 3) : AUTO_LEAD_SECONDS;
+        cues = E.buildCues({
+          repRange: set.targetReps, tempo: tempoOf(lift.exercise), leadInSeconds: lead,
+          lastCall: E.lastCallLine(style), slowdown: true,
+        });
+        events.push({ at: beforeAt + lead, text: '시작' });
+      }
+      var easyRir = (typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir) >= 3;
+      var repTimes = [];
+      cues.forEach(function (cue) {
+        if (cue.rep === 0) return;
+        var at = beforeAt + cue.atMs / 1000;
+        repTimes.push({ rep: cue.rep, at: at });
+        events.push({ at: at, text: cue.say });
+        if (set.targetReps.max >= 5 && cue.rep === set.targetReps.max - 2) {
+          events.push({ at: at + 0.6, text: E.forSpeech(E.pushLine(style, liftIndex + k, holdingBack() || easyRir)) });
+        }
+      });
+      var end = (repTimes.length ? repTimes[repTimes.length - 1].at : beforeAt) + 0.7;
+      var isLast = k === lift.sets.length - 1;
+      var reps = set.targetReps.max;
+      var rest = E.restFor(restInput(lift, reps, isLast)).seconds;
+      var next = lift.sets[k + 1];
+      doneCount += 1;
+      var after = E.afterSetLines({
+        style: style, feel: 'right', lastOfLift: isLast, nextWeightKg: next ? next.weightKg : undefined, deltaKg: 0,
+        pounds: inPounds(lift.exercise.id), setsDone: doneCount, at: liftIndex + k, name: state.friendName,
+      });
+      if (!isLast) after = after.concat([E.restAnnounceLine(style, { seconds: rest, nextSet: k + 2 })]);
+      var afterText = E.forSpeech(after.filter(Boolean).join(' '));
+      events.push({ at: end, text: afterText });
+      blocks.push({ liftIndex: liftIndex, setIndex: k, beforeAt: beforeAt, end: end, reps: reps, rest: rest, repTimes: repTimes });
+      t = end + E.speechSeconds(afterText);
+      restLeft = Math.max(0, rest - E.speechSeconds(afterText));
+    }
+    if (!blocks.length) return null;
+    return { anchor: anchor, events: events, blocks: blocks, duration: t + 2 };
+  }
+
+  /** 지금 자리에 맞는 소리 파일을 미리 만들어 둔다. 화면이 꺼지는 순간에는 만들 시간이 없다. */
+  function prepareLockTrack() {
+    var sig = lockSig();
+    if (!sig || typeof RestSound === 'undefined' || !voiceReady()) { state.lockTrack = null; return; }
+    if (state.lockTrack && state.lockTrack.sig === sig) return;
+    var plan = lockPlan();
+    if (!plan) { state.lockTrack = null; return; }
+    var job = { sig: sig, plan: plan, bytes: null };
+    state.lockTrack = job;
+    CoachVoice.setVoice(coachVoiceName());
+    CoachVoice.renderTrack(plan.events, plan.duration).then(function (bytes) {
+      if (state.lockTrack === job) job.bytes = bytes;
+    }).catch(function () { /* 못 만들면 예전처럼 멈춘다 */ });
+  }
+
+  /**
+   * 화면을 다시 켰다 — 꺼져 있는 동안 소리 파일이 센 세트를 적고, 지금 있어야 할 자리로 간다.
+   * 세는 중이면 그 개수부터, 쉬는 중이면 남은 시간으로, 세트 전 말 중이면 그 세트를 바로 시작한다.
+   */
+  function catchUpLock() {
+    var pt = state.ptRun;
+    var plan = pt.lock;
+    pt.lock = null;
+    RestSound.stop();
+    var elapsed = (Date.now() - plan.anchor) / 1000;
+    var here = null;
+    plan.blocks.forEach(function (block) {
+      var lift = state.lifts[block.liftIndex];
+      var set = lift && lift.sets[block.setIndex];
+      if (!set || set.done || here) return;
+      if (block.end <= elapsed) {
+        set.reps = block.reps;
+        var target = typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir;
+        completeSet(block.liftIndex, block.setIndex, E.rirFromReps(block.reps, set.targetReps, target));
+        state.coachSaid[block.liftIndex + ':' + block.setIndex + ':before'] = true;
+        // 휴식은 그 세트가 끝난 때부터 — 돌아온 지금부터가 아니다
+        if (state.rest) state.rest.endsAt = Date.now() + (block.end + block.rest - elapsed) * 1000;
+        return;
+      }
+      if (block.beforeAt > elapsed) return;
+      var counted = block.repTimes.filter(function (item) { return item.at <= elapsed; });
+      here = { block: block, rep: counted.length ? counted[counted.length - 1].rep : 0 };
+    });
+    pt.paused = false;
+    pt.pausedWhy = null;
+    pt.resume = null;
+    if (here) {
+      if (state.rest) stopRest();
+      state.coachSaid[here.block.liftIndex + ':' + here.block.setIndex + ':before'] = true;
+      if (here.rep > 0) {
+        pt.resume = { liftIndex: here.block.liftIndex, setIndex: here.block.setIndex, rep: here.rep };
+        pt.paused = true;
+        resumePt();
+        return;
+      }
+      state.autoCountedFor = null;
+      return;
+    }
+    if (state.rest && restRemaining() <= 0) stopRest(true);
+    else if (state.rest && restSoundOn()) RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
+    state.autoCountedFor = null;
+  }
+
   function pausePt(why) {
     var pt = state.ptRun;
     if (!pt || pt.paused) return;
@@ -16535,11 +16916,15 @@ var RestSound = (function () {
     warmup.sets.forEach(function (set, i) {
       wrap.appendChild(el('div', { class: 'warmup-set' }, [
         el('span', { class: 'set-no', text: 'W' + (i + 1) }),
-        el('span', { class: 'warmup-load', text: set.weightKg + 'kg × ' + set.reps + '회' }),
+        el('span', { class: 'warmup-load', text: (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회' }),
         el('span', { class: 'warmup-pct', text: Math.round(set.percent * 100) + '%' + (set.note ? ' · ' + set.note : '') }),
       ]));
     });
-    wrap.appendChild(el('div', { class: 'warmup-note', text: warmup.note }));
+    if (warmup.note) wrap.appendChild(el('div', { class: 'warmup-note', text: warmup.note }));
+    wrap.appendChild(el('button', {
+      type: 'button', class: 'link-btn warmup-add', text: '+ 워밍업 한 세트 더',
+      onclick: function () { addWarmup(lift); },
+    }));
     return wrap;
   }
 

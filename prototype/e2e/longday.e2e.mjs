@@ -30,6 +30,19 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('.lift-more').count() === 1, '종목 ⋯ 메뉴가 없습니다');
   await shot('2-lift');
 
+  // 운동 중에 세트 · 워밍업 더하기 — 세트 칸 끝의 "+ 세트", 워밍업 칸의 "+ 워밍업 한 세트 더"
+  const boxes = async () => page.locator('.set-strip .set-box:not(.add)').count();
+  const setsBefore = await boxes();
+  await page.locator('.set-box.add').click();
+  check(await boxes() === setsBefore + 1, '세트를 더했는데 칸이 그대로입니다');
+  const warmBefore = await page.locator('.warmup-set').count();
+  await page.locator('.warmup-add').click();
+  check(await page.locator('.warmup-set').count() === warmBefore + 1, '워밍업을 더했는데 그대로입니다');
+  await page.reload();
+  await page.waitForSelector('.set-strip');
+  check(await boxes() === setsBefore + 1, '다시 켜니 더한 세트가 사라졌습니다');
+  check(await page.locator('.warmup-set').count() === warmBefore + 1, '다시 켜니 더한 워밍업이 사라졌습니다');
+
   // 휴식 시간 — 내 정보에서 고른다
   await tab(page, '내 정보');
   const card = page.locator('.rest-settings');
