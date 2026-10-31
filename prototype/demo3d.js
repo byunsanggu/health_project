@@ -1024,6 +1024,9 @@
         var bone = bones[name];
         var thick = name === 'chest' || name === 'lumbar' ? 26 : name === 'pelvis' ? 24 : /thigh/.test(name) ? 14 : /shin|upperArm/.test(name) ? 10 : 8;
         line(bone.a, bone.b, thick * unit / 160, /R$/.test(name) ? hex(colors.muscle) : skin);
+        // 평면 그림에도 반바지 — 골반과 허벅지 위쪽 2/3를 바지 색으로(맨살 막대 인형으로 보이지 않게)
+        if (name === 'pelvis') line(bone.a, bone.b, (thick + 4) * unit / 160, hex(colors.shorts));
+        if (/thigh/.test(name)) line(bone.a, add3(bone.a, mul3(sub3(bone.b, bone.a), 0.62)), (thick + 3) * unit / 160, hex(colors.shorts));
       });
       var head = project(add3(bones.head.a, mul3(norm3(sub3(bones.head.b, bones.head.a)), 0.09)));
       ctx.fillStyle = skin;

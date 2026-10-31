@@ -155,6 +155,12 @@ const ASSETS = [
 for (const name of ASSETS) {
   await copyFile(new URL(name, root), new URL(`dist/${name}`, root));
 }
+/*
+ * 3D 시연이 쓰는 three.js(r128, MIT)는 앱이 직접 들고 간다. 전에는 CDN에서 받았는데, 그 주소가 막히거나
+ * 늦은 폰에서는 모든 3D 동작이 평면 막대 인형으로 떨어졌다(반바지 · 근육 없이 선만).
+ */
+await mkdir(new URL('dist/vendor/', root), { recursive: true });
+await copyFile(new URL('vendor/three.min.js', root), new URL('dist/vendor/three.min.js', root));
 
 console.log(`built ${target.pathname} — ${(page.length / 1024).toFixed(1)} KB`);
 console.log(`       + PWA 부속 ${ASSETS.length}개 (manifest · sw · 아이콘)`);

@@ -9,13 +9,13 @@
  * 넣는 게 정상이다. 화면이 꺼지면 페이지의 타이머는 throttle되거나 멈추지만,
  * 서비스 워커의 알림은 시계까지 간다.
  */
-const VERSION = 'volume-coach-v2';
+const VERSION = 'volume-coach-v3';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 /*
- * 입체 시연이 쓰는 three.js. 다른 출처(CDN)지만 주소에 버전이 박혀 있어 바뀌지 않으므로
+ * 입체 시연이 쓰는 three.js — 앱과 같은 주소에 둔다(예전엔 CDN). 버전이 박혀 바뀌지 않으므로
  * 처음 설치할 때 받아 두고 캐시에서 준다 — 지하 헬스장에서도 시연이 평면으로 떨어지지 않게.
  */
-const THREE_JS = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+const THREE_JS = new URL('./vendor/three.min.js', self.location.href).href;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

@@ -3,3 +3,4 @@ node_modules/
 *.log
 __pycache__/
 prototype/dist/voice/
+prototype/dist/vendor/
