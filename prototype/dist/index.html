@@ -8440,6 +8440,8 @@ var RestSound = (function () {
         lift.sets.splice(last, 1);
       }
       for (var w = 0; w < (extras.warmups[id] || 0); w += 1) lift.warmup = withExtraWarmup(lift);
+      // 뺀 워밍업 — 뒤에서부터
+      for (var x = 0; x < -(extras.warmups[id] || 0) && lift.warmup && lift.warmup.sets.length; x += 1) lift.warmup = withoutLastWarmup(lift);
     });
     // 아직 안 한 세트에 미리 고쳐 둔 무게 · 횟수 — 다시 켜거나 세션을 다시 짜도 그대로
     (extras.edits || []).forEach(function (edit) {
@@ -8513,6 +8515,35 @@ var RestSound = (function () {
     lift.sets.splice(order, 1);
     lift.decision = null;
     pushLog('세트 뺌', '<b>' + lift.exercise.name + '</b> 한 세트를 뺐습니다 — 오늘만.');
+    persist();
+    render();
+  }
+
+  /** 마지막 워밍업 한 세트를 뺀 워밍업 — 시간도 그만큼 뺀다. */
+  function withoutLastWarmup(lift) {
+    var sets = lift.warmup.sets;
+    var gone = sets[sets.length - 1];
+    return Object.assign({}, lift.warmup, {
+      sets: sets.slice(0, -1),
+      estimatedSeconds: Math.max(0, lift.warmup.estimatedSeconds - (gone ? gone.reps * 3 + (gone.restSeconds || 0) : 0)),
+    });
+  }
+
+  /** 워밍업 빼기 — 하나씩, 또는 모두. 오늘만. */
+  function removeWarmup(lift, all) {
+    if (!lift.warmup || !lift.warmup.sets.length) return;
+    var id = lift.exercise.id;
+    var extras = todayExtras();
+    var count = all ? lift.warmup.sets.length : 1;
+    for (var k = 0; k < count; k += 1) lift.warmup = withoutLastWarmup(lift);
+    extras.warmups[id] = (extras.warmups[id] || 0) - count;
+    // 뺀 자리의 ✓ 표시도 지운다 — 다시 더했을 때 안 한 워밍업이 한 것으로 보이지 않게
+    if (extras.warmDone && extras.warmDone[id]) extras.warmDone[id] = extras.warmDone[id].slice(0, lift.warmup.sets.length);
+    var liftIndex = state.lifts.indexOf(lift);
+    // PT가 이 종목 워밍업을 하는 중인데 다 뺐거나 지금 하던 것을 뺐으면 본세트로
+    var warm = state.ptRun && state.ptRun.warm;
+    if (warm && warm.liftIndex === liftIndex && warm.index >= lift.warmup.sets.length) skipWarmup(liftIndex);
+    pushLog('워밍업 뺌', '<b>' + lift.exercise.name + '</b> ' + (lift.warmup.sets.length ? '워밍업 한 세트를 뺐습니다' : '워밍업 없이 바로 본세트로 갑니다') + ' — 오늘만.');
     persist();
     render();
   }
@@ -14567,11 +14598,25 @@ var RestSound = (function () {
           el('span', { class: 'set-state', text: done ? '✓' : now ? '지금' : (set.note || (set.percent ? Math.round(set.percent * 100) + '%' : '')) }),
         ]));
       });
-      rows.push(el('button', {
-        type: 'button', class: 'set-add warmup-add', text: '+ 워밍업',
-        'aria-label': lift.exercise.name + ' 워밍업 한 세트 더하기',
-        onclick: function () { addWarmup(lift); },
-      }));
+      // 워밍업도 세트처럼 더하고 뺀다 — 몸이 이미 풀렸거나 하기 싫은 날은 통째로 뺀다
+      var warmCount = lift.warmup.sets.length;
+      rows.push(el('div', { class: 'set-adds' }, [
+        el('button', {
+          type: 'button', class: 'set-add warmup-add', text: '+ 워밍업',
+          'aria-label': lift.exercise.name + ' 워밍업 한 세트 더하기',
+          onclick: function () { addWarmup(lift); },
+        }),
+        warmCount > 0 ? el('button', {
+          type: 'button', class: 'set-add minus warmup-remove', text: '− 워밍업',
+          'aria-label': lift.exercise.name + ' 마지막 워밍업 빼기',
+          onclick: function () { removeWarmup(lift, false); },
+        }) : null,
+        warmCount > 1 ? el('button', {
+          type: 'button', class: 'set-add minus warmup-none', text: '워밍업 안 함',
+          'aria-label': lift.exercise.name + ' 워밍업 모두 빼기',
+          onclick: function () { removeWarmup(lift, true); },
+        }) : null,
+      ]));
     }
     sets.forEach(function (set, order) {
       var now = order === cursor;
@@ -14921,7 +14966,9 @@ var RestSound = (function () {
       later(function () {
         // 다 센 워밍업은 목록에 ✓
         checkWarmup(lift, i, true);
-        if (i < steps.length - 1) {
+        // PT가 하는 중에 워밍업을 뺐으면 남은 것까지만 — 뺀 세트를 하지 않는다
+        var live = lift.warmup ? lift.warmup.sets.length : 0;
+        if (i < Math.min(steps.length, live) - 1) {
           run.phase = 'rest';
           run.endsAt = Date.now() + steps[i].restSeconds * 1000;
           coachSay([E.warmupRestLine(state.coach.style, steps[i].restSeconds)]);
@@ -14974,7 +15021,8 @@ var RestSound = (function () {
   function ptWarmBanner(lift, liftIndex) {
     var warm = state.ptRun && state.ptRun.warm;
     if (!warm || warm.liftIndex !== liftIndex) return null;
-    var set = lift.warmup.sets[warm.index];
+    var set = lift.warmup && lift.warmup.sets[warm.index];
+    if (!set) return null;
     var left = warm.phase === 'rest' && warm.endsAt ? Math.max(0, Math.ceil((warm.endsAt - Date.now()) / 1000)) : null;
     return el('div', { class: 'pt-warm' }, [
       el('div', { class: 'pt-warm-head' }, [

@@ -70,7 +70,7 @@ export default async function ({ page, url, shot }) {
   // 세트 빼기 — 남은 세트 줄의 ✕, 맨 아래 "− 세트". 다시 켜도 빠진 채로
   const beforeRemove = await boxes();
   await page.locator('.set-strip .set-box .set-remove').last().click();
-  await page.locator('.set-add.minus').click();
+  await page.locator('.set-add.minus', { hasText: '− 세트' }).click();
   check(await boxes() === beforeRemove - 2, '세트를 뺐는데 그대로입니다');
   await page.reload();
   await page.waitForSelector('.set-strip');

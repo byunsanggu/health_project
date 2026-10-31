@@ -1,4 +1,4 @@
-// 세트 줄 미리 고치기 — 고친 무게는 앞 세트를 끝내도 · 다시 켜도 그대로, 0kg은 받지 않고, ✓는 두 번 눌러야 지운다.
+// 세트 줄 미리 고치기 · 워밍업 빼기 — 고친 무게는 앞 세트를 끝내도 · 다시 켜도 그대로, 0kg은 받지 않고, ✓는 두 번 눌러야 지운다.
 //   전에는 다음 세트를 40kg으로 고쳐도 앞 세트를 끝내면 말없이 45kg으로 돌아갔고, 다시 켜면 고친 값이 사라졌다.
 import { check, onboard, startWorkout } from './lib.mjs';
 
@@ -11,6 +11,23 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
   await startWorkout(page);
+
+  // 워밍업 빼기 — 하나씩, 또는 "워밍업 안 함"으로 모두. 다시 켜도 빠진 그대로, 더하기는 남는다
+  const warmRows = () => page.locator('.set-strip').first().locator('.warmup-set').count();
+  const warm0 = await warmRows();
+  check(warm0 >= 2, '바벨 벤치에 워밍업 줄이 ' + warm0 + '개');
+  await page.locator('.warmup-add').first().scrollIntoViewIfNeeded();
+  await shot('w-rows');
+  await page.locator('.warmup-remove').first().click();
+  check(await warmRows() === warm0 - 1, '− 워밍업을 눌렀는데 줄지 않았습니다');
+  if (warm0 - 1 > 1) await page.locator('.warmup-none').first().click();
+  else await page.locator('.warmup-remove').first().click();
+  check(await warmRows() === 0, '워밍업이 남아 있습니다: ' + await warmRows());
+  await page.reload();
+  await page.locator('.set-strip').first().waitFor();
+  check(await warmRows() === 0, '다시 켜니 뺀 워밍업이 돌아왔습니다');
+  check(await page.locator('.warmup-add').count() > 0, '워밍업을 다 빼니 다시 더할 버튼이 없습니다');
+  await shot('w-none');
 
   const start = await weights(page);
   check(start.length >= 3 && Number(start[0]) > 0, '처음 무게 칸: ' + JSON.stringify(start));
