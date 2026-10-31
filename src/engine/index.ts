@@ -52,7 +52,7 @@ export * from './backup.ts';
 export * from './coach.ts';
 export * from './ptSession.ts';
 export { speechPieces, speechSentences, coachVoiceId, clipId } from './speech.ts';
-export { exerciseGuideLines } from './coachGuide.ts';
+export { exerciseGuideLines, restGuideFor, restGuideLines, type RestGuide } from './coachGuide.ts';
 export * from './mistakes.ts';
 export * from './setupGuide.ts';
 export * from './nudge.ts';

@@ -287,6 +287,7 @@
         friendCode: state.friendCode,
         voiceRate: state.voiceRate,
         ptRateByExercise: state.ptRateByExercise,
+        restGuide: state.restGuide,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
         settingsUpdatedAt: state.settingsUpdatedAt,
@@ -390,6 +391,7 @@
       // 예전 기기 음성 시절 값(0.9 등)은 가장 가까운 칸으로
       state.voiceRate = nearestRate(settings.voiceRate || 1);
       state.ptRateByExercise = settings.ptRateByExercise || {};
+      state.restGuide = settings.restGuide !== false;
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
       state.settingsUpdatedAt = settings.settingsUpdatedAt || null;
@@ -793,6 +795,8 @@
     voiceRate: 1,
     /* 종목마다 PT 빠르기(말 · 세는 박자) — 없으면 voiceRate */
     ptRateByExercise: {},
+    /* PT — 쉬는 동안 다음 운동 하는 법을 보여 주고 말해 준다 */
+    restGuide: true,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
     reportSeenWeek: null,
     /* 오늘 한 유산소. [{exerciseId, minutes, zone, distanceKm, before}] */
@@ -2950,6 +2954,13 @@
   }
 
   function render() {
+    state.motionWanted = null;
+    renderScreens();
+    // 이번에 그린 화면이 쓰지 않은 동작은 내린다(다른 동작으로 바뀌었거나 화면이 바뀌었다)
+    settleLiveMotion();
+  }
+
+  function renderScreens() {
     if (wiping) return;
     if (state.ptRun) prepareLockTrack();
     var onboarding = state.onboarding.active;
@@ -6781,6 +6792,19 @@
     });
   }
 
+  /**
+   * 다음 운동 하는 법(잡는 법 · 동작 핵심 · 흔한 실수 하나) — 종목마다 그날 한 번. PT를 켰고 끄지 않았을 때만.
+   * 쉬는 동안(이동 안내 뒤)에 하고, 그날 첫 종목처럼 앞에 쉬는 시간이 없으면 첫 세트(워밍업) 앞에서.
+   */
+  function takeGuide(liftIndex) {
+    var lift = state.lifts[liftIndex];
+    if (!lift || !ptOn() || state.restGuide === false) return [];
+    var key = liftIndex + ':guide';
+    if (state.coachSaid[key]) return [];
+    state.coachSaid[key] = true;
+    return E.restGuideLines(state.coach.style, lift.exercise);
+  }
+
   /** 세트 전에 하는 말. 이미 한 자리면 다시 하지 않는다. */
   function coachBefore(liftIndex, setIndex) {
     var key = liftIndex + ':' + setIndex + ':before';
@@ -6792,7 +6816,9 @@
     if (!set) return '';
     var demo = E.demoFor(lift.exercise);
     var first = !triedBefore(lift.exercise);
-    return coachSay(E.beforeSetLines({
+    // 앞에 쉬는 시간이 없었던 종목(그날 첫 종목 등) — 하는 법을 세트 전 말 앞에
+    var guide = setIndex === 0 && !lift.sets.some(function (one) { return one.done; }) ? takeGuide(liftIndex) : [];
+    return coachSay(guide.concat(E.beforeSetLines({
       style: state.coach.style,
       exerciseName: lift.exercise.name,
       setIndex: setIndex,
@@ -6811,7 +6837,7 @@
       totalLifts: state.lifts.length,
       watch: watchFor(lift, setIndex, first),
       restrained: holdingBack(),
-    }));
+    })));
   }
 
   /*
@@ -7155,6 +7181,13 @@
         },
       };
     })));
+    // 쉬는 동안 다음 운동 — 동작을 띄우고 잡는 법 · 동작 · 흔한 실수를 말해 준다(PT)
+    box.appendChild(el('div', { class: 'list-label', text: '쉬는 동안 운동 설명 (PT)' }));
+    box.appendChild(el('p', { class: 'hint-line', text: '쉬는 시간마다 다음 운동 동작을 보여 주고, 잡는 법 · 동작 · 흔한 실수를 말로 알려 줍니다.' }));
+    box.appendChild(segmented([
+      { label: '켜기', active: state.restGuide !== false, onSelect: function () { state.restGuide = true; persist(); onChange(); } },
+      { label: '끄기', active: state.restGuide === false, onSelect: function () { state.restGuide = false; persist(); onChange(); } },
+    ]));
     var status = el('p', { class: 'hint-line voice-status', text: '' });
     var show = function (done, total) {
       if (CoachVoice.ready(coachVoiceName())) status.textContent = '이 폰에 받아 두었습니다 — 인터넷 없이도 나옵니다.';
@@ -8309,6 +8342,8 @@
       run.total = steps.length;
       run.step = steps[i];
       var line = E.warmupSetLine(state.coach.style, lift.exercise.name, i, steps, inPounds(lift.exercise.id));
+      // 앞에 쉬는 시간이 없었던 종목이면 첫 워밍업 앞에서 하는 법부터
+      if (i === 0) line = takeGuide(liftIndex).concat([line]).join(' ');
       coachSay([line]);
       render();
       var lead = Math.ceil(spokenSeconds(line)) + 2;
@@ -8428,6 +8463,14 @@
         firstTime: !triedBefore(next.exercise) && E.hasSetting(next.exercise),
         seconds: Math.round(seconds / 15) * 15,
       }));
+      // 쉬는 동안 다음 운동 하는 법 — 말이 휴식을 다 먹으면(곧 시작 15초 전까지) 첫 세트 앞으로 미룬다
+      var guideKey = (liftIndex + 1) + ':guide';
+      var guideLines = ptOn() && state.restGuide !== false && !state.coachSaid[guideKey]
+        ? E.restGuideLines(state.coach.style, next.exercise) : [];
+      if (guideLines.length && spokenSeconds(lines.concat(guideLines).join(' ')) + 15 <= seconds) {
+        state.coachSaid[guideKey] = true;
+        lines = lines.concat(guideLines);
+      }
     } else if (!lastOfLift && state.rest) {
       // 같은 종목 다음 세트 — 얼마나 쉬는지 먼저 말한다. 처음 한 번은 더 쉬는 법도.
       var nextOpen = state.lifts[liftIndex].sets.findIndex(function (set) { return !set.done; });
@@ -9094,7 +9137,9 @@
       if (host) host.hidden = !state.rest;
     }
     focusHost.textContent = '';
+    // 집중 화면이 없으면 도는 동작은 보통 화면(마무리 스트레칭) 몫 — render()가 정리한다
     if (!phase) return;
+    state.motionWanted = null;
 
     var ref = focusSetRef();
     var lift = ref ? ref.lift : state.lifts[state.liftCursor];
@@ -9159,8 +9204,11 @@
       var restLeft = restRemaining();
       var card = el('div', { class: 'focus-next-card' }, []);
       var map = window.FitBodyMap;
-      var nextPair = bodyPair(ref.lift.exercise.contribution || {}, ref.lift.exercise.pattern, ref.lift.exercise.name + '에서 쓰는 근육');
-      if (nextPair || map) {
+      // PT 설명을 켰으면 근육 그림 대신 동작이 바로 돈다(아래 줄에 잡는 법 · 동작 · 주의)
+      var guideBox = restGuideBox(ref.lift.exercise);
+      if (guideBox) { card.classList.add('single'); middle.classList.add('with-guide'); }
+      var nextPair = guideBox ? null : bodyPair(ref.lift.exercise.contribution || {}, ref.lift.exercise.pattern, ref.lift.exercise.name + '에서 쓰는 근육');
+      if (!guideBox && (nextPair || map)) {
         card.appendChild(el('div', { class: 'focus-map' }, [nextPair || map.render(ref.lift.exercise.contribution || {}, ref.lift.exercise.name + '에서 쓰는 근육')]));
       }
       var info = el('div', { class: 'focus-next-info' }, [
@@ -9174,9 +9222,10 @@
       var saved = state.machineSettings[settingKeyFor(ref.lift)];
       if (saved) info.appendChild(el('span', { class: 'focus-setting', text: '세팅 · ' + saved }));
       else if (!triedBefore(ref.lift.exercise)) info.appendChild(el('span', { class: 'focus-setting', text: '처음 하는 종목이에요' }));
-      info.appendChild(el('button', { type: 'button', class: 'focus-demo', text: '▶ 사용법 보기',
+      info.appendChild(el('button', { type: 'button', class: 'focus-demo', text: guideBox ? '▶ 크게 보기' : '▶ 사용법 보기',
         onclick: function () { openDemo(ref.lift.exercise); } }));
       card.appendChild(info);
+      if (guideBox) middle.appendChild(guideBox);
       middle.appendChild(card);
       middle.appendChild(el('div', { class: 'focus-switch-time' }, [
         el('span', { text: '이동 · 쉬는 시간' }),
@@ -9191,10 +9240,20 @@
       var remaining = restRemaining();
       var nextLift = ref ? ref.lift : null;
       var nextSet = ref ? ref.set : null;
-      middle.appendChild(focusRing(remaining / state.rest.total, 'focus-ring-bar', [
-        el('span', { class: 'focus-of', text: '휴식' }),
-        el('b', { class: 'focus-num rest', id: 'focus-rest-time', text: E.formatDuration(remaining) }),
-      ]));
+      // 쉬는 동안 동작을 띄우면 큰 원 대신 숫자만 — 원 · 동작 · 세 줄이 한 화면에 들어가지 않는다
+      var sameGuide = nextLift ? restGuideBox(nextLift.exercise) : null;
+      if (sameGuide) {
+        middle.classList.add('with-guide');
+        middle.appendChild(el('div', { class: 'focus-switch-time' }, [
+          el('span', { text: '휴식' }),
+          el('b', { class: 'focus-num rest small', id: 'focus-rest-time', text: E.formatDuration(remaining) }),
+        ]));
+      } else {
+        middle.appendChild(focusRing(remaining / state.rest.total, 'focus-ring-bar', [
+          el('span', { class: 'focus-of', text: '휴식' }),
+          el('b', { class: 'focus-num rest', id: 'focus-rest-time', text: E.formatDuration(remaining) }),
+        ]));
+      }
       middle.appendChild(el('div', { class: 'focus-what' }, [
         el('b', { text: '쉬고 → ' + (state.rest.next || '다음') }),
         nextSet ? el('span', { text: ' · ' + loadText(nextLift, nextSet.weightKg) + ' × ' + repsText(nextSet.targetReps) }) : null,
@@ -9203,6 +9262,8 @@
       var setting = nextLift && nextLift.exercise.id !== state.rest.exerciseId
         ? state.machineSettings[settingKeyFor(nextLift)] : null;
       if (setting) middle.appendChild(el('div', { class: 'focus-setting', text: '세팅 · ' + setting }));
+      // 쉬는 동안에도 동작을 — 같은 종목 다음 세트도 자세를 한 번 더 본다
+      if (sameGuide) middle.appendChild(sameGuide);
       middle.appendChild(el('div', { class: 'focus-soon', text: restSoon() ? '곧 시작해요 · 더 쉬려면 +30초' : '' }));
       actions.classList.add('three');
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn', text: '−30초', onclick: function () { extendRest(-30); } }));
@@ -9279,6 +9340,59 @@
       focusHost.appendChild(el('button', { type: 'button', class: 'focus-hurt', text: '아픈 데 있어요',
         onclick: function () { hurtWhileResting(ref.liftIndex, ref.setIndex); } }));
     }
+    settleLiveMotion();
+  }
+
+  /*
+   * 화면에 계속 도는 동작 하나 — 쉬는 동안 다음 운동, 몸 풀기 · 스트레칭.
+   * 화면은 1초에도 몇 번씩 다시 그려지므로 그릴 때마다 새로 띄우면 깜빡이고 그래픽 메모리가 샌다.
+   * 같은 동작이면 같은 캔버스를 다시 붙이고, 안 쓰게 되면(다른 동작 · 다른 화면) 그때 내린다.
+   */
+  function liveMotion(key, clip, options) {
+    if (!clip || !window.FitDemo3D || !window.FitDemo3D.available()) return null;
+    state.motionWanted = key;
+    var cur = state.liveMotion;
+    if (cur && cur.key === key) return cur.canvas;
+    disposeLiveMotion();
+    var canvas = el('canvas', { class: 'live-motion', 'aria-label': (options && options.label) || '동작' });
+    var entry = { key: key, canvas: canvas, handle: null };
+    state.liveMotion = entry;
+    // 화면에 붙은 뒤에 띄운다 — 붙기 전에는 크기가 0이다
+    setTimeout(function () {
+      if (state.liveMotion !== entry || !canvas.isConnected) return;
+      entry.handle = window.FitDemo3D.mount(canvas, clip, Object.assign({ dark: prefersDark() }, options || {}));
+    }, 0);
+    return canvas;
+  }
+
+  function disposeLiveMotion() {
+    var cur = state.liveMotion;
+    state.liveMotion = null;
+    if (cur && cur.handle && cur.handle.dispose) cur.handle.dispose();
+  }
+
+  function settleLiveMotion() {
+    if (state.liveMotion && state.liveMotion.key !== state.motionWanted) disposeLiveMotion();
+  }
+
+  /** 쉬는 동안 다음 운동 — 동작이 바로 돌고, 잡는 법 · 동작 핵심 · 흔한 실수 하나. */
+  function restGuideBox(exercise) {
+    if (!exercise || state.restGuide === false) return null;
+    var guide = E.restGuideFor(exercise);
+    var motion = liveMotion('ex:' + exercise.id, E.motionFor(exercise), {
+      contribution: exercise.contribution, pattern: exercise.pattern, label: exercise.name + ' 동작',
+    });
+    var line = function (tag, text, cls) {
+      return text ? el('li', { class: cls || '' }, [el('b', { text: tag }), el('span', { text: text })]) : null;
+    };
+    return el('div', { class: 'rest-guide' }, [
+      motion ? el('div', { class: 'focus-motion' }, [motion]) : null,
+      el('ul', { class: 'rest-guide-lines' }, [
+        line('준비', guide.grip),
+        line('동작', guide.move),
+        guide.mistake ? line('주의', guide.mistake.sign + ' → ' + guide.mistake.short, 'warn') : null,
+      ]),
+    ]);
   }
 
   function ptPanel(liftIndex, setIndex) {
@@ -10743,7 +10857,7 @@
    */
   var SHARED_SETTINGS = [
     'program', 'lifter', 'answers', 'gymBook', 'gym', 'style', 'blockHistory',
-    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'ptRateByExercise', 'autoCount',
+    'timeBudget', 'restBand', 'restOverrides', 'voiceOn', 'tempo', 'tempoByExercise', 'tempoVersion', 'voiceRate', 'ptRateByExercise', 'restGuide', 'autoCount',
     'consent', 'consentRecord', 'landmarks', 'exclusions', 'comeback', 'promise', 'block',
     'mistakeFlags', 'customRoutine', 'repOverrides', 'topSet',
   ];

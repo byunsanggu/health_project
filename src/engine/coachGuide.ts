@@ -76,3 +76,46 @@ export function exerciseGuideLines(style: CoachStyle, exercise: Exercise): strin
   lines.push(OUTRO[style]);
   return lines;
 }
+
+/* ── 쉬는 동안 다음 운동 미리 듣기 (PT) ─────────────────── */
+
+const PREVIEW_HEAD: ByStyle<string> = {
+  energetic: '쉬는 동안 하는 법 미리 볼게요!',
+  gentle: '쉬시는 동안 하는 법을 미리 알려 드리겠습니다.',
+  tough: '쉬는 동안 하는 법 듣고 가.',
+  fun: '쉬는 시간 예습 들어갑니다.',
+};
+
+export interface RestGuide {
+  /** 잡는 법 · 자리 — 동작 설명 첫 줄 */
+  grip: string | null;
+  /** 동작 핵심 — 둘째 줄 */
+  move: string | null;
+  /** 흔한 실수 하나 — 무엇이 잘못되는지(sign)와 고치는 말(fix · short) */
+  mistake: { sign: string; fix: string; short: string } | null;
+}
+
+/** 화면에 띄울 세 줄 — 잡는 법, 동작 핵심, 흔한 실수 하나. */
+export function restGuideFor(exercise: Exercise): RestGuide {
+  const cues = demoFor(exercise).cues;
+  const first = mistakesFor(exercise)[0];
+  return {
+    grip: cues[0] ?? null,
+    move: cues[1] ?? null,
+    mistake: first ? { sign: first.sign, fix: first.cue, short: first.short } : null,
+  };
+}
+
+/**
+ * 쉬는 동안 PT가 다음 운동을 말로 — "다음 종목, ○○!"(이동 안내) 뒤에 붙는다.
+ * 잡는 법 → 동작 핵심 → 흔한 실수 하나. 20초 안쪽이라 쉬는 시간을 다 잡아먹지 않는다.
+ * 매번 한다 — 익숙한 종목도 자세는 쉬는 동안 한 번 더 듣는 게 낫다.
+ */
+export function restGuideLines(style: CoachStyle, exercise: Exercise): string[] {
+  const guide = restGuideFor(exercise);
+  const lines = [PREVIEW_HEAD[style]];
+  if (guide.grip) lines.push(sentence(guide.grip));
+  if (guide.move) lines.push(sentence(guide.move));
+  if (guide.mistake) lines.push(MISTAKE_HEAD[style], sentence(guide.mistake.fix));
+  return lines;
+}

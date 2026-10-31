@@ -74,7 +74,8 @@ export interface Link {
 }
 
 export interface Cable {
-  from: Vec3;
+  /** 줄이 시작하는 곳 — 도르래 자리, 또는 손(두 손 사이에 건 밴드) */
+  from: Vec3 | 'L' | 'R';
   to: 'L' | 'R' | 'mid' | 'bar' | 'pelvis';
 }
 
@@ -246,9 +247,10 @@ export function clipFrame(clip: Clip, t: number): ClipFrame {
         : cable.to === 'bar' && solved.bar ? solved.bar.c
           : cable.to === 'pelvis' ? madd(solved.bones.pelvis.a, solved.bones.pelvis.f, 0.12)
             : scale(add(solved.hands.L.grip, solved.hands.R.grip), 0.5);
-    const along = normalize(sub(end, cable.from));
-    const len = distance(end, cable.from);
-    moving.push({ kind: 'cableLine', p: madd(cable.from, along, len / 2), size: [0.004, len], x: along, y: normalize(perpendicular(up, along), [0, 0, 1]) });
+    const from = cable.from === 'L' || cable.from === 'R' ? solved.hands[cable.from].grip : cable.from;
+    const along = normalize(sub(end, from));
+    const len = distance(end, from);
+    moving.push({ kind: 'cableLine', p: madd(from, along, len / 2), size: [0.004, len], x: along, y: normalize(perpendicular(up, along), [0, 0, 1]) });
   }
 
   return { solved, label, effort: effortAt(clip, t), moving };

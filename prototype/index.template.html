@@ -2753,6 +2753,15 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-actions:has(.focus-btn:only-child) { grid-template-columns: 1fr; }
 .focus-btn.quiet { color: var(--muted); }
 .focus-next-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 12px; align-items: center; width: 100%; }
+.focus-next-card.single { grid-template-columns: 1fr; }
+.rest-guide { display: grid; gap: 10px; width: 100%; }
+.focus-middle.with-guide { justify-content: flex-start; overflow-y: auto; padding-bottom: 8px; }
+.focus-motion { width: min(100%, 340px); aspect-ratio: 1 / 1; max-height: 34dvh; margin: 0 auto; border-radius: 12px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--line-soft); }
+.live-motion { display: block; width: 100%; height: 100%; }
+.rest-guide-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; text-align: left; }
+.rest-guide-lines li { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 8px; align-items: baseline; font-size: 15px; line-height: 1.4; }
+.rest-guide-lines b { font-size: 13px; color: var(--accent); }
+.rest-guide-lines li.warn b { color: var(--zone-over); }
 .focus-map svg { width: 100%; height: auto; max-height: 30dvh; }
 .focus-map .body3d-pair { gap: 2px; }
 .focus-map .body3d-pair canvas { max-height: 30dvh; object-fit: contain; }

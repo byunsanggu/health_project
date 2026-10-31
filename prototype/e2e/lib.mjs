@@ -209,3 +209,15 @@ export async function startWorkout(page) {
   await begin(page);
   if (await page.locator('.warm-skip').count()) await page.locator('.warm-skip').click();
 }
+
+/** 쉬는 동안 운동 설명(동작 · 말) 끄기 — 오래 돌리는 PT 테스트에서 가짜 시계가 동작 그림을 프레임마다 그리느라 느려진다. */
+export async function restGuideOff(page) {
+  await tab(page, '내 정보');
+  // 소리 설정은 PT(또는 소리 켜기)일 때만 보인다 — 잠깐 PT로 바꿔 끄고, 원래 방식으로 돌린다
+  const modes = page.locator('.coach-settings .coach-mode');
+  const was = await modes.evaluateAll((buttons) => buttons.findIndex((b) => b.getAttribute('aria-pressed') === 'true'));
+  await page.locator('.coach-settings .coach-mode', { hasText: 'PT' }).click();
+  await page.locator('.list-label:has-text("쉬는 동안 운동 설명") ~ .segmented').first().locator('button', { hasText: '끄기' }).click();
+  if (was >= 0) await modes.nth(was).click();
+  await tab(page, '오늘');
+}

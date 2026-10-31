@@ -13,7 +13,7 @@ import {
   pushLine, readySoonLine, restTipLine, resumeFromLine, resumeLine, sessionStartLines, watchLine, wrapUpLines,
   type CoachStyle, type Feel,
 } from './coach.ts';
-import { exerciseGuideLines } from './coachGuide.ts';
+import { exerciseGuideLines, restGuideLines } from './coachGuide.ts';
 import { demoFor } from './demos.ts';
 import { EXERCISES } from './exercises.ts';
 import { mistakesFor, type MistakeMoment } from './mistakes.ts';
@@ -84,6 +84,7 @@ export function coachTexts(style: CoachStyle): string[] {
     const shorts = mistakes.map((item) => item.short);
     for (const at of range(shorts.length)) say(formCueLine(style, exercise.pattern, at, shorts));
     say(exerciseGuideLines(style, exercise));
+    say(restGuideLines(style, exercise));
   }
   for (const pattern of ['squat', 'lunge', 'hinge', 'horizontalPush', 'verticalPush', 'verticalPull', 'horizontalPull', 'isolation', 'core'] as const) {
     for (const at of range(4)) say(formCueLine(style, pattern, at));
