@@ -2589,11 +2589,6 @@
     render();
   }
 
-  function setReps(liftIndex, setIndex, delta) {
-    var set = state.lifts[liftIndex].sets[setIndex];
-    carryForward(liftIndex, setIndex, 'reps', clamp(set.reps + delta, 1, 50));
-    render();
-  }
 
   /** 첫 세트 무게를 바꾸면 워밍업도 같은 비율로 — 40kg 기준 워밍업을 35kg 앞에 하면 너무 무겁다. 빈 바는 그대로. */
   function rescaleWarmup(lift, setIndex, from, to) {
@@ -2614,28 +2609,19 @@
   }
 
   /**
-   * 지금 세트의 무게 · 횟수를 바꾸면 뒤 세트도 같이 — 40kg이 무거워 35kg으로 내렸으면 2 · 3세트도 35kg.
-   * 뒤 세트를 따로 정해 둔 것(값이 달랐던 것) · 끝낸 세트 · 무거운 세트는 건드리지 않는다.
+   * 세트의 무게 · 횟수를 바꾸면 그 아래 세트도 같이 — 40kg이 무거워 35kg으로 내렸으면 아래 세트도 35kg.
+   * 끝낸 세트 · 무거운 세트는 건드리지 않는다.
    */
   function carryForward(liftIndex, setIndex, key, value) {
     var sets = state.lifts[liftIndex].sets;
-    var old = sets[setIndex][key];
     sets[setIndex][key] = value;
     if (sets[setIndex].top) return;
     for (var k = setIndex + 1; k < sets.length; k += 1) {
       var later = sets[k];
-      if (later.done || later.top || later[key] !== old) continue;
+      if (later.done || later.top) continue;
       later[key] = value;
       if (key === 'weightKg') later.estimated = false;
     }
-  }
-
-  function typeReps(liftIndex, setIndex, raw) {
-    var value = parseInt(raw, 10);
-    // 빈칸이나 이상한 값이면 원래 값을 그대로 둔다 — 0회를 기록할 일은 없다.
-    if (!Number.isFinite(value) || value < 1) return render();
-    carryForward(liftIndex, setIndex, 'reps', clamp(value, 1, 100));
-    render();
   }
 
   function setWeight(liftIndex, setIndex, weightKg) {
@@ -2646,49 +2632,6 @@
     // 직접 정한 값이므로 더 이상 추정이 아니다. 화면의 "추정" 표시가 사라진다.
     set.estimated = false;
     render();
-  }
-
-  function typeWeight(liftIndex, setIndex, raw) {
-    var value = parseFloat(raw);
-    if (!Number.isFinite(value) || value < 0) return render();
-    /*
-     * 파운드 기계면 사용자가 친 것은 파운드다. **기록은 늘 kg으로
-     * 남긴다** — 안 그러면 주간 볼륨도 추정 1RM도 다른 종목과의 비교도
-     * 전부 2.2배로 틀어진다.
-     */
-    var lift = state.lifts[liftIndex];
-    if (lift && inPounds(lift.exercise.id)) {
-      return setWeight(liftIndex, setIndex, E.lbToKg(Math.min(2200, value)));
-    }
-    setWeight(liftIndex, setIndex, Math.min(999, value));
-  }
-
-  /**
-   * ± 한 번에 얼마나 움직일까.
-   *
-   * 종목마다 다르다 — 바벨은 플레이트 한 쌍(보통 2.5kg), 덤벨은 사다리
-   * 간격, 스택 머신은 한 판. 1kg씩 움직이면 바벨에서 못 만드는 무게만
-   * 나온다.
-   */
-  function stepWeight(liftIndex, setIndex, direction) {
-    var lift = state.lifts[liftIndex];
-    var set = lift.sets[setIndex];
-    /*
-     * 파운드 기계는 파운드로 센다. kg 격자로 움직인 뒤 파운드로 보여주면
-     * 45 → 54.9처럼 기계에 없는 숫자가 뜬다.
-     */
-    if (inPounds(lift.exercise.id)) {
-      return setWeight(liftIndex, setIndex, E.stepLbFromKg(set.weightKg, direction));
-    }
-    if (!lift.loading) {
-      return setWeight(liftIndex, setIndex, Math.max(0, set.weightKg + direction * (lift.exercise.increment || 2.5)));
-    }
-    /*
-     * 만들 수 있는 무게 목록에서 한 칸 옮긴다. 증분을 더하는 것보다
-     * 정확하다 — 덤벨은 간격이 일정하지 않다(20, 22.5, 25, 30...).
-     */
-    var moved = E.neighborLoad(set.weightKg, lift.loading, direction);
-    if (moved !== set.weightKg) setWeight(liftIndex, setIndex, moved);
   }
 
   /* ── 렌더링 ────────────────────────────────────── */
@@ -7866,14 +7809,6 @@
     sets.forEach(function (set, order) {
       var now = order === cursor;
       var label = (order + 1) + '세트' + (set.top ? ' · 무거운' : '');
-      if (now) {
-        rows.push(el('div', { class: 'set-box now', 'aria-current': 'step' }, [
-          el('span', { class: 'set-no', text: label }),
-          el('span', { class: 'set-load', text: load(set.weightKg, set.reps) }),
-          el('span', { class: 'set-state', text: '지금' }),
-        ]));
-        return;
-      }
       var cells = [el('span', { class: 'set-no', text: label })];
       var fields = [];
       if (set.weightKg > 0) {
@@ -7883,7 +7818,14 @@
           'aria-label': (order + 1) + '세트 무게 (' + unit + ')',
           onfocus: function (event) { event.target.select(); },
           onchange: function (event) { editSetInline(liftIndex, order, 'weight', event.target.value); },
-        }), el('span', { class: 'set-unit', text: unit + ' ×' }));
+        }), now
+          // 지금 세트의 단위를 눌러 kg · lb를 바꾼다 — 파운드 표기 기계 앞에서
+          ? el('button', {
+              type: 'button', class: 'set-unit unit-pick', text: unit + ' ×', 'aria-pressed': String(pounds),
+              'aria-label': pounds ? '파운드로 보는 중 — 눌러서 kg으로' : 'kg으로 보는 중 — 파운드 표기 기계면 눌러서 lb로',
+              onclick: function () { togglePounds(lift.exercise.id); },
+            })
+          : el('span', { class: 'set-unit', text: unit + ' ×' }));
       } else {
         fields.push(el('span', { class: 'set-unit', text: '맨몸 ×' }));
       }
@@ -7895,7 +7837,7 @@
         onchange: function (event) { editSetInline(liftIndex, order, 'reps', event.target.value); },
       }), el('span', { class: 'set-unit', text: '회' }));
       cells.push(el('span', { class: 'set-fields' }, fields));
-      cells.push(set.done
+      cells.push(now ? el('span', { class: 'set-state', text: '지금' }) : set.done
         ? el('button', {
             type: 'button', class: 'set-undo', text: '✓',
             title: '안 한 세트면 눌러서 기록을 지웁니다',
@@ -7910,7 +7852,7 @@
             'aria-label': (order + 1) + '세트 빼기',
             onclick: function () { removeSet(lift, order); },
           }));
-      rows.push(el('div', { class: 'set-box' + (set.done ? ' done' : '') }, cells));
+      rows.push(el('div', { class: 'set-box' + (set.done ? ' done' : now ? ' now' : ''), 'aria-current': now ? 'step' : null }, cells));
     });
     var open = sets.filter(function (set) { return !set.done; }).length;
     rows.push(el('div', { class: 'set-adds' }, [
@@ -9206,9 +9148,6 @@
     maybeAutoCount(liftIndex, setIndex);
     var pounds = inPounds(lift.exercise.id);
     var plates = set.weightKg > 0 && lift.loading ? E.platePlan(set.weightKg, lift.loading) : null;
-    var target = set.targetReps.min === set.targetReps.max
-      ? set.targetReps.max + '회'
-      : set.targetReps.min + '–' + set.targetReps.max + '회';
 
     var body = [];
 
@@ -9242,70 +9181,7 @@
     // 몇 세트째인지는 목록의 "지금" 줄이 말한다. 무거운 세트만 한 줄 — 최대 도전이 아니다, 두어 개 남기고 멈춘다
     if (set.top) body.push(el('div', { class: 'now-head' }, [el('span', { class: 'top-tag', text: '무거운 세트 · 두어 개 남기고' })]));
 
-    /*
-     * 중량과 반복은 직접 친다.
-     *
-     * ± 버튼만 두면 105에서 60으로 내리는 데 열여덟 번을 눌러야 한다.
-     * 처방과 다르게 한 날이 오히려 기록이 중요한 날이고, 그때 입력이
-     * 번거로우면 아예 기록을 안 한다. 버튼은 미세 조정용으로 남긴다.
-     */
-    // 무게 · 횟수 칸은 한 줄에. 세는 중(PT)이면 횟수 칸은 숨긴다 — 그때는 숫자 하나만 크게.
-    var countingHere = state.counting && state.counting.liftIndex === liftIndex && state.counting.setIndex === setIndex;
-    var repsField = countingHere ? null : el('div', { class: 'big-field small' }, [
-      el('button', { type: 'button', class: 'nudge', 'aria-label': '반복 수 줄이기', text: '−',
-        onclick: function () { setReps(liftIndex, setIndex, -1); } }),
-      el('input', {
-        type: 'number', min: '1', max: '100', step: '1', inputmode: 'numeric',
-        class: 'big-input', value: String(set.reps),
-        title: '목표 ' + target,
-        'aria-label': (setIndex + 1) + '세트 반복 수 (목표 ' + target + ')',
-        onfocus: function (event) { event.target.select(); },
-        onchange: function (event) { typeReps(liftIndex, setIndex, event.target.value); },
-      }),
-      el('span', { class: 'big-unit', text: '회' }),
-      el('button', { type: 'button', class: 'nudge', 'aria-label': '반복 수 늘리기', text: '+',
-        onclick: function () { setReps(liftIndex, setIndex, 1); } }),
-    ]);
-    if (set.weightKg > 0) {
-      body.push(el('div', { class: 'now-load now-fields' }, [
-        el('div', { class: 'big-field small' }, [
-          el('button', { type: 'button', class: 'nudge', 'aria-label': '중량 줄이기', text: '−',
-            onclick: function () { stepWeight(liftIndex, setIndex, -1); } }),
-          el('input', {
-            type: 'number', min: '0', max: pounds ? '2200' : '999', step: 'any',
-            inputmode: 'decimal',
-            class: 'big-input',
-            value: String(pounds ? E.kgToLb(set.weightKg) : set.weightKg),
-            'aria-label': (setIndex + 1) + '세트 중량 (' + (pounds ? '파운드' : 'kg') + ')',
-            onfocus: function (event) { event.target.select(); },
-            onchange: function (event) { typeWeight(liftIndex, setIndex, event.target.value); },
-          }),
-          /*
-           * 단위를 눌러서 바꾼다.
-           *
-           * 따로 설정 화면을 만들지 않는다. 파운드 기계인 걸 깨닫는
-           * 자리는 기계 앞에서 숫자를 보는 순간이고, 고치는 자리도
-           * 거기여야 한다. 칸 옆에 이미 'kg'이 적혀 있으니 그걸 누르게
-           * 하면 새로 배울 것이 없다.
-           */
-          el('button', {
-            type: 'button', class: 'big-unit unit-pick',
-            text: pounds ? 'lb' : 'kg',
-            'aria-pressed': String(pounds),
-            'aria-label': pounds
-              ? '파운드로 보는 중 — 눌러서 kg으로'
-              : 'kg으로 보는 중 — 파운드 표기 기계면 눌러서 lb로',
-            onclick: function () { togglePounds(lift.exercise.id); },
-          }),
-          el('button', { type: 'button', class: 'nudge', 'aria-label': '중량 늘리기', text: '+',
-            onclick: function () { stepWeight(liftIndex, setIndex, 1); } }),
-        ]),
-        repsField,
-      ]));
-    } else {
-      body.push(el('div', { class: 'now-load now-fields' }, [el('span', { class: 'weight', text: '맨몸' }), repsField]));
-    }
-
+    // 무게 · 횟수는 위 세트 줄의 "지금" 줄에서 바로 고친다 — 아래에 큰 칸을 또 두지 않는다.
     if (plates) body.push(el('div', { class: 'plates', text: E.describePlates(plates) }));
 
     /*

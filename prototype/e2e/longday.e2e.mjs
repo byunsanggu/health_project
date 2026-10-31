@@ -42,18 +42,22 @@ export default async function ({ page, url, shot }) {
   await page.waitForSelector('.set-strip');
   check(await boxes() === setsBefore + 1, '다시 켜니 더한 세트가 사라졌습니다');
 
-  // 무게를 내리면 뒤 세트도 같이 — 세트마다 "35kg × 10회" 줄로 보인다
-  await page.locator('.big-field .nudge[aria-label="중량 줄이기"]').click();
-  const want = (await page.locator('.big-input').first().inputValue()) + 'kg';
-  const lines = await page.locator('.set-strip .set-box .set-load').allTextContents();
-  check(lines.every((line) => line.startsWith(want)), '무게를 내렸는데 뒤 세트가 그대로입니다: ' + lines.join(' / '));
+  // 지금 세트(1세트) 무게를 그 줄에서 내리면 아래 세트도 같이 — 아래 큰 칸은 없다
+  check(await page.locator('.big-input').count() === 0, '아래 큰 무게 · 횟수 칸이 남았습니다');
+  const nowWeight = page.locator('.set-box.now .set-in-weight');
+  const want = String(Number(await nowWeight.inputValue()) - 5);
+  await nowWeight.fill(want);
+  await nowWeight.press('Enter');
+  await nowWeight.blur();
+  const weights = await page.locator('.set-strip .set-box .set-in-weight').evaluateAll((all) => all.map((one) => one.value));
+  check(weights.every((value) => value === want), '1세트를 바꿨는데 아래 세트가 그대로입니다: ' + weights.join(' / '));
   check((await page.locator('.warmup-set').count()) > 0, '1세트 위에 워밍업 줄이 없습니다');
 
   // 혼자 할 때는 워밍업 줄을 눌러 ✓
   await page.locator('.warmup-set').first().click();
   check(await page.locator('.warmup-set[aria-pressed="true"]').count() === 1, '워밍업 줄을 눌렀는데 ✓가 없습니다');
 
-  // 남은 세트는 그 줄에서 바로 — 3세트만 무겁게(창 없이)
+  // 3세트를 바꾸면 3세트와 그 아래만 — 위의 2세트는 그대로(창 없이)
   const third = page.locator('.set-strip .set-box').nth(2).locator('.set-in-weight');
   await third.fill('50');
   await third.press('Enter');
@@ -61,6 +65,7 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('dialog[open]').count() === 0, '남은 세트를 고치는데 창이 떴습니다');
   check((await page.locator('.set-strip .set-box').nth(2).locator('.set-in-weight').inputValue()) === '50', '3세트 무게가 안 바뀌었습니다');
   check((await page.locator('.set-strip .set-box').nth(1).locator('.set-in-weight').inputValue()) !== '50', '고치지 않은 2세트까지 바뀌었습니다');
+  check((await page.locator('.set-strip .set-box').nth(3).locator('.set-in-weight').inputValue()) === '50', '3세트 아래 4세트가 안 따라왔습니다');
 
   // 세트 빼기 — 남은 세트 줄의 ✕, 맨 아래 "− 세트". 다시 켜도 빠진 채로
   const beforeRemove = await boxes();

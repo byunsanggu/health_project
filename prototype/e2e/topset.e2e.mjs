@@ -53,12 +53,12 @@ export default async function ({ page, url, shot }) {
     await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click().catch(() => {});
   }
   check((await page.locator('.top-tag').textContent()).includes('무거운 세트'), '무거운 세트 표시가 없습니다');
-  await page.locator('.now-fields input[aria-label*="반복 수"]').first().fill('2');
-  await page.locator('.now-fields input[aria-label*="반복 수"]').first().dispatchEvent('change');
+  await page.locator('.set-box.now .set-in-reps').fill('2');
+  await page.locator('.set-box.now .set-in-reps').dispatchEvent('change');
   await shot('3-top');
   const backoffBefore = await page.evaluate(() => document.querySelectorAll('.set-plan .set-plan-line')[0]?.textContent || '');
   await page.locator('.now-done').click();
-  const kg = Number(await page.locator('.big-input').first().inputValue());
+  const kg = Number(await page.locator('.set-box.now .set-in-weight').inputValue());
   check(kg <= 60 && kg >= 50, `무거운 세트 뒤 백오프가 ${kg}kg (전: ${backoffBefore})`);
   check(await page.locator('.top-tag').count() === 0, '2세트도 무거운 세트로 표시됩니다');
 
