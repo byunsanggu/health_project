@@ -215,3 +215,12 @@ describe('맨몸 종목 — 상단을 못 채웠으면 더 어렵게 바꾸지 �
     assert.ok(!/0kg/.test(result.reason), result.reason);
   });
 });
+
+describe('올리는 폭 — 칸에 맞추느라 두 배로 오르지 않는다', () => {
+  it('67.5kg 스쿼트를 다 채우면 72.5kg(+5), 75kg이 아니다', () => {
+    const logs: SetLog[] = [1, 2, 3].map(() => ({ exerciseId: squat.id, weightKg: 67.5, reps: 12, rir: 2 }));
+    const result = prescribeLoad(squat, logs, rule);
+    assert.equal(result.change, 'increase');
+    assert.equal(result.weightKg, 67.5 + result.deltaKg);
+  });
+});

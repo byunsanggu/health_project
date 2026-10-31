@@ -352,6 +352,9 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     const multiplier = input.plan.intensityMultiplier * ruling.loadMultiplier;
     let weightKg: number | null;
     let startingLoad: StartingLoad | undefined;
+    // 아픈 동안 올리지 않고 둔 날 — "N kg 올립니다"라고 쓰면 안 된다
+    let painHold = false;
+    let increaseNote: string | null = null;
 
     if (prescription.weightKg === null) {
       // 첫 수행. 관련 종목 기록이나 체중 기준선에서 출발점을 제안한다.
@@ -365,8 +368,38 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
         loading,
       });
       weightKg = startingLoad.weightKg;
+      // 처음 하는 종목이어도 아픈 날이면 낮춘다 — 안내는 "25% 낮춥니다"라고 하면서 그대로 내주던 것
+      if (weightKg !== null && ruling.loadMultiplier < 1) {
+        weightKg = snapLoad(weightKg * ruling.loadMultiplier, exercise, loading, ruling.loadMultiplier, 'decrease');
+      }
+    } else if (ruling.loadMultiplier < 1) {
+      /*
+       * 아픈 날 감량은 아프기 전 무게에서 한 번만. 지난번에 이미 낮춘 무게에 또 곱하면 같은 통증이
+       * 이어지는 동안 세션마다 무게가 줄었다(레그프레스 130 → 97.5 → 82.5 → 60). 최근 6주 가장 무거운
+       * 본세트를 기준으로 낮춘 값을 넘지 않게 하고, 그보다 가벼운 처방이면 처방대로 둔다.
+       */
+      const best = recentBest(weightHistory, exercise.id, input.date);
+      const normal = prescription.weightKg * input.plan.intensityMultiplier;
+      const lastCut = Boolean(lastSession?.sets.some((set) => set.exerciseId === exercise.id && set.painCut));
+      // 지난번이 이미 낮춘 무게였으면 거기서 처방대로(더 곱하지 않는다), 아니면 지금 낮춘다
+      // 같은 통증이 이어지는 동안은 무게를 올리지 않는다 — 반복만 늘린다
+      const lastWeight = Math.max(0, ...(lastSession?.sets ?? [])
+        .filter((set) => set.exerciseId === exercise.id && !set.warmup && !set.top).map((set) => set.weightKg));
+      let capped = lastCut ? Math.min(normal, lastWeight) : prescription.weightKg * multiplier;
+      if (best > 0) capped = Math.min(capped, best * multiplier);
+      weightKg = snapLoad(capped, exercise, loading, multiplier, prescription.change);
+      if (lastCut && prescription.change === 'increase') painHold = true;
     } else {
-      weightKg = snapLoad(prescription.weightKg * multiplier, exercise, loading, multiplier, prescription.change);
+      const lastKg = lastSession ? Math.max(0, ...lastSession.sets
+        .filter((set) => set.exerciseId === exercise.id && !set.warmup && !set.top).map((set) => set.weightKg)) : undefined;
+      weightKg = snapLoad(prescription.weightKg * multiplier, exercise, loading, multiplier, prescription.change, lastKg);
+      // 기구 칸 때문에 말한 폭과 실제 폭이 다르면 실제 폭으로 말한다("1kg 올립니다"인데 2 → 4kg)
+      if (prescription.change === 'increase' && multiplier >= 1 && lastKg !== undefined && weightKg !== null) {
+        const actual = Math.round((weightKg - lastKg) * 100) / 100;
+        if (actual > 0 && Math.abs(actual - prescription.deltaKg) > 0.01) {
+          increaseNote = prescription.reason.replace(/[\d.]+kg 올립니다\.?$/, `${actual}kg 올립니다 — 이 기구로 들 수 있는 다음 무게입니다.`);
+        }
+      }
     }
 
     // 대체 종목은 이력이 없다. 원래 종목의 마지막 기록을 참고로 붙인다.
@@ -384,7 +417,7 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
       plates: weightKg !== null && loading ? platePlan(weightKg, loading) : null,
       startingLoad,
       gymWeightNote: gymWeight.note,
-      note: buildNote(prescription.reason, multiplier, ruling, reference, startingLoad),
+      note: buildNote(painHold ? '아픈 동안은 무게를 올리지 않고 같은 무게로 반복을 채웁니다.' : increaseNote ?? prescription.reason, multiplier, ruling, reference, startingLoad),
       templateSets: slot.sets,
       sets: Array.from({ length: setCount }, (_, i) => ({
         setNumber: i + 1,
@@ -479,6 +512,20 @@ export function primaryMuscle(exercise: Exercise): MuscleGroup | undefined {
   return best;
 }
 
+/** 최근 6주 이 종목의 가장 무거운 본세트(아파서 낮춘 세트는 빼고) — 아픈 날 감량의 기준(아프기 전 무게). */
+const PAIN_BASELINE_DAYS = 42;
+function recentBest(history: readonly SessionLog[], exerciseId: string, today: string): number {
+  const since = addDays(today, -PAIN_BASELINE_DAYS);
+  let best = 0;
+  for (const session of history) {
+    if (session.date < since || session.date >= today) continue;
+    for (const set of session.sets) {
+      if (set.exerciseId === exerciseId && !set.warmup && !set.top && !set.painCut && set.reps > 0) best = Math.max(best, set.weightKg);
+    }
+  }
+  return best;
+}
+
 function findLastSession(
   history: readonly SessionLog[],
   exerciseId: string,
@@ -514,7 +561,20 @@ function snapLoad(
   loading: LoadingSpec | null,
   multiplier: number,
   change: string,
+  lastKg?: number,
 ): number {
+  /*
+   * 올릴 때는 지난 무게보다 무거운 값 중 가장 가벼운 것 — 위로만 맞추면 스택 17.5 + 5 = 22.5가 25가 되고
+   * (말은 +5kg, 실제 +43%), 아래로 맞춰도 지난 무게를 넘으면 그쪽이 맞다.
+   */
+  if (change === 'increase' && multiplier >= 1 && lastKg !== undefined) {
+    const inc = exercise.increment;
+    const down = loading ? nearestLoadable(targetKg, loading, 'down')
+      : inc > 0 ? Math.floor(targetKg / inc + 1e-9) * inc : targetKg;
+    const up = loading ? nearestLoadable(targetKg, loading, 'up')
+      : inc > 0 ? Math.ceil(targetKg / inc - 1e-9) * inc : targetKg;
+    return Math.round((down > lastKg ? down : up) * 100) / 100;
+  }
   if (!loading) return roundToIncrement(targetKg, exercise.increment);
 
   const direction: SnapDirection =

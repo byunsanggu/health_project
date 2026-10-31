@@ -189,8 +189,16 @@ export function suggestStartingLoad(input: StartingLoadInput): StartingLoad {
     };
   }
 
-  const fromHistory = anchorFromHistory(mapping.anchor, input.history ?? [], input.index);
-  const anchor1RM = fromHistory?.value ?? anchorFromProfile(mapping.anchor, input.profile);
+  let fromHistory = anchorFromHistory(mapping.anchor, input.history ?? [], input.index);
+  const fromProfile = anchorFromProfile(mapping.anchor, input.profile);
+  /*
+   * 레터럴 레이즈 · 페이스 풀처럼 계수가 작은 고립 종목 기록으로 큰 종목을 키우지 않는다. 기계 최소 무게(5kg)로
+   * 여유 있게 한 기록도 계수로 나누면 8배가 되어, 초보 여성에게 덤벨 숄더프레스 14kg이 나왔다.
+   * 그런 기록은 체중 기준보다 무겁게 잡을 때는 쓰지 않는다.
+   */
+  if (fromHistory && fromHistory.factor < SMALL_ANCHOR_FACTOR && mapping.factor >= SMALL_ANCHOR_FACTOR &&
+    (fromProfile === null || fromHistory.value > fromProfile)) fromHistory = null;
+  const anchor1RM = fromHistory?.value ?? fromProfile;
 
   if (anchor1RM === null) {
     return {
@@ -224,12 +232,15 @@ export function suggestStartingLoad(input: StartingLoadInput): StartingLoad {
   };
 }
 
+/** 이 계수보다 작은 종목(고립)의 기록은 큰 종목 시작 무게를 체중 기준보다 높이는 데 쓰지 않는다. */
+const SMALL_ANCHOR_FACTOR = 0.3;
+
 /** 이력에 있는 종목들로 앵커 1RM을 역산한다. 앵커에 가까운 종목일수록 신뢰한다. */
 function anchorFromHistory(
   anchor: Anchor,
   history: readonly SessionLog[],
   index?: ReadonlyMap<string, Exercise>,
-): { value: number; label: string } | null {
+): { value: number; label: string; factor: number } | null {
   let best: { value: number; factor: number; exerciseId: string } | null = null;
 
   for (const session of history) {
@@ -250,6 +261,7 @@ function anchorFromHistory(
   return {
     value: best.value,
     label: index?.get(best.exerciseId)?.name ?? best.exerciseId,
+    factor: best.factor,
   };
 }
 

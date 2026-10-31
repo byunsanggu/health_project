@@ -1920,6 +1920,8 @@
     if (pickedMachine) logged.machine = pickedMachine;
     // 주 1회 무거운 세트 — 다음 무게 처방의 근거에서 빠진다(prescribeLoad)
     if (set.top) logged.top = true;
+    // 아파서 낮춘 무게 — 다음에 같은 통증이면 이 무게에 또 곱하지 않는다
+    if (lift.ruling && lift.ruling.action === 'reduceLoad' && lift.ruling.loadMultiplier < 1) logged.painCut = true;
     state.todaySets.push(logged);
     // 되돌릴 때 이 항목만 정확히 빼려고 붙여 둔다. 같은 중량·반복이 여러 번
     // 나오므로 값으로 찾으면 엉뚱한 세트가 지워진다.

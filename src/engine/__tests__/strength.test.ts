@@ -142,3 +142,16 @@ describe('calibrateFromSet', () => {
     assert.ok(calibrated > estimated);
   });
 });
+
+describe('작은 고립 종목 기록으로 큰 종목을 키우지 않는다', () => {
+  it('케이블 레터럴 5kg(기계 최소) 한 번으로 초보 여성 덤벨 숄더프레스가 체중 기준보다 무거워지지 않는다', () => {
+    const press = exerciseById('seated-dumbbell-press') as Exercise;
+    const profile = { bodyweightKg: 55, level: 'beginner' as const, sex: 'female' as const };
+    const plain = suggest(press, { profile, repRange: { min: 6, max: 10 }, targetRir: 4 });
+    const afterLateral = suggest(press, {
+      profile, repRange: { min: 6, max: 10 }, targetRir: 4,
+      history: [session('2026-09-07', sets('cable-lateral-raise', 1, { weightKg: 5, reps: 12, rir: 4 }))],
+    });
+    assert.ok((afterLateral.weightKg ?? 0) <= (plain.weightKg ?? 0), `${afterLateral.weightKg} > ${plain.weightKg}`);
+  });
+});

@@ -156,7 +156,9 @@ export function prescribeLoad(
     const jump = jumpFor(exercise, last.weightKg, rirSurplus);
     return {
       ...base,
-      weightKg: roundToIncrement(last.weightKg + jump, step),
+      // 칸에 맞추지 않고 그대로 더한다 — 67.5에 5를 더해 칸(5)으로 반올림하면 75가 되어 말한 것보다 두 배 올랐다.
+      // 실제로 끼울 수 있는 무게로는 세션이 맞춘다(올릴 때는 지난 무게를 넘는 가장 가까운 값).
+      weightKg: round1(last.weightKg + jump),
       change: 'increase',
       deltaKg: round1(jump),
       reason: `${sets}${rule.repRange.max}회를 채우고 여유도 ${describeRir(tightest.rir, observedRir)} 남았습니다. ${round1(jump)}kg 올립니다.`,

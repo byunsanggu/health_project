@@ -154,6 +154,26 @@ describe('통증 대응', () => {
     assert.equal(bench.sets[0]?.weightKg, 67.5, '80kg 유지 처방에 4점이면 0.85 배율');
   });
 
+  it('같은 통증이 이어지면 이미 낮춘 무게에 또 곱하지 않는다', () => {
+    const history = [
+      session('2026-09-07', sets('barbell-bench-press', 4, { weightKg: 80, reps: 8, rir: 2 })),
+      session('2026-09-14', sets('barbell-bench-press', 4, { weightKg: 67.5, reps: 10, rir: 3, painCut: true })),
+    ];
+    const planned = build({ history, pain: [{ joint: 'wrist', score: 4 }] });
+    const bench = planned.exercises.find((e) => e.exercise.id === 'barbell-bench-press')!;
+    assert.equal(bench.painRuling.action, 'reduceLoad');
+    assert.equal(bench.sets[0]?.weightKg, 67.5, '지난번 낮춘 무게 그대로 — 57.5로 또 깎지 않는다');
+    assert.ok(!/올립니다/.test(bench.note), bench.note);
+  });
+
+  it('처음 하는 종목도 아픈 날이면 시작 무게를 낮춘다', () => {
+    const lifter: LifterProfile = { bodyweightKg: 90, level: 'intermediate', sex: 'male' };
+    const without = build({ lifter }).exercises.find((e) => e.exercise.id === 'barbell-bench-press')!;
+    const hurt = build({ lifter, pain: [{ joint: 'wrist', score: 5 }] }).exercises.find((e) => e.exercise.id === 'barbell-bench-press')!;
+    assert.ok((without.sets[0]?.weightKg ?? 0) > 20, '시작 무게가 나와야 비교가 된다: ' + without.sets[0]?.weightKg);
+    assert.ok((hurt.sets[0]?.weightKg ?? 0) < without.sets[0]!.weightKg!, `${hurt.sets[0]?.weightKg} vs ${without.sets[0]?.weightKg}`);
+  });
+
   it('통증 판정은 부하 계산보다 먼저 적용된다', () => {
     // 증량 조건을 충족한 기록이지만 통증이 있으면 최종 중량은 직전보다 높지 않아야 한다.
     const benchHistory = [
