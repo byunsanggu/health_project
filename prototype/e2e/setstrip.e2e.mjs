@@ -29,14 +29,14 @@ export default async function ({ page, url, shot }) {
   check((await page.locator('.set-box.now .set-no').first().textContent()).startsWith('3세트'), '지금 세트: ' + await page.locator('.set-box.now .set-no').first().textContent());
   await shot('1-strip');
 
-  // 1세트 횟수를 고친다 — 지금 할 세트는 그대로 3세트
-  await page.locator('.set-box.done').first().click();
-  await page.locator('dialog .set-edit-reps').fill('7');
-  check(await page.locator('dialog .rir-row').count() === 0, '고치는 창에서도 남은 힘을 묻습니다');
+  // 1세트 횟수를 그 줄에서 바로 고친다(창 없이) — 지금 할 세트는 그대로 3세트
+  const reps = page.locator('.set-box.done').first().locator('.set-in-reps');
+  await reps.fill('7');
+  await reps.press('Enter');
+  await reps.blur();
+  check(await page.locator('dialog[open]').count() === 0, '고치는데 창이 떴습니다');
   await shot('2-edit');
-  await page.locator('dialog .set-edit-save').click();
-  await page.waitForFunction(() => !document.querySelector('dialog')?.open);
-  check(/×\s*7회/.test(await page.locator('.set-box.done').first().textContent()), '고친 횟수가 줄에 없습니다');
+  check(await page.locator('.set-box.done').first().locator('.set-in-reps').inputValue() === '7', '고친 횟수가 줄에 없습니다');
   check((await head()) === total + '세트 중 2세트 끝', '고치고 나서 머리줄: ' + await head());
   check((await page.locator('.set-box.now .set-no').first().textContent()).startsWith('3세트'), '고쳤더니 지금 세트가 바뀌었습니다');
 

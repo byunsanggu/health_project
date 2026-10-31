@@ -48,6 +48,19 @@ export default async function ({ page, url, shot }) {
   const lines = await page.locator('.set-strip .set-box .set-load').allTextContents();
   check(lines.every((line) => line.startsWith(want)), '무게를 내렸는데 뒤 세트가 그대로입니다: ' + lines.join(' / '));
   check((await page.locator('.warmup-set').count()) > 0, '1세트 위에 워밍업 줄이 없습니다');
+
+  // 혼자 할 때는 워밍업 줄을 눌러 ✓
+  await page.locator('.warmup-set').first().click();
+  check(await page.locator('.warmup-set[aria-pressed="true"]').count() === 1, '워밍업 줄을 눌렀는데 ✓가 없습니다');
+
+  // 남은 세트는 그 줄에서 바로 — 3세트만 무겁게(창 없이)
+  const third = page.locator('.set-strip .set-box').nth(2).locator('.set-in-weight');
+  await third.fill('50');
+  await third.press('Enter');
+  await third.blur();
+  check(await page.locator('dialog[open]').count() === 0, '남은 세트를 고치는데 창이 떴습니다');
+  check((await page.locator('.set-strip .set-box').nth(2).locator('.set-in-weight').inputValue()) === '50', '3세트 무게가 안 바뀌었습니다');
+  check((await page.locator('.set-strip .set-box').nth(1).locator('.set-in-weight').inputValue()) !== '50', '고치지 않은 2세트까지 바뀌었습니다');
   check(await page.locator('.warmup-set').count() === warmBefore + 1, '다시 켜니 더한 워밍업이 사라졌습니다');
 
   // 휴식 시간 — 내 정보에서 고른다
