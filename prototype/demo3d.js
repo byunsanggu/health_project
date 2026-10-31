@@ -30,13 +30,17 @@
   /* ── 몸 치수 (렌더용) ───────────────────────── */
 
   // 팔다리 단면 반지름 — [뼈 길이 비율, 반지름(m)]
+  /*
+   * 운동 1~2년 한 탄탄한 몸 — 어깨가 넓고 허리가 잘록하다(역삼각형). 보디빌더처럼 키우지 않는다:
+   * 초보가 거리감을 느끼고, 덩어리가 관절 · 손 위치를 가려 동작이 덜 보인다.
+   */
   var PROFILE = {
-    thigh: [[0, 0.084], [0.12, 0.082], [0.45, 0.07], [0.8, 0.057], [1, 0.05]],
-    shin: [[0, 0.05], [0.12, 0.055], [0.3, 0.057], [0.62, 0.044], [0.9, 0.034], [1, 0.032]],
-    upperArm: [[0, 0.05], [0.25, 0.047], [0.55, 0.043], [0.85, 0.037], [1, 0.035]],
-    forearm: [[0, 0.037], [0.22, 0.041], [0.6, 0.033], [1, 0.026]],
-    lumbar: [[0, 0.15], [0.5, 0.142], [1, 0.146]],
-    chest: [[0, 0.146], [0.3, 0.166], [0.62, 0.176], [0.86, 0.158], [1, 0.1]],
+    thigh: [[0, 0.09], [0.12, 0.09], [0.42, 0.08], [0.78, 0.063], [1, 0.052]],
+    shin: [[0, 0.052], [0.12, 0.058], [0.28, 0.063], [0.58, 0.047], [0.88, 0.035], [1, 0.033]],
+    upperArm: [[0, 0.056], [0.22, 0.054], [0.52, 0.05], [0.82, 0.041], [1, 0.037]],
+    forearm: [[0, 0.04], [0.2, 0.045], [0.58, 0.035], [1, 0.027]],
+    lumbar: [[0, 0.14], [0.5, 0.134], [1, 0.146]],
+    chest: [[0, 0.148], [0.3, 0.172], [0.62, 0.188], [0.86, 0.172], [1, 0.106]],
   };
 
   /*
@@ -46,24 +50,31 @@
    * 몸통 앞면(가슴 · 배)은 겉면보다 1cm쯤만 솟게 — 더 안쪽이면 몸통에 묻혀 빛나도 안 보인다.
    */
   var MUSCLES = [
-    { group: 'chest', bone: 'chest', u: 0.62, side: 0.078, front: 0.122, r: [0.068, 0.07, 0.034], pair: true, turn: 16 },
-    { group: 'abs', bone: 'lumbar', u: 0.52, side: 0, front: 0.114, r: [0.06, 0.1, 0.03] },
-    { group: 'abs', bone: 'chest', u: 0.16, side: 0, front: 0.124, r: [0.058, 0.07, 0.028] },
-    { group: 'back', bone: 'chest', u: 0.62, side: 0.11, front: -0.025, r: [0.05, 0.1, 0.055], pair: true },
-    { group: 'back', bone: 'chest', u: 0.3, side: 0.095, front: -0.03, r: [0.042, 0.1, 0.05], pair: true },
-    { group: 'back', bone: 'chest', u: 0.72, side: 0.045, front: -0.06, r: [0.05, 0.07, 0.025], pair: true },
-    { group: 'lowBack', bone: 'lumbar', u: 0.5, side: 0.035, front: -0.058, r: [0.03, 0.1, 0.022], pair: true },
-    { group: 'traps', bone: 'chest', u: 0.93, side: 0.075, front: -0.03, r: [0.075, 0.05, 0.035], pair: true },
-    { group: 'frontDelt', bone: 'upperArm', u: 0.13, side: 0.008, front: 0.03, r: [0.03, 0.07, 0.026], pair: true },
-    { group: 'sideDelt', bone: 'upperArm', u: 0.11, side: 0.036, front: 0, r: [0.026, 0.07, 0.034], pair: true },
-    { group: 'rearDelt', bone: 'upperArm', u: 0.13, side: 0.008, front: -0.03, r: [0.03, 0.07, 0.026], pair: true },
-    { group: 'biceps', bone: 'upperArm', u: 0.56, side: 0, front: 0.026, r: [0.028, 0.1, 0.024], pair: true },
-    { group: 'triceps', bone: 'upperArm', u: 0.5, side: 0, front: -0.026, r: [0.03, 0.12, 0.026], pair: true },
-    { group: 'forearms', bone: 'forearm', u: 0.3, side: 0.008, front: 0.012, r: [0.03, 0.09, 0.028], pair: true },
-    { group: 'quads', bone: 'thigh', u: 0.5, side: 0.008, front: 0.04, r: [0.055, 0.17, 0.034], pair: true },
-    { group: 'hamstrings', bone: 'thigh', u: 0.5, side: 0, front: -0.04, r: [0.05, 0.16, 0.034], pair: true },
-    { group: 'glutes', bone: 'pelvis', u: 0.45, side: 0.07, front: -0.082, r: [0.07, 0.08, 0.05], pair: true },
-    { group: 'calves', bone: 'shin', u: 0.3, side: 0, front: -0.03, r: [0.04, 0.1, 0.03], pair: true },
+    // 가슴 — 넓고 두툼하게, 아래 경계가 보이게
+    { group: 'chest', bone: 'chest', u: 0.62, side: 0.068, front: 0.142, r: [0.082, 0.06, 0.03], pair: true, turn: 18 },
+    // 복근 — 세 줄 두 칸(식스팩). 가운데 홈이 보이게 양쪽으로 나눈다
+    { group: 'abs', bone: 'lumbar', u: 0.36, side: 0.03, front: 0.112, r: [0.027, 0.04, 0.02], pair: true },
+    { group: 'abs', bone: 'lumbar', u: 0.7, side: 0.03, front: 0.116, r: [0.027, 0.04, 0.02], pair: true },
+    { group: 'abs', bone: 'chest', u: 0.12, side: 0.03, front: 0.124, r: [0.026, 0.038, 0.02], pair: true },
+    // 등 — 광배가 옆으로 퍼져 역삼각형을 만든다
+    { group: 'back', bone: 'chest', u: 0.58, side: 0.118, front: -0.022, r: [0.056, 0.11, 0.058], pair: true },
+    { group: 'back', bone: 'chest', u: 0.28, side: 0.1, front: -0.03, r: [0.048, 0.11, 0.054], pair: true },
+    { group: 'back', bone: 'chest', u: 0.72, side: 0.048, front: -0.064, r: [0.054, 0.075, 0.028], pair: true },
+    { group: 'lowBack', bone: 'lumbar', u: 0.5, side: 0.036, front: -0.06, r: [0.032, 0.11, 0.024], pair: true },
+    { group: 'traps', bone: 'chest', u: 0.93, side: 0.078, front: -0.03, r: [0.082, 0.056, 0.04], pair: true },
+    // 어깨 — 둥글게 솟은 삼각근
+    { group: 'frontDelt', bone: 'upperArm', u: 0.13, side: 0.008, front: 0.034, r: [0.034, 0.076, 0.03], pair: true },
+    { group: 'sideDelt', bone: 'upperArm', u: 0.12, side: 0.04, front: 0, r: [0.03, 0.078, 0.04], pair: true },
+    { group: 'rearDelt', bone: 'upperArm', u: 0.13, side: 0.008, front: -0.034, r: [0.034, 0.076, 0.03], pair: true },
+    { group: 'biceps', bone: 'upperArm', u: 0.55, side: 0, front: 0.031, r: [0.032, 0.105, 0.029], pair: true },
+    { group: 'triceps', bone: 'upperArm', u: 0.48, side: 0, front: -0.031, r: [0.034, 0.125, 0.03], pair: true },
+    { group: 'forearms', bone: 'forearm', u: 0.28, side: 0.01, front: 0.014, r: [0.033, 0.095, 0.031], pair: true },
+    // 허벅지 — 반바지 밑으로 앞쪽 근육(무릎 위 물방울)이 보이게 조금 아래로
+    { group: 'quads', bone: 'thigh', u: 0.6, side: 0.004, front: 0.044, r: [0.046, 0.17, 0.034], pair: true },
+    { group: 'hamstrings', bone: 'thigh', u: 0.58, side: 0, front: -0.044, r: [0.044, 0.16, 0.034], pair: true },
+    // 엉덩이 — 반바지 위라 평소엔 바지 색(빛날 때만 색이 든다)
+    { group: 'glutes', bone: 'pelvis', u: 0.45, side: 0.072, front: -0.086, r: [0.074, 0.082, 0.054], pair: true, cloth: true },
+    { group: 'calves', bone: 'shin', u: 0.28, side: 0, front: -0.036, r: [0.046, 0.1, 0.036], pair: true },
   ];
 
   /* ── three.js ────────────────────────────────── */
@@ -273,9 +284,9 @@
       var hand = boneBasis(bones['hand' + s]);
       place(parts['hand' + s], add3(bones['hand' + s].a, mul3(hand.y, 0.055)), hand.x, hand.y, 0.03, 0.1, 0.082);
       wrap(parts['thigh' + s], bones['thigh' + s], 1, 1, 0);
-      // 반바지 — 넓적다리 위쪽 40%
+      // 반바지 — 허벅지 가운데쯤까지(속옷처럼 보이지 않게). 조금 헐렁하게
       var thigh = boneBasis(bones['thigh' + s]);
-      place(parts['short' + s], add3(bones['thigh' + s].a, mul3(thigh.y, -0.04)), thigh.x, thigh.y, 1.13, thigh.len * 0.52, 1.13);
+      place(parts['short' + s], add3(bones['thigh' + s].a, mul3(thigh.y, -0.04)), thigh.x, thigh.y, 1.17, thigh.len * 0.66, 1.17);
       wrap(parts['shin' + s], bones['shin' + s], 1, 1, 0);
       ball(parts['knee' + s], bones['shin' + s].a, 0.05);
       ball(parts['ankle' + s], bones['shin' + s].b, 0.034);
@@ -312,11 +323,12 @@
   /** 근육 색 — 그 종목이 쓰는 비율만큼, 힘쓰는 구간에 더 밝게. */
   function paintMuscles(body, colors, weights, effort, fault) {
     var base = colorOf(colors.muscle);
+    var cloth = colorOf(colors.shorts);
     var hot = colorOf(fault ? colors.fault : colors.accent);
     body.muscles.forEach(function (m) {
       var w = weights[m.spec.group] || 0;
       var k = Math.min(1, w * (0.55 + 0.45 * effort) * 1.15);
-      m.mat.color.copy(base).lerp(hot, k);
+      m.mat.color.copy(m.spec.cloth ? cloth : base).lerp(hot, k);
       m.mat.emissive.copy(hot);
       m.mat.emissiveIntensity = k * 0.28 * effort;
     });

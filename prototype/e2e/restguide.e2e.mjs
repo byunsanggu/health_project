@@ -14,6 +14,11 @@ export default async function ({ page, url, shot }) {
   });
   await begin(page);
   await runUntil(page, 'prep');
+  // 몸 풀기도 동작이 화면에 돈다
+  await page.locator('#focus .focus-btn', { hasText: '지금 시작' }).click().catch(() => {});
+  await page.clock.runFor(300);
+  check(await page.locator('#focus .stretch-motion canvas').count() === 1, '몸 풀기 동작이 안 보입니다');
+  await shot('0-prep');
   await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
   if (await runUntil(page, ['warm', 'count']) === 'warm') {
     await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();

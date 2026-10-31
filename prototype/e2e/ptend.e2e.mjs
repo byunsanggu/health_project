@@ -45,6 +45,9 @@ export default async function ({ page, url, shot }) {
   check(await focusPhase(page) === 'cool', '스트레칭까지 못 갔습니다');
   check(sets >= 2, `세트가 ${sets}개뿐입니다`);
   check(!lastLines.some((line) => /한 번 더|한 세트 더/.test(line)), '마지막 세트 뒤에 한 번 더라고 했습니다: ' + lastLines.join(' / '));
+  // 스트레칭 자세가 화면에 돈다
+  await page.clock.runFor(1500);
+  check(await page.locator('.pt-cool .stretch-motion canvas').count() === 1, '스트레칭 동작이 안 보입니다');
   await shot('1-cool');
 
   // 스트레칭 중에 다른 앱으로 갔다가 와서, 멈춘 채로 끝낸다

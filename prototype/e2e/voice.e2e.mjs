@@ -35,7 +35,7 @@ export default async function ({ page, url, shot }) {
   await shot('1-ready');
 
   // 말 빠르기 — 0.5배~1.5배. 고르면 그 빠르기로 한마디 들려주고, 다시 켜도 남는다
-  const rates = await page.locator('#screen .voice-controls .segmented').last().locator('button').allTextContents();
+  const rates = await page.locator('#screen .voice-controls .list-label:has-text("PT 빠르기") ~ .segmented').first().locator('button').allTextContents();
   check(rates.join(',') === '0.5배,0.75배,보통,1.25배,1.5배', '말 빠르기 칸: ' + rates.join(','));
   const heard = await page.evaluate(() => window.__said.length);
   await page.locator('#screen .voice-controls .segmented button', { hasText: '1.5배' }).click();

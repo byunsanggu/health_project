@@ -18,6 +18,7 @@ export * from './consent.ts';
 export * from './exercises.ts';
 export * from './demos.ts';
 export { motionFor, faultsFor, motionIds } from './motions.ts';
+export { stretchMotionFor, stretchMotionIds, stretchStyle, mirrorClip, mirrorPose, type StretchStyle } from './motionsStretch.ts';
 export { clipFrame, clipBounds, clipPoints, clipPose, effortAt, type Clip, type ClipFrame, type Prim, type Placed } from './motionKit.ts';
 export { solvePose, BONES, type Pose3, type Solved, type Bone } from './rig.ts';
 export * from './volume.ts';

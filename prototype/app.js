@@ -8588,7 +8588,7 @@
     run.endsAt = Date.now() + talk + item.seconds * 1000;
     run.talkMs = talk;
     render();
-    if (item.sides) later(function () { coachSay([E.cooldownSwitchLine(state.coach.style)]); }, talk + item.seconds * 500);
+    if (item.sides) later(function () { coachSay([E.cooldownSwitchLine(state.coach.style)]); render(); }, talk + item.seconds * 500);
     later(function () { prepStep(run, i + 1); }, talk + item.seconds * 1000);
   }
 
@@ -8643,7 +8643,7 @@
     run.endsAt = Date.now() + talk + item.seconds * 1000;
     render();
     if (i === 0) screen.scrollTop = 0;
-    if (item.sides) later(function () { coachSay([E.cooldownSwitchLine(state.coach.style)]); }, talk + item.seconds * 500);
+    if (item.sides) later(function () { coachSay([E.cooldownSwitchLine(state.coach.style)]); render(); }, talk + item.seconds * 500);
     later(function () { cooldownStep(run, i + 1); }, talk + item.seconds * 1000);
   }
 
@@ -8696,6 +8696,8 @@
     return el('div', { class: 'pt-cool' }, [
       el('div', { class: 'label', text: '마무리 스트레칭 ' + (waiting ? '· 곧 시작' : (cool.index + 1) + ' / ' + cool.steps.length) }),
       el('div', { class: 'pt-cool-name', text: item.name }),
+      // 스트레칭 자세를 그대로 — 양쪽 하는 동작은 반쯤에서 반대쪽으로 바뀐다
+      stretchMotion(item, Math.min(item.seconds, left), item.seconds),
       el('div', { class: 'pt-cool-left', id: 'pt-cool-left', text: left + '초' }),
       el('p', { class: 'hint-line', text: item.cue + (item.sides ? ' · 반쯤에서 반대쪽' : '') }),
       el('div', { class: 'pt-cool-actions' }, [
@@ -9274,10 +9276,21 @@
       var waitingPrep = prep.index < 0;
       var move = prep.steps[Math.max(0, prep.index)];
       var moveLeft = prep.endsAt ? Math.min(move.seconds, Math.max(0, Math.ceil((prep.endsAt - Date.now()) / 1000))) : move.seconds;
-      middle.appendChild(focusRing(waitingPrep ? 1 : Math.min(1, moveLeft / move.seconds), 'focus-ring-bar', [
-        el('span', { class: 'focus-of', text: waitingPrep ? '곧 시작' : '몸 풀기 ' + (prep.index + 1) + ' / ' + prep.steps.length }),
-        el('b', { class: 'focus-num rest', id: 'focus-prep-left', text: moveLeft >= 60 ? E.formatDuration(moveLeft) : moveLeft + '초' }),
-      ]));
+      // 몸 풀기 동작을 그대로 보여 준다 — 그때는 큰 원 대신 숫자만
+      var prepMotion = stretchMotion(move, moveLeft, move.seconds);
+      if (prepMotion) {
+        middle.classList.add('with-guide');
+        middle.appendChild(el('div', { class: 'focus-switch-time' }, [
+          el('span', { text: waitingPrep ? '곧 시작' : '몸 풀기 ' + (prep.index + 1) + ' / ' + prep.steps.length }),
+          el('b', { class: 'focus-num rest small', id: 'focus-prep-left', text: moveLeft >= 60 ? E.formatDuration(moveLeft) : moveLeft + '초' }),
+        ]));
+        middle.appendChild(prepMotion);
+      } else {
+        middle.appendChild(focusRing(waitingPrep ? 1 : Math.min(1, moveLeft / move.seconds), 'focus-ring-bar', [
+          el('span', { class: 'focus-of', text: waitingPrep ? '곧 시작' : '몸 풀기 ' + (prep.index + 1) + ' / ' + prep.steps.length }),
+          el('b', { class: 'focus-num rest', id: 'focus-prep-left', text: moveLeft >= 60 ? E.formatDuration(moveLeft) : moveLeft + '초' }),
+        ]));
+      }
       middle.appendChild(el('div', { class: 'focus-what' }, [el('b', { text: move.name })]));
       middle.appendChild(el('div', { class: 'focus-setting', text: move.cue + (move.sides ? ' · 반쯤에서 반대쪽' : '') }));
       var nextMove = prep.steps[Math.max(0, prep.index) + 1];
@@ -9373,6 +9386,18 @@
 
   function settleLiveMotion() {
     if (state.liveMotion && state.liveMotion.key !== state.motionWanted) disposeLiveMotion();
+  }
+
+  /**
+   * 몸 풀기 · 스트레칭 동작 — 그 동작 그대로 돈다. 양쪽 하는 동작은 반쯤 지나면(코치가 "반대쪽") 거울 동작으로.
+   * left = 이 동작에서 남은 초, total = 이 동작 시간.
+   */
+  function stretchMotion(step, left, total) {
+    if (!step || !E.stretchMotionFor) return null;
+    var side = step.sides && total > 0 && left <= total / 2 ? 'R' : 'L';
+    var clip = E.stretchMotionFor(step.id, side);
+    var canvas = liveMotion('st:' + step.id + ':' + side, clip, { label: step.name + ' 동작' });
+    return canvas ? el('div', { class: 'focus-motion stretch-motion' }, [canvas]) : null;
   }
 
   /** 쉬는 동안 다음 운동 — 동작이 바로 돌고, 잡는 법 · 동작 핵심 · 흔한 실수 하나. */
