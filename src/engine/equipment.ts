@@ -438,11 +438,15 @@ export function gymFromCatalog(selection: GymSelection): GymProfile {
 
   // 실측값이 있는 기구는 종목별 명세를 따로 준다.
   if (selected.has('ez-bar')) {
-    overrides['barbell-curl'] = {
-      kind: 'barbell',
+    // EZ바로 하는 종목은 전부 EZ바 무게(보통 10kg)부터 — 스컬 크러셔 · 프리처 컬이 20kg 올림픽 바로 시작하던 것
+    const ez = {
+      kind: 'barbell' as const,
       barKg: value('ez-bar', 'barKg') ?? 10,
       plates: plates.filter((plate) => plate <= 10),
     };
+    for (const [id, needs] of Object.entries(EXERCISE_REQUIREMENTS)) {
+      if (needs.includes('ez-bar') && overrides[id] !== 'unavailable') overrides[id] = { ...ez };
+    }
   }
   if (selected.has('leg-press-machine')) {
     overrides['leg-press'] = {

@@ -75,7 +75,7 @@ export const EXERCISES: readonly Exercise[] = [
     name: '파이크 푸시업', nameEn: 'Pike Push-Up',
     equipment: 'bodyweight', pattern: 'verticalPush', increment: 0,
     contribution: { frontDelt: 0.85, triceps: 0.5, sideDelt: 0.3, chest: 0.25 },
-    jointStress: { shoulder: 0.55, elbow: 0.3, wrist: 0.6 },
+    jointStress: { shoulder: 0.75, elbow: 0.3, wrist: 0.6 },
   },
   {
     id: 'glute-bridge',
@@ -698,7 +698,7 @@ export const EXERCISES: readonly Exercise[] = [
     id: 'kettlebell-swing', name: '케틀벨 스윙', nameEn: 'Kettlebell Swing',
     equipment: 'dumbbell', pattern: 'hinge', increment: 4,
     contribution: { glutes: 1, hamstrings: 0.6, back: 0.3, abs: 0.3 },
-    jointStress: { lowBack: 0.4, hip: 0.3, shoulder: 0.2 },
+    jointStress: { lowBack: 0.6, hip: 0.3, shoulder: 0.2 },
   },
   {
     id: 'decline-sit-up', name: '디클라인 싯업', nameEn: 'Decline Sit-Up',
@@ -749,7 +749,7 @@ export const EXERCISES: readonly Exercise[] = [
     equipment: 'barbell', pattern: 'hinge', increment: 5,
     // 몸 안에 서서 드니 허리 부담이 컨벤셔널보다 적고 무릎이 더 쓰인다.
     contribution: { glutes: 1, quads: 0.6, hamstrings: 0.5, back: 0.4, traps: 0.4 },
-    jointStress: { lowBack: 0.5, hip: 0.4, knee: 0.4 },
+    jointStress: { lowBack: 0.7, hip: 0.4, knee: 0.4 },
   },
   {
     id: 'glute-ham-raise', name: '글루트 햄 레이즈', nameEn: 'Glute Ham Raise',
@@ -793,13 +793,13 @@ export const EXERCISES: readonly Exercise[] = [
     equipment: 'dumbbell', pattern: 'hinge', increment: 2,
     // 바벨보다 가볍게 다루고 덤벨이 몸 옆으로 내려가 허리 부담이 덜하다
     contribution: { hamstrings: 1, glutes: 0.8, back: 0.3, forearms: 0.4 },
-    jointStress: { lowBack: 0.55, hip: 0.4, knee: 0.15 },
+    jointStress: { lowBack: 0.75, hip: 0.4, knee: 0.15 },
   },
   {
     id: 'dumbbell-bent-over-row', name: '덤벨 벤트오버 로우', nameEn: 'Dumbbell Bent-Over Row',
     equipment: 'dumbbell', pattern: 'horizontalPull', increment: 2,
     contribution: { back: 1, rearDelt: 0.5, biceps: 0.4, traps: 0.4, hamstrings: 0.25 },
-    jointStress: { lowBack: 0.55, shoulder: 0.3, elbow: 0.3 },
+    jointStress: { lowBack: 0.7, shoulder: 0.3, elbow: 0.3 },
   },
   {
     id: 'dumbbell-calf-raise', name: '덤벨 카프레이즈', nameEn: 'Dumbbell Calf Raise',

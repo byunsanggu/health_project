@@ -137,3 +137,18 @@ describe('몸 풀기를 한 날의 워밍업', () => {
     assert.ok(heavy.sets.length < old.sets.length);
   });
 });
+
+describe('근육은 데워졌어도 처음 하는 동작이면 두 단계', () => {
+  it('레그프레스 뒤 데드리프트 · 벤치 뒤 오버헤드는 워밍업이 0세트가 아니다', async () => {
+    const { planWarmup, warmedMusclesOf } = await import('../warmup.ts');
+    const { exerciseById } = await import('../exercises.ts');
+    const dead = exerciseById('conventional-deadlift')!;
+    const warmed = warmedMusclesOf(exerciseById('leg-press')!);
+    const plan = planWarmup({ exercise: dead, workingWeightKg: 140, workingReps: 5, alreadyWarmedMuscles: warmed, alreadyDonePatterns: ['squat'], generalWarmupDone: true });
+    assert.ok(plan.sets.length >= 2, JSON.stringify(plan));
+    // 같은 동작을 이미 했으면(벤치 뒤 인클라인) 바로 본세트
+    const incline = planWarmup({ exercise: exerciseById('incline-barbell-press')!, workingWeightKg: 60, workingReps: 8,
+      alreadyWarmedMuscles: warmedMusclesOf(exerciseById('barbell-bench-press')!), alreadyDonePatterns: ['horizontalPush'], generalWarmupDone: true });
+    assert.equal(incline.sets.length, 0);
+  });
+});

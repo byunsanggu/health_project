@@ -1599,7 +1599,7 @@
       if (E.estimateSessionTime(built, timeOptions).totalMinutes < budget) {
         // 평소보다 넉넉한 날 — 이번 주 회복 한계 안에서 세트를 더한다. 덜어내는 주 · 별로인 날 · 내 루틴은 그대로.
         if (state.plan.phase !== 'deload' && todayFeel() !== 'low' && !state.customRoutine) {
-          state.timeFit = E.extendToTimeBudget(built, budget, Object.assign({ headroom: weekHeadroom() }, timeOptions));
+          state.timeFit = E.extendToTimeBudget(built, budget, Object.assign({ headroom: weekHeadroom(built) }, timeOptions));
           built = state.timeFit.session;
         }
       } else {
@@ -1633,6 +1633,7 @@
     state.session = built;
 
     var warmed = [];
+    var donePatterns = [];
     /*
      * 가벼운 무게로 배우는 중인 종목은 여기서 무게를 낮춘다.
      *
@@ -1651,6 +1652,7 @@
         workingReps: firstSet ? firstSet.targetReps.max : 10,
         level: state.lifter.level,
         alreadyWarmedMuscles: warmed.slice(),
+        alreadyDonePatterns: donePatterns.slice(),
         loading: item.loading,
         barKg: item.loading && item.loading.kind === 'barbell' ? item.loading.barKg : undefined,
         // 시작에 몸 풀기를 하므로 종목 워밍업은 오늘 처음 하는 복합 동작에만
@@ -1659,6 +1661,7 @@
       E.warmedMusclesOf(item.exercise).forEach(function (m) {
         if (warmed.indexOf(m) < 0) warmed.push(m);
       });
+      donePatterns.push(item.exercise.pattern);
 
       return {
         exercise: item.exercise,
@@ -1790,17 +1793,27 @@
   }
 
   /**
-   * 부위마다 이번 주에 더 넣어도 되는 유효 세트 — 회복 한계(MRV) − 이번 주 계획(다 했을 때).
-   * 시간이 넉넉한 날 세트를 붙일 때 이 선을 넘지 않는다. 근성장 체크와 같은 셈이다.
+   * 부위마다 이번 주에 더 넣어도 되는 유효 세트 — 적정선(MAV) − 이번 주 계획.
+   * 앞선 날에 이미 계획보다 더 했으면(어제도 90분) 그만큼 또 뺀다: 이번 주 한 것 + 오늘 계획이 계획을 넘으면 그쪽으로.
+   * 회복 한계(MRV)까지 채우지 않는다 — 블록의 남은 주에 늘릴 자리가 없어진다.
    */
-  function weekHeadroom() {
+  function weekHeadroom(today) {
+    var opts = rirOptions();
     var planned = E.aggregateVolume(E.plannedWeekLogs({
       templates: state.program.templates, plan: state.plan, index: index, landmarks: state.landmarks,
       history: state.history, level: state.lifter && state.lifter.level,
-    }), index, rirOptions());
+    }), index, opts);
+    var before = E.aggregateVolume(weekSessions().filter(function (session) { return session.date !== state.todayDate; }), index, opts);
+    var todayLogs = today ? [{ id: 'today', date: state.todayDate, sets: [].concat.apply([], today.exercises.map(function (item) {
+      return item.sets.filter(function (set) { return !set.top; }).map(function (set) {
+        return { exerciseId: item.exercise.id, weightKg: set.weightKg || 0, reps: set.targetReps.max, rir: set.targetRir };
+      });
+    })) }] : [];
+    var todayPlanned = E.aggregateVolume(todayLogs, index, opts);
     var room = {};
     E.MUSCLE_GROUPS.forEach(function (muscle) {
-      room[muscle] = Math.max(0, state.landmarks[muscle].mrv - planned[muscle].effectiveSets);
+      var used = Math.max(planned[muscle].effectiveSets, before[muscle].effectiveSets + todayPlanned[muscle].effectiveSets);
+      room[muscle] = Math.max(0, state.landmarks[muscle].mav - used);
     });
     return room;
   }
@@ -7463,7 +7476,7 @@
             state.restBand = null;
             state.restOverrides = {};
             rebuildSession();
-            pushLog('휴식', '기본 띠(1:00~1:30)로 되돌렸습니다.');
+            pushLog('휴식', '기본(큰 운동 2~3분 · 고립 1~1.5분)으로 되돌렸습니다.');
             render();
             draw();
           },
@@ -7771,9 +7784,11 @@
   function setStrip(lift, liftIndex, cursor, doneCount) {
     var sets = lift.sets;
     var pounds = inPounds(lift.exercise.id);
-    var unit = pounds ? 'lb' : 'kg';
+    // 덤벨 두 개를 드는 종목은 "씩" — 2kg이 한 손에 2kg인지 둘 합쳐 2kg인지 헷갈린다
+    var each = pairOfDumbbells(lift.exercise) ? '씩' : '';
+    var unit = (pounds ? 'lb' : 'kg') + each;
     var load = function (kg, reps) {
-      return (kg > 0 ? E.weightLabelIn(kg, pounds) : '맨몸') + ' × ' + reps + '회';
+      return (kg > 0 ? E.weightLabelIn(kg, pounds) + each : '맨몸') + ' × ' + reps + '회';
     };
     /*
      * 세트마다 한 줄 — "1세트 [35]kg × [10]회 ✓ / 2세트 지금 / 3세트 [35]kg × [10]회".
@@ -7876,6 +7891,12 @@
       ]),
       el('div', { class: 'set-strip' }, rows),
     ]);
+  }
+
+  /** 덤벨을 양손에 하나씩 드는 종목인가 — 고블릿 · 케틀벨 스윙 · 한 팔씩 하는 것은 하나뿐이다. */
+  var ONE_DUMBBELL = ['goblet-squat', 'kettlebell-swing', 'dumbbell-overhead-extension', 'concentration-curl', 'one-arm-dumbbell-row'];
+  function pairOfDumbbells(exercise) {
+    return exercise.equipment === 'dumbbell' && !exercise.unilateral && ONE_DUMBBELL.indexOf(exercise.id) < 0;
   }
 
   /** 줄에서 바로 고친 숫자. 끝낸 세트면 기록까지, 안 한 세트면 그 세트와 같은 값이던 뒤 세트까지. */
@@ -15150,7 +15171,7 @@
     return el('div', { class: 'sheet rest-settings' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '휴식 시간' }),
-        el('span', { class: 'meta', text: E.describeBand(band) }),
+        el('span', { class: 'meta', text: !state.restBand ? '큰 운동 2~3분 · 고립 1~1.5분' : E.describeBand(band) }),
       ]),
       el('div', { class: 'sheet-body' }, [
         segmented(E.REST_PRESETS.map(function (preset) {

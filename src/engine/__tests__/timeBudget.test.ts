@@ -188,7 +188,8 @@ describe('시간 예산에 맞추기', () => {
 
   it('휴식만 줄여서 안 되면 평소대로 세트를 줄인다', () => {
     const result = fitToTimeBudget(session, 40, { allowShortRest: true });
-    assert.ok(result.adjustments.some((item) => item.action === 'trimSets'));
+    assert.ok(result.adjustments.some((item) => item.action === 'trimSets' || item.action === 'drop'));
+    assert.ok(!result.adjustments.some((item) => item.action === 'shortenRest'));
   });
 });
 
@@ -325,6 +326,18 @@ describe('시간이 넉넉한 날 — 하루 상한', () => {
     }
     for (const muscle of Object.keys(today)) {
       assert.ok(today[muscle]! <= Math.max(9, before[muscle]!) + 1e-9, `${muscle} ${today[muscle]}`);
+    }
+  });
+});
+
+describe('시간이 넉넉한 날 — 데드리프트류는 늘리지 않는다', () => {
+  it('HEAVY_PULLS에는 세트를 붙이지 않는다', async () => {
+    const { HEAVY_PULLS } = await import('../exercises.ts');
+    const plenty = { chest: 99, back: 99, quads: 99, hamstrings: 99, glutes: 99, sideDelt: 99, rearDelt: 99, frontDelt: 99, triceps: 99, biceps: 99, calves: 99, abs: 99, forearms: 99, traps: 99 };
+    for (const template of onboarded.program.templates) {
+      const day = buildSession({ template, date: '2026-09-21', plan: onboarded.firstWeek, history: [], index, gym: onboarded.gym, lifter: onboarded.lifter });
+      const result = extendToTimeBudget(day, 240, { headroom: plenty });
+      for (const item of result.adjustments) assert.ok(!HEAVY_PULLS.has(item.exerciseId), item.name);
     }
   });
 });

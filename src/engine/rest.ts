@@ -63,12 +63,21 @@ export const REST_MIN_SECONDS = 60;
 export const REST_MAX_SECONDS = 90;
 
 /**
- * 6회 이하 고중량 복합 세트는 기본 띠에서도 2분은 쉰다. 무거운 스쿼트 · 데드리프트를
- * 1분 15초 만에 다시 들면 뒤 세트 무게가 안 나오고, 그 세트들은 자극이 덜 붙는다
- * (짧은 휴식이 근력 · 근비대 모두에 손해라는 연구가 반복해서 나온다). 실패에 가깝거나
- * 허리를 많이 쓰면 조금 더(최대 2분 반). 사용자가 띠를 직접 골랐으면 그 띠를 따른다.
+ * 기본(띠를 따로 고르지 않았을 때)은 종목 종류로 정한다 — 반복 수가 아니라.
+ *
+ *   복합 동작        2분       (고반복 13회+ · 맨몸은 1분 30초)
+ *   큰 바벨 · 허리 부담 큰 동작 2분 30초 (스쿼트 · 데드 · 벤치 · 오버헤드 · 로우)
+ *   실패에 가까우면(여유 1 이하) +30초, 최대 3분
+ *   고립 · 코어      1분~1분 30초 띠 안에서
+ *
+ * 1분 남짓 쉬고 다시 들면 뒤 세트 반복이 무너지고, "모든 세트가 상단을 채우면 무게를 올린다"는
+ * 진행 규칙도 막힌다. 3분 쉰 쪽이 1분 쉰 쪽보다 근비대 · 근력 모두 더 늘었다(Schoenfeld 2016),
+ * 복합 동작은 90초 아래에서 손해가 크다(Singer 2024). 전에는 6회 이하만 2분이라 같은 스쿼트가
+ * 날마다 70초 · 120초를 오갔다.
  */
 export const HEAVY_COMPOUND_REST_SECONDS = 120;
+export const BIG_LIFT_REST_SECONDS = 150;
+export const MAX_DEFAULT_REST_SECONDS = 180;
 
 export const DEFAULT_BAND: RestBand = {
   minSeconds: REST_MIN_SECONDS,
@@ -92,13 +101,13 @@ export const REST_PRESETS: readonly {
     id: 'normal',
     label: '보통',
     band: DEFAULT_BAND,
-    note: '근비대 기본 · 1분~1분 30초',
+    note: '기본 · 큰 운동 2~3분, 고립 운동 1분~1분 30초',
   },
   {
     id: 'long',
     label: '길게',
-    band: { minSeconds: 90, maxSeconds: 150 },
-    note: '무겁게 갈 때 · 뒤 세트 반복을 지키고 싶을 때',
+    band: { minSeconds: 120, maxSeconds: 210 },
+    note: '무겁게 갈 때 · 뒤 세트 반복을 꼭 지키고 싶을 때',
   },
   {
     id: 'strength',
@@ -141,9 +150,19 @@ function toStep(seconds: number): number {
  */
 const STEPS = 6;
 
+/** 큰 바벨 동작 · 허리 부담이 큰 동작 — 2분 30초부터. */
+function isBigLift(exercise: Exercise): boolean {
+  if ((exercise.jointStress.lowBack ?? 0) >= 0.8) return true;
+  return exercise.equipment === 'barbell' && !exercise.unilateral &&
+    ['squat', 'hinge', 'horizontalPush', 'verticalPush', 'horizontalPull'].includes(exercise.pattern);
+}
+
 export function restFor(input: RestInput): RestPrescription {
   const { exercise, reps, targetRir } = input;
-  const band = normalizeBand(input.band);
+  // "보통" 띠를 고른 것은 고르지 않은 것과 같다 — 종목 종류대로
+  const custom = input.band && !(input.band.minSeconds === DEFAULT_BAND.minSeconds && input.band.maxSeconds === DEFAULT_BAND.maxSeconds)
+    ? input.band : undefined;
+  const band = normalizeBand(custom);
 
   // 이 종목만 직접 정했으면 계산하지 않는다. 정한 사람이 더 잘 안다.
   if (input.overrideSeconds != null && Number.isFinite(input.overrideSeconds)) {
@@ -189,12 +208,16 @@ export function restFor(input: RestInput): RestPrescription {
   need = clamp(need, 0, STEPS);
   const span = band.maxSeconds - band.minSeconds;
   let seconds = clamp(toStep(band.minSeconds + (span * need) / STEPS), band.minSeconds, band.maxSeconds);
-  if (!input.band && !isIsolation && reps <= 6) {
-    const heavy = Math.min(150, HEAVY_COMPOUND_REST_SECONDS + 10 * Math.max(0, need - 3));
-    if (seconds < heavy) {
-      seconds = heavy;
-      reason += ' · 무거운 세트라 2분은 쉽니다';
-    }
+  if (!custom && !isIsolation) {
+    const light = reps > 12 || exercise.equipment === 'bodyweight';
+    const big = isBigLift(exercise);
+    let floor = light && !big ? 90 : big ? BIG_LIFT_REST_SECONDS : HEAVY_COMPOUND_REST_SECONDS;
+    if (targetRir <= 1) floor += 30;
+    seconds = Math.min(MAX_DEFAULT_REST_SECONDS, Math.max(seconds, floor));
+    reason = big ? '큰 복합 동작입니다 — 뒤 세트 반복을 지키려면 충분히 쉽니다'
+      : light ? '가벼운 복합 동작입니다'
+      : '복합 동작입니다 — 1분 남짓 쉬면 뒤 세트가 무너집니다';
+    if (targetRir <= 1) reason += ' · 실패에 가까운 세트라 30초 더';
   }
   // 블록 유형 배수 — 근력 블록은 길게, 고밀도 블록은 짧게
   if (input.multiplier && input.multiplier > 0 && input.multiplier !== 1) seconds = toStep(seconds * input.multiplier);

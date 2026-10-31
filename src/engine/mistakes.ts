@@ -163,6 +163,7 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'good-morning': [ROUND_BACK, TOO_DEEP_HINGE],
   'hip-thrust': [THRUST_ARCH, THRUST_CHIN],
   'machine-hip-thrust': [THRUST_ARCH, THRUST_CHIN],
+  'glute-bridge': [THRUST_ARCH, THRUST_CHIN],
   'back-extension': [EXT_HYPER, ROUND_BACK],
   'cable-pull-through': [SQUATTING, KB_ARMS],
   'kettlebell-swing': [KB_SQUAT, KB_ARMS, ROUND_BACK],

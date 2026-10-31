@@ -185,3 +185,14 @@ describe('만들 수 있는 무게에서 한 칸', () => {
     assert.equal(neighborLoad(99, spec, 1), 14);
   });
 });
+
+describe('EZ바 종목', () => {
+  it('스컬 크러셔 · 프리처 컬도 EZ바(10kg)부터 — 20kg 올림픽 바가 아니다', async () => {
+    const E = await import('../index.ts');
+    const result = E.runOnboarding({ selfReportedLevel: 'beginner', monthsTraining: 2, bodyweightKg: 58, sex: 'female', daysPerWeek: 3, goals: ['hypertrophy'], gym: { equipmentIds: E.COMMON_EQUIPMENT_IDS } } as never);
+    for (const id of ['skull-crusher', 'preacher-curl', 'barbell-curl']) {
+      const spec = E.loadingFor(E.exerciseById(id)!, result.gym) as { kind: string; barKg: number } | null;
+      assert.ok(spec && spec.kind === 'barbell' && spec.barKg === 10, id + ' ' + JSON.stringify(spec));
+    }
+  });
+});

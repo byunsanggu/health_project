@@ -38,6 +38,11 @@ export interface WarmupInput {
   level?: TrainingLevel;
   /** 이 세션에서 앞서 수행한 종목들이 이미 자극한 부위 */
   alreadyWarmedMuscles?: readonly MuscleGroup[];
+  /**
+   * 이 세션에서 앞서 한 동작 종류(squat · hinge · horizontalPush …). 근육이 데워졌어도 동작이
+   * 다르면(레그프레스 뒤 데드리프트, 벤치 뒤 오버헤드) 관절과 동작은 아직이다 — 그때는 두 단계는 밟는다.
+   */
+  alreadyDonePatterns?: readonly string[];
   /** 그 헬스장에서 만들 수 있는 중량으로 맞춘다 */
   loading?: LoadingSpec | null;
   /** 빈 바 무게 — 바벨 종목의 첫 램프에 쓴다 */
@@ -69,6 +74,11 @@ const SHORT_RAMP: readonly { percent: number; reps: number }[] = [
   { percent: 0.75, reps: 3 },
 ];
 
+const FEEDER_RAMP: readonly { percent: number; reps: number }[] = [
+  { percent: 0.6, reps: 5 },
+  { percent: 0.8, reps: 2 },
+];
+
 const MINIMAL_RAMP: readonly { percent: number; reps: number }[] = [
   { percent: 0.6, reps: 8 },
 ];
@@ -95,7 +105,12 @@ export function planWarmup(input: WarmupInput): WarmupPlan {
   let note: string;
   const lean = Boolean(input.generalWarmupDone);
 
-  if (lean && (isIsolation || alreadyWarm || workingWeightKg < LIGHT_WORKING_KG)) {
+  // 근육은 데워졌지만 처음 하는 동작인 복합 동작 — 무게 감각 · 관절을 위해 두 단계(60% · 80%)
+  const newPattern = !isIsolation && alreadyWarm && input.alreadyDonePatterns !== undefined && !input.alreadyDonePatterns.includes(exercise.pattern);
+  if (lean && newPattern && workingWeightKg >= LIGHT_WORKING_KG) {
+    ramp = FEEDER_RAMP;
+    note = '근육은 앞 종목에서 데워졌지만 처음 하는 동작입니다. 두 단계로 동작과 무게 감각을 잡습니다.';
+  } else if (lean && (isIsolation || alreadyWarm || workingWeightKg < LIGHT_WORKING_KG)) {
     ramp = [];
     note = isIsolation
       ? '몸 풀기와 앞 종목으로 충분합니다. 첫 세트를 조금 여유 있게 시작하세요.'

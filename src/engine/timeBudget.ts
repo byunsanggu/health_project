@@ -1,3 +1,4 @@
+import { HEAVY_PULLS } from './exercises.ts';
 import { withParticle } from './korean.ts';
 import { restFor } from './rest.ts';
 import type { RestBand } from './rest.ts';
@@ -108,6 +109,7 @@ export function estimateSessionTime(
   const config = { ...DEFAULTS, ...options };
   const roles = classifyRoles(session.exercises);
   const warmed: MuscleGroup[] = [];
+  const patterns: string[] = [];
 
   let warmupTotal = 0;
   let workTotal = 0;
@@ -139,6 +141,7 @@ export function estimateSessionTime(
         workingWeightKg: weight ?? 0,
         workingReps: reps,
         alreadyWarmedMuscles: [...warmed],
+        alreadyDonePatterns: [...patterns],
         loading: options.loadingFor ? options.loadingFor(item.exercise) : item.loading ?? null,
         generalWarmupDone: (config.generalWarmupSeconds ?? 0) > 0,
       });
@@ -147,6 +150,7 @@ export function estimateSessionTime(
     for (const muscle of warmedMusclesOf(item.exercise)) {
       if (!warmed.includes(muscle)) warmed.push(muscle);
     }
+    patterns.push(item.exercise.pattern);
 
     warmupTotal += warmupSeconds;
     workTotal += work;
@@ -371,8 +375,8 @@ function roleLabel(role: ExerciseRole): string {
 
 export interface TimeExtendOptions extends TimeOptions {
   /**
-   * 부위마다 이번 주에 더 넣어도 되는 유효 세트 — 회복 한계(MRV)에서 이번 주 계획을 뺀 값.
-   * 세트를 붙이면 그 종목의 기여도만큼 깎는다. 0 밑으로 가는 세트는 붙이지 않는다.
+   * 부위마다 이번 주에 더 넣어도 되는 유효 세트 — 적정선(MAV)에서 이번 주 계획(또는 이미 더 한 만큼)을 뺀 값.
+   * 회복 한계(MRV)까지 채우면 블록의 남은 주에 늘릴 자리가 없다. 세트를 붙이면 기여도만큼 깎는다.
    */
   headroom: Partial<Record<MuscleGroup, number>>;
   /** 한 종목에 더 붙일 수 있는 세트 (기본 2) */
@@ -397,6 +401,7 @@ const EXTEND_MIN_CONTRIBUTION = 0.25;
  *   - 예산을 넘기면 멈춘다.
  *
  * 무거운 세트(top)는 늘리지 않는다 — 붙이는 세트는 그 종목의 마지막 작업 세트와 같다.
+ * 데드리프트류(HEAVY_PULLS)도 늘리지 않는다 — 주간 진행에서도 세트를 묶어 둔 종목이다.
  */
 export function extendToTimeBudget(
   session: PlannedSession,
@@ -434,7 +439,7 @@ export function extendToTimeBudget(
       const item = working.exercises[i]!;
       const work = item.sets.filter((set) => !set.top);
       const last = work[work.length - 1];
-      if (!last || (added.get(item.exercise.id) ?? 0) > round) continue;
+      if (!last || (added.get(item.exercise.id) ?? 0) > round || HEAVY_PULLS.has(item.exercise.id)) continue;
       if (!fitsVolume(item)) { blockedByVolume = true; continue; }
       const extra = { ...last, setNumber: item.sets.length + 1 };
       const next = { ...working, exercises: working.exercises.map((one, j) => (j === i ? { ...one, sets: one.sets.concat([extra]) } : one)) };

@@ -129,6 +129,16 @@ export interface TechniqueAvailability {
  * 막는 게 목적이 아니라, 지금 쓰면 손해인 것을 이유와 함께 알려주는 게 목적이다.
  * MRV 근처에서 드롭세트를 붙이면 자극이 아니라 회복 부채만 쌓인다.
  */
+/** 실패까지 가도 허리 · 균형이 무너질 일이 적은 힌지 — 등을 대고 엉덩이로 미는 것 · 맨몸 백익스텐션. */
+const SAFE_HINGES = new Set(['hip-thrust', 'machine-hip-thrust', 'back-extension']);
+
+/** 실패 지점에서 위험한 동작 — 힌지 · 런지 · 캐리 · 머신이 아닌 스쿼트. */
+function riskyAtFailure(exercise: Exercise): boolean {
+  if (exercise.pattern === 'hinge') return !SAFE_HINGES.has(exercise.id);
+  if (exercise.pattern === 'lunge' || exercise.pattern === 'carry') return true;
+  return exercise.pattern === 'squat' && exercise.equipment !== 'machine' && exercise.equipment !== 'smith';
+}
+
 export function availableTechniques(context: TechniqueContext): TechniqueAvailability[] {
   const { exercise, level, style } = context;
   const styleAllows = styleProfile(style).allowsIntensityTechniques;
@@ -154,6 +164,14 @@ export function availableTechniques(context: TechniqueContext): TechniqueAvailab
     }
     if (technique.maxJointStress !== undefined && maxStress > technique.maxJointStress) {
       return deny('관절 부하가 큰 종목입니다. 지친 상태에서 자세가 무너지면 다칩니다.');
+    }
+    /*
+     * 실패까지 가는 기법(드롭세트 · 레스트포즈 · AMRAP · 같은 부위 슈퍼세트)은 동작 종류로도 막는다.
+     * 힌지는 지칠 때 허리가 말리고, 런지 · 프리웨이트 스쿼트는 균형을 잃고, 캐리는 쥔 것을 놓친다 —
+     * 관절 부하 숫자가 낮게 매겨진 덤벨 루마니안 · 트랩바 · 케틀벨 스윙 · 불가리안도 같다.
+     */
+    if (technique.fatigueFactor >= 1.5 && riskyAtFailure(exercise)) {
+      return deny('지쳐서 자세가 무너지면 허리 · 균형을 다치는 동작입니다. 실패까지 가는 기법은 붙이지 않습니다.');
     }
     for (const report of painful) {
       if ((exercise.jointStress[report.joint as Joint] ?? 0) >= 0.3) {

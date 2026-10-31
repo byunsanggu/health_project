@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { HEAVY_COMPOUND_REST_SECONDS, REST_MAX_SECONDS, REST_MIN_SECONDS, describeBand, formatDuration, normalizeBand, restFor } from '../rest.ts';
+import { BIG_LIFT_REST_SECONDS, HEAVY_COMPOUND_REST_SECONDS, MAX_DEFAULT_REST_SECONDS, REST_MAX_SECONDS, REST_MIN_SECONDS, describeBand, formatDuration, normalizeBand, restFor } from '../rest.ts';
 import { exerciseById } from '../exercises.ts';
 import type { Exercise } from '../types.ts';
 
@@ -9,6 +9,7 @@ const bench = exerciseById('barbell-bench-press') as Exercise;
 const deadlift = exerciseById('conventional-deadlift') as Exercise;
 const pushdown = exerciseById('triceps-pushdown') as Exercise;
 const plank = exerciseById('plank') as Exercise;
+const pulldown = exerciseById('lat-pulldown') as Exercise;
 
 describe('restFor', () => {
   it('복합 동작이 고립 운동보다 오래 쉰다', () => {
@@ -17,11 +18,12 @@ describe('restFor', () => {
     assert.ok(compound > isolation);
   });
 
-  it('반복이 적을수록(무거울수록) 오래 쉰다', () => {
+  it('종목 종류로 정한다 — 같은 스쿼트가 날마다 70초 · 120초를 오가지 않는다', () => {
     const heavy = restFor({ exercise: bench, reps: 5, targetRir: 2 }).seconds;
     const moderate = restFor({ exercise: bench, reps: 10, targetRir: 2 }).seconds;
-    const light = restFor({ exercise: bench, reps: 15, targetRir: 2 }).seconds;
-    assert.ok(heavy > moderate && moderate > light);
+    assert.equal(heavy, moderate);
+    // 큰 바벨 동작이 아닌 복합 동작은 고반복(13회+)만 짧다
+    assert.ok(restFor({ exercise: pulldown, reps: 15, targetRir: 2 }).seconds < restFor({ exercise: pulldown, reps: 10, targetRir: 2 }).seconds);
   });
 
   it('실패에 가까운 세트는 더 쉰다', () => {
@@ -34,25 +36,26 @@ describe('restFor', () => {
     assert.ok(near > easy, `${near} > ${easy}`);
   });
 
-  it('현장 띠(1분~1분 30초)를 벗어나지 않는다 — 6회 이하 고중량 복합 세트만 2분', () => {
-    /*
-     * 1분 아래면 복합 동작에서 뒤 세트가 무너지고, 1분 30초를 넘기면
-     * 세션이 늘어져서 지키지 않게 된다. 조건이 겹쳐도 넘지 않아야 한다.
-     * 다만 무거운 스쿼트 · 데드리프트를 1분 15초 만에 다시 들면 무게가 안 나온다 —
-     * 6회 이하 복합 세트는 2분이다. (블록 배율은 이 값에 곱해진다.)
-     */
-    for (const exercise of [bench, deadlift, plank]) {
-      for (const reps of [3, 5, 8, 12, 20]) {
-        for (const targetRir of [0, 1, 2, 3]) {
+  it('복합 동작은 2분부터(큰 바벨 동작 2분 30초, 최대 3분), 고립 · 코어는 1분~1분 30초', () => {
+    for (const reps of [3, 5, 8, 12, 20]) {
+      for (const targetRir of [0, 1, 2, 3]) {
+        for (const exercise of [bench, deadlift]) {
           const { seconds } = restFor({ exercise, reps, targetRir });
-          const heavy = exercise !== plank && reps <= 6;
-          assert.ok(
-            heavy ? seconds >= HEAVY_COMPOUND_REST_SECONDS && seconds <= 150 : seconds >= REST_MIN_SECONDS && seconds <= REST_MAX_SECONDS,
-            `${exercise.name} ${reps}회 RIR${targetRir} → ${seconds}초`,
-          );
+          assert.ok(seconds >= BIG_LIFT_REST_SECONDS && seconds <= MAX_DEFAULT_REST_SECONDS, `${exercise.name} ${reps}회 RIR${targetRir} → ${seconds}초`);
+        }
+        const pull = restFor({ exercise: pulldown, reps, targetRir }).seconds;
+        assert.ok(pull >= (reps > 12 ? 90 : HEAVY_COMPOUND_REST_SECONDS) && pull <= MAX_DEFAULT_REST_SECONDS, `랫풀다운 ${reps}회 → ${pull}초`);
+        for (const exercise of [plank, pushdown]) {
+          const { seconds } = restFor({ exercise, reps, targetRir });
+          assert.ok(seconds >= REST_MIN_SECONDS && seconds <= REST_MAX_SECONDS, `${exercise.name} ${reps}회 → ${seconds}초`);
         }
       }
     }
+  });
+
+  it('"보통" 띠를 고른 것은 고르지 않은 것과 같다', () => {
+    assert.equal(restFor({ exercise: bench, reps: 8, targetRir: 2, band: { minSeconds: 60, maxSeconds: 90 } }).seconds,
+      restFor({ exercise: bench, reps: 8, targetRir: 2 }).seconds);
   });
 
   it('블록 유형 배수를 곱한다 — 근력 블록이면 실제 타이머도 길어진다', () => {
@@ -61,10 +64,10 @@ describe('restFor', () => {
     assert.equal(restFor({ exercise: bench, reps: 5, targetRir: 2, overrideSeconds: 100, multiplier: 1.5 }).seconds, 100, '직접 정한 값에는 안 곱한다');
   });
 
-  it('허리 부담이 큰 종목은 더 쉰다', () => {
-    const hinge = restFor({ exercise: deadlift, reps: 5, targetRir: 1 }).seconds;
-    const press = restFor({ exercise: bench, reps: 5, targetRir: 1 }).seconds;
-    assert.ok(hinge > press);
+  it('큰 바벨 · 허리 부담 큰 동작은 다른 복합 동작보다 더 쉰다', () => {
+    const hinge = restFor({ exercise: deadlift, reps: 5, targetRir: 2 }).seconds;
+    const pull = restFor({ exercise: pulldown, reps: 8, targetRir: 2 }).seconds;
+    assert.ok(hinge > pull, `${hinge} > ${pull}`);
   });
 
   it('코어 운동은 고립 운동과 같은 기준으로 본다', () => {
@@ -123,7 +126,7 @@ describe('휴식 띠 — 사용자가 정한다', () => {
   it('어떤 띠를 줘도 그 띠를 벗어나지 않는다', () => {
     for (const band of [
       { minSeconds: 45, maxSeconds: 75 },
-      { minSeconds: 60, maxSeconds: 90 },
+      { minSeconds: 50, maxSeconds: 100 },
       { minSeconds: 150, maxSeconds: 240 },
       { minSeconds: 30, maxSeconds: 30 },
     ]) {

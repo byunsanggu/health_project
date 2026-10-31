@@ -184,7 +184,9 @@ export function findSubstitutes(
   return candidates
     .map((candidate) => ({
       candidate,
-      score: similarity(exercise, candidate) - painPenalty(candidate, pain) - (HARD_SUBSTITUTES.has(candidate.id) ? 0.25 : 0),
+      score: similarity(exercise, candidate) - painPenalty(candidate, pain) - (HARD_SUBSTITUTES.has(candidate.id) ? 0.25 : 0) -
+        // 무게를 싣던 종목을 맨몸으로 바꾸면 자극이 확 준다 — 무게를 실을 수 있는 대체를 먼저
+        (exercise.equipment !== 'bodyweight' && candidate.equipment === 'bodyweight' ? 0.15 : 0),
     }))
     // 자극이 충분히 겹치지 않으면 대체가 아니다. 애매한 후보를 내놓느니 없다고 하는 편이 낫다.
     .filter((entry) => entry.score >= SUBSTITUTE_MIN_SCORE)
