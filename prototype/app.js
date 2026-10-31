@@ -1722,6 +1722,13 @@
         var kept = (previous[id] || [])[lift.sets.length];
         lift.sets.push(kept && kept.done ? kept : extraSet(lift));
       }
+      // 뺀 세트 — 뒤에서부터 안 한 세트를 뺀다
+      for (var r = 0; r < -(extras.sets[id] || 0); r += 1) {
+        var last = -1;
+        lift.sets.forEach(function (one, at) { if (!one.done) last = at; });
+        if (last < 0 || lift.sets.length <= 1) break;
+        lift.sets.splice(last, 1);
+      }
       for (var w = 0; w < (extras.warmups[id] || 0); w += 1) lift.warmup = withExtraWarmup(lift);
     });
   }
@@ -1758,6 +1765,19 @@
       sets: warmup.sets.concat([added]),
       estimatedSeconds: warmup.estimatedSeconds + added.reps * 3 + added.restSeconds,
     });
+  }
+
+  /** 안 한 세트 하나 빼기 — 오늘만. 끝낸 세트는 빼지 않는다(✓를 눌러 기록을 지운다). */
+  function removeSet(lift, order) {
+    var set = lift.sets[order];
+    if (!set || set.done) return;
+    var extras = todayExtras();
+    extras.sets[lift.exercise.id] = (extras.sets[lift.exercise.id] || 0) - 1;
+    lift.sets.splice(order, 1);
+    lift.decision = null;
+    pushLog('세트 뺌', '<b>' + lift.exercise.name + '</b> 한 세트를 뺐습니다 — 오늘만.');
+    persist();
+    render();
   }
 
   function addWarmup(lift) {
@@ -7885,15 +7905,28 @@
               undoSet(liftIndex, order);
             },
           })
-        : el('span', { class: 'set-state', text: '' }));
+        : el('button', {
+            type: 'button', class: 'set-remove', text: '✕',
+            'aria-label': (order + 1) + '세트 빼기',
+            onclick: function () { removeSet(lift, order); },
+          }));
       rows.push(el('div', { class: 'set-box' + (set.done ? ' done' : '') }, cells));
     });
-    rows.push(el('button', {
-      type: 'button', class: 'set-add',
-      'aria-label': lift.exercise.name + ' 한 세트 더하기',
-      text: '+ 세트',
-      onclick: function () { addSet(lift); },
-    }));
+    var open = sets.filter(function (set) { return !set.done; }).length;
+    rows.push(el('div', { class: 'set-adds' }, [
+      el('button', {
+        type: 'button', class: 'set-add',
+        'aria-label': lift.exercise.name + ' 한 세트 더하기',
+        text: '+ 세트',
+        onclick: function () { addSet(lift); },
+      }),
+      open > 0 ? el('button', {
+        type: 'button', class: 'set-add minus',
+        'aria-label': lift.exercise.name + ' 마지막 세트 빼기',
+        text: '− 세트',
+        onclick: function () { removeSet(lift, sets.length - 1 - sets.slice().reverse().findIndex(function (set) { return !set.done; })); },
+      }) : null,
+    ]));
     return el('div', { class: 'set-strip-wrap' }, [
       cursor >= 0 ? null : el('div', { class: 'set-strip-head' }, [
         el('b', { text: sets.length + '세트 모두 끝' }),
@@ -9216,9 +9249,26 @@
      * 처방과 다르게 한 날이 오히려 기록이 중요한 날이고, 그때 입력이
      * 번거로우면 아예 기록을 안 한다. 버튼은 미세 조정용으로 남긴다.
      */
+    // 무게 · 횟수 칸은 한 줄에. 세는 중(PT)이면 횟수 칸은 숨긴다 — 그때는 숫자 하나만 크게.
+    var countingHere = state.counting && state.counting.liftIndex === liftIndex && state.counting.setIndex === setIndex;
+    var repsField = countingHere ? null : el('div', { class: 'big-field small' }, [
+      el('button', { type: 'button', class: 'nudge', 'aria-label': '반복 수 줄이기', text: '−',
+        onclick: function () { setReps(liftIndex, setIndex, -1); } }),
+      el('input', {
+        type: 'number', min: '1', max: '100', step: '1', inputmode: 'numeric',
+        class: 'big-input', value: String(set.reps),
+        title: '목표 ' + target,
+        'aria-label': (setIndex + 1) + '세트 반복 수 (목표 ' + target + ')',
+        onfocus: function (event) { event.target.select(); },
+        onchange: function (event) { typeReps(liftIndex, setIndex, event.target.value); },
+      }),
+      el('span', { class: 'big-unit', text: '회' }),
+      el('button', { type: 'button', class: 'nudge', 'aria-label': '반복 수 늘리기', text: '+',
+        onclick: function () { setReps(liftIndex, setIndex, 1); } }),
+    ]);
     if (set.weightKg > 0) {
-      body.push(el('div', { class: 'now-load' }, [
-        el('div', { class: 'big-field' }, [
+      body.push(el('div', { class: 'now-load now-fields' }, [
+        el('div', { class: 'big-field small' }, [
           el('button', { type: 'button', class: 'nudge', 'aria-label': '중량 줄이기', text: '−',
             onclick: function () { stepWeight(liftIndex, setIndex, -1); } }),
           el('input', {
@@ -9250,16 +9300,13 @@
           el('button', { type: 'button', class: 'nudge', 'aria-label': '중량 늘리기', text: '+',
             onclick: function () { stepWeight(liftIndex, setIndex, 1); } }),
         ]),
+        repsField,
       ]));
     } else {
-      body.push(el('div', { class: 'now-load' }, [el('span', { class: 'weight', text: '맨몸' })]));
+      body.push(el('div', { class: 'now-load now-fields' }, [el('span', { class: 'weight', text: '맨몸' }), repsField]));
     }
 
     if (plates) body.push(el('div', { class: 'plates', text: E.describePlates(plates) }));
-    // 덤벨은 하나의 무게다 — 두 개 합친 무게로 읽으면 두 배를 든다
-    else if (lift.exercise.equipment === 'dumbbell' && set.weightKg > 0) {
-      body.push(el('div', { class: 'plates', text: '덤벨 하나 무게입니다' }));
-    }
 
     /*
      * 친 무게를 이 헬스장에서 만들 수 있는지 본다. 못 만들면 고쳐주지
@@ -9300,24 +9347,6 @@
       return nowCard(body, ' counting');
     }
 
-    body.push(el('div', { class: 'now-reps' }, [
-      el('span', { class: 'rir-label', text: '반복' }),
-      el('span', { class: 'now-target', text: '목표 ' + target }),
-      el('div', { class: 'big-field small' }, [
-        el('button', { type: 'button', class: 'nudge', 'aria-label': '반복 수 줄이기', text: '−',
-          onclick: function () { setReps(liftIndex, setIndex, -1); } }),
-        el('input', {
-          type: 'number', min: '1', max: '100', step: '1', inputmode: 'numeric',
-          class: 'big-input', value: String(set.reps),
-          'aria-label': (setIndex + 1) + '세트 반복 수',
-          onfocus: function (event) { event.target.select(); },
-          onchange: function (event) { typeReps(liftIndex, setIndex, event.target.value); },
-        }),
-        el('span', { class: 'big-unit', text: '회' }),
-        el('button', { type: 'button', class: 'nudge', 'aria-label': '반복 수 늘리기', text: '+',
-          onclick: function () { setReps(liftIndex, setIndex, 1); } }),
-      ]),
-    ]));
 
     // PT는 세어 주기 칸(일시정지 · 계속)이 워밍업 · 휴식 중에도 보여야 한다.
     if (ptOn()) body.push(countPanel(liftIndex, setIndex));
@@ -9467,20 +9496,11 @@
     return nowCard(body);
   }
 
-  /**
-   * 지금 세트 카드 — 세트 목록(body[0]) 안의 "지금" 줄 바로 아래에 무게 · 횟수 칸과 완료 버튼을 끼운다.
-   * 그러면 위는 끝낸 세트, 가운데는 지금 할 것, 아래는 남은 세트로 한 줄에 읽힌다.
-   */
+  /** 지금 세트 카드 — 위에 세트 줄(1 · 2 · 3세트), 아래에 지금 세트의 무게 · 횟수 칸과 완료 버튼. */
   function nowCard(body, extra) {
-    var strip = body[0];
-    var row = strip && strip.querySelector ? strip.querySelector('.set-box.now') : null;
-    if (row) {
-      var inline = el('div', { class: 'now-inline' }, body.slice(1));
-      row.parentNode.insertBefore(inline, row.nextSibling);
-      body = [strip];
-    }
     return el('div', { class: 'set-now' + (extra || '') }, [el('div', { class: 'now-body' }, body)]);
   }
+
 
   /**
    * 혼자 모드에서 세트를 마칠 때 묻는 방식.
@@ -9688,7 +9708,9 @@
 
     // "계속 — 계획대로"는 말하지 않는다. 멈추라거나 · 마지막이라거나 · 한 세트 더 할 수 있을 때만.
     var decision = renderDecision(lift);
-    if (decision && (lift.decision.verdict !== 'continue' || lift.sets.every(function (set) { return set.done; }))) {
+    // "마지막 세트"도 말하지 않는다 — 완료 버튼이 이미 "마지막 세트"라고 한다
+    if (decision && lift.decision.verdict !== 'lastSet' &&
+        (lift.decision.verdict !== 'continue' || lift.sets.every(function (set) { return set.done; }))) {
       card.appendChild(decision);
     }
 

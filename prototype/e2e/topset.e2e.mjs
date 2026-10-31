@@ -53,8 +53,8 @@ export default async function ({ page, url, shot }) {
     await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click().catch(() => {});
   }
   check((await page.locator('.top-tag').textContent()).includes('무거운 세트'), '무거운 세트 표시가 없습니다');
-  await page.locator('input[aria-label$="반복 수"]').first().fill('2');
-  await page.locator('input[aria-label$="반복 수"]').first().dispatchEvent('change');
+  await page.locator('.now-fields input[aria-label*="반복 수"]').first().fill('2');
+  await page.locator('.now-fields input[aria-label*="반복 수"]').first().dispatchEvent('change');
   await shot('3-top');
   const backoffBefore = await page.evaluate(() => document.querySelectorAll('.set-plan .set-plan-line')[0]?.textContent || '');
   await page.locator('.now-done').click();

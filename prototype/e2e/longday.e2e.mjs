@@ -61,6 +61,15 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('dialog[open]').count() === 0, '남은 세트를 고치는데 창이 떴습니다');
   check((await page.locator('.set-strip .set-box').nth(2).locator('.set-in-weight').inputValue()) === '50', '3세트 무게가 안 바뀌었습니다');
   check((await page.locator('.set-strip .set-box').nth(1).locator('.set-in-weight').inputValue()) !== '50', '고치지 않은 2세트까지 바뀌었습니다');
+
+  // 세트 빼기 — 남은 세트 줄의 ✕, 맨 아래 "− 세트". 다시 켜도 빠진 채로
+  const beforeRemove = await boxes();
+  await page.locator('.set-strip .set-box .set-remove').last().click();
+  await page.locator('.set-add.minus').click();
+  check(await boxes() === beforeRemove - 2, '세트를 뺐는데 그대로입니다');
+  await page.reload();
+  await page.waitForSelector('.set-strip');
+  check(await boxes() === beforeRemove - 2, '다시 켜니 뺀 세트가 돌아왔습니다');
   check(await page.locator('.warmup-set').count() === warmBefore + 1, '다시 켜니 더한 워밍업이 사라졌습니다');
 
   // 휴식 시간 — 내 정보에서 고른다
