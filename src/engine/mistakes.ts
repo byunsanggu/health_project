@@ -32,7 +32,7 @@ const m = (
 /* ── 하체 · 스쿼트 ─────────────────────────────── */
 const KNEE_CAVE = m('knee-cave', '무릎이 안으로 모여요', '무릎을 발끝 방향으로 밀어 주세요', '무릎은 바깥으로', '무릎 안쪽 인대에 부담이 갑니다', true);
 const HEELS_UP = m('heels-up', '뒤꿈치가 들려요', '뒤꿈치로 바닥을 누르세요', '뒤꿈치로', '무게가 앞으로 쏠려 무릎과 허리가 받습니다');
-const TORSO_LEAN = m('torso-lean', '상체가 너무 숙여져요', '가슴을 세우고 시선은 정면에 두세요', '가슴은 앞으로', '허리가 하체 대신 무게를 받습니다', true);
+const TORSO_LEAN = m('torso-lean', '상체가 너무 숙여져요', '가슴을 세우고 시선은 정면에 두세요', '가슴 세우고', '허리가 하체 대신 무게를 받습니다', true);
 const BUTT_WINK = m('butt-wink', '맨 아래에서 허리가 말려요', '깊이를 조금 줄이고 배에 힘을 꽉 주세요', '배에 힘 주고', '허리 디스크에 부담이 갑니다', true);
 const HIPS_FIRST = m('hips-first', '올라올 때 엉덩이만 먼저 올라와요', '가슴과 엉덩이가 같이 올라오게 하세요', '가슴도 같이', '스쿼트가 허리 운동이 됩니다', true);
 const PAD_OFF = m('pad-off', '등과 엉덩이가 패드에서 떨어져요', '등과 엉덩이를 패드에 붙인 채로 하세요', '등은 패드에', '허리가 말리면서 기계가 허리를 누릅니다', true);
@@ -57,6 +57,8 @@ const THRUST_ARCH = m('arch', '허리를 젖혀서 들어 올려요', '갈비뼈
 const THRUST_CHIN = m('chin-up', '턱이 들리며 머리가 뒤로 젖혀져요', '턱을 당기고 시선은 무릎 쪽에 두세요', '턱 당기고', '목과 허리가 같이 젖혀집니다');
 const EXT_HYPER = m('hyper', '올라올 때 허리를 과하게 젖혀요', '몸이 일자가 되면 멈추세요', '일자에서 멈추고', '허리 뒤쪽 관절이 눌립니다');
 const KB_SQUAT = m('squat-swing', '스쿼트처럼 앉았다 일어나요', '엉덩이를 뒤로 접었다가 튕기듯 펴세요', '엉덩이 뒤로', '스윙의 힘이 엉덩이가 아니라 다리에서 나옵니다');
+const PIKE_HIPS = m('hips-drop', '엉덩이가 내려가 푸시업이 돼요', '엉덩이를 높게 유지해 몸을 거꾸로 된 브이자로 두세요', '엉덩이 높게', '어깨 대신 가슴이 일합니다');
+const THROUGH_ARMS = m('arms-lift', '팔로 줄을 당겨 올려요', '팔은 줄을 잡기만 하고 엉덩이를 앞으로 밀어 일어나세요', '엉덩이로', '팔과 어깨가 일하고 엉덩이 자극이 줄어듭니다');
 const KB_ARMS = m('arms-lift', '팔로 들어 올려요', '팔은 줄처럼 두고 엉덩이로 튕기세요', '엉덩이로', '어깨를 다칩니다');
 
 /* ── 가슴 프레스 ───────────────────────────────── */
@@ -88,7 +90,7 @@ const ROW_STAND = m('stand-up', '당길 때 상체가 일어나요', '상체 각
 const ROW_ROCK = m('rocking', '몸을 앞뒤로 흔들어요', '상체는 세운 채 고정하고 팔꿈치만 뒤로 보내세요', '몸 흔들지 말고', '허리 반동이 등 대신 일합니다', true);
 const ROW_TWIST = m('twist', '몸통이 돌아가요', '몸통은 바닥과 평행하게 두고 팔꿈치만 뒤로 보내세요', '몸통은 고정하고', '허리가 비틀리며 등 자극이 줄어듭니다');
 const CHEST_OFF = m('chest-off', '가슴이 패드에서 떨어져요', '가슴을 패드에 붙인 채로 당기세요', '가슴은 패드에', '반동이 들어가 등 자극이 줄어듭니다');
-const ROW_ELBOW = m('elbow-path', '팔꿈치가 옆으로 벌어져요', '팔꿈치를 엉덩이 쪽으로 당기세요', '팔꿈치는 엉덩이 쪽으로', '넓은 등 대신 어깨 뒤쪽이 일합니다');
+const ROW_ELBOW = m('elbow-path', '팔꿈치가 옆으로 벌어져요', '광배를 노린다면 팔꿈치를 엉덩이 쪽으로 당기세요', '팔꿈치는 엉덩이 쪽으로', '넓게 벌리면 등 위쪽 · 어깨 뒤쪽 운동이 됩니다 — 노린 게 아니라면');
 const STRAIGHT_BEND = m('bend', '팔꿈치를 굽혀서 당겨요', '팔꿈치는 살짝만 굽힌 채 고정하세요', '팔은 고정하고', '등 대신 삼두가 일합니다');
 
 /* ── 어깨 고립 ─────────────────────────────────── */
@@ -96,7 +98,7 @@ const RAISE_SHRUG = m('shrug', '어깨가 으쓱 올라가요', '어깨를 내�
 const RAISE_SWING = m('swing', '몸을 흔들어서 올려요', '몸은 고정하고 무게를 조금 줄이세요', '반동 없이', '어깨 대신 반동이 일합니다', true);
 const RAISE_HIGH = m('too-high', '팔을 어깨보다 높이 올려요', '어깨 높이까지만 올리세요', '어깨 높이까지', '어깨가 끼면서 통증이 생깁니다');
 const REAR_TRAPS = m('traps', '날개뼈를 모으며 등으로 당겨요', '어깨를 내리고 팔을 옆으로 벌린다는 느낌으로 하세요', '팔은 옆으로', '뒤쪽 어깨 대신 등이 일합니다');
-const SHRUG_ROLL = m('roll', '어깨를 돌려요', '돌리지 말고 위아래로만 올리세요', '위아래로만', '자극은 없고 어깨만 상합니다');
+const SHRUG_ROLL = m('roll', '어깨를 돌려요', '돌리지 말고 위아래로만 올리세요', '위아래로만', '돌려도 자극은 늘지 않습니다');
 const FACE_PULL_LOW = m('too-low', '줄을 가슴 쪽으로 당겨요', '줄을 얼굴 높이로, 손이 귀 옆에 오게 당기세요', '얼굴 높이로', '뒤쪽 어깨 대신 등이 일합니다');
 
 /* ── 팔 ────────────────────────────────────────── */
@@ -165,8 +167,8 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'machine-hip-thrust': [THRUST_ARCH, THRUST_CHIN],
   'glute-bridge': [THRUST_ARCH, THRUST_CHIN],
   'back-extension': [EXT_HYPER, ROUND_BACK],
-  'cable-pull-through': [SQUATTING, KB_ARMS],
-  'kettlebell-swing': [KB_SQUAT, KB_ARMS, ROUND_BACK],
+  'cable-pull-through': [SQUATTING, THROUGH_ARMS, LEAN_BACK_TOP, ROUND_BACK],
+  'kettlebell-swing': [KB_SQUAT, KB_ARMS, ROUND_BACK, LEAN_BACK_TOP],
   // 가슴
   'barbell-bench-press': [PRESS_SHRUG, BENCH_BUTT, ELBOW_FLARE, BOUNCE, WRIST_BACK],
   'incline-barbell-press': [PRESS_SHRUG, ELBOW_FLARE, BENCH_BUTT],
@@ -180,7 +182,7 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'machine-incline-chest-press': [SHOULDERS_ROLL, SEAT_HEIGHT],
   'push-up': [HIPS_SAG, ELBOW_FLARE],
   'inverted-row': [HIPS_SAG, PULL_SHRUG],
-  'pike-push-up': [PRESS_HALF],
+  'pike-push-up': [PIKE_HIPS, PRESS_HALF, ELBOW_FLARE],
   'bodyweight-reverse-lunge': [LUNGE_KNEE, LUNGE_LEAN],
   'chest-dip': [DIP_DEEP, PRESS_SHRUG],
   'cable-fly': [FLY_ARMS, FLY_SHRUG],

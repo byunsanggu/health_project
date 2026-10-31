@@ -6702,7 +6702,7 @@
       afterHeavy: setIndex > 0 && lift.lastFeel === 'heavy',
       firstTime: firstTime,
     });
-    return picked ? { cue: picked.mistake.cue, moment: picked.moment } : null;
+    return picked ? { cue: picked.mistake.cue, short: picked.mistake.short, moment: picked.moment } : null;
   }
 
   /** 세트 중 자세 한마디에 쓸 짧은 말 — 체크한 실수가 있으면 그것만. */

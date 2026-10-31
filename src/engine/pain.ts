@@ -30,7 +30,7 @@ export interface PainRuling {
   /** 판정을 유발한 관절 */
   joint?: Joint;
   painScore?: number;
-  /** 중량 배율. reduceLoad면 0.9, 그 외에는 1 */
+  /** 중량 배율. reduceLoad면 아픈 만큼 0.9 · 0.85 · 0.75, 그 외에는 1 */
   loadMultiplier: number;
   message: string;
   /** action이 substitute/stop일 때 제안할 대체 종목 */
@@ -89,8 +89,9 @@ export function screenExercise(
       action: 'reduceLoad',
       joint: worst.report.joint,
       painScore: worst.report.score,
-      loadMultiplier: 0.9,
-      message: `${jointLabel} 통증 ${worst.report.score}점. 중량을 10% 낮추고 통증이 나타나지 않는 가동 범위에서만 수행하세요.`,
+      loadMultiplier: reduceFor(worst.report.score),
+      message: `${jointLabel} 통증 ${worst.report.score}점. 중량을 ${Math.round((1 - reduceFor(worst.report.score)) * 100)}% 낮추고 ` +
+        '통증이 나타나지 않는 가동 범위에서만 수행하세요. 세트 중에 통증이 커지거나 찌르면 바로 멈추세요.',
     };
   }
 
@@ -118,6 +119,13 @@ export function screenExercise(
         ? `${jointLabel} 통증 ${worst.report.score}점. ${exercise.name} 대신 ${withParticle(substitutes[0]!.name, '을/를')} 권합니다.`
         : `${jointLabel} 통증 ${worst.report.score}점. 이 종목은 부담이 큽니다. 해당 부위는 오늘 건너뛰세요.`,
   };
+}
+
+/** 무게를 얼마나 낮출까 — 아픈 만큼. 5~6점에 10%만 낮추면 거의 같은 무게다. */
+function reduceFor(score: number): number {
+  if (score >= 5) return 0.75;
+  if (score >= 3) return 0.85;
+  return 0.9;
 }
 
 /*

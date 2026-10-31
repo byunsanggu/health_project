@@ -36,7 +36,7 @@ describe('screenExercise', () => {
   it('중간 부하 종목은 대체까지 가지 않고 감량으로 끝낸다', () => {
     const ruling = screenExercise(machinePress, [{ joint: 'shoulder', score: 4 }]);
     assert.equal(ruling.action, 'reduceLoad');
-    assert.equal(ruling.loadMultiplier, 0.9);
+    assert.equal(ruling.loadMultiplier, 0.85, '4점이면 15% 낮춘다');
   });
 
   it('7점 이상이면 중단시키고 진료를 권한다', () => {

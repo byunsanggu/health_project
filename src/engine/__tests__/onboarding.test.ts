@@ -275,6 +275,11 @@ describe('buildProgram — 트레이너 기준 점검', () => {
         const most = Math.max(...compound);
         for (const slot of template.slots) {
           if (exerciseById(slot.exerciseId)!.pattern !== 'isolation') continue;
+          // 종아리는 대신 채워 줄 복합 종목이 없다 — 고립 한 세트 더(4세트)는 예외로 둔다
+          if (exerciseById(slot.exerciseId)!.contribution.calves === 1) {
+            assert.ok(slot.sets <= Math.max(most, 4), `${label} ${template.name}: ${slot.exerciseId} ${slot.sets}`);
+            continue;
+          }
           assert.ok(slot.sets <= most, `${label} ${template.name}: ${slot.exerciseId} ${slot.sets} > ${most}`);
         }
       }

@@ -83,10 +83,11 @@ describe('코치가 실수를 짚는 말', () => {
     const lines = beforeSetLines({
       style: 'tough', exerciseName: '백 스쿼트', setIndex: 1, totalSets: 4, weightKg: 100,
       repsMin: 6, repsMax: 10, targetRir: 2, cues: ['가슴을 펴고'],
-      watch: { cue: '무릎을 발끝 방향으로 밀어 주세요', moment: 'heavy' },
+      watch: { cue: '무릎을 발끝 방향으로 밀어 주세요', short: '무릎은 바깥으로', moment: 'heavy' },
     }).join(' ');
-    assert.match(lines, /무거울 때 자세가 먼저 무너진다\. 무릎을 발끝 방향으로 밀어 주세요!/);
-    assert.doesNotMatch(lines, /가슴을 펴고/);
+    // 반말 코치는 짧은 말로 — 반말 머리 뒤에 "밀어 주세요"를 붙이지 않는다
+    assert.match(lines, /무거울 때 자세가 먼저 무너진다\. 무릎은 바깥으로!/);
+    assert.doesNotMatch(lines, /가슴을 펴고|주세요/);
   });
 
   it('왜 지금 말하는지가 앞에 붙는다', () => {

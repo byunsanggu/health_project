@@ -151,7 +151,7 @@ describe('통증 대응', () => {
     const bench = planned.exercises.find((e) => e.exercise.id === 'barbell-bench-press')!;
 
     assert.equal(bench.painRuling.action, 'reduceLoad');
-    assert.equal(bench.sets[0]?.weightKg, 72.5, '80kg 유지 처방에 0.9 배율');
+    assert.equal(bench.sets[0]?.weightKg, 67.5, '80kg 유지 처방에 4점이면 0.85 배율');
   });
 
   it('통증 판정은 부하 계산보다 먼저 적용된다', () => {

@@ -906,7 +906,12 @@ export function buildProgram(
     const muscle = item.slot.muscle;
     const remaining = targetFor(muscle) - (indirect.get(muscle) ?? 0);
     const { floor, cap } = setRange('isolation');
-    item.sets = clamp(Math.ceil(remaining / Math.max(1, isolationCount.get(muscle) ?? 1)), floor, cap);
+    /*
+     * 종아리는 스쿼트 · 런지가 거의 채워 주지 않아(발목이 거의 안 움직인다) 고립 두 자리로만
+     * 최소 8세트를 채워야 한다. 회복이 빨라 한 번에 4세트도 무리가 아니다.
+     */
+    const muscleCap = muscle === 'calves' ? cap + 1 : cap;
+    item.sets = clamp(Math.ceil(remaining / Math.max(1, isolationCount.get(muscle) ?? 1)), floor, muscleCap);
   }
 
   for (const item of all) weeklyTargets[item.slot.muscle] = targetFor(item.slot.muscle);

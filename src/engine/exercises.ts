@@ -171,7 +171,7 @@ export const EXERCISES: readonly Exercise[] = [
     id: 'barbell-row',
     name: '바벨 로우', nameEn: 'Barbell Row',
     equipment: 'barbell', pattern: 'horizontalPull', increment: 2.5,
-    contribution: { back: 1, rearDelt: 0.5, biceps: 0.4, traps: 0.4, hamstrings: 0.25 },
+    contribution: { back: 1, rearDelt: 0.5, biceps: 0.4, traps: 0.4 },
     jointStress: { lowBack: 0.8, shoulder: 0.4, elbow: 0.3 },
   },
   {
@@ -208,21 +208,21 @@ export const EXERCISES: readonly Exercise[] = [
     id: 'back-squat',
     name: '백 스쿼트', nameEn: 'Back Squat',
     equipment: 'barbell', pattern: 'squat', increment: 5,
-    contribution: { quads: 1, glutes: 0.7, hamstrings: 0.3, abs: 0.4, calves: 0.25 },
+    contribution: { quads: 1, glutes: 0.7, hamstrings: 0.1, abs: 0.4 },
     jointStress: { knee: 0.75, lowBack: 0.7, hip: 0.5, ankle: 0.5, shoulder: 0.3 },
   },
   {
     id: 'hack-squat',
     name: '핵 스쿼트', nameEn: 'Hack Squat',
     equipment: 'machine', pattern: 'squat', increment: 10,
-    contribution: { quads: 1, glutes: 0.5, hamstrings: 0.25 },
+    contribution: { quads: 1, glutes: 0.5, hamstrings: 0.1 },
     jointStress: { knee: 0.7, lowBack: 0.2, hip: 0.35, ankle: 0.4 },
   },
   {
     id: 'leg-press',
     name: '레그프레스', nameEn: 'Leg Press',
     equipment: 'machine', pattern: 'squat', increment: 10,
-    contribution: { quads: 1, glutes: 0.6, hamstrings: 0.25 },
+    contribution: { quads: 1, glutes: 0.6, hamstrings: 0.1 },
     jointStress: { knee: 0.5, lowBack: 0.15, hip: 0.3 },
   },
   {
@@ -280,7 +280,7 @@ export const EXERCISES: readonly Exercise[] = [
     id: 'back-extension',
     name: '백 익스텐션', nameEn: 'Back Extension',
     equipment: 'bodyweight', pattern: 'hinge', increment: 2.5,
-    contribution: { glutes: 0.7, hamstrings: 0.7, back: 0.5 },
+    contribution: { glutes: 0.7, hamstrings: 0.7, back: 0.25 },
     jointStress: { lowBack: 0.45, hip: 0.3 },
   },
 
@@ -528,7 +528,7 @@ export const EXERCISES: readonly Exercise[] = [
   {
     id: 'front-squat', name: '프론트 스쿼트', nameEn: 'Front Squat',
     equipment: 'barbell', pattern: 'squat', increment: 2.5,
-    contribution: { quads: 1, glutes: 0.5, abs: 0.5, calves: 0.25 },
+    contribution: { quads: 1, glutes: 0.5, abs: 0.5 },
     // 바를 어깨 앞에 얹는다(프론트 랙) — 어깨가 아픈 날 스쿼트 대체로 나오면 안 된다
     jointStress: { knee: 0.8, lowBack: 0.5, hip: 0.4, wrist: 0.5, ankle: 0.55, shoulder: 0.3 },
   },
@@ -547,7 +547,7 @@ export const EXERCISES: readonly Exercise[] = [
   {
     id: 'smith-squat', name: '스미스 스쿼트', nameEn: 'Smith Machine Squat',
     equipment: 'smith', pattern: 'squat', increment: 2.5,
-    contribution: { quads: 1, glutes: 0.5, hamstrings: 0.25 },
+    contribution: { quads: 1, glutes: 0.5, hamstrings: 0.1 },
     jointStress: { knee: 0.65, lowBack: 0.35, hip: 0.35, ankle: 0.35 },
   },
 
@@ -567,7 +567,7 @@ export const EXERCISES: readonly Exercise[] = [
   {
     id: 'good-morning', name: '굿모닝', nameEn: 'Good Morning',
     equipment: 'barbell', pattern: 'hinge', increment: 2.5,
-    contribution: { hamstrings: 1, glutes: 0.6, back: 0.5 },
+    contribution: { hamstrings: 1, glutes: 0.6, back: 0.25 },
     jointStress: { lowBack: 0.9, hip: 0.5 },
   },
   {
@@ -668,7 +668,7 @@ export const EXERCISES: readonly Exercise[] = [
     name: '브이 스쿼트', nameEn: 'V-Squat',
     equipment: 'machine', pattern: 'squat', increment: 10,
     // 핵 스쿼트와 같은 계열이다. 어깨 패드에 실려서 허리 부담이 적다.
-    contribution: { quads: 1, glutes: 0.55, hamstrings: 0.25 },
+    contribution: { quads: 1, glutes: 0.55, hamstrings: 0.1 },
     jointStress: { knee: 0.65, lowBack: 0.15, hip: 0.35, ankle: 0.35 },
   },
   {
@@ -717,11 +717,11 @@ export const EXERCISES: readonly Exercise[] = [
     id: 'machine-hip-adduction', name: '힙 어덕션 (이너타이)', nameEn: 'Hip Adduction Machine',
     equipment: 'machine', pattern: 'isolation', increment: 5,
     /*
-     * 내전근은 따로 세는 근육군이 없다. 대내전근이 엉덩이를 펴는 데
-     * 같이 쓰이니 엉덩이에 조금만 얹는다 — 주동근 자리에 넣으면 엉덩이
+     * 내전근은 따로 세는 근육군이 없다. 대내전근이 엉덩이를 펴는 데 조금
+     * 거들 뿐이라 엉덩이 세트로는 거의 치지 않는다 — 크게 얹으면 엉덩이
      * 처방이 이 종목으로 채워진다.
      */
-    contribution: { glutes: 0.3 },
+    contribution: { glutes: 0.15 },
     jointStress: { hip: 0.3, knee: 0.1 },
   },
   {
@@ -741,7 +741,7 @@ export const EXERCISES: readonly Exercise[] = [
     id: 'belt-squat', name: '벨트 스쿼트', nameEn: 'Belt Squat',
     equipment: 'machine', pattern: 'squat', increment: 10,
     // 허리에 바를 지지 않는다. 허리 아픈 사람의 스쿼트 대안이다.
-    contribution: { quads: 1, glutes: 0.6, hamstrings: 0.2 },
+    contribution: { quads: 1, glutes: 0.6, hamstrings: 0.1 },
     jointStress: { knee: 0.55, hip: 0.35, lowBack: 0.05 },
   },
   {

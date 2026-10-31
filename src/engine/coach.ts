@@ -61,7 +61,7 @@ export const COACH_STYLES: readonly CoachStyleInfo[] = [
     id: 'fun',
     label: '유머 있게',
     hint: '웃기면서 끝까지 하게 만드는 코치',
-    sample: '이 바벨, 어제 남긴 치킨이라고 생각하고 들어 봅시다!',
+    sample: '이 무게, 어제 남긴 치킨이라고 생각하고 들어 봅시다!',
   },
 ];
 
@@ -284,7 +284,7 @@ const GROWTH: ByStyle<readonly ((when: string, then: number, now: number) => str
   ],
   fun: [
     (w, t, n) => `${w} 이 무게로 ${t}개. 오늘은 ${n}개! 근육이 몰래 야근했나 봐요.`,
-    (w, t, n) => `${w} ${t}개, 오늘은 ${n}개! 이 정도면 바벨이 긴장하겠는데요?`,
+    (w, t, n) => `${w} ${t}개, 오늘은 ${n}개! 이 정도면 기구가 긴장하겠는데요?`,
   ],
 };
 
@@ -318,7 +318,7 @@ export interface BeforeSetInput {
   /** 오늘 종목 수 — "마지막 종목"을 말하는 데 쓴다 */
   totalLifts?: number;
   /** 이번 세트에 짚을 흔한 실수 (mistakeToWatch). 있으면 동작 포인트 대신 말한다 */
-  watch?: { cue: string; moment: MistakeMoment } | null;
+  watch?: { cue: string; short?: string; moment: MistakeMoment } | null;
   /**
    * 끝까지 밀지 않는 날 — 첫날 · 덜어내는 주 · 컨디션 낮은 날 · 아픈 데 있는 날.
    * 남길 횟수가 3개 이상인 주(블록 초반)도 그렇다. 밀어붙이는 코치(빡센 · 활기찬)도
@@ -376,7 +376,7 @@ export function watchLine(style: CoachStyle, cue: string, moment: MistakeMoment)
  * 밀어붙이는 코치의 각오 한마디. 하나만 두면 한 세션에 여섯 번 같은 말을 듣는다 — 돌려 쓴다.
  */
 export const RESOLVE: ByStyle<readonly string[]> = {
-  tough: ['오늘이 마지막인 것처럼 가자.', '올라잇! 인생 갈아 넣는다는 느낌으로!', '더 할 수 있어. 끝까지 간다.', '여기서 버티는 놈이 바뀐다.'],
+  tough: ['오늘이 마지막인 것처럼 가자.', '올라잇! 인생 갈아 넣는다는 느낌으로!', '목표 개수, 마지막 두 개가 제일 깔끔하게.', '여기서 버티는 사람이 바뀐다.'],
   energetic: ['오늘 최고 기록 한번 만들어 봐요!', '할 수 있어요! 끝까지 가 봐요!', '에너지 다 쏟아 봐요!', '여기서 버티면 진짜 달라져요!'],
   gentle: ['천천히, 정확하게 가 보시죠.', '호흡 지키시고, 한 개씩 가겠습니다.'],
   fun: ['자, 근육한테 출근 도장 찍어 줍시다!', '이번 세트 끝나면 박수 쳐 드릴게요!'],
@@ -403,10 +403,10 @@ function endWith(text: string, mark: '.' | '!'): string {
 
 /** 중간 세트 한마디 — 첫 세트의 각오보다 짧다. */
 export const MIDDLE: ByStyle<readonly string[]> = {
-  tough: ['더 할 수 있어.', '방금보다 한 개 더 간다는 생각으로.', '여기서부터가 진짜 운동이야.', '힘든 게 정상이야. 그게 자극이고.', '자세 무너지지 않게, 끝까지 버텨.', '쉬운 세트는 없어. 집중.'],
-  energetic: ['좋아요, 이 리듬 그대로!', '방금보다 한 개 더 간다는 생각으로요!', '여기서부터가 진짜예요!', '힘든 거 정상이에요! 그게 자극이에요!', '할 수 있어요, 집중!'],
-  gentle: ['방금처럼만 하시면 됩니다.', '리듬 좋습니다. 그대로 가시죠.', '숨 참지 마시고, 올릴 때 내쉬세요.', '천천히 내리셔도 괜찮습니다.', '잘하고 계십니다. 한 개씩만 생각하세요.'],
-  fun: ['방금처럼만요. 복사, 붙여넣기!', '힘든 표정, 사진 찍고 싶을 만큼 멋있어요.', '이 세트 끝나면 물이 꿀맛일 거예요.', '근육이 지금 레벨업 중이에요. 띠링!', '숨은 쉬면서요. 숨 참으면 얼굴이 토마토 돼요.'],
+  tough: ['더 할 수 있어.', '목표 개수, 마지막 두 개를 제일 깔끔하게.', '여기서부터가 진짜 운동이야.', '힘든 게 정상이야. 그게 자극이고.', '자세 무너지지 않게, 끝까지 버텨.', '쉬운 세트는 없어. 집중.'],
+  energetic: ['좋아요, 이 리듬 그대로!', '목표 개수까지, 마지막 두 개가 제일 중요해요!', '여기서부터가 진짜예요!', '힘든 거 정상이에요! 그게 자극이에요!', '할 수 있어요, 집중!'],
+  gentle: ['방금처럼만 하시면 됩니다.', '리듬 좋습니다. 그대로 가시죠.', '내리기 전에 숨을 마셔 배에 힘을 주고, 올라온 뒤 내쉬세요.', '천천히 내리셔도 괜찮습니다.', '잘하고 계십니다. 한 개씩만 생각하세요.'],
+  fun: ['방금처럼만요. 복사, 붙여넣기!', '힘든 표정, 사진 찍고 싶을 만큼 멋있어요.', '이 세트 끝나면 물이 꿀맛일 거예요.', '근육이 지금 레벨업 중이에요. 띠링!', '숨은 올라온 뒤에 후— 내쉬어요. 얼굴 토마토 금지!'],
 };
 
 /** 종목을 시작할 때 오늘 어디쯤인지 — 마지막 종목이라는 말이 그날 남은 힘을 끌어낸다. */
@@ -433,7 +433,7 @@ const NAME_LINE: ByStyle<(name: string) => string> = {
 const SETUP_INTRO: ByStyle<string> = {
   energetic: '처음 하는 종목이니까, 세팅부터 같이 봐요!',
   gentle: '처음 하시는 종목이라, 세팅부터 차근차근 보겠습니다.',
-  tough: '처음이지? 세팅부터 본다.',
+  tough: '처음이지? 세팅 순서 읽어 줄게.',
   fun: '처음 만나는 기구네요. 인사부터 하고, 세팅 볼게요.',
 };
 
@@ -466,9 +466,15 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
   const turn = (input.liftIndex ?? 0) + input.setIndex;
 
   const resolve = (at: number): string => pick(calmDown ? CONTROLLED_RESOLVE[style] : RESOLVE[style], at);
+  /*
+   * 반말 코치는 짧은 말로만 짚는다 — 실수의 "무릎을 발끝 방향으로 밀어 주세요"나 시연의 "…내립니다"를
+   * 반말 머리 뒤에 붙이면 말투가 한 문장 안에서 바뀐다. 짧은 말("무릎은 바깥으로")이 있으면 그것, 없으면 생략.
+   */
   const tail = (): void => {
-    if (input.watch) lines.push(watchLine(style, input.watch.cue, input.watch.moment));
-    else if (cue) lines.push(cueEnd(style, cue));
+    if (input.watch) {
+      const said = style === 'tough' ? input.watch.short : input.watch.cue;
+      if (said) lines.push(watchLine(style, said, input.watch.moment));
+    } else if (cue && style !== 'tough') lines.push(cueEnd(style, cue));
   };
 
   if (input.setIndex > 0) {
@@ -536,7 +542,7 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
     else lines.push(`오늘은 ${today}, ${reps} 해 보겠습니다.`);
   } else {
     if (last) lines.push(`지난번엔 ${then}, ${last.reps}개! 기억하시죠?`);
-    if (last && diff > 0) lines.push(`오늘은 ${delta} 추가! ${today}, ${reps}. 바벨한테 미리 사과해 두세요.`);
+    if (last && diff > 0) lines.push(`오늘은 ${delta} 추가! ${today}, ${reps}. 기구한테 미리 사과해 두세요.`);
     else if (last && diff < 0) lines.push(`오늘은 살짝 내려서, ${today}, ${reps}. 무게도 쉬는 날이 있어야죠.`);
     else if (last) lines.push(`같은 무게, ${today}, ${reps}. 익숙한 친구랑 한 번 더!`);
     else lines.push(`오늘은 ${today}, ${reps}! 가 볼까요?`);
@@ -651,10 +657,10 @@ export function formCueLine(
 }
 
 const ASK_FEEL: ByStyle<readonly string[]> = {
-  tough: ['무게 어땠어? 솔직하게.', '어땠어? 더 갈 수 있었지?', '무게 괜찮았어? 정직하게 눌러.'],
-  energetic: ['무게 어땠어요?', '방금 세트 어땠어요? 솔직하게요!', '어땠어요? 더 갈 수 있었어요?'],
+  tough: ['무게 어땠어? 솔직하게.', '어땠어? 몇 개 남았는지 솔직하게.', '무게 괜찮았어? 정직하게 눌러.'],
+  energetic: ['무게 어땠어요?', '방금 세트 어땠어요? 솔직하게요!', '어땠어요? 여유 몇 개였는지 솔직하게요!'],
   gentle: ['무게는 어떠셨어요?', '무게 괜찮으셨나요?', '방금 세트 어떠셨어요?'],
-  fun: ['무게 어땠어요? 바벨은 괜찮대요.', '방금 세트 어땠어요? 솔직하게, 저 안 삐져요.', '어땠어요? 무거웠으면 바벨 탓 해도 돼요.'],
+  fun: ['무게 어땠어요? 기구는 괜찮대요.', '방금 세트 어땠어요? 솔직하게, 저 안 삐져요.', '어땠어요? 무거웠으면 기구 탓 해도 돼요.'],
 };
 
 /** 세트가 끝나면 묻는 말. at을 안 주면 늘 같은 첫 문장이다(화면 글자용). */
@@ -694,7 +700,7 @@ function call(name?: string | null): string {
 
 const FEEL_ACK: ByStyle<Partial<Record<Feel, readonly string[]>>> = {
   tough: {
-    light: ['가벼웠다고? 다음엔 더 간다.', '여유 있었다는 건, 더 갈 수 있다는 거야.'],
+    light: ['가벼웠다고? 그럼 자세를 더 깔끔하게.', '여유 있었다는 건, 더 갈 수 있다는 거야.'],
     heavy: ['무거운 게 정상이야. 그게 자극이고.', '무거웠는데 해냈어. 그게 실력이야.'],
   },
   energetic: {
@@ -706,8 +712,8 @@ const FEEL_ACK: ByStyle<Partial<Record<Feel, readonly string[]>>> = {
     heavy: ['무거우셨죠. 그래도 잘 버티셨습니다.', '힘드셨죠. 자세는 좋았습니다.'],
   },
   fun: {
-    light: ['가벼웠어요? 바벨이 서운하겠네요.', '여유 있었다니, 오늘 밥 잘 드셨나 봐요.'],
-    heavy: ['무거웠죠? 바벨이 오늘 좀 예민하네요.', '무거웠는데 해냈어요! 바벨이 졌어요.'],
+    light: ['가벼웠어요? 기구가 서운하겠네요.', '여유 있었다니, 오늘 밥 잘 드셨나 봐요.'],
+    heavy: ['무거웠죠? 기구가 오늘 좀 예민하네요.', '무거웠는데 해냈어요! 무게가 졌어요.'],
   },
 };
 
@@ -715,7 +721,7 @@ const NEXT_UP: ByStyle<readonly ((w: string) => string)[]> = {
   tough: [(w) => `다음 세트, ${w}! 올린다.`, (w) => `${w}. 올린다. 할 수 있어.`, (w) => `다음은 ${w}. 한 단계 위로 간다!`],
   energetic: [(w) => `다음 세트는 ${w}! 올려 봐요!`, (w) => `${w}! 한 단계 올라가요!`],
   gentle: [(w) => `다음 세트는 조금 올려서, ${w}.`, (w) => `여유가 있으시니, ${w}. 살짝 올려 보겠습니다.`],
-  fun: [(w) => `다음 세트, ${w}! 무게가 레벨업했어요.`, (w) => `${w}! 바벨한테 원판 친구가 생겼어요.`],
+  fun: [(w) => `다음 세트, ${w}! 무게가 레벨업했어요.`, (w) => `${w}! 무게가 한 칸 올라갔어요, 축하 파티!`],
 };
 const NEXT_DOWN: ByStyle<readonly ((w: string) => string)[]> = {
   tough: [(w) => `${w}. 내린다. 대신 자세는 완벽하게.`, (w) => `${w}. 조정한다. 횟수는 끝까지 채운다.`],
@@ -724,7 +730,7 @@ const NEXT_DOWN: ByStyle<readonly ((w: string) => string)[]> = {
   fun: [(w) => `${w}. 살짝 내려요. 작전상 후퇴예요.`, (w) => `${w}. 무게도 가끔은 쉬어야죠.`],
 };
 const NEXT_SAME: ByStyle<readonly string[]> = {
-  tough: ['좋아. 같은 무게, 이번엔 더 깔끔하게.', '같은 무게 그대로. 방금보다 한 개 더 생각해.', '무게 유지. 자세로 이긴다.'],
+  tough: ['좋아. 같은 무게, 이번엔 더 깔끔하게.', '같은 무게 그대로. 목표 개수, 자세 그대로.', '무게 유지. 자세로 이긴다.'],
   energetic: ['좋아요! 같은 무게로 한 번 더!', '딱 좋아요! 이대로 한 세트 더!', '같은 무게, 방금처럼만 가요!'],
   gentle: ['좋습니다. 같은 무게로 한 번 더 가시죠.', '딱 좋습니다. 이대로 한 세트 더 하겠습니다.', '같은 무게로, 방금처럼만 하시면 됩니다.'],
   fun: ['같은 무게, 한 번 더! 익숙한 맛이 제일이죠.', '딱 좋아요. 이 무게랑 정들었네요.', '같은 무게로 앙코르 갑니다!'],
@@ -747,7 +753,7 @@ const WEIGHT_PR: ByStyle<string> = {
   tough: '이 종목 최고 무게다! 오늘 기록 세웠어!',
   energetic: '이 종목 최고 무게예요! 신기록이에요!',
   gentle: '이 종목에서 처음 드신 무게입니다. 축하드립니다.',
-  fun: '이 종목 최고 무게! 바벨이 깜짝 놀랐어요!',
+  fun: '이 종목 최고 무게! 기구가 깜짝 놀랐어요!',
 };
 
 const STOP: ByStyle<string> = {
@@ -808,12 +814,12 @@ export function afterSetLines(input: AfterSetInput): string[] {
 export const REST_TIPS: ByStyle<readonly string[]> = {
   tough: [
     '숨 골라. 다음 세트가 진짜야.',
-    '물 한 모금. 다음 세트도 다 쏟는다.',
+    '물 한 모금. 다음 세트도 자세부터.',
     '쉬는 것도 훈련이야. 제대로 쉬어.',
     '지금 쉬는 만큼 다음 세트에서 나온다.',
-    '방금 그 느낌 기억해. 다음엔 더 간다.',
+    '방금 그 느낌 기억해. 다음도 그대로.',
     '폰 보지 마. 다음 세트만 생각해.',
-    '심장 뛰는 거 느껴지지? 제대로 하고 있는 거야.',
+    '코로 마시고 입으로 길게 내쉬어.',
     '어깨 한 번 털어. 힘 빼고.',
     '근육은 오늘 밤에 자란다. 잠 꼭 자.',
     '단백질 챙겨. 운동만 하고 안 먹으면 반쪽이야.',
@@ -852,8 +858,8 @@ export const REST_TIPS: ByStyle<readonly string[]> = {
     '쉬는 동안 폰 보면, 근육이 질투해요.',
     '근육은 자는 동안 자라요. 오늘 밤 꿀잠이 숙제예요.',
     '단백질 챙기세요. 치킨도 단백질이긴 해요. 튀김은 빼고요.',
-    '심장 뛰는 소리 들리죠? 몸이 박수 치는 소리예요.',
-    '어제의 나보다 한 개만 더. 그게 오늘의 승리예요.',
+    '숨은 코로 마시고, 입으로 후— 길게요.',
+    '어제의 나보다 조금만 더. 그게 오늘의 승리예요.',
     '힘들죠? 원래 힘들어요. 그래서 다들 안 하는 거예요.',
   ],
 };
@@ -871,7 +877,7 @@ const READY_SOON: ByStyle<readonly string[]> = {
   tough: ['10초! 자리로 가.', '10초 남았다. 그립 잡아.', '10초! 다음 세트 준비.'],
   energetic: ['10초 남았어요! 자리로 가요!', '이제 10초! 준비해요!', '10초 뒤에 시작해요!'],
   gentle: ['10초 남았습니다. 자리로 가 보시죠.', '이제 10초입니다. 천천히 준비하세요.', '10초 뒤에 시작하겠습니다.'],
-  fun: ['10초! 다시 바벨이랑 데이트할 시간이에요.', '10초 남았어요. 마음의 준비, 되셨죠?', '10초 뒤 시작! 도망은 안 돼요.'],
+  fun: ['10초! 다시 기구랑 데이트할 시간이에요.', '10초 남았어요. 마음의 준비, 되셨죠?', '10초 뒤 시작! 도망은 안 돼요.'],
 };
 
 export function readySoonLine(style: CoachStyle, at = 0): string {
@@ -964,7 +970,7 @@ export function wrapUpLines(input: WrapUpInput): string[] {
     lines.push(...FIRST_EVER[style]);
   } else {
     const sets: ByStyle<string> = {
-      tough: `${input.setsDone}세트. 오늘 다 쏟아냈다.`,
+      tough: `${input.setsDone}세트. 오늘도 해냈다.`,
       energetic: `오늘 ${input.setsDone}세트! 완전 잘했어요!`,
       gentle: `오늘 ${input.setsDone}세트 하셨습니다.`,
       fun: `오늘 ${input.setsDone}세트! 근육이 감사 편지 쓸 거예요.`,

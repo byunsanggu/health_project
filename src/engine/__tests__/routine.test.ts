@@ -207,9 +207,9 @@ describe('내 루틴 — 점검', () => {
     assert.deepEqual(under.muscles, ['sideDelt', 'calves']);
     assert.ok(under.text.includes('측면 삼각근 6세트(최소 8)'));
     assert.equal(routineHeadline(reviewRoutine(broSplit, index, landmarks)), '측면 삼각근 · 종아리가 주 최소 세트에 못 미칩니다');
-    // 종아리 4세트 → 6.3(최소 8)은 15% 넘게 모자라다. 5세트면 7.3 — 말하지 않는다
+    // 종아리 4세트 → 5(레그컬 몫 1 포함, 최소 8)는 15% 넘게 모자라다. 6세트면 7 — 말하지 않는다
     const more: CustomRoutine = structuredClone(broSplit);
-    more.days[3]!.slots[4]!.sets = 5;
+    more.days[3]!.slots[4]!.sets = 6;
     more.days[2]!.slots[1]!.sets = 6;
     assert.equal(reviewRoutine(more, index, landmarks).notes.find((note) => note.kind === 'under'), undefined);
   });
