@@ -2818,8 +2818,15 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-next { font-size: 13px; color: var(--muted); text-align: center; }
 .focus-hurt { align-self: center; border: 0; background: none; font-size: 13px; color: var(--muted); text-decoration: underline; padding: 4px; min-height: 44px; }
 /* 쉬는 화면 맨 위 — 남은 시간 · 쉬고 나서 할 것 · 곧 시작 */
-.focus-rest-head { display: grid; justify-items: center; gap: 2px; width: 100%; flex: none; }
+.focus-rest-head { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 14px; width: 100%; flex: none; }
+.focus-rest-clock { display: grid; justify-items: start; }
+.focus-rest-clock span { font-size: 13px; color: var(--muted); }
+.focus-rest-side { display: grid; gap: 3px; min-width: 0; }
+.focus-rest-side .focus-what { text-align: left; line-height: 1.35; }
 .focus-rest-head .focus-soon { min-height: 0; }
+.focus-soon:empty { display: none; }
+.rest-guide-motion { display: grid; gap: 6px; justify-items: center; align-content: start; }
+.rest-guide-motion .focus-demo { justify-self: center; margin-top: 0; min-height: 36px; }
 .focus-switch-info { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; flex: none; }
 .focus-switch-info .focus-demo { margin-top: 0; flex: none; min-height: 40px; }
 /* 방금 적은 세트 — 몇 개로 적혔는지, 틀렸으면 그 자리에서 고친다 */
@@ -2840,11 +2847,12 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
  * 쉬는 화면 · 세트 화면의 동작 그림 크기 — 남는 높이만큼. 큰 폰에서는 크게, 작은 폰에서는 줄어들되
  * 세 줄과 남은 시간이 늘 화면 안에 들어오게.
  */
-.rest-guide .focus-motion { width: clamp(120px, calc(100dvh - 600px), 340px); max-height: none; }
+.rest-guide .focus-motion { width: clamp(120px, calc(100dvh - 640px), 340px); max-height: none; }
 @media (max-height: 800px) {
   /* 작은 폰(360×640 · 375×667 · 360×780) — 동작은 왼쪽에 작게, 세 줄은 오른쪽에 */
   .rest-guide { grid-template-columns: minmax(104px, 34%) minmax(0, 1fr); align-items: start; gap: 10px; }
   .rest-guide .focus-motion { width: 100%; margin: 0; }
+  .rest-guide-motion .focus-demo { padding: 4px 8px; font-size: 12px; }
   .rest-guide-lines li { grid-template-columns: 1fr; gap: 0; font-size: 14px; line-height: 1.35; }
   .rest-guide-lines b { font-size: 12px; }
   .focus-middle.with-motion .focus-motion { max-height: 26dvh; width: min(100%, 26dvh, 320px); }
@@ -2853,6 +2861,10 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
   .focus { gap: 8px; padding-top: 10px; }
 }
 @media (max-height: 700px) {
+  /* 자막은 한 줄 — 누르면 다 보인다 */
+  .focus-say { -webkit-line-clamp: 1; }
+  .focus-logged { padding: 2px 2px 2px 12px; }
+  .focus-middle.with-guide { padding-bottom: 0; }
   .focus-middle { gap: 6px; }
   .focus-middle.with-motion .focus-ring { width: min(40vw, 150px, 21dvh); min-width: 112px; }
   .focus-num { font-size: 64px; }

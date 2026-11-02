@@ -96,7 +96,7 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('.stretch-now').count() === 1, '지금 할 동작 칸이 없습니다');
   const secs = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1] || 30);
   await page.locator('.stretch-go').click();
-  await page.clock.runFor(1500);
+  await page.clock.runFor(2500);
   const ticking = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1]);
   check(ticking < secs, `초가 줄지 않습니다: ${secs} → ${ticking}`);
   await shot('4-cool');

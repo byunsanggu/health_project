@@ -28,9 +28,11 @@ export default async function ({ page, url, shot }) {
   if (await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).count()) {
     await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
   }
-  // 그날 첫 종목 — 앞에 쉬는 시간이 없으니 첫 세트 앞(또는 첫 워밍업 앞)에서 하는 법을 말했다
+  // 그날 첫 종목 — 앞에 쉬는 시간이 없으니 첫 세트 앞(또는 첫 워밍업 앞)에서 하는 법을 말했다.
+  // 처음 하는 종목이면 세팅 순서가 그 자리를 대신한다(둘을 붙이면 30초 넘는 강의가 된다). "쉬시는 동안"이라고는 하지 않는다.
   const said0 = await page.evaluate(() => window.__said.join(' | '));
-  check(/하는 법/.test(said0), '첫 종목 앞에서 하는 법을 말하지 않았습니다: ' + said0.slice(0, 200));
+  check(/하는 법|세팅부터/.test(said0), '첫 종목 앞에서 하는 법을 말하지 않았습니다: ' + said0.slice(0, 200));
+  check(!/쉬시는 동안|쉬는 동안 하는 법/.test(said0), '쉬는 시간이 없는데 "쉬는 동안"이라고 했습니다: ' + said0.slice(0, 300));
 
   // 같은 종목 세트 사이 휴식 — 동작과 세 줄이 화면에
   await runUntil(page, 'rest', { maxMs: 180000 });

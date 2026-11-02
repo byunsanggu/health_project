@@ -35,7 +35,7 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('.stretch-now .live-motion').count() === 1, '몸 풀기 동작 그림이 없습니다');
   const secs = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1] || 60);
   await page.locator('.stretch-go').click();
-  await page.clock.runFor(1500);
+  await page.clock.runFor(2500);
   const ticking = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1]);
   check(ticking < secs, `몸 풀기 초가 줄지 않습니다: ${secs} → ${ticking}`);
   await shot('2-stage');

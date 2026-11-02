@@ -47,6 +47,17 @@ export default async function ({ page, url, shot }) {
   check(saved.includes('"reps":7'), '저장된 기록에 고친 횟수가 없습니다');
   await shot('3-after');
 
+  // 마지막 세트의 강도 기법(중급) — 쉬운 이름이 먼저이고, 누르면 하는 법 한 장과 "이 세트에 쓰기"
+  //   (전에는 눌러도 화면에 아무 일이 없었다). 막힌 이유 줄은 아무에게도 띄우지 않는다
+  check(await page.locator('.tech-blocked').count() === 0, '쓸 수 없는 강도 기법의 이유 줄이 보입니다');
+  const techs = page.locator('.tech-row .pick');
+  if (await techs.count()) {
+    check(!/^(드롭세트|AMRAP)/.test((await techs.first().textContent()).trim()), '강도 기법 이름이 영어 · 현장 말부터입니다: ' + await techs.first().textContent());
+    await techs.first().click();
+    await page.locator('dialog .tech-use').click();
+    check(await page.locator('.set-now .top-tag', { hasText: '이번 세트' }).count() === 1, '이 세트에 쓰기를 눌렀는데 세트에 표시가 없습니다');
+  }
+
   // 원하는 사람은 내 정보에서 묻기를 켠다 — 켜면 "몇 개 더" 버튼이 돌아온다
   await tab(page, '내 정보');
   await page.locator('.coach-settings .segmented button', { hasText: '남은 횟수' }).click();
