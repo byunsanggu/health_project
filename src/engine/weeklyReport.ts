@@ -252,8 +252,10 @@ function adviceOf(
   remaining: readonly string[],
 ): string {
   if (sessionCount < target && remaining.length > 0) {
-    const left = Math.min(target - sessionCount, remaining.length);
-    return `남은 ${left}번을 마저 하면 이번 주 계획을 채웁니다.`;
+    // 남은 날로 모자란 만큼을 다 채울 수 있을 때만 "채웁니다" — 수요일을 놓친 목요일에는 채울 수 없다
+    const gap = target - sessionCount;
+    if (remaining.length >= gap) return `남은 ${gap}번을 마저 하면 이번 주 계획을 채웁니다.`;
+    return `남은 ${remaining.length}번을 하면 이번 주 ${sessionCount + remaining.length}번입니다.`;
   }
   if (sessionCount === 0) return '다음 주에 한 번만 나가면 다시 굴러갑니다.';
   if (sessionCount < target) {

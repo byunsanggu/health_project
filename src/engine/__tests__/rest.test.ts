@@ -191,7 +191,7 @@ describe('휴식 띠 — 사용자가 정한다', () => {
   it('고른 띠로 큰 운동 · 작은 운동이 실제로 몇 분 쉬는지 알려 준다 — 목록과 어긋나지 않게', () => {
     // "보통 1:00~1:30"을 골라 놓고 벤치는 2:00이 뜨던 것: 띠 숫자가 아니라 실제 값을 보여 준다
     const normal = restPlanSummary(null);
-    assert.equal(normal.text, '큰 운동 2~3분 · 작은 운동 1분');
+    assert.equal(normal.text, '큰 운동 1분 30초~3분 · 작은 운동 1분');
     const bench = restFor({ exercise: exerciseById('dumbbell-bench-press')!, reps: 10, targetRir: 2 }).seconds;
     assert.ok(bench >= normal.big.min && bench <= normal.big.max, String(bench));
     const lateral = restFor({ exercise: exerciseById('lateral-raise')!, reps: 12, targetRir: 2 }).seconds;
@@ -201,6 +201,17 @@ describe('휴식 띠 — 사용자가 정한다', () => {
       assert.match(summary.text, /^큰 운동 .+ · 작은 운동 .+$/);
       assert.doesNotMatch(summary.text, /\d:\d\d/, '타이머 표기(1:30)는 쓰지 않는다');
       assert.ok(summary.big.min >= summary.small.min, preset.id);
+    }
+  });
+
+  it('큰 운동 범위가 맨몸 · 15회짜리 큰 운동의 실제 휴식도 담는다', () => {
+    for (const band of [null, ...REST_PRESETS.map((preset) => preset.band)]) {
+      const summary = restPlanSummary(band);
+      for (const [id, reps, targetRir] of [['push-up', 15, 2], ['leg-press', 15, 2], ['dumbbell-bench-press', 10, 2], ['back-squat', 6, 1]] as const) {
+        const seconds = restFor({ exercise: exerciseById(id)!, reps, targetRir, band: band ?? undefined }).seconds;
+        const rounded = Math.round(seconds / 15) * 15;
+        assert.ok(rounded >= summary.big.min && rounded <= summary.big.max, `${summary.text} — ${id} ${seconds}초`);
+      }
     }
   });
 

@@ -173,9 +173,16 @@ export function restPlanSummary(band?: RestBand | null): RestPlanSummary {
   const sample = (exercise: Partial<Exercise>, reps: number, targetRir: number) =>
     restFor({ exercise: { jointStress: {}, unilateral: false, ...exercise } as Exercise, reps, targetRir, band: band ?? undefined }).seconds;
   const quarter = (seconds: number) => Math.max(15, Math.round(seconds / 15) * 15);
-  // 큰 운동: 보통 기계 · 덤벨 큰 운동(10회 · 여유 2) ~ 허리 부담 큰 바벨 동작을 힘 거의 다 쓰고(여유 1)
-  const bigLow = quarter(sample({ pattern: 'squat', equipment: 'machine' }, 10, 2));
-  const bigHigh = quarter(sample({ pattern: 'hinge', equipment: 'barbell', jointStress: { lowBack: 0.9 } }, 6, 1));
+  // 큰 운동: 맨몸 · 15회짜리 ~ 허리 부담 큰 바벨 동작을 힘 거의 다 쓰고(여유 1)
+  // 맨몸 큰 운동(푸시업) · 15회짜리 큰 운동은 더 짧게(1분 30초) 쉰다 — 목록에 뜨는 값과 맞게 같이 잰다
+  const bigSamples = [
+    sample({ pattern: 'squat', equipment: 'machine' }, 10, 2),
+    sample({ pattern: 'horizontalPush', equipment: 'bodyweight' }, 15, 2),
+    sample({ pattern: 'squat', equipment: 'machine' }, 15, 2),
+    sample({ pattern: 'hinge', equipment: 'barbell', jointStress: { lowBack: 0.9 } }, 6, 1),
+  ].map(quarter);
+  const bigLow = Math.min(...bigSamples);
+  const bigHigh = Math.max(...bigSamples);
   // 작은 운동: 여유 2 ~ 힘 거의 다 쓰고(여유 0)
   const smallLow = quarter(sample({ pattern: 'isolation', equipment: 'dumbbell' }, 12, 2));
   const smallHigh = quarter(sample({ pattern: 'isolation', equipment: 'dumbbell' }, 12, 0));

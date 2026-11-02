@@ -150,6 +150,16 @@ describe('한 줄 제목과 다음 주 지시', () => {
     assert.match(over.headline, /계획은 3번이었습니다/);
   });
 
+  it('놓친 날이 있으면 "채웁니다"라고 하지 않는다 — 목요일, 월만 하고 수를 놓쳤으면 금 하나로는 3번이 안 된다', () => {
+    const now = [session('2026-09-21', [set('barbell-bench-press', 100, 8)])];
+    const remainingDays = plannedDaysLeft({ planned: ['2026-09-21', '2026-09-23', '2026-09-25'], done: ['2026-09-21'], today: '2026-09-24' });
+    assert.deepEqual(remainingDays, ['2026-09-25']);
+    const report = buildWeeklyReport({ ...base, targetSessions: 3, sessions: now, history: now, remainingDays });
+    assert.equal(report.headline, '3번 중 1번 했습니다 · 금 남음');
+    assert.doesNotMatch(report.advice, /채웁니다/);
+    assert.equal(report.advice, '남은 1번을 하면 이번 주 2번입니다.');
+  });
+
   it('남은 날 — 오늘 이미 했으면 오늘은 빼고, 지난 날은 남은 날이 아니다', () => {
     const planned = ['2026-09-21', '2026-09-23', '2026-09-25'];
     assert.deepEqual(plannedDaysLeft({ planned, done: [], today: '2026-09-23' }), ['2026-09-23', '2026-09-25']);

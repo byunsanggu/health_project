@@ -93,11 +93,18 @@ describe('워밍업 램프', () => {
   it('무게가 0으로 넘어온 기계 종목을 맨몸이라고 하지 않는다 — 짐작이라고 말하고 할 일을 준다', () => {
     const machine = exerciseById('machine-triceps-extension') ?? pushdown;
     assert.notEqual(machine.equipment, 'bodyweight');
-    const result = plan(machine, 0, 15);
+    const result = planWarmup({ exercise: machine, workingWeightKg: 0, workingReps: 15, estimatedWeight: true });
     assert.equal(result.sets.length, 0);
     assert.doesNotMatch(result.note, /맨몸/);
     assert.match(result.note, /짐작/);
     assert.match(result.note, /숫자를 눌러 고치세요/);
+  });
+
+  it('짐작이라고 넘기지 않았으면 무게 0이어도 "짐작"이라고 하지 않는다', () => {
+    const machine = exerciseById('machine-triceps-extension') ?? pushdown;
+    const result = plan(machine, 0, 15);
+    assert.equal(result.sets.length, 0);
+    assert.doesNotMatch(result.note, /맨몸|짐작/);
   });
 
   it('무게가 짐작이면 그렇다고 말한다', () => {
