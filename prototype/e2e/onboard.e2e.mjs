@@ -36,7 +36,7 @@ export default async function ({ page, url, shot }) {
 
   // 프로그램 — 근성장 체크가 같이 나온다
   check(await page.locator('.growth-card').count() === 1, '프로그램 화면에 근성장 체크가 없습니다');
-  check(/근성장 기준을 넘습니다/.test(await page.locator('.growth-card').textContent()), '근성장 체크에 결론이 없습니다');
+  check(/최소 세트를 채웁니다/.test(await page.locator('.growth-card').textContent()), '근성장 체크에 결론이 없습니다');
   await shot('2-program');
   await finishWizard(page, { level: '초보', sex: '여성' });
   // 초보 프로그램 — 바벨 데드리프트 · 백 스쿼트로 시작하지 않는다

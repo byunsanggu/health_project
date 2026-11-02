@@ -185,7 +185,7 @@ export function suggestStartingLoad(input: StartingLoadInput): StartingLoad {
       weightKg: null,
       method: 'unknown',
       confidence: 'low',
-      rationale: '환산 기준이 없는 종목입니다. 가볍게 시작해 첫 세트에서 맞춰 나가세요.',
+      rationale: '처음 하는 종목이라 무게를 짐작할 수 없습니다. 가볍게 한 세트 해 보고, 숫자를 눌러 무게를 고치세요.',
     };
   }
 
@@ -206,7 +206,7 @@ export function suggestStartingLoad(input: StartingLoadInput): StartingLoad {
       weightKg: null,
       method: 'unknown',
       confidence: 'low',
-      rationale: '기준으로 삼을 기록도 체중 정보도 없습니다. 탐색 세트부터 시작하세요.',
+      rationale: '체중도 기록도 없어 무게를 짐작할 수 없습니다. 가볍게 한 세트 해 보고, 숫자를 눌러 무게를 고치세요.',
     };
   }
 
@@ -220,8 +220,10 @@ export function suggestStartingLoad(input: StartingLoadInput): StartingLoad {
     : round(conservative, 0.5);
 
   const rationale = fromHistory
-    ? `${fromHistory.label} 기록에서 환산한 값입니다. ${input.repRange.max}회에 여유 ${input.targetRir}개 기준으로 보수적으로 잡았습니다.`
-    : `체중 ${input.profile?.bodyweightKg}kg · ${levelLabel(input.profile?.level)} 기준에서 환산했습니다. 첫 세트에서 반드시 확인하세요.`;
+    ? `${fromHistory.label} 기록으로 짐작한 무게입니다. ${input.repRange.max}회를 하고도 ${input.targetRir}개쯤 더 할 수 있게 가볍게 잡았습니다. ` +
+      '너무 가볍거나 무거우면 숫자를 눌러 바꾸세요.'
+    : `체중 ${input.profile?.bodyweightKg}kg · ${levelLabel(input.profile?.level)}에 맞춰 짐작한 무게입니다. ` +
+      '가볍게 해 보고, 너무 가볍거나 무거우면 숫자를 눌러 바꾸세요.';
 
   return {
     ...base,

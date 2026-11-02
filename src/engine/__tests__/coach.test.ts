@@ -543,3 +543,39 @@ describe('남은 힘을 묻지 않을 때', () => {
     assert.equal(rirFromReps(15, range, 4), 5);
   });
 });
+
+describe('PT 말이 서로 어긋나지 않는다', () => {
+  it('"여기까지"라고 한 말에 다음 세트 · 쉬는 시간 안내가 붙지 않는다 — PT는 그 종목을 정말 거기서 마친다', () => {
+    for (const style of STYLES) {
+      for (const feel of ['light', 'right', 'heavy'] as const) {
+        for (const lastOfLift of [false, true]) {
+          for (let at = 0; at < 4; at += 1) {
+            const said = forSpeech(afterSetLines({ style, feel, lastOfLift, at, nextWeightKg: 40, deltaKg: -5, stopReason: '첫 세트 8회에서 5회로 떨어졌습니다' }).join(' '));
+            assert.match(said, /여기서|여기까지/, `${style}: ${said}`);
+            assert.doesNotMatch(said, /쉬고|\d\s*세트|다음 세트|한 번 더|한 세트 더|킬로/, `${style}: ${said}`);
+          }
+        }
+      }
+    }
+  });
+
+  it('종목 끝에 "다음 종목"을 말하지 않는다 — 다음은 이동 안내가 말하고, 마지막 종목이면 다음이 없다', () => {
+    for (const style of STYLES) {
+      for (const feel of ['light', 'right', 'heavy'] as const) {
+        for (let at = 0; at < 6; at += 1) {
+          const said = afterSetLines({ style, feel, lastOfLift: true, at }).join(' ');
+          assert.doesNotMatch(said, /다음 종목|다음 스테이지|다음 간다|다음 거|다음\./, `${style}: ${said}`);
+        }
+      }
+    }
+  });
+
+  it('목표에 못 미친 마지막 세트 뒤에 "깔끔하게 · 최고"라고 하지 않는다', () => {
+    for (const style of STYLES) {
+      for (let at = 0; at < 6; at += 1) {
+        const said = afterSetLines({ style, feel: 'heavy', lastOfLift: true, at }).join(' ');
+        assert.doesNotMatch(said, /깔끔하게|최고|이겼다/, `${style}: ${said}`);
+      }
+    }
+  });
+});

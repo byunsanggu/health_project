@@ -112,7 +112,37 @@ describe('summarizeSession', () => {
         session('2026-01-07', sets('barbell-bench-press', many, { weightKg: 80, reps: 10, rir: 1 })),
       ],
     });
-    assert.ok(summary.notes.some((note) => note.includes('회복 범위')), summary.notes.join(' / '));
+    assert.ok(summary.notes.some((note) => note.includes('최대 세트를 넘었습니다')), summary.notes.join(' / '));
+  });
+
+  it('최소가 0인 부위(앞어깨 · 복근)는 "채웠다"고 칭찬하지 않는다', () => {
+    const summary = summarizeSession({
+      ...base,
+      sets: sets('barbell-bench-press', 3, { weightKg: 80, reps: 10, rir: 2 }),
+      history: [],
+    });
+    const joined = summary.notes.join(' ');
+    assert.doesNotMatch(joined, /전면 삼각근|복근/, joined);
+    assert.doesNotMatch(joined, /자극선/, joined);
+  });
+
+  it('주가 진행 중이면 최소 아래 부위를 "부족"이 아니라 "진행 중"으로 쓴다', () => {
+    const input = { ...base, sets: sets('barbell-bench-press', 3, { weightKg: 80, reps: 10, rir: 2 }), history: [] };
+    const going = summarizeSession({ ...input, weekInProgress: true });
+    const chest = going.byMuscle.find((row) => row.muscle === 'chest')!;
+    assert.equal(chest.zoneId, 'underMev');
+    assert.equal(chest.zone, '진행 중');
+    const done = summarizeSession(input);
+    assert.equal(done.byMuscle.find((row) => row.muscle === 'chest')!.zone, '부족');
+  });
+
+  it('이번 주 계획을 "다음 주" 칸에 쓰지 않는다', () => {
+    const plan = (weekStart: string) => ({ weekStart, summary: '2주차 · 세트 그대로' }) as unknown as Parameters<typeof summarizeSession>[0]['plan'];
+    const input = { ...base, sets: sets('barbell-bench-press', 3, { weightKg: 80, reps: 10, rir: 2 }), history: [] };
+    // TODAY(2026-01-09)가 든 주의 월요일은 2026-01-05
+    assert.equal(summarizeSession({ ...input, plan: plan('2026-01-05') }).nextWeek, '이번 주 기록을 보고 부위별 세트를 정합니다.');
+    assert.equal(summarizeSession({ ...input, plan: plan('2026-01-12') }).nextWeek, '2주차 · 세트 그대로');
+    assert.equal(summarizeSession(input).nextWeek, undefined);
   });
 
   it('조사를 붙여서 말한다', () => {

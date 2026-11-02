@@ -9,9 +9,9 @@
  * 말의 모양(갈래 · 돌려 쓰는 순번)을 다 밟는다.
  */
 import {
-  COACH_STYLES, FEELS, REST_TIPS, afterSetLines, askFeelLine, beforeSetLines, formCueLine, lastCallLine, ptStartLine,
-  pushLine, readySoonLine, restTipLine, resumeFromLine, resumeLine, sessionStartLines, watchLine, wrapUpLines,
-  type CoachStyle, type Feel,
+  COACH_STYLES, FEELS, REST_TIPS, afterSetLines, askFeelLine, beforeSetLines, formCueLine, lastCallLine, liftNameLine,
+  ptStartLine, pushLine, readySoonLine, restTipLine, resumeFromLine, resumeLine, sessionStartLines, setupLines, watchLine,
+  wrapUpLines, type CoachStyle, type Feel,
 } from './coach.ts';
 import { exerciseGuideLines, restGuideLines } from './coachGuide.ts';
 import { demoFor } from './demos.ts';
@@ -85,6 +85,12 @@ export function coachTexts(style: CoachStyle): string[] {
     for (const at of range(shorts.length)) say(formCueLine(style, exercise.pattern, at, shorts));
     say(exerciseGuideLines(style, exercise));
     say(restGuideLines(style, exercise));
+    // 그날 첫 종목(앞에 쉬는 시간 없음) · 처음 하는 종목의 세팅 뒤(자리 잡는 말 생략)
+    say(restGuideLines(style, exercise, { resting: false }));
+    say(restGuideLines(style, exercise, { resting: false, grip: false }));
+    // PT 첫 워밍업 앞 — 이름 · 세팅 순서
+    say(liftNameLine(style, exercise.name));
+    say(setupLines(style, setupFor(exercise)));
   }
   for (const pattern of ['squat', 'lunge', 'hinge', 'horizontalPush', 'verticalPush', 'verticalPull', 'horizontalPull', 'isolation', 'core'] as const) {
     for (const at of range(4)) say(formCueLine(style, pattern, at));
@@ -110,7 +116,7 @@ export function coachTexts(style: CoachStyle): string[] {
       }
       say(afterSetLines({ style, feel, lastOfLift: false, nextWeightKg: 60, deltaKg: 0, at, weightPr: true, name: '민수' }));
       for (const daysAgo of [7, 21]) say(afterSetLines({ style, feel, lastOfLift: false, nextWeightKg: 60, deltaKg: 0, at, growth: { daysAgo, thenReps: 8, nowReps: 10 } }));
-      say(afterSetLines({ style, feel, lastOfLift: false, at, stopReason: '계획한 4세트를 마쳤습니다' }));
+      for (const lastOfLift of [false, true]) say(afterSetLines({ style, feel, lastOfLift, at, stopReason: '계획한 4세트를 마쳤습니다' }));
     }
   }
 
@@ -143,6 +149,7 @@ export function coachTexts(style: CoachStyle): string[] {
   const steps = [{ weightKg: 0, reps: 10, restSeconds: 45 }, { weightKg: 40, reps: 5, restSeconds: 60 }, { weightKg: 60, reps: 3, restSeconds: 90 }];
   const [one, two] = [EXERCISES[0]!.name, EXERCISES[1]!.name];
   for (const index of range(3)) say(warmupSetLine(style, one, index, steps));
+  say(warmupSetLine(style, one, 0, steps, false, { named: false }));
   say(warmupRestLine(style, 45));
   say(warmupDoneLine(style));
   for (const firstTime of [false, true]) {

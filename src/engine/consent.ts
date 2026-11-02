@@ -50,7 +50,7 @@ export interface ConsentItem {
  * 동의 문구의 판. 내용을 고치면 반드시 올린다.
  * 올라가면 기존 사용자에게 다시 묻는다 — 바뀐 내용에 동의한 적이 없기 때문이다.
  */
-export const CONSENT_VERSION = '2026-09-19';
+export const CONSENT_VERSION = '2026-11-01';
 
 export const CONSENT_ITEMS: readonly ConsentItem[] = [
   {
@@ -69,10 +69,10 @@ export const CONSENT_ITEMS: readonly ConsentItem[] = [
     label: '개인정보 수집·이용 동의',
     required: true,
     sensitive: false,
-    items: ['훈련 경력', '훈련 기간', '성별', '다니는 헬스장과 보유 기구'],
-    purpose: '훈련 프로그램 생성과 종목 선택',
+    items: ['운동 경력', '운동한 기간', '성별', '다니는 헬스장과 그곳 기구'],
+    purpose: '운동 계획을 짜고 종목을 고르는 데',
     retention: '탈퇴 후 즉시 파기',
-    ifDeclined: '프로그램을 만들 수 없어 서비스를 이용할 수 없습니다.',
+    ifDeclined: '운동 계획을 짤 수 없어 앱을 쓸 수 없습니다.',
     basis: '개인정보보호법 제15조',
   },
   {
@@ -80,12 +80,12 @@ export const CONSENT_ITEMS: readonly ConsentItem[] = [
     label: '건강정보 수집·이용 동의 (민감정보)',
     required: true,
     sensitive: true,
-    items: ['체중', '운동 기록(종목·중량·반복·RIR)'],
+    items: ['체중', '운동 기록(종목 · 무게 · 횟수 · 남은 힘)'],
     purpose:
-      '첫 중량 추정, 경력 자가신고 검증, 주간 볼륨과 피로도 계산, 다음 주 훈련량 처방',
+      '첫 무게 정하기, 고른 운동 경력 확인, 한 주 운동량과 피로 계산, 다음 주 운동량 정하기',
     retention: '탈퇴 후 즉시 파기. 앱에서 언제든 직접 삭제할 수 있습니다.',
     ifDeclined:
-      '중량을 처방하거나 훈련량을 조절할 수 없습니다. 이 앱의 핵심 기능이라 서비스를 이용할 수 없습니다.',
+      '무게를 정해 드리거나 운동량을 맞출 수 없습니다. 이 앱에서 가장 중요한 기능이라 앱을 쓸 수 없습니다.',
     basis: '개인정보보호법 제23조 (민감정보 — 별도 동의)',
   },
   {
@@ -94,10 +94,10 @@ export const CONSENT_ITEMS: readonly ConsentItem[] = [
     required: false,
     sensitive: true,
     items: ['관절별 통증 점수'],
-    purpose: '아픈 관절에 부담이 큰 종목을 대체하거나 제외',
+    purpose: '아픈 관절에 무리가 가는 종목을 다른 종목으로 바꾸거나 빼는 데',
     retention: '탈퇴 후 즉시 파기. 앱에서 언제든 직접 삭제할 수 있습니다.',
     ifDeclined:
-      '통증에 따른 종목 대체가 동작하지 않습니다. 나머지 기능은 그대로 쓸 수 있습니다.',
+      '아픈 곳에 맞춰 종목을 바꿔 주는 기능만 꺼집니다. 나머지 기능은 그대로 쓸 수 있습니다.',
     basis: '개인정보보호법 제23조 (민감정보 — 별도 동의)',
   },
   {
@@ -111,7 +111,7 @@ export const CONSENT_ITEMS: readonly ConsentItem[] = [
     required: false,
     sensitive: true,
     items: ['먹은 음식과 양, 끼니'],
-    purpose: '칼로리 · 단백질 · 지방 · 탄수화물 계산, 체중 변화와 함께 유지 칼로리 추정',
+    purpose: '칼로리 · 단백질 · 지방 · 탄수화물 계산, 체중 변화와 맞춰 내 유지 칼로리 계산',
     retention: '탈퇴 후 즉시 파기. 앱에서 언제든 직접 삭제할 수 있습니다.',
     ifDeclined: '먹은 것을 적고 계산하는 기능만 꺼집니다. 나머지 기능은 그대로 쓸 수 있습니다.',
     basis: '개인정보보호법 제23조 (민감정보 — 별도 동의)',
@@ -122,7 +122,7 @@ export const CONSENT_ITEMS: readonly ConsentItem[] = [
     required: false,
     sensitive: false,
     items: ['기기의 현재 위치'],
-    purpose: '근처 헬스장 찾기, 도착한 헬스장 자동 전환, 중복 등록 판정',
+    purpose: '근처 헬스장 찾기, 도착한 헬스장으로 자동으로 바꾸기, 같은 헬스장이 두 번 등록되지 않게 확인',
     retention: '이용 시점에만 쓰고 저장하지 않습니다.',
     ifDeclined:
       '헬스장을 이름으로 검색하고 직접 고르면 됩니다. 나머지 기능은 그대로 쓸 수 있습니다.',
@@ -205,10 +205,10 @@ export interface FeatureGate {
 }
 
 const GATES: readonly FeatureGate[] = [
-  { feature: 'painGate', label: '통증에 따른 종목 대체', needs: 'painData' },
+  { feature: 'painGate', label: '아픈 곳에 맞춰 종목 바꾸기', needs: 'painData' },
   { feature: 'dietLog', label: '먹은 것 적고 칼로리 계산', needs: 'dietLog' },
   { feature: 'nearbyGyms', label: '근처 헬스장 찾기', needs: 'location' },
-  { feature: 'autoSwitchGym', label: '도착한 헬스장 자동 전환', needs: 'location' },
+  { feature: 'autoSwitchGym', label: '도착한 헬스장으로 자동 바꾸기', needs: 'location' },
   { feature: 'marketing', label: '새 기능·이벤트 안내', needs: 'marketing' },
 ];
 

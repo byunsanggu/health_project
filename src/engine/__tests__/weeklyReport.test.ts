@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { buildWeeklyReport, reportText, weekLabelOf, zoneWord } from '../weeklyReport.ts';
+import { buildWeeklyReport, plannedDaysLeft, reportText, weekInProgress, weekLabelOf, weekdayKo, zoneWord } from '../weeklyReport.ts';
 import { EXERCISES } from '../exercises.ts';
 import { landmarksFor } from '../muscles.ts';
 import type { SessionLog, SetLog } from '../types.ts';
@@ -131,6 +131,37 @@ describe('한 줄 제목과 다음 주 지시', () => {
     assert.match(report.advice, /4번을 먼저/);
   });
 
+  it('계획한 날이 남은 주는 진행 중으로 말한다 — 과거형은 마지막 계획일이 지난 뒤에만', () => {
+    // 월요일 첫 운동 직후: 월 · 수 · 금 중 월만 했다
+    const now = [session('2026-09-21', [set('barbell-bench-press', 100, 8)])];
+    const remainingDays = plannedDaysLeft({ planned: ['2026-09-21', '2026-09-23', '2026-09-25'], done: ['2026-09-21'], today: '2026-09-21' });
+    assert.deepEqual(remainingDays, ['2026-09-23', '2026-09-25']);
+    const report = buildWeeklyReport({ ...base, targetSessions: 3, sessions: now, history: now, remainingDays });
+    assert.equal(report.inProgress, true);
+    assert.equal(report.headline, '3번 중 1번 했습니다 · 수 · 금 남음');
+    assert.doesNotMatch(report.headline + report.advice, /이었습니다|다음 주는/);
+    assert.match(report.advice, /남은 2번/);
+    assert.match(reportText(report), /진행 중|적정/);
+    assert.doesNotMatch(reportText(report), /부족/);
+
+    // 금요일이 지나면 그때는 지난 일로 말한다
+    const over = buildWeeklyReport({ ...base, targetSessions: 3, sessions: now, history: now, remainingDays: [] });
+    assert.equal(over.inProgress, false);
+    assert.match(over.headline, /계획은 3번이었습니다/);
+  });
+
+  it('남은 날 — 오늘 이미 했으면 오늘은 빼고, 지난 날은 남은 날이 아니다', () => {
+    const planned = ['2026-09-21', '2026-09-23', '2026-09-25'];
+    assert.deepEqual(plannedDaysLeft({ planned, done: [], today: '2026-09-23' }), ['2026-09-23', '2026-09-25']);
+    assert.deepEqual(plannedDaysLeft({ planned, done: ['2026-09-23'], today: '2026-09-23' }), ['2026-09-25']);
+    assert.deepEqual(plannedDaysLeft({ planned, done: [], today: '2026-09-26' }), []);
+    assert.equal(weekInProgress({ planned, done: ['2026-09-21'], today: '2026-09-21' }), true);
+    assert.equal(weekInProgress({ planned, done: ['2026-09-21'], today: '2026-09-26' }), false);
+    // 목표를 다 채웠으면 남은 날이 있어도 진행 중이 아니다
+    assert.equal(weekInProgress({ planned, done: ['2026-09-21', '2026-09-22', '2026-09-23'], today: '2026-09-23', targetSessions: 3 }), false);
+    assert.equal(weekdayKo('2026-09-23'), '수');
+  });
+
   it('오른 종목이 있으면 그걸 제목으로 쓴다', () => {
     const before = [session('2026-09-14', [set('barbell-bench-press', 100, 8)])];
     const now = ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24'].map((date) =>
@@ -161,6 +192,7 @@ describe('카톡에 붙여 넣을 글', () => {
 
   it('구역을 사람 말로 쓴다', () => {
     assert.equal(zoneWord('underMev'), '부족');
+    assert.equal(zoneWord('underMev', true), '진행 중');
     assert.equal(zoneWord('mevToMav'), '적정');
     assert.equal(zoneWord('overMrv'), '한계 초과');
   });

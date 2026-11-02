@@ -90,10 +90,37 @@ describe('워밍업 램프', () => {
     assert.match(result.note, /맨몸/);
   });
 
-  it('실패까지 가지 말라고 항상 붙인다', () => {
+  it('무게가 0으로 넘어온 기계 종목을 맨몸이라고 하지 않는다 — 짐작이라고 말하고 할 일을 준다', () => {
+    const machine = exerciseById('machine-triceps-extension') ?? pushdown;
+    assert.notEqual(machine.equipment, 'bodyweight');
+    const result = plan(machine, 0, 15);
+    assert.equal(result.sets.length, 0);
+    assert.doesNotMatch(result.note, /맨몸/);
+    assert.match(result.note, /짐작/);
+    assert.match(result.note, /숫자를 눌러 고치세요/);
+  });
+
+  it('무게가 짐작이면 그렇다고 말한다', () => {
+    const guessed = planWarmup({ exercise: pushdown, workingWeightKg: 20, workingReps: 15, estimatedWeight: true, generalWarmupDone: true });
+    assert.match(guessed.note, /무게는 짐작입니다/);
+    const known = planWarmup({ exercise: pushdown, workingWeightKg: 20, workingReps: 15, generalWarmupDone: true });
+    assert.doesNotMatch(known.note, /짐작/);
+  });
+
+  it('워밍업 세트가 있으면 힘들 때까지 하지 말라고 붙인다', () => {
     for (const [exercise, weight, reps] of [[squat, 140, 5], [pushdown, 40, 12]] as const) {
-      assert.match(plan(exercise, weight, reps).note, /실패까지 가지 않습니다/);
+      assert.match(plan(exercise, weight, reps).note, /힘들 때까지 하지 않습니다/);
     }
+  });
+
+  it('워밍업 설명에 현장 용어를 쓰지 않는다', () => {
+    const notes = [
+      plan(squat, 140, 5).note, plan(squat, 60, 8).note, plan(pushdown, 40, 12).note, plan(bench, 25, 10).note,
+      planWarmup({ exercise: squat, workingWeightKg: 100, workingReps: 5, generalWarmupDone: true }).note,
+      planWarmup({ exercise: squat, workingWeightKg: 60, workingReps: 10, generalWarmupDone: true }).note,
+      planWarmup({ exercise: bench, workingWeightKg: 15, workingReps: 10, generalWarmupDone: true }).note,
+    ];
+    for (const note of notes) assert.doesNotMatch(note, /본세트|램프|복합|고립|실패|중량/, note);
   });
 
   it('기구에서 만들 수 있는 중량으로 맞춘다', () => {

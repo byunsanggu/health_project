@@ -75,7 +75,7 @@ export function assessFatigue(input: FatigueInput): FatigueAssessment {
   if (dropped.length >= 2) {
     signals.push({
       id: 'performanceDrop',
-      label: `${dropped.length}개 종목의 추정 1RM이 지난주보다 떨어졌습니다 (${dropped
+      label: `${dropped.length}개 종목에서 들 수 있는 무게가 지난주보다 줄었습니다 (${dropped
         .slice(0, 3)
         .map((id) => index.get(id)?.name ?? id)
         .join(', ')}${dropped.length > 3 ? ' 외' : ''})`,
@@ -111,7 +111,7 @@ export function assessFatigue(input: FatigueInput): FatigueAssessment {
     );
     signals.push({
       id: 'volumeOverMrv',
-      label: `${over.map((m) => MUSCLE_LABELS_KO[m]).join(', ')} 세트 수가 회복 가능 범위를 넘었습니다`,
+      label: `${over.map((m) => MUSCLE_LABELS_KO[m]).join(', ')} 세트 수가 한 주 최대를 넘었습니다`,
       weight:
         over.length >= 3
           ? DELOAD_THRESHOLD
@@ -127,7 +127,7 @@ export function assessFatigue(input: FatigueInput): FatigueAssessment {
   if (painDays.length >= 2) {
     signals.push({
       id: 'jointPain',
-      label: `최근 7일 중 ${painDays.length}일에 3점 이상 관절 통증이 보고됐습니다`,
+      label: `최근 7일 중 ${painDays.length}일에 관절 통증을 3점 이상으로 적었습니다`,
       weight: 3,
     });
   }
@@ -149,7 +149,7 @@ export function assessFatigue(input: FatigueInput): FatigueAssessment {
   if (motivation !== null && motivation <= 3) {
     signals.push({
       id: 'lowMotivation',
-      label: '운동 의욕이 지속적으로 낮습니다. 중추 피로의 흔한 신호입니다',
+      label: '운동하고 싶은 마음이 계속 낮습니다. 몸이 지쳤을 때 흔히 나타납니다',
       weight: 1,
     });
   }

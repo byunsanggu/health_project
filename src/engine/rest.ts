@@ -1,3 +1,4 @@
+import { particle } from './korean.ts';
 import type { Exercise } from './types.ts';
 
 export interface RestPrescription {
@@ -97,25 +98,25 @@ export const REST_PRESETS: readonly {
     id: 'dense',
     label: '짧게',
     band: { minSeconds: 45, maxSeconds: 75 },
-    note: '시간이 없는 날 · 대사 스트레스를 노릴 때',
+    note: '시간이 없는 날 · 짧게 쉬며 숨차게 할 때',
   },
   {
     id: 'normal',
     label: '보통',
     band: DEFAULT_BAND,
-    note: '기본 · 큰 운동 2~3분, 고립 운동 1분~1분 30초',
+    note: '기본 · 큰 운동은 길게, 작은 운동은 짧게 쉽니다',
   },
   {
     id: 'long',
     label: '길게',
     band: { minSeconds: 120, maxSeconds: 210 },
-    note: '무겁게 갈 때 · 뒤 세트 반복을 꼭 지키고 싶을 때',
+    note: '무겁게 할 때 · 다음 세트도 같은 횟수를 꼭 채우고 싶을 때',
   },
   {
     id: 'strength',
-    label: '근력',
+    label: '아주 길게',
     band: { minSeconds: 150, maxSeconds: 240 },
-    note: '5회 이하 고중량 · 신경 회복까지 기다립니다',
+    note: '5회 이하로 아주 무겁게 하는 날 · 힘이 다 돌아올 때까지 쉽니다',
   },
 ];
 
@@ -128,9 +129,63 @@ export function normalizeBand(band: Partial<RestBand> | null | undefined): RestB
   return { minSeconds: low, maxSeconds: high };
 }
 
+/** 띠를 글로 — "1분~1분 30초". 화면의 시간 표기는 이 한 가지로 쓴다(타이머 숫자만 1:30). */
 export function describeBand(band: RestBand): string {
   const safe = normalizeBand(band);
-  return `${formatDuration(safe.minSeconds)}~${formatDuration(safe.maxSeconds)}`;
+  return formatRangeKo(safe.minSeconds, safe.maxSeconds);
+}
+
+/** 시간을 말로 — 45초 · 1분 · 1분 30초 · 2분. */
+export function formatDurationKo(seconds: number): string {
+  const safe = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(safe / 60);
+  const rest = safe % 60;
+  if (minutes === 0) return `${rest}초`;
+  return rest === 0 ? `${minutes}분` : `${minutes}분 ${rest}초`;
+}
+
+/** 범위를 말로 — 둘 다 딱 떨어지는 분이면 "2~3분", 아니면 "1분~1분 30초", 같으면 하나만. */
+export function formatRangeKo(minSeconds: number, maxSeconds: number): string {
+  const low = Math.round(minSeconds);
+  const high = Math.round(maxSeconds);
+  if (low === high) return formatDurationKo(low);
+  if (low % 60 === 0 && high % 60 === 0 && low > 0) return `${low / 60}~${high / 60}분`;
+  return `${formatDurationKo(low)}~${formatDurationKo(high)}`;
+}
+
+export interface RestPlanSummary {
+  /** 여러 근육을 같이 쓰는 큰 운동(스쿼트 · 벤치 · 로우 …)이 실제로 받는 휴식 */
+  big: { min: number; max: number };
+  /** 한 근육만 쓰는 작은 운동(레터럴 레이즈 · 컬 …)이 실제로 받는 휴식 */
+  small: { min: number; max: number };
+  /** "큰 운동 2~3분 · 작은 운동 1분" */
+  text: string;
+}
+
+/**
+ * 이 띠를 고르면 실제로 몇 초씩 쉬는가 — 큰 운동 · 작은 운동으로 나눠서.
+ *
+ * "보통 1:00~1:30"을 골라 놓고 목록에는 벤치 2:00이 떴다. 띠는 작은 운동에 쓰이고, 큰 운동은
+ * 기본 띠에서 2분 아래로 내려가지 않기 때문이다. 띠 숫자 대신 이 값을 보여 줘야 앞뒤가 맞는다.
+ * restFor를 그대로 불러 계산하므로 규칙이 바뀌어도 따라간다. 15초 단위로 맞춰 보여 준다.
+ */
+export function restPlanSummary(band?: RestBand | null): RestPlanSummary {
+  const sample = (exercise: Partial<Exercise>, reps: number, targetRir: number) =>
+    restFor({ exercise: { jointStress: {}, unilateral: false, ...exercise } as Exercise, reps, targetRir, band: band ?? undefined }).seconds;
+  const quarter = (seconds: number) => Math.max(15, Math.round(seconds / 15) * 15);
+  // 큰 운동: 보통 기계 · 덤벨 큰 운동(10회 · 여유 2) ~ 허리 부담 큰 바벨 동작을 힘 거의 다 쓰고(여유 1)
+  const bigLow = quarter(sample({ pattern: 'squat', equipment: 'machine' }, 10, 2));
+  const bigHigh = quarter(sample({ pattern: 'hinge', equipment: 'barbell', jointStress: { lowBack: 0.9 } }, 6, 1));
+  // 작은 운동: 여유 2 ~ 힘 거의 다 쓰고(여유 0)
+  const smallLow = quarter(sample({ pattern: 'isolation', equipment: 'dumbbell' }, 12, 2));
+  const smallHigh = quarter(sample({ pattern: 'isolation', equipment: 'dumbbell' }, 12, 0));
+  const big = { min: Math.min(bigLow, bigHigh), max: Math.max(bigLow, bigHigh) };
+  const small = { min: Math.min(smallLow, smallHigh), max: Math.max(smallLow, smallHigh) };
+  return {
+    big,
+    small,
+    text: `큰 운동 ${formatRangeKo(big.min, big.max)} · 작은 운동 ${formatRangeKo(small.min, small.max)}`,
+  };
 }
 
 function clamp(value: number, low: number, high: number): number {
@@ -181,30 +236,34 @@ export function restFor(input: RestInput): RestPrescription {
   let need: number;
   let reason: string;
 
+  /*
+   * 휴식 이유는 하루에 스무 번 넘게 휴식 막대에 뜬다. 복합 · 고립 · 실패 · 국소 피로 같은 말은
+   * 처음 온 사람에게 소음이라, "큰 운동(여러 근육을 같이 쓰는) · 작은 운동(한 근육만 쓰는)"으로만 말한다.
+   */
   if (isIsolation) {
     need = 0;
-    reason = '고립 운동은 국소 피로만 회복하면 됩니다';
+    reason = '한 근육만 쓰는 작은 운동이라 짧게 쉬어도 회복됩니다';
   } else if (reps <= 6) {
     need = 3;
-    reason = '고중량 복합 동작입니다';
+    reason = '무거운 큰 운동이라 작은 운동보다 길게 쉽니다';
   } else if (reps <= 12) {
     need = 2;
-    reason = '복합 동작 중간 반복 구간입니다';
+    reason = '여러 근육을 같이 쓰는 큰 운동이라 작은 운동보다 길게 쉽니다';
   } else {
     need = 1;
-    reason = '복합 동작 고반복 구간입니다';
+    reason = '가볍게 여러 번 하는 큰 운동이라 작은 운동보다 조금 길게 쉽니다';
   }
 
   // 실패 근처까지 가는 세트는 회복이 더 필요하다.
   if (targetRir <= 1) {
     need += 1;
-    reason += ' · 실패에 가까운 세트라 조금 더 둡니다';
+    reason += ' · 힘을 거의 다 쓴 세트라 조금 더 쉽니다';
   }
 
   // 허리에 크게 실리는 종목은 체간 회복이 늦다.
   if ((exercise.jointStress.lowBack ?? 0) >= 0.8) {
     need += 1;
-    reason += ' · 허리 부담이 커서 조금 더 둡니다';
+    reason += ' · 허리에 부담이 커서 조금 더 쉽니다';
   }
 
   need = clamp(need, 0, STEPS);
@@ -218,13 +277,21 @@ export function restFor(input: RestInput): RestPrescription {
   if (notShorter && !isIsolation) {
     const light = reps > 12 || exercise.equipment === 'bodyweight';
     const big = isBigLift(exercise);
-    let floor = light && !big ? 90 : big ? BIG_LIFT_REST_SECONDS : HEAVY_COMPOUND_REST_SECONDS;
-    if (targetRir <= 1) floor += 30;
+    const baseFloor = light && !big ? 90 : big ? BIG_LIFT_REST_SECONDS : HEAVY_COMPOUND_REST_SECONDS;
+    const floor = targetRir <= 1 ? baseFloor + 30 : baseFloor;
     seconds = Math.min(Math.max(MAX_DEFAULT_REST_SECONDS, custom ? band.maxSeconds : 0), Math.max(seconds, floor));
-    reason = big ? '큰 복합 동작입니다 — 뒤 세트 반복을 지키려면 충분히 쉽니다'
-      : light ? '가벼운 복합 동작입니다'
-      : '복합 동작입니다 — 1분 남짓 쉬면 뒤 세트가 무너집니다';
-    if (targetRir <= 1) reason += ' · 실패에 가까운 세트라 30초 더';
+    /*
+     * "2분은 쉬어야"처럼 숫자를 말하는 건 그 숫자가 맞을 때만 — 줄이는 배수(고밀도)가 붙거나
+     * 마지막 세트(다음 종목으로 옮기는 시간이 휴식)면 타이머가 그보다 짧다.
+     */
+    const exact = !input.isLastSet && !(input.multiplier && input.multiplier > 0 && input.multiplier < 1);
+    const base = formatDurationKo(baseFloor);
+    const atLeast = exact ? `${base}${particle(base, '은/는')} 쉬어야` : '넉넉히 쉬어야';
+    reason = big ? `여러 근육을 같이 쓰는 무거운 운동이라 ${atLeast} 다음 세트도 같은 횟수가 나옵니다`
+      : exercise.equipment === 'bodyweight' ? '맨몸 운동이라 덜 지쳐서 조금 짧게 쉽니다'
+      : light ? '가볍게 여러 번 하는 큰 운동이라 조금 짧게 쉽니다'
+      : `여러 근육을 같이 쓰는 큰 운동이라 ${atLeast} 다음 세트도 같은 횟수가 나옵니다`;
+    if (targetRir <= 1) reason += ' · 힘을 거의 다 쓴 세트라 30초 더 쉽니다';
   }
   // 블록 유형 배수 — 근력 블록은 길게, 고밀도 블록은 짧게
   if (input.multiplier && input.multiplier > 0 && input.multiplier !== 1) {
@@ -240,6 +307,7 @@ export function restFor(input: RestInput): RestPrescription {
    */
   if (input.isLastSet) {
     seconds = Math.max(Math.min(45, band.minSeconds), toStep(seconds * 0.7));
+    reason = '다음 종목으로 옮기는 동안도 쉬는 시간이라 조금 짧게 쉽니다';
   }
 
   return {

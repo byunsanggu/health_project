@@ -1,11 +1,10 @@
 import { withParticle } from './korean.ts';
-import { MUSCLE_LABELS_KO, zoneOf } from './muscles.ts';
+import { MUSCLE_LABELS_KO, zoneLabelKo, zoneOf } from './muscles.ts';
 import { oneRepMax } from './repmax.ts';
 import { personalRecords } from './progress.ts';
-import { aggregateVolume, sessionsInWeek, type VolumeOptions } from './volume.ts';
-import { ZONE_LABELS_KO } from './muscles.ts';
+import { aggregateVolume, sessionsInWeek, weekStart, type VolumeOptions } from './volume.ts';
 import type { WeeklyPlan } from './mesocycle.ts';
-import type { Exercise, LandmarksByMuscle, MuscleGroup, SessionLog, SetLog } from './types.ts';
+import type { Exercise, LandmarksByMuscle, MuscleGroup, SessionLog, SetLog, VolumeZone } from './types.ts';
 
 /**
  * 세션 후 요약.
@@ -28,7 +27,10 @@ export interface MuscleSummary {
   /** 이번 주 누적 */
   week: number;
   landmark: { mev: number; mav: number; mrv: number };
+  /** 화면에 쓰는 구간 이름 — 주가 진행 중이면 최소 아래도 '부족'이 아니라 '진행 중' */
   zone: string;
+  /** 구간 그대로(underMev · mevToMav …) — 색 · 아이콘을 고를 때 */
+  zoneId: VolumeZone;
 }
 
 export interface LiftHighlight {
@@ -63,10 +65,22 @@ export interface SummaryInput {
   history: readonly SessionLog[];
   index: ReadonlyMap<string, Exercise>;
   landmarks: LandmarksByMuscle;
+  /**
+   * 다음 주 계획. 이번 주 계획(weekStart가 오늘이 든 주)을 넘기면 다음 주 이야기가 아니므로
+   * nextWeek에 그 요약을 쓰지 않는다 — "다음 주 처방 — 1주차 · 볼륨 유지"가 이번 주 이야기였다.
+   */
   plan?: WeeklyPlan;
   durationSeconds?: number;
   volumeOptions?: VolumeOptions;
+  /**
+   * 이번 주 계획한 운동이 아직 남았는가(weekInProgress로 구한다). 그러면 최소 아래 부위를
+   * '부족'이 아니라 '진행 중'으로 쓴다.
+   */
+  weekInProgress?: boolean;
 }
+
+/** 이번 주 계획만 있을 때 '다음 주' 칸에 쓰는 말 — 다음 주는 이번 주 기록을 보고 정한다. */
+export const NEXT_WEEK_PENDING_KO = '이번 주 기록을 보고 부위별 세트를 정합니다.';
 
 export function summarizeSession(input: SummaryInput): SessionSummary {
   const working = input.sets.filter((set) => !set.warmup && set.reps > 0);
@@ -90,6 +104,7 @@ export function summarizeSession(input: SummaryInput): SessionSummary {
     const today = todayVolume[muscle].effectiveSets;
     if (today <= 0) continue;
     const week = weekVolume[muscle].effectiveSets;
+    const zoneId = zoneOf(week, input.landmarks[muscle]);
     byMuscle.push({
       muscle,
       label: MUSCLE_LABELS_KO[muscle],
@@ -97,7 +112,8 @@ export function summarizeSession(input: SummaryInput): SessionSummary {
       todaySets: directSets[muscle] ?? 0,
       week,
       landmark: input.landmarks[muscle],
-      zone: ZONE_LABELS_KO[zoneOf(week, input.landmarks[muscle])],
+      zone: zoneLabelKo(zoneId, { weekInProgress: input.weekInProgress }),
+      zoneId,
     });
   }
   byMuscle.sort((a, b) => b.today - a.today);
@@ -115,7 +131,8 @@ export function summarizeSession(input: SummaryInput): SessionSummary {
     byMuscle,
     highlights: findHighlights(working, input),
     records: findRecords(working, todaySession, input),
-    nextWeek: input.plan?.summary,
+    nextWeek: !input.plan ? undefined
+      : input.plan.weekStart > weekStart(input.date) ? input.plan.summary : NEXT_WEEK_PENDING_KO,
     notes: buildNotes(byMuscle, working.length),
   };
 }
@@ -185,16 +202,20 @@ function buildNotes(byMuscle: readonly MuscleSummary[], setsCompleted: number): 
   if (setsCompleted === 0) return ['완료한 세트가 없습니다.'];
 
   const notes: string[] = [];
-  const reached = byMuscle.filter((item) => item.week >= item.landmark.mev);
+  /*
+   * 최소가 0인 부위(앞어깨 · 복근)는 칭찬에서 뺀다 — 0을 넘긴 건 한 일이 아니다. 미는 운동을 한 날이면
+   * 복근 0.2세트로 "최소를 넘겼습니다"가 늘 나왔다.
+   */
+  const reached = byMuscle.filter((item) => item.landmark.mev > 0 && item.week >= item.landmark.mev);
   const over = byMuscle.filter((item) => item.week > item.landmark.mrv);
 
   if (reached.length > 0) {
     const names = reached.slice(0, 3).map((item) => item.label).join(', ');
-    notes.push(`${withParticle(names, '은/는')} 이번 주 최소 자극선을 넘겼습니다.`);
+    notes.push(`${withParticle(names, '은/는')} 이번 주 최소 세트를 채웠습니다.`);
   }
   if (over.length > 0) {
     const names = over.map((item) => item.label).join(', ');
-    notes.push(`${withParticle(names, '은/는')} 회복 범위를 넘었습니다. 다음 세션에서 줄입니다.`);
+    notes.push(`${withParticle(names, '은/는')} 이번 주 최대 세트를 넘었습니다. 다음 운동에서 줄입니다.`);
   }
   return notes;
 }

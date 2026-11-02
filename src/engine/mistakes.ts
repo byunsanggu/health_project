@@ -70,6 +70,8 @@ const WRIST_BACK = m('wrist-back', '손목이 뒤로 꺾여요', '바를 손바�
 const SHOULDERS_ROLL = m('shoulders-roll', '어깨가 앞으로 말려요', '가슴을 내밀고 어깨는 뒤로 고정하세요', '가슴 내밀고', '가슴 대신 어깨 앞쪽으로 밀게 됩니다');
 const SEAT_HEIGHT = m('seat', '손잡이가 가슴보다 너무 높거나 낮아요', '손잡이가 가슴 중간에 오게 시트를 맞추세요', '손잡이는 가슴 높이로', '높이가 틀리면 어깨가 일을 합니다');
 const HIPS_SAG = m('hips-sag', '허리가 아래로 처져요', '배에 힘을 주고 몸을 일자로 유지하세요', '몸은 일자로', '허리가 꺾이며 허리에 부담이 갑니다', true);
+// 딥스에는 벤치가 없다 — 벤치 프레스의 "날개뼈를 벤치에 박으세요"를 쓰면 말이 안 된다
+const DIP_SHRUG = m('shoulders-up', '어깨가 귀 쪽으로 올라가요', '어깨를 내리고 가슴을 편 채로 내려가세요', '어깨는 내리고', '어깨 앞쪽이 끼면서 통증이 잘 생깁니다', true);
 const DIP_DEEP = m('too-deep', '어깨가 너무 깊이 내려가요', '어깨가 팔꿈치보다 살짝 낮을 때까지만 내리세요', '깊이는 적당히', '어깨 앞쪽이 과하게 늘어나 다칩니다', true);
 const FLY_ARMS = m('arm-angle', '팔꿈치를 굽혔다 폈다 해요', '팔꿈치 각도는 고정하고 크게 안는다는 느낌으로 하세요', '팔꿈치는 고정하고', '플라이가 프레스가 되며 가슴 자극이 줄어듭니다');
 const FLY_SHRUG = m('shoulders-up', '어깨로 모아요', '어깨는 내리고 가슴으로 모으세요', '어깨는 내리고', '가슴 대신 어깨 앞쪽이 일합니다');
@@ -81,7 +83,7 @@ const SEATED_ARCH = m('arch', '등받이에서 허리가 떠요', '등을 등받
 const PRESS_HALF = m('half-rep', '조금만 내렸다 올려요', '귀 높이까지는 내렸다가 미세요', '귀 높이까지', '가동 범위의 반만 근육이 일합니다');
 
 /* ── 당기기 ────────────────────────────────────── */
-const PULL_LEAN = m('lean-back', '몸을 뒤로 젖혀서 당겨요', '상체는 살짝만 기울이고 가슴으로 당기세요', '상체는 고정하고', '등 대신 반동이 일을 합니다', true);
+const PULL_LEAN = m('lean-back', '몸을 뒤로 젖혀서 당겨요', '상체는 살짝만 기울이고 가슴으로 당기세요', '상체는 살짝만 기울이고', '등 대신 반동이 일을 합니다', true);
 const PULL_ARMS = m('arms', '팔로만 당겨요', '팔꿈치를 옆구리로 내린다는 느낌으로 당기세요', '팔꿈치로', '등보다 팔이 먼저 지칩니다');
 const PULL_SHRUG = m('shoulders-up', '어깨가 귀 쪽으로 올라가요', '어깨부터 내리고 당기세요', '어깨 먼저 내리고', '승모가 대신 일하고 목이 뻐근해집니다');
 const KIP = m('kip', '반동으로 올라가요', '다리를 고정하고 반동 없이 올라가세요', '반동 없이', '등 자극이 줄고 어깨를 다칩니다', true);
@@ -184,7 +186,7 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'inverted-row': [HIPS_SAG, PULL_SHRUG],
   'pike-push-up': [PIKE_HIPS, PRESS_HALF, ELBOW_FLARE],
   'bodyweight-reverse-lunge': [LUNGE_KNEE, LUNGE_LEAN],
-  'chest-dip': [DIP_DEEP, PRESS_SHRUG],
+  'chest-dip': [DIP_DEEP, DIP_SHRUG],
   'cable-fly': [FLY_ARMS, FLY_SHRUG],
   'pec-deck': [FLY_SHRUG, FLY_ARMS],
   'low-to-high-cable-fly': [FLY_ARMS, FLY_SHRUG],
@@ -233,7 +235,7 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'triceps-kickback': [PUSHDOWN_ELBOW, CURL_DROP],
   'machine-triceps-extension': [PUSHDOWN_ELBOW, EXT_FLARE],
   'triceps-dip': [TRI_DIP_LEAN, DIP_DEEP],
-  'machine-triceps-dip': [TRI_DIP_LEAN, PRESS_SHRUG],
+  'machine-triceps-dip': [TRI_DIP_LEAN, DIP_SHRUG],
   // 하체 고립
   'leg-extension': [EXT_HIPS, EXT_KICK],
   'lying-leg-curl': [LEG_CURL_HIPS, CURL_DROP],
@@ -305,8 +307,15 @@ export function mistakeToWatch(input: {
   afterHeavy?: boolean;
   /** 처음 하는 종목인가 */
   firstTime?: boolean;
+  /**
+   * 오늘 이 종목에서 이미 짚은 실수(id) — 같은 말을 세 번 들으면 잔소리다. 쉬는 동안 운동 설명에서
+   * 한 번, 세트 앞에서 또 한 번 하던 것을 막는다. 남은 실수가 없으면 아무것도 짚지 않는다.
+   */
+  said?: readonly string[];
+  /** 맨몸 운동 — "무거울수록 자세가 먼저"는 맞지 않는다. 무거웠다는 답으로는 짚지 않는다 */
+  bodyweight?: boolean;
 }): { mistake: CommonMistake; moment: MistakeMoment } | null {
-  const list = mistakesFor(input.exercise);
+  const list = mistakesFor(input.exercise).filter((item) => !input.said?.includes(item.id));
   if (list.length === 0) return null;
   const rotate = <T>(items: readonly T[]): T => items[input.setIndex % items.length] as T;
 
@@ -318,7 +327,7 @@ export function mistakeToWatch(input: {
   }
 
   const loaded = list.filter((item) => item.underLoad);
-  if (input.afterHeavy) return { mistake: rotate(loaded.length ? loaded : list), moment: 'heavy' };
+  if (input.afterHeavy && !input.bodyweight) return { mistake: rotate(loaded.length ? loaded : list), moment: 'heavy' };
   if (input.firstTime && input.setIndex === 0) return { mistake: list[0]!, moment: 'first' };
   if (isLast && input.totalSets >= 3 && loaded.length > 0) return { mistake: rotate(loaded), moment: 'lastSet' };
   return null;

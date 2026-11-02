@@ -102,10 +102,11 @@ export function growthCheck(input: GrowthInput): GrowthCheck {
   }
   const named = (list: GrowthLine[]) => list.slice(0, 3).map((line) => line.label).join(' · ') + (list.length > 3 ? ` 외 ${list.length - 3}곳` : '');
   const headline = short.length === 0
-    ? `계획대로 하면 ${lines.length}개 부위 모두 근성장 기준을 넘습니다`
-    : `계획대로 하면 ${lines.length}개 부위 중 ${enough}곳이 근성장 기준을 넘습니다`;
+    ? `계획대로 하면 ${lines.length}개 부위 모두 한 주 최소 세트를 채웁니다`
+    : `계획대로 하면 ${lines.length}개 부위 중 ${enough}곳이 한 주 최소 세트를 채웁니다`;
   const notes: string[] = [];
-  if (short.length) notes.push(`${withParticle(named(short), '은/는')} 아직 최소선 아래입니다. 주마다 세트를 늘려 채웁니다.`);
-  if (high.length) notes.push(`${withParticle(named(high), '은/는')} 회복 한계보다 많습니다. 다음 주에 줄입니다.`);
+  // 같은 기준을 화면마다 다르게 부르지 않는다 — "부위마다 한 주 최소 ○세트 · 최대 ○세트" 두 말로만
+  if (short.length) notes.push(`${withParticle(named(short), '은/는')} 아직 한 주 최소 세트보다 적습니다. 주마다 세트를 늘려 채웁니다.`);
+  if (high.length) notes.push(`${withParticle(named(high), '은/는')} 한 주 최대 세트보다 많습니다. 다음 주에 줄입니다.`);
   return { lines, enough, total: lines.length, headline, note: notes.length ? notes.join(' ') : null };
 }

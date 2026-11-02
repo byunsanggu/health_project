@@ -39,7 +39,7 @@ export const LEVEL_PROFILES: Record<TrainingLevel, LevelProfile> = {
   beginner: {
     level: 'beginner',
     label: '초보',
-    description: '6개월 미만 · 자세를 익히는 단계. 가벼운 볼륨으로도 계속 늘어납니다',
+    description: '6개월 미만 · 자세를 익히는 단계. 가벼운 운동으로도 계속 늡니다',
     accumulationWeeks: 6,
     startingRir: 4,
     suggestedDaysPerWeek: 3,
@@ -48,7 +48,7 @@ export const LEVEL_PROFILES: Record<TrainingLevel, LevelProfile> = {
   intermediate: {
     level: 'intermediate',
     label: '중급',
-    description: '6개월~2년 · 주 단위로 무게가 오르던 시기가 끝난 단계',
+    description: '6개월~2년 · 매주 무게가 오르던 때가 지난 단계',
     accumulationWeeks: 5,
     startingRir: 3,
     suggestedDaysPerWeek: 4,
@@ -57,7 +57,7 @@ export const LEVEL_PROFILES: Record<TrainingLevel, LevelProfile> = {
   advanced: {
     level: 'advanced',
     label: '고급',
-    description: '2~5년 · 블록 단위로 계획해야 진도가 나가는 단계',
+    description: '2~5년 · 몇 주 단위로 계획해야 느는 단계',
     accumulationWeeks: 4,
     startingRir: 2,
     suggestedDaysPerWeek: 5,
@@ -66,7 +66,7 @@ export const LEVEL_PROFILES: Record<TrainingLevel, LevelProfile> = {
   expert: {
     level: 'expert',
     label: '전문가',
-    description: '5년 이상 또는 경기 경험 · 피로 관리가 훈련만큼 중요한 단계',
+    description: '5년 이상 또는 대회 경험 · 쉬는 것도 운동만큼 중요한 단계',
     accumulationWeeks: 4,
     startingRir: 2,
     suggestedDaysPerWeek: 5,
@@ -208,11 +208,11 @@ function buildNote(
   if (!adjusted) return `${label} 기준으로 시작합니다.`;
 
   if (chosen.source === 'experience') {
-    return `훈련 경력 ${input.monthsTraining}개월 기준으로 ${label} 볼륨에서 시작합니다. ` +
-      '가볍게 느껴지면 몇 주 안에 올라갑니다 — 처음부터 높게 잡는 쪽이 위험합니다.';
+    return `운동한 기간이 ${input.monthsTraining}개월이라 ${label}에 맞는 운동량으로 시작합니다. ` +
+      '가볍게 느껴지면 몇 주 안에 올라갑니다 — 처음부터 높게 잡는 쪽이 다치기 쉽습니다.';
   }
   if (chosen.source === 'strength') {
-    return `현재 기록 기준으로 ${label} 볼륨에서 시작합니다. 수행이 안정되면 단계가 올라갑니다.`;
+    return `지금 기록에 맞춰 ${label} 운동량으로 시작합니다. 기록이 꾸준히 오르면 단계도 올라갑니다.`;
   }
   return `${label} 기준으로 시작합니다.`;
 }

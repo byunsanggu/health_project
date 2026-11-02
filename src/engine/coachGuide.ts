@@ -86,13 +86,25 @@ const PREVIEW_HEAD: ByStyle<string> = {
   fun: '쉬는 시간 예습 들어갑니다.',
 };
 
+/** 앞에 쉬는 시간이 없을 때(그날 첫 종목) — "쉬시는 동안"이라고 하면 안 맞는다. */
+const BEFORE_HEAD: ByStyle<string> = {
+  energetic: '시작 전에 하는 법부터 짧게 볼게요!',
+  gentle: '시작 전에 하는 법부터 짧게 알려 드리겠습니다.',
+  tough: '시작 전에 하는 법부터 듣고 가.',
+  fun: '시작 전에 짧게 예습 들어갑니다.',
+};
+
 export interface RestGuide {
   /** 잡는 법 · 자리 — 동작 설명 첫 줄 */
   grip: string | null;
   /** 동작 핵심 — 둘째 줄 */
   move: string | null;
-  /** 흔한 실수 하나 — 무엇이 잘못되는지(sign)와 고치는 말(fix · short) */
-  mistake: { sign: string; fix: string; short: string } | null;
+  /**
+   * 흔한 실수 하나 — 무엇이 잘못되는지(sign)와 고치는 말(fix · short), 화면 줄(warn).
+   * 화면 줄은 말로 하는 고치는 말(fix)과 같은 문장이다 — 화면은 "상체는 고정하고", 말은 "살짝만
+   * 기울이고"처럼 둘이 다르면 초보는 어느 쪽을 따라야 할지 모른다.
+   */
+  mistake: { id: string; sign: string; fix: string; short: string; warn: string } | null;
 }
 
 /** 화면에 띄울 세 줄 — 잡는 법, 동작 핵심, 흔한 실수 하나. */
@@ -102,7 +114,7 @@ export function restGuideFor(exercise: Exercise): RestGuide {
   return {
     grip: cues[0] ?? null,
     move: cues[1] ?? null,
-    mistake: first ? { sign: first.sign, fix: first.cue, short: first.short } : null,
+    mistake: first ? { id: first.id, sign: first.sign, fix: first.cue, short: first.short, warn: `${first.sign} → ${first.cue}` } : null,
   };
 }
 
@@ -110,11 +122,18 @@ export function restGuideFor(exercise: Exercise): RestGuide {
  * 쉬는 동안 PT가 다음 운동을 말로 — "다음 종목, ○○!"(이동 안내) 뒤에 붙는다.
  * 잡는 법 → 동작 핵심 → 흔한 실수 하나. 20초 안쪽이라 쉬는 시간을 다 잡아먹지 않는다.
  * 매번 한다 — 익숙한 종목도 자세는 쉬는 동안 한 번 더 듣는 게 낫다.
+ *
+ * resting: false — 앞에 쉬는 시간이 없는 자리(그날 첫 종목의 첫 워밍업 앞). 머리말이 "시작 전에"가 된다.
+ * grip: false — 처음 하는 종목이라 바로 앞에서 세팅 순서를 말했을 때. 자리 잡는 말을 두 번 하지 않는다.
  */
-export function restGuideLines(style: CoachStyle, exercise: Exercise): string[] {
+export function restGuideLines(
+  style: CoachStyle,
+  exercise: Exercise,
+  options: { resting?: boolean; grip?: boolean } = {},
+): string[] {
   const guide = restGuideFor(exercise);
-  const lines = [PREVIEW_HEAD[style]];
-  if (guide.grip) lines.push(sentence(guide.grip));
+  const lines = [options.resting === false ? BEFORE_HEAD[style] : PREVIEW_HEAD[style]];
+  if (guide.grip && options.grip !== false) lines.push(sentence(guide.grip));
   if (guide.move) lines.push(sentence(guide.move));
   if (guide.mistake) lines.push(MISTAKE_HEAD[style], sentence(guide.mistake.fix));
   return lines;

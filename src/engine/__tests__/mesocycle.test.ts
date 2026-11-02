@@ -339,7 +339,8 @@ describe('빈도와 볼륨 처방의 우선순위', () => {
     assert.equal(chest.action, 'split', '버려지는 세트를 더 늘리지 않는다');
     assert.match(chest.rationale, /나누세요/);
     assert.ok(result.frequency.some((item) => item.muscle === 'chest' && item.verdict === 'concentrated'));
-    assert.match(result.summary, /분배 조정/);
+    assert.match(result.summary, /나눠서 하기/);
+    assert.doesNotMatch(result.summary, /볼륨|분배/);
   });
 
   it('같은 볼륨을 나눠서 했으면 정상적으로 증량 처방한다', () => {

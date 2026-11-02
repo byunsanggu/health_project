@@ -56,7 +56,15 @@ export interface WarmupInput {
    * 15분이 워밍업이 되고, 정작 본세트에서 쓸 힘이 빠진다.
    */
   generalWarmupDone?: boolean;
+  /**
+   * 첫 무게가 기록 없이 짐작한 값인가(체중으로 짐작했거나 짐작할 근거가 없어 기본값을 넣었을 때).
+   * 그러면 "무게는 짐작이니 첫 세트를 가볍게 해 보고 고치라"고 같이 말한다.
+   */
+  estimatedWeight?: boolean;
 }
+
+/** 첫 무게가 짐작일 때 워밍업 줄에 붙는 말 — 무엇을 하면 되는지까지 말한다. */
+export const ESTIMATED_WEIGHT_NOTE_KO = '처음이라 무게는 짐작입니다 — 첫 세트를 가볍게 해 보고 숫자를 눌러 고치세요.';
 
 /** 이보다 가벼운 본세트는 첫 세트가 곧 워밍업이다. */
 const LIGHT_WORKING_KG = 20;
@@ -93,11 +101,17 @@ export function planWarmup(input: WarmupInput): WarmupPlan {
   const heavy = workingReps <= 6;
 
   if (workingWeightKg <= 0) {
+    /*
+     * 무게가 0이라고 맨몸 운동은 아니다. 기계 종목에 짐작할 무게가 없어서 0이 넘어오면
+     * 20kg 칸 위에 "맨몸 종목입니다"가 떴다. 맨몸이라고 말하는 건 정말 맨몸 운동일 때만.
+     */
     return {
       exerciseId: exercise.id,
       sets: [],
       estimatedSeconds: 0,
-      note: '맨몸 종목입니다. 가볍게 한 세트로 감각을 잡고 시작하세요.',
+      note: exercise.equipment === 'bodyweight'
+        ? '맨몸 운동입니다. 가볍게 한 세트로 동작을 익히고 시작하세요.'
+        : ESTIMATED_WEIGHT_NOTE_KO,
     };
   }
 
@@ -109,35 +123,35 @@ export function planWarmup(input: WarmupInput): WarmupPlan {
   const newPattern = !isIsolation && alreadyWarm && input.alreadyDonePatterns !== undefined && !input.alreadyDonePatterns.includes(exercise.pattern);
   if (lean && newPattern && workingWeightKg >= LIGHT_WORKING_KG) {
     ramp = FEEDER_RAMP;
-    note = '근육은 앞 종목에서 데워졌지만 처음 하는 동작입니다. 두 단계로 동작과 무게 감각을 잡습니다.';
+    note = '근육은 앞 종목에서 데워졌지만 처음 하는 동작입니다. 두 번에 나눠 동작과 무게 감각을 잡습니다.';
   } else if (lean && (isIsolation || alreadyWarm || workingWeightKg < LIGHT_WORKING_KG)) {
     ramp = [];
     note = isIsolation
       ? '몸 풀기와 앞 종목으로 충분합니다. 첫 세트를 조금 여유 있게 시작하세요.'
       : alreadyWarm
-        ? '앞 종목에서 이미 데워진 부위입니다. 바로 본세트로 갑니다.'
-        : '본세트 중량이 가벼워 첫 세트가 곧 워밍업입니다.';
+        ? '앞 종목에서 이미 데워진 부위입니다. 바로 첫 세트로 갑니다.'
+        : '무게가 가벼워 워밍업 없이 바로 첫 세트를 해도 됩니다.';
   } else if (lean) {
     // 몸은 풀렸으니 중량 감각만 — 무거운 날은 세 단계, 보통은 두 단계
     ramp = heavy ? FULL_RAMP.slice(1) : SHORT_RAMP;
     note = heavy
-      ? '오늘 처음 하는 고중량 복합 동작입니다. 세 단계로 중량을 올립니다.'
-      : '오늘 처음 하는 복합 동작입니다. 두 단계로 중량 감각만 잡습니다.';
+      ? '오늘 처음 하는 무거운 큰 운동이라 세 번에 나눠 무게를 올립니다.'
+      : '오늘 처음 하는 큰 운동이라 가벼운 무게로 두 번 감을 잡습니다.';
   } else if (alreadyWarm && isIsolation) {
     ramp = [];
     note = '앞 종목에서 이미 데워진 부위입니다. 첫 세트를 조금 여유 있게 시작하세요.';
   } else if (alreadyWarm) {
     ramp = SHORT_RAMP;
-    note = '앞 종목에서 부위가 데워졌습니다. 중량 감각만 잡습니다.';
+    note = '앞 종목에서 이미 데워진 부위입니다. 무게 감각만 잡습니다.';
   } else if (isIsolation) {
     ramp = MINIMAL_RAMP;
-    note = '고립 운동입니다. 한 세트로 충분합니다.';
+    note = '한 근육만 쓰는 작은 운동이라 워밍업은 한 세트면 됩니다.';
   } else if (heavy) {
     ramp = FULL_RAMP;
-    note = '고중량 복합 동작입니다. 램프를 다 밟아야 첫 세트가 제대로 나옵니다.';
+    note = '무거운 큰 운동이라 여러 번에 나눠 무게를 올립니다 — 다 하고 나야 첫 세트가 제대로 나옵니다.';
   } else {
     ramp = FULL_RAMP.slice(1);
-    note = '복합 동작입니다. 중간 단계부터 올라갑니다.';
+    note = '큰 운동이라 가벼운 무게부터 몇 번에 나눠 올립니다.';
   }
 
   const sets: WarmupSet[] = [];
@@ -172,14 +186,19 @@ export function planWarmup(input: WarmupInput): WarmupPlan {
   }
 
   if (sets.length === 0 && ramp.length > 0) {
-    note = '본세트 중량이 낮아 램프가 필요 없습니다. 첫 세트를 여유 있게 시작하세요.';
+    note = '무게가 가벼워 워밍업 없이 바로 첫 세트를 해도 됩니다. 첫 세트를 여유 있게 시작하세요.';
   }
+
+  // 워밍업 세트가 있을 때만 "힘들 때까지 하지 않는다"를 붙인다 — 없는데 붙이면 무슨 말인지 모른다.
+  const parts = [note];
+  if (sets.length > 0) parts.push('워밍업은 힘들 때까지 하지 않습니다.');
+  if (input.estimatedWeight) parts.push(ESTIMATED_WEIGHT_NOTE_KO);
 
   return {
     exerciseId: exercise.id,
     sets,
     estimatedSeconds: sets.reduce((sum, set) => sum + set.reps * 2.5 + 20 + set.restSeconds, 0),
-    note: `${note} 워밍업은 실패까지 가지 않습니다.`,
+    note: parts.join(' '),
   };
 }
 

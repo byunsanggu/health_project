@@ -24,7 +24,7 @@ describe('근성장 체크', () => {
     assert.ok(result.total >= 8);
     assert.equal(result.enough, result.total, JSON.stringify(result.lines.filter((line) => line.verdict === 'short')));
     assert.equal(result.note, null);
-    assert.match(result.headline, /모두 근성장 기준을 넘습니다/);
+    assert.match(result.headline, /모두 한 주 최소 세트를 채웁니다/);
   });
 
   it('저절로 채워지는 부위(앞어깨 · 전완 · 복근)는 판정하지 않는다', () => {
@@ -35,7 +35,7 @@ describe('근성장 체크', () => {
   it('모자란 부위는 이름을 대고 어떻게 채우는지 말한다', () => {
     const result = growthCheck({ planned: [], done: [], landmarks: landmarksFor('intermediate'), index });
     assert.equal(result.enough, 0);
-    assert.match(result.note ?? '', /최소선 아래입니다. 주마다 세트를 늘려 채웁니다/);
+    assert.match(result.note ?? '', /한 주 최소 세트보다 적습니다. 주마다 세트를 늘려 채웁니다/);
   });
 
   it('덜어내는 주는 모자라다고 하지 않는다', () => {

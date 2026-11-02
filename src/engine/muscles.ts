@@ -208,3 +208,18 @@ export const ZONE_LABELS_KO: Record<VolumeZone, string> = {
   mavToMrv: '고강도',
   overMrv: '초과',
 };
+
+/** 이번 주 계획한 운동이 아직 남았을 때 최소 아래 부위에 쓰는 말 — '부족' 대신. */
+export const ZONE_IN_PROGRESS_LABEL_KO = '진행 중';
+
+/**
+ * 구간 이름. 주가 아직 진행 중이면(계획한 운동이 남았으면) 최소 아래를 '부족'이라 하지 않는다.
+ *
+ * 주 3회 중 첫날을 다 마친 사람에게 가슴 · 등 · 삼두가 전부 '부족'으로 떴다. 아직 두 번이 남은
+ * 주의 누적은 모자란 게 아니라 채우는 중이다. ZONE_LABELS_KO 표는 여러 화면이 같이 쓰므로
+ * 바꾸지 않고, 진행 중인지는 부르는 쪽이 넘긴다(plannedDaysLeft · weekInProgress).
+ */
+export function zoneLabelKo(zone: VolumeZone, options?: { weekInProgress?: boolean }): string {
+  if (zone === 'underMev' && options?.weekInProgress) return ZONE_IN_PROGRESS_LABEL_KO;
+  return ZONE_LABELS_KO[zone];
+}

@@ -45,7 +45,24 @@ describe('suggestStartingLoad', () => {
     const result = suggest(bench);
     assert.equal(result.weightKg, null);
     assert.equal(result.method, 'unknown');
-    assert.match(result.rationale, /탐색 세트/);
+    // 할 일을 말한다: 짐작이라는 것, 가볍게 해 보라는 것, 숫자를 눌러 고치라는 것
+    assert.match(result.rationale, /짐작/);
+    assert.match(result.rationale, /가볍게/);
+    assert.match(result.rationale, /숫자를 눌러/);
+  });
+
+  it('짐작한 무게라고 말하고, 바꾸는 법까지 알려 준다 — 현장 용어 없이', () => {
+    const history = [session('2026-09-14', sets('barbell-bench-press', 3, { weightKg: 90, reps: 8, rir: 2 }))];
+    for (const result of [
+      suggest(bench),
+      suggest(plank, { profile: { bodyweightKg: 60, level: 'beginner' } }),
+      suggest(bench, { profile: { bodyweightKg: 60, level: 'beginner', sex: 'female' } }),
+      suggest(machinePress, { history }),
+    ]) {
+      assert.match(result.rationale, /짐작/, result.rationale);
+      assert.match(result.rationale, /숫자를 눌러/, result.rationale);
+      assert.doesNotMatch(result.rationale, /환산|탐색|RIR|1RM|반드시 확인|보수적/, result.rationale);
+    }
   });
 
   it('체중과 경력에서 보수적인 출발점을 낸다', () => {

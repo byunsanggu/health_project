@@ -290,6 +290,14 @@ function accumulationVolume(args: {
   }
 }
 
+/**
+ * 주간 계획 요약에서 "세트를 늘린 부위" 앞에 붙는 말. 앱이 이 부분을 실제로 늘어난 세트로 바꿔 쓰므로
+ * 문자열을 직접 찾지 말고 이 상수를 쓴다(전에는 '볼륨 증가').
+ */
+export const PLAN_INCREASE_LABEL_KO = '세트 늘림';
+/** 한 번에 몰린 부위를 여러 날로 나누라는 부분 앞에 붙는 말(전에는 '분배 조정'). */
+export const PLAN_SPLIT_LABEL_KO = '나눠서 하기';
+
 function summarize(
   phase: Phase,
   weekInBlock: number,
@@ -303,7 +311,8 @@ function summarize(
       .sort((a, b) => b.weight - a.weight)
       .slice(0, 2)
       .map((signal) => signal.label);
-    return `덜어내는 주입니다. 볼륨을 절반으로 줄이고 무게는 90%로 둡니다. 근거: ${top.join(' / ')}`;
+    // '처방 · 볼륨 · 근거' 대신 쉬운 말로. 디로드는 앱 전체에서 '덜어내는 주' 한 이름으로 부른다.
+    return `덜어내는 주입니다. 세트는 절반으로 줄이고, 무게는 평소의 90%로 합니다. 이유: ${top.join(' / ')}`;
   }
 
   const increased = volume.filter((item) => item.action === 'increase');
@@ -312,21 +321,21 @@ function summarize(
 
   if (increased.length > 0) {
     parts.push(
-      `볼륨 증가: ${increased
+      `${PLAN_INCREASE_LABEL_KO}: ${increased
         .slice(0, 4)
         .map((item) => `${item.label} +${item.deltaSets}`)
         .join(', ')}`,
     );
   }
   if (reduced.length > 0) {
-    parts.push(`조정: ${reduced.map((item) => `${item.label} ${item.deltaSets}`).join(', ')}`);
+    parts.push(`세트 줄임: ${reduced.map((item) => `${item.label} ${item.deltaSets}`).join(', ')}`);
   }
   if (increased.length === 0 && reduced.length === 0) {
-    parts.push('볼륨 유지');
+    parts.push('세트 그대로');
   }
   if (frequency.length > 0) {
     parts.push(
-      `분배 조정: ${frequency
+      `${PLAN_SPLIT_LABEL_KO}: ${frequency
         .slice(0, 3)
         .map((item) => `${item.label} 주 ${item.recommendedSessions}회`)
         .join(', ')}`,

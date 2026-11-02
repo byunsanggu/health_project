@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { BIG_LIFT_REST_SECONDS, HEAVY_COMPOUND_REST_SECONDS, MAX_DEFAULT_REST_SECONDS, REST_MAX_SECONDS, REST_MIN_SECONDS, describeBand, formatDuration, normalizeBand, restFor } from '../rest.ts';
+import { BIG_LIFT_REST_SECONDS, HEAVY_COMPOUND_REST_SECONDS, MAX_DEFAULT_REST_SECONDS, REST_MAX_SECONDS, REST_MIN_SECONDS, REST_PRESETS, describeBand, formatDuration, formatDurationKo, normalizeBand, restFor, restPlanSummary } from '../rest.ts';
 import { exerciseById } from '../exercises.ts';
 import type { Exercise } from '../types.ts';
 
@@ -181,8 +181,44 @@ describe('휴식 띠 — 사용자가 정한다', () => {
     assert.ok(band.minSeconds >= 20 && band.maxSeconds <= 600);
   });
 
-  it('띠를 사람이 읽는 말로 준다', () => {
-    assert.equal(describeBand({ minSeconds: 60, maxSeconds: 90 }), '1:00~1:30');
+  it('띠를 사람이 읽는 말로 준다 — 시간 표기는 "1분 30초" 한 가지', () => {
+    assert.equal(describeBand({ minSeconds: 60, maxSeconds: 90 }), '1분~1분 30초');
+    assert.equal(describeBand({ minSeconds: 120, maxSeconds: 180 }), '2~3분');
+    assert.equal(formatDurationKo(45), '45초');
+    assert.equal(formatDurationKo(150), '2분 30초');
+  });
+
+  it('고른 띠로 큰 운동 · 작은 운동이 실제로 몇 분 쉬는지 알려 준다 — 목록과 어긋나지 않게', () => {
+    // "보통 1:00~1:30"을 골라 놓고 벤치는 2:00이 뜨던 것: 띠 숫자가 아니라 실제 값을 보여 준다
+    const normal = restPlanSummary(null);
+    assert.equal(normal.text, '큰 운동 2~3분 · 작은 운동 1분');
+    const bench = restFor({ exercise: exerciseById('dumbbell-bench-press')!, reps: 10, targetRir: 2 }).seconds;
+    assert.ok(bench >= normal.big.min && bench <= normal.big.max, String(bench));
+    const lateral = restFor({ exercise: exerciseById('lateral-raise')!, reps: 12, targetRir: 2 }).seconds;
+    assert.ok(lateral >= normal.small.min && lateral <= normal.small.max, String(lateral));
+    for (const preset of REST_PRESETS) {
+      const summary = restPlanSummary(preset.band);
+      assert.match(summary.text, /^큰 운동 .+ · 작은 운동 .+$/);
+      assert.doesNotMatch(summary.text, /\d:\d\d/, '타이머 표기(1:30)는 쓰지 않는다');
+      assert.ok(summary.big.min >= summary.small.min, preset.id);
+    }
+  });
+
+  it('휴식 이유에 현장 용어를 쓰지 않는다', () => {
+    const cases = ['back-squat', 'dumbbell-bench-press', 'push-up', 'lateral-raise', 'leg-press'].flatMap((id) =>
+      [2, 1].flatMap((targetRir) => [false, true].flatMap((isLastSet) => [undefined, { minSeconds: 45, maxSeconds: 75 }].map((band) =>
+        restFor({ exercise: exerciseById(id)!, reps: id === 'back-squat' ? 5 : 10, targetRir, isLastSet, band }).reason))));
+    for (const reason of cases) assert.doesNotMatch(reason, /복합|고립|실패|국소|고중량|반복 구간|무너/, reason);
+    for (const preset of REST_PRESETS) assert.doesNotMatch(preset.label + preset.note, /근력|대사|신경|고중량|고립/, preset.note);
+  });
+
+  it('큰 운동은 몇 분을 쉬어야 하는지 숫자로 말한다 — 그 숫자가 맞을 때만', () => {
+    const bench = exerciseById('dumbbell-bench-press')!;
+    assert.match(restFor({ exercise: bench, reps: 10, targetRir: 2 }).reason, /2분은 쉬어야/);
+    // 줄이는 배수가 붙으면 타이머가 2분보다 짧으니 숫자를 말하지 않는다
+    const dense = restFor({ exercise: bench, reps: 10, targetRir: 2, multiplier: 0.65 });
+    assert.ok(dense.seconds < 120);
+    assert.doesNotMatch(dense.reason, /2분/);
   });
 
   it('짧은 띠에서는 마지막 세트를 45초로 끌어올리지 않는다', () => {

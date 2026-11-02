@@ -430,12 +430,28 @@ const NAME_LINE: ByStyle<(name: string) => string> = {
   fun: (name) => `${name}, 출동합니다!`,
 };
 
+/** 종목을 시작할 때 이름을 부르는 한 줄 — 세트 전 말과 PT 첫 워밍업이 같이 쓴다. */
+export function liftNameLine(style: CoachStyle, name: string): string {
+  return NAME_LINE[style](name);
+}
+
 const SETUP_INTRO: ByStyle<string> = {
   energetic: '처음 하는 종목이니까, 세팅부터 같이 봐요!',
   gentle: '처음 하시는 종목이라, 세팅부터 차근차근 보겠습니다.',
   tough: '처음이지? 세팅 순서 읽어 줄게.',
   fun: '처음 만나는 기구네요. 인사부터 하고, 세팅 볼게요.',
 };
+
+/**
+ * 처음 하는 종목의 세팅 순서 — 머리말 한 줄 뒤에 순서대로.
+ *
+ * 세팅은 첫 세트를 들기 **전에** 들어야 한다. PT는 워밍업이 있는 종목이면 첫 워밍업 앞에서
+ * 이걸 말하고(안전바 없이 워밍업을 하면 안 된다), 없으면 첫 세트 앞에서 말한다.
+ */
+export function setupLines(style: CoachStyle, setup: readonly string[]): string[] {
+  if (setup.length === 0) return [];
+  return [SETUP_INTRO[style], ...setup.map((step) => endWith(step, '.'))];
+}
 
 const SETTING_SAVED: ByStyle<string> = {
   energetic: '지난번 세팅, 화면에 띄워 뒀어요!',
@@ -499,8 +515,7 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
   lines.push(NAME_LINE[style](input.exerciseName));
 
   if (input.firstTime && input.setup && input.setup.length > 0) {
-    lines.push(SETUP_INTRO[style]);
-    for (const step of input.setup) lines.push(endWith(step, '.'));
+    lines.push(...setupLines(style, input.setup));
   } else if (input.machineSetting) {
     lines.push(SETTING_SAVED[style] + screenOnly(` (${input.machineSetting})`));
   }
@@ -680,7 +695,10 @@ export interface AfterSetInput {
   /** 엔진이 다음 세트를 바꾼 양 */
   deltaKg?: number;
   pounds?: boolean;
-  /** 엔진이 여기서 멈추라고 했으면 그 이유 */
+  /**
+   * 엔진이 여기서 멈추라고 했으면 그 이유. PT는 이때 그 종목의 남은 세트를 뺀다 —
+   * 그래서 이 말 뒤에 다음 세트 · 쉬는 시간 안내가 붙지 않는다.
+   */
   stopReason?: string | null;
   growth?: Growth | null;
   setsDone?: number;
@@ -735,11 +753,23 @@ const NEXT_SAME: ByStyle<readonly string[]> = {
   gentle: ['좋습니다. 같은 무게로 한 번 더 가시죠.', '딱 좋습니다. 이대로 한 세트 더 하겠습니다.', '같은 무게로, 방금처럼만 하시면 됩니다.'],
   fun: ['같은 무게, 한 번 더! 익숙한 맛이 제일이죠.', '딱 좋아요. 이 무게랑 정들었네요.', '같은 무게로 앙코르 갑니다!'],
 };
+/*
+ * 종목 끝 — "다음 종목"은 여기서 말하지 않는다. 바로 뒤에 PT가 "다음 종목은, ○○"을 말하고(이동 안내),
+ * 그날 마지막 종목이면 다음이 없다. 여기서 "다음 가시죠"라고 하면 마지막 종목 뒤에도 그 말이 나왔다.
+ */
 const LIFT_DONE: ByStyle<readonly string[]> = {
-  tough: ['끝까지 해냈다. 다음 종목 간다!', '한 종목 끝. 숨 고르고 다음 간다!', '이 종목은 이겼다. 다음.'],
-  energetic: ['이 종목 끝! 완전 잘했어요!', '하나 끝냈어요! 다음 거 가 봐요!', '깔끔하게 끝냈어요! 최고예요!'],
-  gentle: ['이 종목은 마무리입니다. 수고하셨습니다.', '잘하셨습니다. 이 종목은 여기까지입니다.', '깔끔하게 끝내셨습니다. 잠깐 쉬고 다음 종목 가시죠.'],
-  fun: ['이 종목 클리어! 다음 스테이지로!', '끝났어요! 이 기구랑은 이제 작별 인사해요.', '한 종목 끝! 박수, 짝짝짝!'],
+  tough: ['끝까지 해냈다. 이 종목은 끝!', '한 종목 끝. 숨 골라.', '이 종목은 이겼다.'],
+  energetic: ['이 종목 끝! 완전 잘했어요!', '하나 끝냈어요! 잘했어요!', '깔끔하게 끝냈어요! 최고예요!'],
+  gentle: ['이 종목은 마무리입니다. 수고하셨습니다.', '잘하셨습니다. 이 종목은 여기까지입니다.', '깔끔하게 끝내셨습니다.'],
+  fun: ['이 종목 클리어!', '끝났어요! 이 기구랑은 이제 작별 인사해요.', '한 종목 끝! 박수, 짝짝짝!'],
+};
+
+/** 마지막 세트가 목표에 못 미쳤을 때의 종목 끝 — "깔끔하게 · 최고"는 하지 않는다. */
+const LIFT_DONE_HARD: ByStyle<readonly string[]> = {
+  tough: ['이 종목은 끝. 오늘 무게, 다음에 넘는다.', '여기까지 버텼다. 이 종목은 끝.'],
+  energetic: ['이 종목 끝! 끝까지 버텼어요!', '여기까지! 버틴 것만으로도 잘했어요!'],
+  gentle: ['이 종목은 여기까지입니다. 수고하셨습니다.', '오늘은 여기까지로 충분합니다. 이 종목은 마무리입니다.'],
+  fun: ['이 종목 끝! 다음엔 이 무게, 가볍게 들 거예요.', '여기까지! 버틴 게 어디예요.'],
 };
 
 const HURT: ByStyle<readonly string[]> = {
@@ -756,11 +786,16 @@ const WEIGHT_PR: ByStyle<string> = {
   fun: '이 종목 최고 무게! 기구가 깜짝 놀랐어요!',
 };
 
+/*
+ * 엔진이 "여기서 멈추라"고 했을 때 — PT는 정말로 그 종목을 거기서 마친다(남은 세트를 뺀다).
+ * 그래서 "여기까지"라고 한 뒤에 "쉬고 3세트"가 나오면 안 된다. 이 말 뒤에 오는 것은
+ * 다음 종목 안내나 마무리뿐이다.
+ */
 const STOP: ByStyle<string> = {
-  tough: '여기서 멈추는 것도 실력이야.',
-  energetic: '오늘은 여기까지가 좋겠어요!',
-  gentle: '오늘은 여기까지가 좋겠습니다.',
-  fun: '오늘은 여기까지! 아쉬울 때 멈추는 게 고수예요.',
+  tough: '이 종목은 여기서 끝. 멈추는 것도 실력이야.',
+  energetic: '이 종목은 여기서 마쳐요! 무리 안 하는 게 실력이에요!',
+  gentle: '이 종목은 여기서 마치겠습니다. 무리하지 않는 게 좋습니다.',
+  fun: '이 종목은 여기까지! 아쉬울 때 멈추는 게 고수예요.',
 };
 
 /**
@@ -787,14 +822,16 @@ export function afterSetLines(input: AfterSetInput): string[] {
     if (acks) lines.push(pick(acks, at));
   }
 
-  if (input.lastOfLift) {
-    lines.push(pick(LIFT_DONE[style], at));
-    return lines;
-  }
   if (input.stopReason) {
+    // 멈추는 말이 먼저다 — 남은 세트가 없어졌으니 "종목 끝"을 따로 말하지 않는다
     lines.push(STOP[style]);
     // 엔진이 쓴 이유는 화면에만 — 합니다체라 반말 코치 목소리와 섞이면 어색하고, 말은 위 한 줄로 충분하다
     lines.push(screenOnly(endWith(input.stopReason, '.')));
+    return lines;
+  }
+  if (input.lastOfLift) {
+    // 목표에 못 미친 마지막 세트 뒤에 "깔끔하게 끝냈어요"는 맞지 않는다
+    lines.push(pick(input.feel === 'heavy' ? LIFT_DONE_HARD[style] : LIFT_DONE[style], at));
     return lines;
   }
   const next = load(input.nextWeightKg ?? 0, input.pounds);

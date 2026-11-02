@@ -42,10 +42,27 @@ describe('particle', () => {
 });
 
 describe('기호로 끝나는 이름', () => {
-  it('괄호를 걷어내고 받침을 본다', () => {
-    // "예시 피트니스 A (대형)" → 마지막 한글은 '형', 받침 있음
-    assert.equal(withParticle('예시 피트니스 A (대형)', '과/와'), '예시 피트니스 A (대형)과');
+  it('끝 괄호 묶음은 떼고 괄호 앞 낱말에 조사를 맞춘다', () => {
+    // 표기 규칙: 커피(coffee)를 — 괄호 안이 아니라 앞 낱말을 본다
+    assert.equal(withParticle('힙 어브덕션 머신 (아웃타이)', '이/가'), '힙 어브덕션 머신 (아웃타이)이');
+    assert.equal(withParticle('힙 어덕션 머신 (이너타이)', '이/가'), '힙 어덕션 머신 (이너타이)이');
+    assert.equal(withParticle('딥스 (가슴)', '을/를'), '딥스 (가슴)를');
+    assert.equal(withParticle('딥스 (가슴)', '은/는'), '딥스 (가슴)는');
+    assert.equal(withParticle('딥스 (가슴)', '이/가'), '딥스 (가슴)가');
+    assert.equal(withParticle('딥스 (가슴)', '으로/로'), '딥스 (가슴)로');
+    assert.equal(withParticle('힙 어브덕션 (아웃타이)', '을/를'), '힙 어브덕션 (아웃타이)을');
+    assert.equal(withParticle('리어델트 머신 (벤트오버 레터럴)', '으로/로'), '리어델트 머신 (벤트오버 레터럴)으로');
     assert.equal(withParticle('상구헬스장 (3층)', '이/가'), '상구헬스장 (3층)이');
+    // 앞이 영문이면 판정을 못 하니 받침 없는 쪽(에이 → 와)
+    assert.equal(withParticle('예시 피트니스 A (대형)', '과/와'), '예시 피트니스 A (대형)와');
+  });
+
+  it('괄호만 있는 이름은 괄호 안을 본다', () => {
+    assert.equal(particle('(대형)', '이/가'), '이');
+  });
+
+  it('괄호 뒤에 따옴표가 와도 괄호 앞 낱말을 본다', () => {
+    assert.equal(particle('"딥스 (가슴)"', '을/를'), '를');
   });
 
   it('따옴표로 끝나도 판정한다', () => {
@@ -54,7 +71,8 @@ describe('기호로 끝나는 이름', () => {
   });
 
   it('기호를 걷어낸 뒤에도 ㄹ 받침은 로를 쓴다', () => {
-    assert.equal(particle('서울 (본점)', '으로/로'), '으로');
+    assert.equal(particle('서울 (본점)', '으로/로'), '로');
+    assert.equal(particle('본점)', '으로/로'), '으로');
     assert.equal(particle('케이블', '으로/로'), '로');
     assert.equal(particle('케이블)', '으로/로'), '로');
   });

@@ -17,6 +17,25 @@ const HANGUL_LAST = 0xd7a3;
  */
 const TRAILING_NOISE = /[\s"'’”)\]}»·.,!?~-]+$/;
 
+/** 괄호 바깥에 붙는 기호(따옴표 · 마침표 …) — 괄호 묶음을 떼기 전에 걷어낸다. */
+const TRAILING_NOISE_OUTSIDE = /[\s"'’”»·.,!?~-]+$/;
+
+/**
+ * 이름 끝에 붙은 괄호 묶음 — "힙 어브덕션 머신 (아웃타이)", "딥스 (가슴)".
+ *
+ * 조사는 괄호 앞 낱말에 맞춘다(표기 규칙: 커피(coffee)를). 괄호 안 마지막 글자로
+ * 보면 "힙 어브덕션 머신 (아웃타이)가 없습니다", "딥스 (가슴)을"이 나왔다.
+ */
+const TRAILING_GROUP = /\s*[(\[][^()\[\]]*[)\]]$/;
+
+/** 받침을 판정할 부분 — 끝 기호와 끝 괄호 묶음을 걷어낸다. 괄호만 있는 이름이면 괄호 안을 본다. */
+function judgedPart(word: string): string {
+  let core = word.trim().replace(TRAILING_NOISE_OUTSIDE, '');
+  const outside = core.replace(TRAILING_GROUP, '');
+  if (outside !== core && outside.replace(TRAILING_NOISE, '').length > 0) core = outside;
+  return core.replace(TRAILING_NOISE, '');
+}
+
 /**
  * 숫자는 읽는 소리로 본다 — "등받이 3"은 "삼"이라 "3이었어요"다.
  * 영 · 일 · 삼 · 육 · 칠 · 팔은 받침이 있다. 10 · 100 · 1000(십 · 백 · 천)도
@@ -31,7 +50,7 @@ const DIGIT_RIEUL = new Set(['1', '7', '8']);
 
 /** 마지막 글자에 받침이 있는가. 한글도 숫자도 아니면 null. */
 export function hasFinalConsonant(word: string): boolean | null {
-  const trimmed = word.trim().replace(TRAILING_NOISE, '');
+  const trimmed = judgedPart(word);
   if (trimmed.length === 0) return null;
 
   const last = trimmed[trimmed.length - 1]!;
@@ -61,7 +80,7 @@ export function particle(word: string, pair: ParticlePair): string {
 
   if (pair === '으로/로' && final) {
     // ㄹ 받침(코드 8)은 '로'. 기호를 걷어낸 같은 글자를 봐야 한다.
-    const core = word.trim().replace(TRAILING_NOISE, '');
+    const core = judgedPart(word);
     if (DIGIT_RIEUL.has(core[core.length - 1]!)) return withoutFinal;
     const code = core.charCodeAt(core.length - 1);
     if ((code - HANGUL_BASE) % 28 === 8) return withoutFinal;

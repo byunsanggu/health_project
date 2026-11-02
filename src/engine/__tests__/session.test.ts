@@ -57,10 +57,10 @@ describe('buildSession', () => {
     );
   });
 
-  it('추정할 근거가 아무것도 없으면 중량을 비워두고 탐색 세트를 안내한다', () => {
+  it('추정할 근거가 아무것도 없으면 중량을 비워두고 가볍게 해 보고 고치라고 안내한다', () => {
     const bench = build().exercises[0]!;
     assert.equal(bench.sets[0]?.weightKg, null);
-    assert.match(bench.note, /탐색 세트/);
+    assert.match(bench.note, /가볍게 한 세트 해 보고/);
   });
 
   it('체중과 경력만 있어도 첫 중량을 제안한다', () => {

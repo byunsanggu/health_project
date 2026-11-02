@@ -60,6 +60,11 @@ export interface WeeklyReport {
   advice: string;
   /** 운동한 날 (YYYY-MM-DD) */
   days: string[];
+  /**
+   * 이번 주 계획한 날이 아직 남았고 목표 횟수도 다 안 채웠는가. 그러면 제목 · 조언을 "진행 중"으로 말하고
+   * (3번 중 1번 했습니다 · 수 · 금 남음), 부위별 최소 아래도 '부족'이 아니라 '진행 중'이다.
+   */
+  inProgress: boolean;
 }
 
 export interface WeeklyReportInput {
@@ -74,7 +79,57 @@ export interface WeeklyReportInput {
   to: string;
   /** 주 몇 회 하기로 했는가 */
   targetSessions?: number;
+  /**
+   * 이번 주 계획한 운동일 중 아직 안 온 날(YYYY-MM-DD) — plannedDaysLeft로 구한다.
+   * 비어 있지 않으면 주가 아직 진행 중이라 지난 일처럼 말하지 않는다("계획은 3번이었습니다" ×).
+   * 지난주 리포트처럼 끝난 주는 넘기지 않는다.
+   */
+  remainingDays?: readonly string[];
   options?: VolumeOptions;
+}
+
+const WEEKDAY_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** "2026-09-23" → "수" */
+export function weekdayKo(date: string): string {
+  const [year, month, day] = date.split('-').map((part) => Number(part));
+  if (!year || !month || !day) return '';
+  return WEEKDAY_KO[new Date(Date.UTC(year, month - 1, day)).getUTCDay()] ?? '';
+}
+
+/**
+ * 이번 주 계획한 운동일 중 아직 남은 날.
+ *
+ * 오늘이 계획한 날이고 아직 안 했으면 남은 날로 친다. 오늘 이미 했거나 지난 날은 뺀다 — 지난 날을
+ * 놓쳤다고 "남았다"고 하면 거짓말이 된다. 결과가 비어 있으면 그 주는 끝난 것으로 보고 과거형으로 말한다.
+ */
+export function plannedDaysLeft(input: {
+  /** 이번 주 계획한 운동일 (YYYY-MM-DD) */
+  planned: readonly string[];
+  /** 이번 주 운동한 날 (YYYY-MM-DD) */
+  done: readonly string[];
+  today: string;
+}): string[] {
+  const done = new Set(input.done);
+  return [...new Set(input.planned)]
+    .filter((date) => date > input.today || (date === input.today && !done.has(date)))
+    .sort();
+}
+
+/**
+ * 이번 주가 아직 진행 중인가 — 계획한 날이 남았고 목표 횟수도 다 안 채웠으면 그렇다.
+ * 요약 · 근성장 체크 · 부위별 세트가 '부족' 대신 '진행 중'이라고 쓸지 정할 때 쓴다(zoneLabelKo).
+ */
+export function weekInProgress(input: {
+  planned: readonly string[];
+  done: readonly string[];
+  today: string;
+  /** 주 몇 회 하기로 했는가. 없으면 계획한 날 수 */
+  targetSessions?: number;
+}): boolean {
+  const doneCount = new Set(input.done).size;
+  const target = input.targetSessions ?? new Set(input.planned).size;
+  return doneCount < target && plannedDaysLeft(input).length > 0;
 }
 
 /** "2026-09-25" → "9월 4주차" */
@@ -170,14 +225,22 @@ function headlineOf(
   target: number,
   muscles: ReportMuscle[],
   gains: ReportGain[],
+  remaining: readonly string[],
 ): string {
+  /*
+   * 계획한 날이 남은 주는 진행 중으로 말한다. 월요일 첫 운동 직후에 "1번 했습니다 · 계획은 3번이었습니다"는
+   * 이미 놓친 것처럼 읽혔다. 과거형은 그 주의 마지막 계획일이 지난 뒤에만.
+   */
+  if (sessionCount < target && remaining.length > 0) {
+    return `${target}번 중 ${sessionCount}번 했습니다 · ${remaining.map(weekdayKo).join(' · ')} 남음`;
+  }
   if (sessionCount === 0) return '이번 주는 쉬었습니다';
   if (sessionCount < target) return `${sessionCount}번 했습니다 · 계획은 ${target}번이었습니다`;
   if (gains.length > 0 && gains[0]) {
     return `${withParticle(gains[0].name, '이/가')} ${gains[0].detail} 올랐습니다`;
   }
   const over = muscles.filter((row) => row.zone === 'overMrv');
-  if (over.length > 0 && over[0]) return `${over[0].label} 볼륨이 회복 한계를 넘었습니다`;
+  if (over.length > 0 && over[0]) return `${over[0].label} 세트가 한 주 최대를 넘었습니다`;
   return `${sessionCount}번 다 했습니다`;
 }
 
@@ -186,10 +249,15 @@ function adviceOf(
   sessionCount: number,
   target: number,
   muscles: ReportMuscle[],
+  remaining: readonly string[],
 ): string {
+  if (sessionCount < target && remaining.length > 0) {
+    const left = Math.min(target - sessionCount, remaining.length);
+    return `남은 ${left}번을 마저 하면 이번 주 계획을 채웁니다.`;
+  }
   if (sessionCount === 0) return '다음 주에 한 번만 나가면 다시 굴러갑니다.';
   if (sessionCount < target) {
-    return `다음 주는 ${target}번을 먼저 채워 보세요. 중량은 그다음입니다.`;
+    return `다음 주는 ${target}번을 먼저 채워 보세요. 무게는 그다음입니다.`;
   }
 
   const over = muscles.filter((row) => row.zone === 'overMrv');
@@ -201,10 +269,10 @@ function adviceOf(
     .filter((row) => row.zone === 'underMev' && row.sets > 0)
     .sort((a, b) => a.fill - b.fill);
   if (under.length > 0 && under[0]) {
-    return `${withParticle(under[0].label, '은/는')} 아직 최소 볼륨 아래입니다. 다음 주에 두 세트만 더 붙이세요.`;
+    return `${withParticle(under[0].label, '은/는')} 아직 한 주 최소 세트보다 적습니다. 다음 주에 두 세트만 더 하세요.`;
   }
 
-  return '볼륨이 목표 구간에 있습니다. 다음 주는 중량을 올릴 자리입니다.';
+  return '부위별 세트가 알맞습니다. 다음 주는 무게를 올릴 차례입니다.';
 }
 
 export function buildWeeklyReport(input: WeeklyReportInput): WeeklyReport {
@@ -239,6 +307,8 @@ export function buildWeeklyReport(input: WeeklyReportInput): WeeklyReport {
   const gains = findGains({ ...input, sessions });
   const target = input.targetSessions ?? 4;
   const days = [...new Set(sessions.map((session) => session.date))].sort();
+  const remaining = (input.remainingDays ?? []).filter((date) => date >= input.from && date <= input.to);
+  const inProgress = days.length < target && remaining.length > 0;
 
   return {
     weekLabel: weekLabelOf(input.to),
@@ -255,9 +325,10 @@ export function buildWeeklyReport(input: WeeklyReportInput): WeeklyReport {
     },
     muscles,
     gains,
-    headline: headlineOf(days.length, target, muscles, gains),
-    advice: adviceOf(days.length, target, muscles),
+    headline: headlineOf(days.length, target, muscles, gains, remaining),
+    advice: adviceOf(days.length, target, muscles, remaining),
     days,
+    inProgress,
   };
 }
 
@@ -273,7 +344,7 @@ export function reportText(report: WeeklyReport): string {
   if (report.muscles.length > 0) {
     lines.push('');
     for (const row of report.muscles.slice(0, 6)) {
-      lines.push(`· ${row.label} ${row.sets}세트 ${zoneWord(row.zone)}`);
+      lines.push(`· ${row.label} ${row.sets}세트 ${zoneWord(row.zone, report.inProgress)}`);
     }
   }
 
@@ -290,8 +361,8 @@ export function reportText(report: WeeklyReport): string {
   return lines.join('\n');
 }
 
-export function zoneWord(zone: MuscleVolumeStatus['zone']): string {
-  if (zone === 'underMev') return '부족';
+export function zoneWord(zone: MuscleVolumeStatus['zone'], inProgress = false): string {
+  if (zone === 'underMev') return inProgress ? '진행 중' : '부족';
   if (zone === 'mevToMav') return '적정';
   if (zone === 'mavToMrv') return '높음';
   return '한계 초과';

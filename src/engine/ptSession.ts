@@ -31,22 +31,27 @@ export interface PtWarmupStep {
   restSeconds: number;
 }
 
-/** 워밍업 세트 하나 전에 하는 말. 첫 세트면 몇 세트인지도 말한다. */
+/**
+ * 워밍업 세트 하나 전에 하는 말. 첫 세트면 몇 세트인지도 말한다.
+ * named: false — 바로 앞에서 종목 이름을 이미 불렀을 때(처음 하는 종목의 세팅 설명 뒤). 이름을 또 말하지 않는다.
+ */
 export function warmupSetLine(
   style: CoachStyle,
   exerciseName: string,
   index: number,
   steps: readonly PtWarmupStep[],
   pounds?: boolean,
+  options: { named?: boolean } = {},
 ): string {
   const step = steps[index]!;
   const what = `${load(step.weightKg, pounds)}, ${step.reps}개`;
   if (index === 0) {
+    const name = options.named === false ? '' : exerciseName;
     const first: ByStyle<string> = {
-      tough: `${exerciseName}. 워밍업부터 간다. ${steps.length}세트. 첫 번째, ${what}!`,
-      energetic: `${exerciseName}! 워밍업부터 가요! ${steps.length}세트. 첫 번째, ${what}!`,
-      gentle: `${exerciseName}. 워밍업 ${steps.length}세트 하겠습니다. 첫 번째, ${what}.`,
-      fun: `${exerciseName}. 워밍업 ${steps.length}세트! 몸한테 예고편 보여 줘요. 첫 번째, ${what}.`,
+      tough: `${name ? name + '. ' : ''}워밍업부터 간다. ${steps.length}세트. 첫 번째, ${what}!`,
+      energetic: `${name ? name + '! ' : ''}워밍업부터 가요! ${steps.length}세트. 첫 번째, ${what}!`,
+      gentle: `${name ? name + '. ' : ''}워밍업 ${steps.length}세트 하겠습니다. 첫 번째, ${what}.`,
+      fun: `${name ? name + '. ' : ''}워밍업 ${steps.length}세트! 몸한테 예고편 보여 줘요. 첫 번째, ${what}.`,
     };
     return first[style];
   }
@@ -296,8 +301,8 @@ export interface MobilityStep extends CooldownStep {
  * 있으면 그걸로 2분, 없으면 바로 관절 동작으로 들어간다.
  */
 const OPENERS: readonly MobilityStep[] = [
-  { id: 'treadmill-walk', name: '러닝머신 빠르게 걷기', seconds: 120, cue: '경사 3에서 5, 숨이 살짝 찰 정도로 걸으세요', muscles: [], needs: ['treadmill'] },
-  { id: 'bike-easy', name: '실내 사이클', seconds: 120, cue: '가볍게 밟다가 마지막 30초만 조금 빠르게', muscles: [], needs: ['stationary-bike'] },
+  { id: 'treadmill-walk', name: '러닝머신 빠르게 걷기', seconds: 120, cue: '경사를 3에서 5에 맞추고, 숨이 살짝 찰 정도로 걸으세요', muscles: [], needs: ['treadmill'] },
+  { id: 'bike-easy', name: '실내 자전거', seconds: 120, cue: '가볍게 밟다가 마지막 30초만 조금 빠르게', muscles: [], needs: ['stationary-bike'] },
   { id: 'row-easy', name: '로잉머신', seconds: 120, cue: '다리로 밀고 팔은 마지막에. 가볍게, 숨이 살짝 찰 정도로', muscles: [], needs: ['rowing-machine'] },
   { id: 'stairs-easy', name: '천국의 계단', seconds: 90, cue: '제일 느린 속도로. 손잡이에 기대지 말고', muscles: [], needs: ['stair-climber'] },
 ];
@@ -497,12 +502,16 @@ export function cooldownSwitchLine(style: CoachStyle): string {
   return lines[style];
 }
 
+/**
+ * 스트레칭까지 끝났을 때 — 이 뒤에 오늘 정리(몇 세트 · 늘어난 종목 · 수고했다는 말)가 붙는다.
+ * 인사는 그 정리 끝에 한 번만 한다. 여기서도 "수고 많으셨습니다"를 하면 인사를 두 번 듣는다.
+ */
 export function cooldownDoneLine(style: CoachStyle): string {
   const lines: ByStyle<string> = {
-    tough: '오늘 PT 끝이다. 잘 버텼어!',
-    energetic: '오늘 PT 끝! 정말 최고였어요!',
-    gentle: '오늘 PT 끝입니다. 정말 수고 많으셨습니다.',
-    fun: '오늘 PT 끝! 집에 가는 길, 계단 조심하세요.',
+    tough: '오늘 PT 끝이다.',
+    energetic: '오늘 PT 끝!',
+    gentle: '오늘 PT 끝입니다.',
+    fun: '오늘 PT 끝!',
   };
   return lines[style];
 }
