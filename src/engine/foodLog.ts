@@ -107,7 +107,7 @@ export const FOODS: readonly FoodItem[] = [
   food('salmon', '연어', ['연어회', '훈제연어', '연어 스테이크'], [200, 20, 13, 0], ['g', 100], 'protein', { 인분: 150 }),
   food('mackerel', '고등어', ['고등어구이', '고등어 구이'], [200, 20, 13, 0], ['토막', 100], 'protein', { 마리: 300 }),
   food('tuna-can', '참치캔', ['참치', '참치통조림', '동원참치', '참치 캔'], [130, 25, 3, 0], ['캔', 100], 'protein', { 개: 100 }),
-  food('sashimi', '회', ['광어', '광어회', '우럭', '생선회', '흰살생선'], [100, 20, 2, 0], ['인분', 150], 'protein', { 접시: 150 }),
+  food('sashimi', '회', ['광어', '광어회', '우럭', '생선회', '흰살생선', '모둠회', '모듬회', '참치회', '우럭회'], [100, 20, 2, 0], ['인분', 150], 'protein', { 접시: 150 }),
   food('shrimp', '새우', ['새우살', '칵테일새우'], [90, 19, 1, 0.5], ['g', 100], 'protein', { 마리: 15 }),
   food('squid', '오징어', ['오징어볶음'], [90, 18, 1.4, 1], ['g', 100], 'protein', { 마리: 250 }),
 
@@ -180,6 +180,13 @@ export const FOODS: readonly FoodItem[] = [
   food('makchang', '막창', ['돼지막창', '소막창', '막창구이'], [260, 12, 22, 4], ['인분', 200], 'dish'),
   food('dakgangjeong', '닭강정', [], [290, 14, 14, 27], ['인분', 250], 'dish', { 컵: 200 }),
   food('poke', '포케', ['포케볼', '포케 볼'], [130, 8, 4, 16], ['그릇', 450], 'dish', { 인분: 450 }),
+  food('hoe-deopbap', '회덮밥', ['회 덮밥'], [120, 6, 2.5, 19], ['그릇', 450], 'dish', { 인분: 450 }),
+  food('kongguksu', '콩국수', ['콩 국수'], [85, 4.5, 3, 10.5], ['그릇', 700], 'dish', { 인분: 700 }),
+  // 국물까지 한 그릇(재료 고른 만큼 달라진다 — 보통 담는 양 기준)
+  food('malatang', '마라탕', ['마라 탕'], [95, 4, 6, 6.5], ['그릇', 800], 'dish', { 인분: 800 }),
+  food('guobaorou', '꿔바로우', ['궈바로우', '꿔바로우 1인분'], [250, 10, 10, 30], ['인분', 200], 'dish', { 접시: 400 }),
+  food('shabu-shabu', '샤브샤브', ['샤브', '샤브 샤브'], [80, 7, 4, 4], ['인분', 500], 'dish', { 그릇: 500 }),
+  food('wolnamssam', '월남쌈', ['라이스페이퍼', '월남쌈 롤'], [120, 6, 3, 18], ['인분', 300], 'dish', { 개: 50, 접시: 300 }),
   food('fish-cake', '어묵', ['오뎅', '어묵꼬치', '부산어묵'], [140, 9.6, 3.5, 17.5], ['장', 30, 2], 'dish', { 꼬치: 40, 개: 30 }),
   food('tangsuyuk', '탕수육', [], [230, 9, 11, 24], ['인분', 200], 'dish', { 접시: 400 }),
   food('kalguksu', '칼국수', [], [85, 3, 1.5, 15], ['그릇', 700], 'dish', { 인분: 700 }),
@@ -223,6 +230,9 @@ export const FOODS: readonly FoodItem[] = [
   food('chocolate', '초콜릿', ['초코', '초코바'], [550, 6, 32, 57], ['개', 35], 'snack'),
   food('energy-bar', '에너지바', ['그래놀라바', '시리얼바', '견과류바'], [420, 7, 15, 65], ['개', 40], 'snack'),
   food('ice-cream', '아이스크림', ['아이스크림콘', '하드'], [230, 3.5, 11, 29], ['개', 100], 'snack'),
+  food('macaron', '마카롱', ['뚱카롱'], [420, 6, 18, 58], ['개', 20], 'snack'),
+  food('tanghulu', '탕후루', ['딸기 탕후루', '딸기탕후루', '과일 탕후루'], [160, 0.5, 0.1, 40], ['개', 80], 'snack', { 꼬치: 80 }),
+  food('croffle', '크로플', [], [400, 6, 22, 45], ['개', 80], 'snack'),
 
   // ── 마실 것 (100ml당)
   food('americano', '아메리카노', ['커피', '블랙커피', '아아', '뜨아', '아이스 아메리카노'], [3, 0.2, 0, 0.5], ['잔', 355], 'drink', { 컵: 355 }),
@@ -231,6 +241,9 @@ export const FOODS: readonly FoodItem[] = [
   food('zero-soda', '제로콜라', ['제로 콜라', '콜라 제로', '제로사이다', '제로 사이다', '탄산수'], [0, 0, 0, 0], ['캔', 355], 'drink', { 병: 500, 잔: 250 }),
   food('orange-juice', '오렌지주스', ['주스', '오렌지 주스'], [45, 0.7, 0.2, 10.5], ['잔', 200], 'drink', { 컵: 200, 병: 300 }),
   food('sports-drink', '이온음료', ['포카리', '포카리스웨트', '게토레이', '파워에이드'], [25, 0, 0, 6.2], ['병', 500], 'drink', { 캔: 245, 잔: 250 }),
+  food('energy-drink', '에너지드링크', ['에너지 드링크', '핫식스', '레드불', '몬스터'], [45, 0, 0, 11], ['캔', 250], 'drink', { 병: 250 }),
+  food('bubble-tea', '버블티', ['밀크티', '흑당버블티', '흑당 버블티', '흑당 밀크티', '타피오카 밀크티'], [70, 0.8, 1.8, 13], ['잔', 500], 'drink', { 컵: 500 }),
+  food('smoothie', '스무디', ['과일 스무디', '딸기 스무디', '요거트 스무디'], [60, 0.8, 0.3, 14], ['잔', 400], 'drink', { 컵: 400 }),
   food('beer', '맥주', ['생맥주'], [43, 0.4, 0, 3.6], ['잔', 500], 'drink', { 캔: 500, 병: 500 }),
   food('soju', '소주', [], [105, 0, 0, 1], ['병', 360], 'drink', { 잔: 50 }),
   food('makgeolli', '막걸리', [], [46, 1.5, 0.1, 2.5], ['병', 750], 'drink', { 잔: 200 }),
@@ -389,6 +402,11 @@ export interface ParseResult {
   items: ParsedFood[];
   /** 음식표에서 못 찾은 조각 */
   unknown: string[];
+  /**
+   * 글에 적힌 끼니(마지막에 나온 것). 음식을 하나도 못 찾았어도 "저녁 …"이라고 적었으면 저녁이다 —
+   * 끼니 칩을 바꾸는 데 쓴다.
+   */
+  meal?: Meal;
 }
 
 /** "반 공기", "2개", "150g" */
@@ -437,6 +455,26 @@ function nameRegex(name: string): RegExp {
 
 interface Mention { food: FoodItem; start: number; end: number; length: number }
 
+const HANGUL_SYLLABLE = /[가-힣]/;
+/**
+ * 한 글자 이름(회 · 밥 · 떡 · 김 · 콩 …) 바로 뒤에 붙어도 되는 말 — 조사 · "한/반 공기" · "먹었어".
+ * 이것 말고 한글이 붙으면 다른 낱말의 첫 글자다: 회사 · 회식 · 회의 · 밥솥 · 김포.
+ */
+const SINGLE_FOLLOWERS = /^(?:이랑|하고|으로|이나|까지|을|를|이|가|은|는|도|만|에|랑|과|와|로|나|좀|한|반|먹)/;
+
+/**
+ * 한 글자 이름이 낱말 하나로 적혔는가. 앞에 한글이 붙어 있으면(모둠회 · 꿀떡) 다른 낱말의 끝이고,
+ * 뒤에 조사 아닌 한글이 붙어 있으면(회사 · 회식) 다른 낱말의 처음이다. "회사에서 제육볶음"이
+ * 회 1인분 150kcal로 적히던 것.
+ */
+function standsAlone(chunk: string, start: number, end: number): boolean {
+  const before = chunk[start - 1];
+  if (before !== undefined && HANGUL_SYLLABLE.test(before)) return false;
+  const after = chunk.slice(end);
+  if (after.length === 0 || !HANGUL_SYLLABLE.test(after[0]!)) return true;
+  return SINGLE_FOLLOWERS.test(after);
+}
+
 /**
  * 한 조각 안의 음식들을 자리와 함께 — 긴 이름부터, 겹치지 않게.
  * "밥 반 공기 김치 1접시"처럼 나누는 말 없이 이어 적어도 둘을 다 찾는다.
@@ -448,7 +486,10 @@ function mentions(chunk: string, foods: readonly FoodItem[]): Mention[] {
       const length = name.replace(/\s+/g, '').length;
       if (!length) continue;
       for (const match of chunk.matchAll(nameRegex(name))) {
-        found.push({ food: item, start: match.index!, end: match.index! + match[0].length, length });
+        const start = match.index!;
+        const end = start + match[0].length;
+        if (length === 1 && !standsAlone(chunk, start, end)) continue;
+        found.push({ food: item, start, end, length });
       }
     }
   }
@@ -519,7 +560,7 @@ export function parseFoodText(input: string, foods: readonly FoodItem[] = FOODS)
       items.push(parsed);
     });
   }
-  return { items, unknown };
+  return meal ? { items, unknown, meal } : { items, unknown };
 }
 
 /** 이름으로 찾기 — 앞부분이 맞는 것 먼저, 짧은 이름 먼저. */

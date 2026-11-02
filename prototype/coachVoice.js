@@ -27,6 +27,19 @@
   var prefetch = { voice: null, done: 0, total: 0, running: false, listeners: [] };
   var rate = 1;              // 말 빠르기 — 1이 녹음 그대로
   var stretched = {};        // id → 그 빠르기로 늘이거나 줄인 소리 (rate가 바뀌면 버린다)
+  /*
+   * 소리가 실제로 나는가. 목록(manifest)을 못 받았거나, 말 하나의 조각을 하나도 못 받았으면 실패다.
+   * 실패하면 앱이 화면에 "소리가 안 나옵니다"를 띄운다 — 조용히 넘어가면 사람은 PT가 말을 안 하는
+   * 줄도 모르고 기다린다. 다음 말이 소리 나면 다시 괜찮다.
+   */
+  var health = { failed: false, reason: null };
+  var healthListeners = [];
+
+  function setHealth(failed, reason) {
+    if (health.failed === failed && health.reason === reason) return;
+    health = { failed: failed, reason: failed ? reason : null };
+    healthListeners.forEach(function (listener) { try { listener(health); } catch (err) { void err; } });
+  }
 
   function audio() {
     if (ctx) return ctx;
@@ -175,7 +188,8 @@
     if (Array.isArray(window.__said)) window.__said.push(text);  // 브라우저 테스트가 들은 말을 본다
     var mine = generation;
     loadManifest().then(function (list) {
-      if (mine !== generation || !list) return;
+      if (!list) { if (voice) setHealth(true, 'manifest'); return; }
+      if (mine !== generation) return;
       var E = window.FitEngine;
       var plan = E.speechSentences(text, function (sentence) { return Boolean(list[E.clipId(sentence)]); });
       var ids = plan.map(function (sentence) {
@@ -183,6 +197,11 @@
       });
       var flat = [].concat.apply([], ids);
       return Promise.all(flat.map(bufferAtRate)).then(function (loaded) {
+        if (flat.length > 0) {
+          var got = loaded.filter(Boolean).length;
+          if (got === 0) setHealth(true, 'clips');
+          else setHealth(false, null);
+        }
         if (mine !== generation) return;
         var c = audio();
         if (!c) return;
@@ -374,6 +393,10 @@
     progress: progress,
     renderTrack: renderTrack,
     setRate: setRate,
+    /** 소리가 나는지 — { failed, reason: 'manifest' | 'clips' | null } */
+    health: function () { return health; },
+    /** 소리가 나다 안 나다 바뀌면 부른다 */
+    onHealth: function (listener) { healthListeners.push(listener); },
     available: function () { return Boolean(window.AudioContext || window.webkitAudioContext); },
     /** 지금 무언가 나오고 있는가 */
     speaking: function () { var c = audio(); return Boolean(c && queueEnd > c.currentTime); },

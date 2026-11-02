@@ -92,7 +92,70 @@ describe('runOnboarding', () => {
 
   it('주의 문구는 짠 프로그램의 실제 볼륨으로 — 주 2회 가슴 미달이면 말한다', () => {
     const program = buildProgram(answers({ daysPerWeek: 2 }), 'intermediate');
-    assert.match(program.caution ?? '', /주 2회.*최소 세트 아래/);
+    assert.match(program.caution ?? '', /주 2회.*최소 세트보다 가볍게 시작해/);
+  });
+
+  it('초보의 주 3회 이상은 "최소 세트 아래" 안내를 띄우지 않는다 — 처음 시작하는 정석이다', () => {
+    const beginner = (days: number) => buildProgram(answers({
+      selfReportedLevel: 'beginner', monthsTraining: 0, bodyweightKg: 58, sex: 'female', daysPerWeek: days,
+    }), 'beginner');
+    assert.equal(beginner(3).caution, undefined);
+    assert.equal(beginner(4).caution, undefined);
+    // 주 2회는 하루 더 내면 크게 달라진다는 말이 쓸모 있다 — 그대로 둔다
+    assert.ok(beginner(2).caution);
+  });
+});
+
+describe('초보에게 주지 않는 맨몸 동작', () => {
+  const beginner = (equipmentIds: readonly string[], days = 3) => buildProgram(answers({
+    selfReportedLevel: 'beginner', monthsTraining: 0, bodyweightKg: 58, sex: 'female', daysPerWeek: days,
+    gym: { equipmentIds: [...equipmentIds] },
+  }), 'beginner');
+
+  it('파이크 푸시업을 주지 않는다 — 매트 · 밴드뿐인 집에서도', () => {
+    for (const ids of [['floor'], ['floor', 'resistance-bands'], COMMON_EQUIPMENT_IDS]) {
+      for (const days of [2, 3, 4]) {
+        const ids_ = exercisesOf(beginner(ids, days)).map((exercise) => exercise.id);
+        assert.ok(!ids_.includes('pike-push-up'), `${ids.join(',')} 주 ${days}회: ${ids_.join(', ')}`);
+      }
+    }
+    // 중급은 그대로 받는다(머리 위로 미는 종목이 그것뿐인 집)
+    const intermediate = buildProgram(answers({ daysPerWeek: 3, gym: { equipmentIds: ['floor'] } }), 'intermediate');
+    assert.ok(exercisesOf(intermediate).some((exercise) => exercise.id === 'pike-push-up'));
+  });
+
+  it('기구가 거의 없어 자리가 비면 쉬운 맨몸 종목(글루트 브릿지 · 데드버그)으로 채운다', () => {
+    const program = beginner(['floor', 'resistance-bands']);
+    for (const template of program.templates) {
+      assert.ok(template.slots.length >= 3, `${template.name}: ${template.slots.map((slot) => slot.exerciseId).join(', ')}`);
+      // 같은 날 같은 부위 채우기 종목을 둘 넣지 않는다
+      const fill = template.slots.filter((slot) => ['dead-bug', 'reverse-crunch'].includes(slot.exerciseId));
+      assert.ok(fill.length <= 1, template.name);
+    }
+    const all = exercisesOf(program).map((exercise) => exercise.id);
+    assert.ok(all.includes('glute-bridge'), all.join(', '));
+    assert.ok(all.includes('dead-bug'), all.join(', '));
+  });
+
+  it('기구가 넉넉한 헬스장에는 채우기 종목을 끼우지 않는다', () => {
+    const program = beginner(COMMON_EQUIPMENT_IDS);
+    assert.ok(!exercisesOf(program).some((exercise) => exercise.id === 'dead-bug'));
+  });
+
+  it('글루트 햄 레이즈 · 풀업 · 친업은 대안이 있으면 초보에게 주지 않는다', () => {
+    const everything = EQUIPMENT_CATALOG.map((item) => item.id);
+    for (const days of [2, 3, 4, 5]) {
+      for (const sex of ['female', 'male'] as const) {
+        const program = buildProgram(answers({
+          selfReportedLevel: 'beginner', monthsTraining: 0, bodyweightKg: 58, sex, daysPerWeek: days,
+          gym: { equipmentIds: everything },
+        }), 'beginner');
+        const ids = exercisesOf(program).map((exercise) => exercise.id);
+        for (const hard of ['glute-ham-raise', 'pull-up', 'chin-up']) {
+          assert.ok(!ids.includes(hard), `주 ${days}회 ${sex}: ${hard}`);
+        }
+      }
+    }
   });
 });
 

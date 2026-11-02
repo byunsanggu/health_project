@@ -153,7 +153,8 @@ export const EQUIPMENT_CATALOG: readonly EquipmentItem[] = [
    * 헬스장 한가운데서 제자리 걷기를 시키는 것보다 러닝머신 2분이 자연스럽다.
    */
   { id: 'treadmill', name: '러닝머신', category: 'cardio', common: true },
-  { id: 'stationary-bike', name: '실내 사이클', category: 'cardio', common: true },
+  // 이름은 하나만 — 유산소 목록 · 몸 풀기와 같은 '실내 자전거'. 다른 이름은 검색용 aka에
+  { id: 'stationary-bike', name: '실내 자전거', category: 'cardio', common: true },
   { id: 'rowing-machine', name: '로잉머신', category: 'cardio' },
   { id: 'stair-climber', name: '천국의 계단 (스텝밀)', category: 'cardio' },
   {
@@ -768,7 +769,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '벨트가 돌아가는 위를 걷거나 뛰는 기계',
   },
   'stationary-bike': {
-    aka: ['사이클', '실내자전거', '실내 자전거', '스핀 바이크', '스피닝', '자전거'],
+    aka: ['사이클', '실내 사이클', '실내자전거', '스핀 바이크', '스피닝', '자전거'],
     look: '바퀴 없이 페달만 밟는 자전거',
   },
   'rowing-machine': {

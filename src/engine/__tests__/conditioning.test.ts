@@ -105,7 +105,7 @@ describe('컨디셔닝 세션', () => {
   it('유효 세트가 아니라 피로에만 더한다고 분명히 밝힌다', () => {
     const workout = buildConditioning(base);
     assert.ok(workout.fatigueLoad > 0);
-    assert.ok(workout.notes.some((note) => note.includes('유효 세트로 세지 않습니다')));
+    assert.ok(workout.notes.some((note) => note.includes('세트 수에는 안 들어가고 피로에만')));
   });
 
   it('기구가 거의 없으면 그 사실을 알려준다', () => {
@@ -229,7 +229,7 @@ describe('와드 한 판', () => {
     assert.ok(forTime.cautions.some((line) => line.includes('EMOM')));
 
     const emom = buildWodSession({ format: 'emom', minutes: 12, level: 'intermediate', equipmentIds: gym, allowBarbell: true });
-    assert.equal(emom.cautions.some((line) => line.includes('EMOM처럼')), false);
+    assert.equal(emom.cautions.some((line) => line.includes('(EMOM)처럼')), false);
   });
 
   it('맨몸 와드에는 잔소리를 하지 않는다', () => {
@@ -240,6 +240,6 @@ describe('와드 한 판', () => {
 
   it('단독으로 하면 볼륨을 대체하지 않는다고 말한다', () => {
     const session = buildWodSession({ format: 'amrap', minutes: 12, level: 'intermediate', equipmentIds: gym, standalone: true });
-    assert.ok(session.cautions.some((line) => line.includes('주간 볼륨')));
+    assert.ok(session.cautions.some((line) => line.includes('한 주 세트는') && !/볼륨|유효 세트/.test(line)));
   });
 });

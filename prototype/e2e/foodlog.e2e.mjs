@@ -47,17 +47,17 @@ export default async function ({ page, url, shot }) {
   await page.locator('dialog .food-delete').click();
   check(await entries.count() === 3, '지워지지 않았습니다');
 
-  // 음식표에 없는 것 — 직접 넣기. 칼로리 없이는 안 들어간다
-  await page.fill('#food-text', '마라탕 1그릇');
+  // 음식표에 없는 것 — 직접 넣기. 칼로리 없이는 안 들어간다 (마라탕은 이제 음식표에 있다)
+  await page.fill('#food-text', '훠궈 1그릇');
   await page.click('.food-calc');
   await page.locator('.food-preview .food-row.unknown .pick').click();
   const dialog = page.locator('dialog');
-  check(await dialog.locator('.food-custom input').first().inputValue() === '마라탕', '이름이 미리 안 채워졌습니다');
+  check(await dialog.locator('.food-custom input').first().inputValue() === '훠궈', '이름이 미리 안 채워졌습니다');
   await dialog.locator('.food-custom-save').click();
   check((await dialog.locator('.food-custom .warn').textContent()).length > 0, '칼로리 없이 넣어졌습니다');
   await dialog.locator('.food-field', { hasText: '칼로리' }).locator('input').fill('800');
   await dialog.locator('.food-custom-save').click();
-  check(await entries.filter({ hasText: '마라탕' }).count() === 1, '직접 넣은 것이 안 보입니다');
+  check(await entries.filter({ hasText: '훠궈' }).count() === 1, '직접 넣은 것이 안 보입니다');
   check(await page.locator('.food-preview').count() === 0, '다 처리했는데 미리보기가 남아 있습니다');
   await shot('3-day1');
 
@@ -70,6 +70,17 @@ export default async function ({ page, url, shot }) {
   check((await copy.textContent()).includes('어제 점심 그대로'), '어제 점심 줄이 없습니다');
   await copy.click();
   check(await entries.count() === 4, `어제 점심을 넣은 뒤 ${await entries.count()}줄`);
+
+  // 읽은 음식이 없어도 "저녁 …"이라고 썼으면 끼니 칩은 저녁으로 간다 (지금은 점심 때)
+  await page.fill('#food-text', '저녁 우리집 특제 수플레');
+  await page.click('.food-calc');
+  check(await page.locator('.food-meal-pick[aria-pressed="true"]').textContent() === '저녁', '모르는 음식만 적은 저녁이 저녁으로 안 갑니다');
+  check(await page.locator('.food-commit').textContent() === '저녁으로 적기', '적기 버튼: ' + await page.locator('.food-commit').textContent());
+  await page.locator('.food-preview-actions .quiet', { hasText: '취소' }).click();
+
+  // 몸 카드 — 큰 숫자가 무엇의 g인지, 버튼이 무엇을 하는지 말한다
+  check((await page.locator('.protein-target').textContent()).startsWith('단백질 하루'), '단백질 목표: ' + await page.locator('.protein-target').textContent());
+  check(!(await page.locator('.protein-toggle').textContent()).includes('누르기'), '버튼 꼬리가 "누르기"입니다');
 
   // 단백질을 채우면 몸 카드의 "채웠나요"가 저절로 켜진다
   check(await page.locator('.protein-toggle').getAttribute('aria-pressed') === 'false', '단백질이 미리 켜져 있습니다');

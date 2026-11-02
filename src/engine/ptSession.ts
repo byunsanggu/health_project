@@ -87,6 +87,22 @@ export function warmupDoneLine(style: CoachStyle): string {
   return lines[style];
 }
 
+/**
+ * PT로 처음 세는 본세트 앞에서 한 번 — 다 못 하면 "여기까지"를 누르라고.
+ *
+ * PT는 세트가 끝나면 묻지 않고 센 개수를 바로 적는다. 일곱 개에서 멈추고 바를 내려놓았는데
+ * 누르지 않으면 열 개가 적히고, 다음 무게가 그걸로 오른다. 처음에 한 번은 알려 줘야 한다.
+ */
+export function stopHintLine(style: CoachStyle): string {
+  const lines: ByStyle<string> = {
+    tough: '다 못 하겠으면 화면에서 여기까지 눌러. 누른 데까지 적는다.',
+    energetic: '다 못 하겠으면 화면에서 여기까지를 눌러요! 누른 데까지 적어요!',
+    gentle: '다 못 하시겠으면 화면에서 여기까지를 누르세요. 누른 데까지 적습니다.',
+    fun: '다 못 하겠으면 화면에서 여기까지! 누른 데까지만 적어요. 부풀리기 없어요.',
+  };
+  return lines[style];
+}
+
 /* ── 세트 사이 휴식 ─────────────────────────────── */
 
 /** "40초" / "1분" / "1분 30초" — 트레이너가 말하는 대로. */

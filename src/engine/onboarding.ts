@@ -430,7 +430,26 @@ const LOADABLE_PULLS: ReadonlySet<string> = new Set(['lat-pulldown', 'neutral-gr
 /** 무게를 못 다루는 사람도 있는 맨몸 당기기. 할 수 있는지 모르는 처음에는 랫풀다운이 먼저다. */
 const BODYWEIGHT_PULLS: ReadonlySet<string> = new Set(['pull-up', 'chin-up']);
 const HOLDS: ReadonlySet<string> = new Set(['plank', 'side-plank']);
-const HARD_BODYWEIGHT: ReadonlySet<string> = new Set(['chest-dip', 'triceps-dip', 'hanging-leg-raise']);
+/*
+ * 처음 하는 사람이 한 개도 못 하는 맨몸 종목 — 초보에게는 뒤로 민다. 글루트 햄 레이즈는 상급 동작이라
+ * 처음 온 사람은 한 번도 못 내려갔다 올라온다(레그컬 기계가 있으면 그쪽). 풀업 · 친업도 처음엔 0개가 흔하다.
+ * 대안이 없는 곳(철봉뿐)이면 그래도 들어온다 — 빼지 않고 미루기만 한다.
+ */
+const HARD_BODYWEIGHT: ReadonlySet<string> = new Set([
+  'chest-dip', 'triceps-dip', 'hanging-leg-raise', 'glute-ham-raise', 'pull-up', 'chin-up',
+]);
+/**
+ * 초보에게는 아예 주지 않는 종목. 파이크 푸시업은 몸을 거꾸로 세워 체중을 어깨로 받는다 — 푸시업 하나도
+ * 버거운 첫 주에 줄 동작이 아니다. 자리가 비면 아래 쉬운 종목으로 채운다.
+ */
+const BEGINNER_EXCLUDED: ReadonlySet<string> = new Set(['pike-push-up']);
+/**
+ * 기구가 거의 없어 자리가 비는 날을 채우는 쉬운 맨몸 종목 — 누구나 첫날부터 할 수 있는 것.
+ * 매트 · 밴드뿐인 집에서 전신 B가 파이크 푸시업과 런지 두 종목으로 끝났다.
+ */
+const EASY_FILLERS: readonly string[] = ['glute-bridge', 'dead-bug', 'reverse-crunch'];
+/** 하루에 이만큼은 있어야 운동한 날 같다 — 모자라면 EASY_FILLERS로 채운다 */
+const MIN_DAY_EXERCISES = 4;
 const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge']);
 
 interface PickContext {
@@ -620,6 +639,7 @@ function pickExercise(
 
   const candidates = pool
     .filter((exercise) => !used.has(exercise.id))
+    .filter((exercise) => context.level !== 'beginner' || !BEGINNER_EXCLUDED.has(exercise.id))
     .filter((exercise) => slot.role !== 'primary' || (exercise.pattern !== 'isolation' && exercise.pattern !== 'core'))
     .filter((exercise) => !hingedToday || !heavyHinge(exercise))
     .filter((exercise) => (exercise.contribution[slot.muscle] ?? 0) >= minContribution);
@@ -885,6 +905,26 @@ export function buildProgram(
       addJointLoad(sessionLoad, exercise);
       picked.push({ slot, exercise, sets: 0 });
     });
+
+    /*
+     * 자리가 비어 하루가 너무 짧으면(기구가 거의 없는 집) 쉬운 맨몸 종목으로 채운다. 그날 아직 안 쓴
+     * 부위를 맡는 종목만 — 데드버그 · 리버스 크런치를 같은 날 둘 다 넣지는 않는다.
+     */
+    const wanted = Math.min(MIN_DAY_EXERCISES, day.slots.length);
+    const mainMuscle = (exercise: Exercise) => (Object.entries(exercise.contribution) as [MuscleGroup, number][])
+      .sort((a, b) => b[1] - a[1])[0]?.[0];
+    for (const id of EASY_FILLERS) {
+      if (picked.length >= wanted) break;
+      const filler = pool.find((exercise) => exercise.id === id);
+      if (!filler || usedToday.has(filler.id)) continue;
+      const muscle = mainMuscle(filler);
+      if (!muscle || picked.some((item) => mainMuscle(item.exercise) === muscle || item.slot.muscle === muscle)) continue;
+      usedToday.add(filler.id);
+      usedThisWeek.add(filler.id);
+      weekBodyweight += 1;
+      addJointLoad(sessionLoad, filler);
+      picked.push({ slot: { muscle, role: 'isolation' }, exercise: filler, sets: 0 });
+    }
     return picked;
   });
 
@@ -1007,7 +1047,7 @@ export function buildProgram(
   return {
     name: SPLIT_NAMES[days] ?? `주 ${days}회 분할`,
     daysPerWeek: days,
-    caution: cautionFor(days, ranged, landmarks, answers.gym.equipmentIds, levelProfile(level).startingRir),
+    caution: cautionFor(days, ranged, landmarks, answers.gym.equipmentIds, levelProfile(level).startingRir, level),
     templates: ranged,
     weeklyTargets,
   };
@@ -1036,12 +1076,18 @@ function cautionFor(
   equipmentIds: readonly string[],
   // 첫 주에 남기는 개수 — 근성장 체크와 같은 셈으로 재야 둘이 다르게 말하지 않는다(초보 첫 주는 4개)
   startingRir = 2,
+  level?: TrainingLevel,
 ): string | undefined {
   if (days === 1) {
     return '주 1회는 근육을 늘리기보다 지키는 일정입니다. 전신을 한 번에 돌려 ' +
-      '빠지는 부위가 없게 짰지만, 부위별 볼륨은 최소 자극선에 못 미칩니다. ' +
+      '빠지는 부위가 없게 짰지만, 부위마다 한 주 최소 세트에는 못 미칩니다. ' +
       '늘리는 것이 목표라면 주 2회부터가 현실적입니다.';
   }
+  /*
+   * 초보의 주 3회 전신은 처음 시작하는 정석이다. 일부러 가볍게 시작해 몇 주에 걸쳐 늘리는 계획을
+   * "최소 세트 아래에서 시작합니다"라고 경고처럼 말하면, 3일을 고르자마자 부족하다는 말부터 듣는다.
+   */
+  if (level === 'beginner' && days >= 3) return undefined;
 
   // 할 종목이 아예 없는 부위만 기구 탓이다 — 한 가지라도 있으면 세트를 늘려 채울 수 있다
   const noGear = new Set(coverageReport(equipmentIds).filter((item) => item.directOptions === 0).map((item) => item.muscle));
@@ -1054,8 +1100,9 @@ function cautionFor(
   const named = short.slice(0, 3).map((muscle) => MUSCLE_LABELS_KO[muscle]).join(' · ') +
     (short.length > 3 ? ` 외 ${short.length - 3}곳` : '');
   const plan = days <= 3 ? `주 ${days}회 · 하루 한 시간 안쪽으로` : withParticle(`주 ${days}회`, '으로/로');
-  return `${plan} 짜서 첫 주에는 ${withParticle(named, '이/가')} ` +
-    '주 최소 세트 아래에서 시작합니다. 몇 주에 걸쳐 세트를 늘리며 채웁니다' +
+  // 경고가 아니라 안내로 — 일부러 낮게 시작해 늘리는 정상 계획이다
+  return `${plan} 짜서 첫 주는 ${withParticle(named, '을/를')} 한 주 최소 세트보다 가볍게 시작해 ` +
+    '몇 주 동안 세트를 조금씩 늘려 채웁니다' +
     (days <= 2 ? ' — 하루를 더 낼 수 있으면 크게 달라집니다.' : '.');
 }
 

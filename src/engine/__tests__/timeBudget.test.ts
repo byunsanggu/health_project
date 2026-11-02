@@ -261,7 +261,7 @@ describe('자동 세트 판단', () => {
       completed: [set(12, 2), set(12, 2)], plannedSets: 4, rule, zone: 'overMrv',
     });
     assert.equal(decision.verdict, 'stop');
-    assert.match(decision.reason, /회복 가능 범위/);
+    assert.match(decision.reason, /최대 세트를 이미 넘었습니다/);
   });
 
   it('시간이 모자라면 마지막 세트로 알리고 멈춘다', () => {

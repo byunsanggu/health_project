@@ -28,3 +28,30 @@ describe('쉬는 동안 다음 운동 미리 듣기', () => {
     assert.ok(!/요[.!]?$|니다[.!]?$/.test(head!), head);
   });
 });
+
+describe('쉬는 동안 운동 설명 — 화면과 말이 같다', () => {
+  it('화면의 주의 줄은 말로 하는 고치는 말과 같은 문장이다', () => {
+    for (const exercise of EXERCISES) {
+      const guide = restGuideFor(exercise);
+      assert.ok(guide.mistake!.warn.endsWith(guide.mistake!.fix), exercise.id);
+      const said = restGuideLines('gentle', exercise).join(' ');
+      assert.ok(said.includes(guide.mistake!.fix), `${exercise.id}: ${said}`);
+    }
+  });
+
+  it('앞에 쉬는 시간이 없으면 "쉬는 동안"이라고 하지 않는다', () => {
+    for (const style of ['energetic', 'gentle', 'tough', 'fun'] as const) {
+      const [head] = restGuideLines(style, EXERCISES[0]!, { resting: false });
+      assert.doesNotMatch(head!, /쉬/, `${style}: ${head}`);
+      assert.match(head!, /시작 전/, style);
+    }
+  });
+
+  it('세팅 순서를 막 말했으면 자리 잡는 말은 빼고 동작 · 실수만', () => {
+    const exercise = EXERCISES[0]!;
+    const guide = restGuideFor(exercise);
+    const said = restGuideLines('gentle', exercise, { resting: false, grip: false }).join(' ');
+    assert.ok(!said.includes(guide.grip!.replace(/[.!?]$/, '')), said);
+    assert.ok(said.includes(guide.mistake!.fix), said);
+  });
+});

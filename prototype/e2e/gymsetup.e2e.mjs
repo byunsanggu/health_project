@@ -58,13 +58,21 @@ export default async function ({ page, url, shot }) {
   await page.locator('input[placeholder^="이름이나 생김새로"]').fill('굽은 봉');
   check((await page.locator('.equip-tile .name').allTextContents()).some((text) => text.includes('EZ')), '굽은 봉으로 EZ 바가 안 나옵니다');
   await page.locator('input[placeholder^="이름이나 생김새로"]').fill('');
-  const onCount = Number((await page.locator('.sheet-head .meta', { hasText: '켜짐' }).textContent()).match(/(\d+)개 켜짐/)[1]);
+  // 기구는 "켜짐"이 아니라 "있음"으로 센다
+  const onCount = Number((await page.locator('.sheet-head .meta', { hasText: '있음' }).textContent()).match(/있음 (\d+)개/)[1]);
+  // 켜도 열리는 종목이 없는 기구(폼롤러 — 위에서 펼친 맨몸 · 소도구 묶음)는 칸에 그렇다고 적는다
+  const roller = tileNamed(page, '폼롤러');
+  check(await roller.count() === 1, '펼친 묶음에 폼롤러가 없습니다');
+  check((await roller.textContent()).includes('아직 이 기구로 하는 종목이 없습니다'), '폼롤러 칸: ' + await roller.textContent());
 
   await finishWizard(page, { level: '초보' });
 
   // 오늘 — 연결 안내, 바로 순서 바꾸기
   const nudge = await page.locator('.gym-link-nudge').textContent();
-  check(nudge.includes('역삼 튼튼짐') && nudge.includes('연결 전'), '오늘 화면 안내: ' + nudge);
+  check(nudge.includes('역삼 튼튼짐') && nudge.includes('등록하지 않았습니다') && nudge.includes('등록하기'), '오늘 화면 안내: ' + nudge);
+  // 제목 옆 "1주차" 칩은 없다 — 맨 위 상태 줄에만 (같은 말을 한 화면에 두 번 하지 않는다)
+  check(!(await page.locator('.session-head').first().textContent()).includes('주차'), '오늘 머리에 주차가 또 있습니다');
+  check((await page.locator('#status-meta').textContent()).includes('1주차'), '상태 줄에 주차가 없습니다');
   const names = async () => (await page.locator('.plan-row .plan-main .name > span:first-child').allTextContents());
   const first = await names();
   await page.locator('.list-order').click();
@@ -85,7 +93,7 @@ export default async function ({ page, url, shot }) {
   // 헬스장 탭 — 지금 다니는 곳
   await gymTab(page);
   const here = await page.locator('.gym-here').textContent();
-  check(here.includes('역삼 튼튼짐') && here.includes('아직 연결 안 됨'), '헬스장 칸: ' + here);
+  check(here.includes('역삼 튼튼짐') && here.includes('아직 등록 안 됨'), '헬스장 칸: ' + here);
   check(here.includes('기구 ' + onCount + '개'), '설문에서 고른 기구 수(' + onCount + ')가 안 맞습니다: ' + here);
   // 검색이 없을 때는 연결하기 하나만 — 따로 등록하는 칸이 같이 있으면 헬스장이 둘로 갈라진다
   check(await page.locator('.register-open').count() === 0, '이름표인데 직접 등록 버튼이 같이 있습니다');
@@ -93,7 +101,7 @@ export default async function ({ page, url, shot }) {
 
   // 연결하기 — 유형 → 층 → 등록
   await page.locator('.gym-link').click();
-  check((await page.locator('dialog').textContent()).includes('내 헬스장 연결'), '연결 창이 아닙니다');
+  check((await page.locator('dialog').textContent()).includes('내 헬스장 등록'), '등록 창이 아닙니다');
   await page.locator('dialog .choice', { hasText: '동네 헬스장' }).click();
   check(await page.locator('dialog input[placeholder="헬스장 이름"]').inputValue() === '역삼 튼튼짐', '이름이 안 넘어왔습니다');
   await page.locator('dialog input[placeholder^="예: 역삼동"]').fill('역삼동');
@@ -102,7 +110,7 @@ export default async function ({ page, url, shot }) {
   await page.waitForFunction(() => !document.querySelector('dialog')?.open);
 
   const linked = await page.locator('.gym-here').textContent();
-  check(linked.includes('역삼 튼튼짐') && linked.includes('역삼동 · 3층') && !linked.includes('연결 안 됨'), '연결 뒤 칸: ' + linked);
+  check(linked.includes('역삼 튼튼짐') && linked.includes('역삼동 · 3층') && !linked.includes('등록 안 됨'), '연결 뒤 칸: ' + linked);
   check(linked.includes('기구 ' + onCount + '개'), '연결하니 기구가 바뀌었습니다: ' + linked);
   check(await page.locator('.gym-row').count() === 0, '이름표와 연결한 곳이 둘로 갈라졌습니다');
   await shot('4-linked');

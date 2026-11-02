@@ -39,60 +39,61 @@ export interface TechniqueProfile {
 export const TECHNIQUES: Record<IntensityTechnique, TechniqueProfile> = {
   dropSet: {
     id: 'dropSet',
-    label: '드롭세트',
+    // 이름은 하는 일 먼저, 업계 이름은 괄호에 — 초보는 '드롭세트'만 보고 무엇인지 모른다
+    label: '무게 내려 한 번 더 (드롭세트)',
     volumeFactor: 1.5,
     fatigueFactor: 2,
     maxJointStress: 0.6,
-    howTo: '목표 반복까지 간 뒤 곧바로 20~25% 낮춰 한 번 더 실패까지 갑니다.',
+    howTo: '목표 횟수까지 한 뒤 무게를 20~25% 내려, 쉬지 않고 더 못 할 때까지 한 번 더 합니다.',
   },
   restPause: {
     id: 'restPause',
-    label: '레스트 포즈',
+    label: '잠깐 쉬고 더 (레스트 포즈)',
     volumeFactor: 1.6,
     fatigueFactor: 2.2,
     maxJointStress: 0.6,
     minLevel: 'intermediate',
-    howTo: '실패까지 간 뒤 15~20초 쉬고 같은 중량으로 더 나오는 만큼, 두 번 반복합니다.',
+    howTo: '더 못 할 때까지 한 뒤 15~20초만 쉬고, 같은 무게로 되는 만큼 더 합니다. 이걸 두 번 합니다.',
   },
   myoReps: {
     id: 'myoReps',
-    label: '미오렙',
+    label: '5초 쉬고 몇 번씩 (미오렙)',
     volumeFactor: 1.8,
     fatigueFactor: 2,
     isolationOnly: true,
     minLevel: 'intermediate',
-    howTo: '활성화 세트를 실패까지 간 뒤, 5초 휴식 + 3~5회를 여러 번 반복합니다.',
+    howTo: '더 못 할 때까지 한 번 한 뒤, 5초 쉬고 3~5번씩을 몇 번 이어서 합니다.',
   },
   cluster: {
     id: 'cluster',
-    label: '클러스터 세트',
+    label: '끊어서 들기 (클러스터)',
     volumeFactor: 1.3,
     fatigueFactor: 1.3,
     minLevel: 'intermediate',
-    howTo: '세트 안에서 1~3회마다 15~20초 쉬어 총 반복을 늘립니다. 고중량에서 자세를 지키며 볼륨을 얻는 방법입니다.',
+    howTo: '한 세트를 1~3번마다 15~20초씩 끊어 쉬며 합니다. 무거운 무게에서 자세를 지키며 횟수를 채웁니다.',
   },
   antagonistSuperset: {
     id: 'antagonistSuperset',
-    label: '길항근 슈퍼세트',
+    label: '반대 동작과 번갈아 (슈퍼세트)',
     volumeFactor: 1,
     fatigueFactor: 1.1,
-    howTo: '미는 동작과 당기는 동작을 번갈아 쉬지 않고 이어갑니다. 자극은 그대로, 시간만 줄입니다.',
+    howTo: '미는 운동과 당기는 운동을 쉬지 않고 번갈아 합니다. 효과는 그대로, 시간만 줄어듭니다.',
   },
   compoundSuperset: {
     id: 'compoundSuperset',
-    label: '같은 부위 슈퍼세트',
+    label: '같은 부위 두 종목 연달아 (슈퍼세트)',
     volumeFactor: 1.4,
     fatigueFactor: 1.6,
     maxJointStress: 0.7,
-    howTo: '같은 부위 두 종목을 쉬지 않고 이어 붙입니다.',
+    howTo: '같은 부위 운동 두 개를 쉬지 않고 이어서 합니다.',
   },
   amrapFinisher: {
     id: 'amrapFinisher',
-    label: 'AMRAP 피니셔',
+    label: '끝까지 하기 (AMRAP)',
     volumeFactor: 1.2,
     fatigueFactor: 1.5,
     maxJointStress: 0.6,
-    howTo: '마지막 세트를 가능한 만큼 끝까지 수행합니다. 종목당 한 번만.',
+    howTo: '마지막 세트를 더 못 할 때까지 합니다. 종목마다 한 번만 합니다.',
   },
 };
 
@@ -149,21 +150,21 @@ export function availableTechniques(context: TechniqueContext): TechniqueAvailab
     const technique = TECHNIQUES[id];
     const deny = (reason: string): TechniqueAvailability => ({ technique, allowed: false, reason });
 
-    if (context.deloadWeek) return deny('덜어내는 주에는 강도 기법을 쓰지 않습니다.');
+    if (context.deloadWeek) return deny('덜어내는 주에는 마지막 세트를 더 세게 하지 않습니다.');
     if (!styleAllows) {
-      return deny(`${styleProfile(style).label} 블록에서는 강도 기법을 쓰지 않습니다. 강도는 중량으로 올립니다.`);
+      return deny(`지금 운동 방식(${styleProfile(style).label})에서는 쓰지 않습니다. 세게 하려면 무게를 올립니다.`);
     }
     if (technique.minLevel && LEVEL_ORDER[level] < LEVEL_ORDER[technique.minLevel]) {
-      return deny('아직 이 기법을 쓸 단계가 아닙니다. 기본 세트로 먼저 쌓으세요.');
+      return deny('아직 쓸 단계가 아닙니다. 보통 세트로 먼저 몸을 만드세요.');
     }
     if (level === 'beginner' && exercise.pattern !== 'isolation') {
-      return deny('초보 단계에서는 고립 운동에만 붙입니다. 복합 동작은 자세가 먼저입니다.');
+      return deny('처음에는 한 근육만 쓰는 작은 운동에만 씁니다. 여러 근육을 같이 쓰는 큰 운동은 자세가 먼저입니다.');
     }
     if (technique.isolationOnly && exercise.pattern !== 'isolation') {
-      return deny(`${withParticle(technique.label, '은/는')} 고립 운동 전용입니다.`);
+      return deny('한 근육만 쓰는 작은 운동에만 씁니다.');
     }
     if (technique.maxJointStress !== undefined && maxStress > technique.maxJointStress) {
-      return deny('관절 부하가 큰 종목입니다. 지친 상태에서 자세가 무너지면 다칩니다.');
+      return deny('관절에 부담이 큰 종목입니다. 지친 상태에서 자세가 무너지면 다칩니다.');
     }
     /*
      * 실패까지 가는 기법(드롭세트 · 레스트포즈 · AMRAP · 같은 부위 슈퍼세트)은 동작 종류로도 막는다.
@@ -171,21 +172,21 @@ export function availableTechniques(context: TechniqueContext): TechniqueAvailab
      * 관절 부하 숫자가 낮게 매겨진 덤벨 루마니안 · 트랩바 · 케틀벨 스윙 · 불가리안도 같다.
      */
     if (technique.fatigueFactor >= 1.5 && riskyAtFailure(exercise)) {
-      return deny('지쳐서 자세가 무너지면 허리 · 균형을 다치는 동작입니다. 실패까지 가는 기법은 붙이지 않습니다.');
+      return deny('지쳐서 자세가 무너지면 허리 · 균형을 다치는 동작입니다. 더 못 할 때까지 가는 방법은 쓰지 않습니다.');
     }
     for (const report of painful) {
       if ((exercise.jointStress[report.joint as Joint] ?? 0) >= 0.3) {
-        return deny('통증이 보고된 관절을 쓰는 종목입니다.');
+        return deny('아프다고 적은 관절을 쓰는 종목입니다.');
       }
     }
     if (context.zone === 'overMrv') {
-      return deny('이미 회복 범위를 넘은 부위입니다. 지금 더 넣으면 자극이 아니라 부채가 됩니다.');
+      return deny('이번 주 최대 세트를 이미 넘은 부위입니다. 더 하면 근육은 안 크고 피로만 쌓입니다.');
     }
     if (context.zone === 'mavToMrv' && technique.fatigueFactor > 1.5) {
-      return deny('고강도 구간입니다. 피로가 적은 기법만 권합니다.');
+      return deny('이번 주에 이 부위를 이미 많이 했습니다. 덜 지치는 방법만 권합니다.');
     }
     if (context.isLastSet === false && technique.fatigueFactor >= 2) {
-      return deny('세트 뒤쪽에 붙이세요. 앞 세트에 쓰면 나머지 세트가 무너집니다.');
+      return deny('마지막 세트에 쓰세요. 앞 세트에 쓰면 나머지 세트의 횟수가 떨어집니다.');
     }
 
     return { technique, allowed: true };
@@ -206,7 +207,7 @@ export function techniqueEffect(technique: IntensityTechnique, baseSets = 1): Te
   return {
     effectiveSets: round1(baseSets * profile.volumeFactor),
     fatigueLoad: round1(baseSets * profile.fatigueFactor),
-    note: `${profile.label}: 유효 ${round1(baseSets * profile.volumeFactor)}세트로 세지만 ` +
+    note: `${profile.label}: ${round1(baseSets * profile.volumeFactor)}세트로 세지만 ` +
       `피로는 ${round1(baseSets * profile.fatigueFactor)}세트만큼 쌓입니다.`,
   };
 }

@@ -210,14 +210,14 @@ export function describeComparison(row: LiftComparison, span: 'previous' | 'mont
     return `${when} ${was} → 그대로입니다`;
   }
 
-  // 무게가 다르면 환산이 필요하다. 믿기 어려운 구간이면 그렇다고 말한다.
-  const tail = row.reliable ? '' : ' (고반복이라 환산이 정확하지 않습니다)';
+  // 무게가 다르면 한 번에 들 수 있는 무게로 바꿔 잰다('환산'이라는 말은 쓰지 않는다). 믿기 어려운 구간이면 그렇다고 말한다.
+  const tail = row.reliable ? '' : ' (횟수가 많은 세트라 정확하지 않습니다)';
 
   switch (directionOf(delta)) {
     case 'up':
-      return `${when} ${was} → 오늘 환산 +${round1(delta)}kg${tail}`;
+      return `${when} ${was} → 오늘 힘이 약 ${round1(delta)}kg만큼 늘었습니다${tail}`;
     case 'down':
-      return `${when} ${was} → 오늘 환산 ${round1(delta)}kg${tail}`;
+      return `${when} ${was} → 오늘 힘이 약 ${round1(-delta)}kg만큼 줄었습니다${tail}`;
     default:
       return `${when} ${was} → 비슷합니다`;
   }
@@ -252,15 +252,21 @@ export function summarizeComparison(rows: readonly LiftComparison[]): Comparison
     else same += 1;
   }
 
+  /*
+   * 끊긴 말("지난번 대비 2종목은 오늘이 처음.")을 쓰지 않는다. 다 처음이면 비교 대신 한 줄,
+   * 아니면 문장마다 끝맺는다.
+   */
   const parts: string[] = [];
-  if (up > 0) parts.push(`${up}종목 올랐습니다`);
-  if (same > 0) parts.push(`${same}종목 유지`);
-  if (down > 0) parts.push(`${down}종목 내려갔습니다`);
-  if (fresh > 0) parts.push(`${fresh}종목은 오늘이 처음`);
+  if (up > 0) parts.push(`${up}종목은 올랐습니다`);
+  if (same > 0) parts.push(`${same}종목은 그대로입니다`);
+  if (down > 0) parts.push(`${down}종목은 내려갔습니다`);
+  if (fresh > 0) parts.push(`${fresh}종목은 오늘 처음 했습니다`);
 
-  const headline = parts.length > 0
-    ? `지난번 대비 ${parts.join(' · ')}.`
-    : '비교할 기록이 아직 없습니다.';
+  const headline = up + same + down === 0
+    ? fresh > 0
+      ? '오늘 한 종목은 모두 처음이라 다음부터 지난번과 비교해 드립니다.'
+      : '비교할 기록이 아직 없습니다.'
+    : `지난번과 비교하면 ${parts.join('. ')}.`;
 
   return { up, same, down, fresh, headline };
 }

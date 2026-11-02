@@ -56,7 +56,7 @@ export function decideNextSet(input: SetDecisionInput): SetDecision {
     reason,
   });
 
-  if (done === 0) return decide('continue', `계획은 ${input.plannedSets}세트입니다. 수행을 보고 조정합니다.`);
+  if (done === 0) return decide('continue', `계획은 ${input.plannedSets}세트입니다. 하는 걸 보고 맞춰 갑니다.`);
 
   const first = completed[0]!;
   const last = completed[done - 1]!;
@@ -78,18 +78,18 @@ export function decideNextSet(input: SetDecisionInput): SetDecision {
     return decide(
       'stop',
       `첫 세트 ${first.reps}회에서 ${last.reps}회로 떨어졌습니다. ` +
-        '이 뒤의 세트는 자극이 아니라 피로만 쌓습니다.',
+        '더 하면 근육은 안 크고 피로만 쌓습니다.',
     );
   }
 
   // 3) 목표 하단도 못 채우면서 실패까지 갔다.
   if (done >= minSets && lastRir <= 0 && last.reps < input.rule.repRange.min) {
-    return decide('stop', `실패 지점에서 ${last.reps}회로 목표 하단(${input.rule.repRange.min}회)에 못 미쳤습니다.`);
+    return decide('stop', `더 들 수 없을 때까지 해서 ${last.reps}회로, 목표 최소 ${input.rule.repRange.min}회에 못 미쳤습니다. 오늘은 여기까지 합니다.`);
   }
 
   // 4) 이미 회복 범위를 넘긴 부위라면 최소만 채운다.
   if (input.zone === 'overMrv' && done >= minSets) {
-    return decide('stop', '이 부위는 이미 회복 가능 범위를 넘었습니다. 오늘은 여기까지가 이득입니다.');
+    return decide('stop', '이 부위는 이번 주 최대 세트를 이미 넘었습니다. 오늘은 여기까지가 이득입니다.');
   }
 
   // 5) 계획을 채웠다 — 잘 나왔으면 한 세트 더.
@@ -98,8 +98,9 @@ export function decideNextSet(input: SetDecisionInput): SetDecision {
     if (done < maxSets && spare >= 2 && dropRatio <= 0.1 && input.zone !== 'mavToMrv') {
       return decide(
         'continue',
-        `계획한 ${input.plannedSets}세트를 마쳤는데 마지막 세트가 RIR ${round1(lastRir)}로 여유가 있었습니다. ` +
-          '한 세트 더 할 수 있습니다.',
+        // 'RIR'을 화면에 내지 않는다 — "몇 개 더 할 수 있었나"로 말한다
+        `계획한 ${input.plannedSets}세트를 마쳤는데 마지막 세트도 ${Math.round(lastRir)}개쯤 더 할 수 있었습니다. ` +
+          '한 세트 더 해도 됩니다.',
       );
     }
     return decide('stop', `계획한 ${input.plannedSets}세트를 마쳤습니다.`);
@@ -115,7 +116,7 @@ export function decideNextSet(input: SetDecisionInput): SetDecision {
    * 여기서 "2/6세트"라고 하면 완료 기준과 현재 기준이 섞여 한 화면에 다른
    * 숫자 둘이 뜬다. 이 줄이 할 말은 "그래서 계속해도 되나"다.
    */
-  return decide('continue', '수행이 유지되고 있습니다. 계획대로 계속합니다.');
+  return decide('continue', '횟수가 잘 유지되고 있습니다. 계획대로 계속합니다.');
 }
 
 /** 세트 하나에 드는 대략적인 시간. 시간 예산 계산과 같은 모델을 쓴다. */
@@ -127,6 +128,3 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
-}

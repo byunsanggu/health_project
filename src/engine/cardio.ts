@@ -55,7 +55,7 @@ export interface CardioExercise {
 export const CARDIO: readonly CardioExercise[] = [
   {
     id: 'treadmill-walk',
-    name: '트레드밀 경사 걷기',
+    name: '러닝머신 경사 걷기',
     legLoad: 0.3,
     impact: 'low',
     muscles: ['glutes', 'hamstrings', 'calves'],
@@ -91,7 +91,7 @@ export const CARDIO: readonly CardioExercise[] = [
   },
   {
     id: 'treadmill-run',
-    name: '트레드밀 달리기',
+    name: '러닝머신 달리기',
     legLoad: 0.7,
     impact: 'high',
     muscles: ['quads', 'hamstrings', 'calves'],
@@ -100,7 +100,7 @@ export const CARDIO: readonly CardioExercise[] = [
   },
   {
     id: 'stair',
-    name: '스텝밀 · 계단',
+    name: '천국의 계단 (스텝밀)',
     legLoad: 0.75,
     impact: 'mid',
     muscles: ['glutes', 'quads', 'calves'],
@@ -114,7 +114,7 @@ export const CARDIO: readonly CardioExercise[] = [
     impact: 'high',
     muscles: ['quads', 'hamstrings', 'calves'],
     needsMachine: false,
-    note: '내리막에서 신장성 수축이 들어가 근육통이 남습니다.',
+    note: '내리막에서 허벅지가 브레이크를 잡느라 근육통이 오래 갑니다.',
   },
   {
     id: 'jump-rope',

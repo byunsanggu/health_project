@@ -223,3 +223,20 @@ describe('몸 풀기', () => {
     assert.match(mobilityDoneLine('gentle'), /니다/);
   });
 });
+
+describe('PT 첫 워밍업 · 끝인사', () => {
+  it('이름을 막 불렀으면 워밍업 첫 말에서 이름을 또 말하지 않는다', () => {
+    const steps = [{ weightKg: 20, reps: 10, restSeconds: 45 }, { weightKg: 40, reps: 5, restSeconds: 60 }];
+    for (const style of STYLES) {
+      const named = warmupSetLine(style, '백 스쿼트', 0, steps);
+      const bare = warmupSetLine(style, '백 스쿼트', 0, steps, false, { named: false });
+      assert.match(named, /백 스쿼트/, style);
+      assert.doesNotMatch(bare, /백 스쿼트/, style);
+      assert.match(bare, /워밍업/, style);
+    }
+  });
+
+  it('스트레칭 끝 말에는 인사가 없다 — 인사는 뒤에 붙는 오늘 정리 끝에 한 번만', () => {
+    for (const style of STYLES) assert.doesNotMatch(cooldownDoneLine(style), /수고|고생|최고/, style);
+  });
+});

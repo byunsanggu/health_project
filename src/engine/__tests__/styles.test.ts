@@ -156,7 +156,7 @@ describe('강도 기법', () => {
     const list = availableTechniques({ ...base, exercise: squat });
     const drop = list.find((item) => item.technique.id === 'dropSet')!;
     assert.equal(drop.allowed, false);
-    assert.match(drop.reason!, /관절 부하/);
+    assert.match(drop.reason!, /관절에 부담이 큰/);
   });
 
   it('디로드 주에는 전부 막는다', () => {
@@ -167,7 +167,7 @@ describe('강도 기법', () => {
   it('한계 돌파 블록에서는 강도 기법을 쓰지 않는다', () => {
     const list = availableTechniques({ ...base, exercise: curl, style: 'peak' });
     assert.ok(list.every((item) => !item.allowed));
-    assert.match(list[0]!.reason!, /강도는 중량으로/);
+    assert.match(list[0]!.reason!, /무게를 올립니다/);
   });
 
   it('MRV를 넘긴 부위에는 막는다', () => {
@@ -201,7 +201,7 @@ describe('강도 기법', () => {
     const list = availableTechniques({ ...base, exercise: curl, isLastSet: false });
     const drop = list.find((item) => item.technique.id === 'dropSet')!;
     assert.equal(drop.allowed, false);
-    assert.match(drop.reason!, /뒤쪽에 붙이세요/);
+    assert.match(drop.reason!, /마지막 세트에 쓰세요/);
   });
 
   it('유효 세트와 피로를 따로 센다', () => {

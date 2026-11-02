@@ -34,7 +34,7 @@ export default async function ({ page, url, shot }) {
   await page.waitForFunction(() => !document.querySelector('dialog')?.open);
 
   const after = await page.locator('.gym-here').textContent();
-  check(after.includes('테헤란로 152') && !after.includes('연결 안 됨'), '연결 뒤 칸: ' + after);
+  check(after.includes('테헤란로 152') && !after.includes('등록 안 됨'), '연결 뒤 칸: ' + after);
   check(after.includes('기구 ' + kit + '개'), '연결하니 기구가 바뀌었습니다: ' + after);
   check(await page.locator('.gym-row').count() === 0, '이름표와 연결한 곳이 둘로 갈라졌습니다');
   check(await page.evaluate(() => window.scrollY) === 0, '연결한 뒤 칸이 화면 밖에 있습니다');

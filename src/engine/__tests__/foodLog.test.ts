@@ -128,9 +128,49 @@ describe('말로 적은 것 읽기', () => {
   });
 
   it('모르는 음식은 따로 돌려준다', () => {
-    const { items, unknown } = parseFoodText('마라탕, 밥 1공기');
-    assert.deepEqual(unknown, ['마라탕']);
+    const { items, unknown } = parseFoodText('훠궈, 밥 1공기');
+    assert.deepEqual(unknown, ['훠궈']);
     assert.equal(items.length, 1);
+  });
+
+  it('한 글자 이름(회 · 밥 · 김 …)은 다른 낱말 속에서 찾지 않는다 — 회사 · 회식 · 회의', () => {
+    const ids = (text: string) => parseFoodText(text).items.map((item) => item.food.id);
+    assert.deepEqual(ids('아침에 바나나 하나랑 아메리카노, 점심은 회사에서 제육볶음 정식'), ['banana', 'americano', 'jeyuk']);
+    assert.deepEqual(ids('회식에서 삼겹살 2인분이랑 소주'), ['pork-belly', 'soju']);
+    assert.deepEqual(ids('회의 끝나고 김밥'), ['gimbap']);
+    assert.deepEqual(ids('회전초밥 10개'), ['sushi']);
+    assert.deepEqual(ids('밥솥에 남은 고구마'), ['sweet-potato']);
+    // 낱말로 적은 회는 그대로 회다 — 띄어 쓰거나 조사 · 양이 붙어도
+    assert.deepEqual(ids('저녁 회 1인분'), ['sashimi']);
+    assert.deepEqual(ids('회를 먹었어'), ['sashimi']);
+    assert.deepEqual(ids('회랑 소주'), ['sashimi', 'soju']);
+    assert.deepEqual(ids('모둠회 한 접시'), ['sashimi']);
+    assert.deepEqual(ids('밥한공기랑 김치'), ['rice', 'kimchi']);
+    assert.deepEqual(ids('김 한 봉'), ['laver']);
+  });
+
+  it('흔히 먹는데 빠졌던 것들 — 마라탕 · 꿔바로우 · 마카롱 · 탕후루 · 샤브샤브 · 월남쌈 · 크로플 · 버블티 · 스무디 · 에너지드링크', () => {
+    const ids = (text: string) => parseFoodText(text).items.map((item) => item.food.id);
+    assert.deepEqual(ids('마라탕이랑 꿔바로우'), ['malatang', 'guobaorou']);
+    assert.deepEqual(ids('마카롱 2개, 탕후루'), ['macaron', 'tanghulu']);
+    assert.deepEqual(ids('샤브샤브 1인분, 월남쌈'), ['shabu-shabu', 'wolnamssam']);
+    assert.deepEqual(ids('크로플이랑 버블티'), ['croffle', 'bubble-tea']);
+    assert.deepEqual(ids('딸기 스무디, 에너지드링크 1캔'), ['smoothie', 'energy-drink']);
+    const kcal = (id: string) => portion(foodById(id)!, null, null).nutrients.kcal;
+    const within = (id: string, lo: number, hi: number) => assert.ok(kcal(id) >= lo && kcal(id) <= hi, `${id} ${kcal(id)}kcal`);
+    within('malatang', 600, 1000);
+    within('guobaorou', 400, 650);
+    within('macaron', 60, 120);
+    within('tanghulu', 80, 200);
+    within('bubble-tea', 250, 450);
+    within('energy-drink', 90, 140);
+  });
+
+  it('음식을 못 찾아도 적은 끼니는 돌려준다 — "저녁 …"이면 저녁', () => {
+    const result = parseFoodText('저녁 뭔가 먹음');
+    assert.equal(result.items.length, 0);
+    assert.equal(result.meal, 'dinner');
+    assert.equal(parseFoodText('바나나').meal, undefined);
   });
 });
 

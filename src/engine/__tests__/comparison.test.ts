@@ -155,7 +155,7 @@ describe('지난번과 비교', () => {
       index,
     });
     assert.equal(rows[0]!.reliable, false);
-    assert.match(describeComparison(rows[0]!, 'previous'), /환산이 정확하지 않습니다/);
+    assert.match(describeComparison(rows[0]!, 'previous'), /정확하지 않습니다/);
   });
 
   it('유효 반복이 기준 이하면 환산을 믿는다', () => {
@@ -195,6 +195,26 @@ describe('지난번과 비교', () => {
     assert.equal(rollup.up, 1);
     assert.equal(rollup.down, 1);
     assert.match(rollup.headline, /내려갔습니다/);
+  });
+
+  it('요약 줄은 끊긴 말 없이 — 다 처음이면 비교 대신 한 줄', () => {
+    const fresh = compareToPast({
+      todaySets: [{ exerciseId: SQUAT, weightKg: 80, reps: 8, rir: 2 }] as SetLog[],
+      today: TODAY, history: [], index,
+    });
+    assert.equal(summarizeComparison(fresh).headline, '오늘 한 종목은 모두 처음이라 다음부터 지난번과 비교해 드립니다.');
+    const mixed = compareToPast({
+      todaySets: [
+        { exerciseId: SQUAT, weightKg: 110, reps: 8, rir: 2 },
+        { exerciseId: 'barbell-bench-press', weightKg: 60, reps: 8, rir: 2 },
+      ] as SetLog[],
+      today: TODAY,
+      history: [session('2026-09-12', [[SQUAT, 100, 8, 2]])],
+      index,
+    });
+    const line = summarizeComparison(mixed).headline;
+    assert.equal(line, '지난번과 비교하면 1종목은 올랐습니다. 1종목은 오늘 처음 했습니다.');
+    assert.doesNotMatch(line, /대비|환산/);
   });
 
   it('많이 오른 것부터 보여준다', () => {

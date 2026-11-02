@@ -98,3 +98,32 @@ describe('코치가 실수를 짚는 말', () => {
     }
   });
 });
+
+describe('같은 실수를 세 번 짚지 않는다', () => {
+  const base = { exercise: squat, totalSets: 4 };
+
+  it('오늘 이미 짚은 실수는 다시 고르지 않는다 — 쉬는 동안 설명에서 한 말을 첫 세트 앞에서 또 하지 않는다', () => {
+    const first = MISTAKES['back-squat']![0]!.id;
+    const picked = mistakeToWatch({ ...base, setIndex: 0, firstTime: true, said: [first] })!;
+    assert.notEqual(picked.mistake.id, first);
+    const all = MISTAKES['back-squat']!.map((item) => item.id);
+    assert.equal(mistakeToWatch({ ...base, setIndex: 3, afterHeavy: true, said: all }), null, '다 짚었으면 아무것도');
+  });
+
+  it('맨몸 운동은 "무거웠다"는 답으로 "무거울수록 자세가 먼저"를 짚지 않는다', () => {
+    const pushUp = exerciseById('push-up')!;
+    const picked = mistakeToWatch({ exercise: pushUp, totalSets: 2, setIndex: 1, afterHeavy: true, bodyweight: true });
+    assert.ok(!picked || picked.moment !== 'heavy', JSON.stringify(picked));
+  });
+
+  it('딥스에 벤치 이야기를 하지 않는다', () => {
+    for (const id of ['chest-dip', 'machine-triceps-dip', 'triceps-dip']) {
+      for (const item of MISTAKES[id] ?? []) assert.doesNotMatch(item.cue, /벤치/, id);
+    }
+  });
+
+  it('랫 풀다운 — 세트 중 짧은 말과 고치는 말이 같은 방향이다', () => {
+    const lean = MISTAKES['lat-pulldown']!.find((item) => item.id === 'lean-back')!;
+    assert.ok(lean.cue.startsWith(lean.short), `${lean.short} / ${lean.cue}`);
+  });
+});

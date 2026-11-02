@@ -19,20 +19,21 @@ import type { Exercise, Joint, MuscleGroup, PainReport, TrainingLevel } from './
  */
 export type ConditioningFormat = 'amrap' | 'emom' | 'forTime' | 'intervals' | 'circuit';
 
+/** 형식 이름 — 하는 일을 한국어로 먼저, 업계 약어는 괄호에. 크로스핏 약어만 보고는 무엇을 고를지 모른다. */
 export const FORMAT_LABELS_KO: Record<ConditioningFormat, string> = {
-  amrap: 'AMRAP',
-  emom: 'EMOM',
-  forTime: 'For Time',
-  intervals: '인터벌',
-  circuit: '서킷',
+  amrap: '시간 안에 최대한 (AMRAP)',
+  emom: '1분마다 (EMOM)',
+  forTime: '빨리 끝내기 (For Time)',
+  intervals: '하고 쉬기 반복 (인터벌)',
+  circuit: '쉬지 않고 돌기 (서킷)',
 };
 
 export const FORMAT_DESCRIPTIONS_KO: Record<ConditioningFormat, string> = {
-  amrap: '정해진 시간 안에 가능한 많은 라운드를 돕니다',
-  emom: '매 분 시작 시 정해진 동작을 수행하고 남는 시간에 쉽니다',
-  forTime: '정해진 분량을 가능한 빨리 끝냅니다',
-  intervals: '작업과 휴식을 정해진 비율로 반복합니다',
-  circuit: '여러 동작을 쉬지 않고 이어 한 라운드를 만듭니다',
+  amrap: '정해진 시간 안에 할 수 있는 만큼 여러 바퀴 돕니다',
+  emom: '1분이 시작될 때마다 정해진 동작을 하고, 남는 시간에 쉽니다',
+  forTime: '정해진 양을 될 수 있는 대로 빨리 끝냅니다',
+  intervals: '운동과 휴식을 정해진 시간만큼 번갈아 합니다',
+  circuit: '여러 동작을 쉬지 않고 이어서 한 바퀴를 돕니다',
 };
 
 /** 버티는 동작은 반복이 아니라 시간으로, 캐리는 걸음으로 센다. */
@@ -270,7 +271,7 @@ function scoringFor(format: ConditioningFormat, minutes: number): string {
 
 function buildNotes(input: ConditioningInput, movements: readonly ConditioningMovement[]): string[] {
   const notes: string[] = [
-    '이 세션은 근비대 유효 세트로 세지 않습니다. 볼륨 게이지가 아니라 피로에만 반영됩니다.',
+    '이건 근육 키우는 세트 수에는 안 들어가고 피로에만 셉니다.',
   ];
 
   // 동작이 셋 미만이면 라운드가 성립하지 않는다. 억지로 굴리지 말고 이유를 알린다.
@@ -437,7 +438,7 @@ function buildWarmup(workout: ConditioningWorkout): WodWarmup {
   return {
     minutes,
     steps: [
-      `${raise}분 — 로잉·자전거·줄넘기·빠르게 걷기 중 하나로 심박을 올립니다. 땀이 살짝 날 정도까지.`,
+      `${raise}분 — 로잉 · 실내 자전거 · 줄넘기 · 빠르게 걷기 중 하나로 숨이 조금 찰 때까지 합니다. 땀이 살짝 날 정도까지.`,
       `${mobility}분 — 어깨·고관절·발목을 돌립니다. 오늘 많이 쓸 관절부터.`,
       `${rehearse}분 — 오늘 할 동작을 맨몸이나 가벼운 무게로 한 바퀴: ${rehearsal}`,
     ],
@@ -471,7 +472,7 @@ export function buildWodSession(input: WodSessionInput): WodSession {
   if (risky.length > 0) {
     cautions.push(
       `${withParticle(risky.join(', '), '은/는')} 시간에 쫓기면 자세가 먼저 무너집니다. ` +
-      '평소 작업 중량의 절반 이하로 잡으세요.',
+      '평소 무게의 절반 이하로 잡으세요.',
     );
 
     /*
@@ -481,16 +482,16 @@ export function buildWodSession(input: WodSessionInput): WodSession {
      */
     if (input.format === 'forTime' || input.format === 'amrap') {
       cautions.push(
-        '이 형식은 속도 제한이 없습니다. 허리가 실리는 동작이 들어가면 ' +
-        'EMOM처럼 매 분 쉬는 구간이 있는 형식이 더 안전합니다.',
+        '이 방식은 쉬는 시간이 따로 없습니다. 허리에 무게가 실리는 동작이 들어가면 ' +
+        '1분마다(EMOM)처럼 매 분 쉬는 틈이 있는 방식이 더 안전합니다.',
       );
     }
   }
 
   if (input.standalone) {
     cautions.push(
-      '오늘은 이것만 합니다. 와드는 유효 세트로 세지 않으므로 주간 볼륨은 ' +
-      '늘지 않고 피로만 쌓입니다 — 근력 세션을 대체하는 게 아니라 다른 것입니다.',
+      '오늘은 이것만 합니다. 와드는 근육 키우는 세트 수에 들어가지 않아 한 주 세트는 ' +
+      '늘지 않고 피로만 쌓입니다 — 근력 운동을 대신하는 게 아니라 다른 운동입니다.',
     );
   }
 

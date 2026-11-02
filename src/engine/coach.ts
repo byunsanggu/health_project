@@ -320,6 +320,11 @@ export interface BeforeSetInput {
   /** 이번 세트에 짚을 흔한 실수 (mistakeToWatch). 있으면 동작 포인트 대신 말한다 */
   watch?: { cue: string; short?: string; moment: MistakeMoment } | null;
   /**
+   * 하는 법(잡는 법 · 동작 · 실수 하나) — 쉬는 동안 못 들었을 때 첫 세트 앞에서. 이름 · 세팅 다음, 오늘 목표 앞에
+   * 들어간다. 이걸 말하면 그 세트의 동작 포인트 · 실수는 쉰다(한 번에 하나).
+   */
+  guide?: readonly string[];
+  /**
    * 끝까지 밀지 않는 날 — 첫날 · 덜어내는 주 · 컨디션 낮은 날 · 아픈 데 있는 날.
    * 남길 횟수가 3개 이상인 주(블록 초반)도 그렇다. 밀어붙이는 코치(빡센 · 활기찬)도
    * 이날은 "끝까지 · 마지막인 것처럼"을 말하지 않는다 — 시작할 때 "무리하지 않는다"고
@@ -519,6 +524,8 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
   } else if (input.machineSetting) {
     lines.push(SETTING_SAVED[style] + screenOnly(` (${input.machineSetting})`));
   }
+  const guided = Boolean(input.guide && input.guide.length > 0);
+  if (guided) lines.push(...input.guide!);
 
   /*
    * 지난번과 오늘을 한 덩어리로 말한다. 따로 말하면 "오늘은 5kg 올려 볼게요.
@@ -563,8 +570,8 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
     else lines.push(`오늘은 ${today}, ${reps}! 가 볼까요?`);
   }
 
-  // 짚을 실수가 있으면 그걸 말하고 동작 포인트는 쉰다 — 한 세트에 한 가지.
-  tail();
+  // 짚을 실수가 있으면 그걸 말하고 동작 포인트는 쉰다 — 한 세트에 한 가지. 하는 법을 막 말했으면 그것으로 충분하다.
+  if (!guided) tail();
   return lines;
 }
 

@@ -19,7 +19,7 @@ import { EXERCISES } from './exercises.ts';
 import { mistakesFor, type MistakeMoment } from './mistakes.ts';
 import {
   COOLDOWN_STEPS, MOBILITY_STEPS, cooldownDoneLine, cooldownLine, cooldownSwitchLine, mobilityDoneLine, mobilityLine,
-  restAnnounceLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
+  restAnnounceLine, stopHintLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from './ptSession.ts';
 import { setupFor } from './setupGuide.ts';
 import { numberInventory, sentences, speechNames, speechPieces } from './speech.ts';
@@ -152,6 +152,7 @@ export function coachTexts(style: CoachStyle): string[] {
   say(warmupSetLine(style, one, 0, steps, false, { named: false }));
   say(warmupRestLine(style, 45));
   say(warmupDoneLine(style));
+  say(stopHintLine(style));
   for (const firstTime of [false, true]) {
     say(restAnnounceLine(style, { seconds: 90, nextSet: 2, firstTime }));
     say(restAnnounceLine(style, { seconds: 30, nextSet: 1, firstTime, nextName: two }));
