@@ -67,9 +67,12 @@ export default async function ({ page, url, shot }) {
   check((await page.locator('.set-strip .set-box').nth(1).locator('.set-in-weight').inputValue()) !== '50', '고치지 않은 2세트까지 바뀌었습니다');
   check((await page.locator('.set-strip .set-box').nth(3).locator('.set-in-weight').inputValue()) === '50', '3세트 아래 4세트가 안 따라왔습니다');
 
-  // 세트 빼기 — 남은 세트 줄의 ✕, 맨 아래 "− 세트". 다시 켜도 빠진 채로
+  // 세트 빼기 — 남은 세트 줄의 ✕(두 번: "뺄까요?" 뒤에 뺀다), 맨 아래 "− 세트". 다시 켜도 빠진 채로
   const beforeRemove = await boxes();
   await page.locator('.set-strip .set-box .set-remove').last().click();
+  check(await boxes() === beforeRemove, '✕를 한 번 눌렀는데 바로 빠졌습니다');
+  check((await page.locator('.set-strip .set-box .set-remove.armed').textContent()).includes('뺄까요'), '✕를 누르면 "뺄까요?"로 바뀌어야 합니다');
+  await page.locator('.set-strip .set-box .set-remove.armed').click();
   await page.locator('.set-add.minus', { hasText: '− 세트' }).click();
   check(await boxes() === beforeRemove - 2, '세트를 뺐는데 그대로입니다');
   await page.reload();
@@ -82,7 +85,8 @@ export default async function ({ page, url, shot }) {
   const card = page.locator('.rest-settings');
   check(await card.locator('button[aria-pressed="true"]', { hasText: '보통' }).count() === 1, '휴식 기본이 보통이 아닙니다');
   await card.locator('button', { hasText: '짧게' }).click();
-  check((await page.locator('.rest-settings .meta').textContent()).includes('0:45'), '짧게를 골랐는데 범위가 그대로입니다: ' + await page.locator('.rest-settings .meta').textContent());
+  // 시간은 앱 어디서나 "45초 · 1분 30초"처럼 말로 쓴다(0:45가 아니라)
+  check(/45초/.test(await page.locator('.rest-settings .meta').textContent()), '짧게를 골랐는데 범위가 그대로입니다: ' + await page.locator('.rest-settings .meta').textContent());
   await page.reload();
   await tab(page, '내 정보');
   check(await page.locator('.rest-settings button[aria-pressed="true"]', { hasText: '짧게' }).count() === 1, '다시 켜니 휴식 설정이 사라졌습니다');

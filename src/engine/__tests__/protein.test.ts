@@ -56,8 +56,10 @@ describe('감 잡는 말', () => {
      * 보는 순간 포기한다. 한 끼에 얼마인지로 말해야 오늘 저녁에 쓴다.
      */
     const hint = proteinHint(proteinTargetG(78, 'cut'));
-    assert.match(hint, /세 끼에/);
+    assert.match(hint, /^세 끼에/);
     assert.doesNotMatch(hint, /덩이쯤/);
+    // 하루 목표는 화면 머리에 있다 — 문장에서 되풀이하지 않는다
+    assert.doesNotMatch(hint, /하루/);
   });
 
   it('조사가 어색하지 않다', () => {

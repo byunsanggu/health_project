@@ -29,7 +29,7 @@ export default async function ({ page, url, shot }) {
 
   // 동작 시연 › 쓰는 근육 — 앞 · 뒤 두 장, 벤치프레스는 앞(가슴)이 더 칠해진다
   await page.locator('.plan-row .row-menu').first().click();
-  await page.locator('dialog .menu-row', { hasText: '동작 시연' }).click();
+  await page.locator('dialog .menu-row', { hasText: '동작 보기' }).click();
   const pair = page.locator('dialog .body3d-pair canvas');
   await pair.first().waitFor();
   check(await pair.count() === 2, '앞 · 뒤 그림이 두 장이 아닙니다');

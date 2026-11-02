@@ -293,8 +293,8 @@ export function reviewRoutine(
     notes.push({
       kind: 'over',
       muscles: over.map((line) => line.muscle),
-      text: over.map((line) => `${MUSCLE_LABELS_KO[line.muscle]} 주 ${setsText(line.sets)}세트(한계 ${line.landmark.mrv})`).join(', ') +
-        ' — 보통 회복할 수 있는 양을 넘습니다. 피로만 쌓이고 더 늘지는 않는 구간이라 몇 세트 덜어내는 게 낫습니다.',
+      text: over.map((line) => `${MUSCLE_LABELS_KO[line.muscle]} 주 ${setsText(line.sets)}세트(최대 ${line.landmark.mrv})`).join(', ') +
+        ' — 한 주 최대 세트를 넘습니다. 피로만 쌓이고 더 늘지는 않는 양이라 몇 세트 덜어내는 게 낫습니다.',
     });
   }
 
@@ -307,7 +307,7 @@ export function reviewRoutine(
       muscles: under.map((line) => line.muscle),
       text: shown.map((line) => `${MUSCLE_LABELS_KO[line.muscle]} ${setsText(line.sets)}세트(최소 ${line.landmark.mev})`).join(', ') +
         (under.length > shown.length ? ` 외 ${under.length - shown.length}곳` : '') +
-        ' — 주 최소 세트에 못 미쳐 늘기 어렵습니다. 일부러 뺀 부위가 아니면 한두 종목 넣어 보세요.',
+        ' — 한 주 최소 세트에 못 미쳐 늘기 어렵습니다. 일부러 뺀 부위가 아니면 한두 종목 넣어 보세요.',
     });
   }
 
@@ -367,9 +367,10 @@ function firstTwo(muscles: readonly MuscleGroup[]): string {
 /** 점검 결과 한 줄 — 프로그램 카드에 쓴다. */
 export function routineHeadline(review: RoutineReview): string {
   const over = review.notes.find((note) => note.kind === 'over');
-  if (over?.muscles?.length) return `${withParticle(firstTwo(over.muscles), '이/가')} 회복 한계를 넘습니다`;
+  // 같은 기준은 앱 어디서나 "한 주 최소 ○세트 · 최대 ○세트"로 부른다(회복 한계 · 최소선 · 자극선 …을 섞지 않는다)
+  if (over?.muscles?.length) return `${withParticle(firstTwo(over.muscles), '이/가')} 한 주 최대 세트를 넘습니다`;
   const under = review.notes.find((note) => note.kind === 'under');
-  if (under?.muscles?.length) return `${withParticle(firstTwo(under.muscles), '이/가')} 주 최소 세트에 못 미칩니다`;
+  if (under?.muscles?.length) return `${withParticle(firstTwo(under.muscles), '이/가')} 한 주 최소 세트에 못 미칩니다`;
   if (review.notes.length > 0) return `고칠 만한 것 ${review.notes.length}가지`;
-  return '부위마다 주 최소 세트를 넘고 한계 안입니다';
+  return '부위마다 한 주 최소 세트를 넘고 최대 안입니다';
 }

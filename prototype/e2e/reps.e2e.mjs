@@ -17,10 +17,10 @@ export default async function ({ page, url, shot }) {
   await shot('1-style');
   await tab(page, '오늘');
 
-  // 가볍게 많이 — 주 종목도 10–15회
+  // 가볍게 많이 — 주 종목도 10~15회
   const lines = await page.locator('.plan-row .plan-sets').allTextContents();
-  check(lines.some((line) => /10–15회/.test(line)), '가볍게 많이를 골랐는데 10–15회가 없습니다: ' + lines.join(' / '));
-  check(!lines.some((line) => /[456]–[68]회/.test(line)), '가볍게 많이인데 저반복이 있습니다: ' + lines.join(' / '));
+  check(lines.some((line) => /10~15회/.test(line)), '가볍게 많이를 골랐는데 10~15회가 없습니다: ' + lines.join(' / '));
+  check(!lines.some((line) => /[456]~[68]회/.test(line)), '가볍게 많이인데 저반복이 있습니다: ' + lines.join(' / '));
   const first = (await page.locator('.plan-row .name > span:first-child').allTextContents())[0].trim();
   const second = (await page.locator('.plan-row .name > span:first-child').allTextContents())[1].trim();
 
@@ -30,15 +30,15 @@ export default async function ({ page, url, shot }) {
   await page.locator('dialog .rep-presets .pick', { hasText: /^6~10회$/ }).click();
   await shot('2-override');
   await page.locator('dialog .rep-save').click();
-  check(/6–10회/.test(await rowReps(page, first)), '직접 정한 반복이 안 들어갔습니다: ' + await rowReps(page, first));
+  check(/6~10회/.test(await rowReps(page, first)), '직접 정한 반복이 안 들어갔습니다: ' + await rowReps(page, first));
 
   // 블록 유형(내 정보) — 고밀도(8~12)로 바꾸면 다른 종목은 바뀌고, 직접 정한 종목은 그대로
   await tab(page, '내 정보');
   await page.locator('.block-toggle').click();
   await page.locator('.choice', { hasText: '고밀도' }).click();
   await tab(page, '오늘');
-  check(/8–12회/.test(await rowReps(page, second)), '블록을 바꿨는데 처방 횟수가 그대로입니다: ' + await rowReps(page, second));
-  check(/6–10회/.test(await rowReps(page, first)), '직접 정한 반복이 블록에 덮였습니다: ' + await rowReps(page, first));
+  check(/8~12회/.test(await rowReps(page, second)), '블록을 바꿨는데 처방 횟수가 그대로입니다: ' + await rowReps(page, second));
+  check(/6~10회/.test(await rowReps(page, first)), '직접 정한 반복이 블록에 덮였습니다: ' + await rowReps(page, first));
   await tab(page, '내 정보');
   if (await page.locator('.block-toggle[aria-expanded="false"]').count()) await page.locator('.block-toggle').click();
   await page.locator('.block-style .choice', { hasText: '근비대' }).first().click();

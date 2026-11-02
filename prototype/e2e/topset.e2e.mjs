@@ -36,7 +36,7 @@ export default async function ({ page, url, shot }) {
   await page.waitForFunction(() => !document.querySelector('dialog')?.open);
 
   const plan = await page.locator('.plan-row', { has: page.locator('.name', { hasText: pick.name }) }).first().locator('.plan-sets').textContent();
-  check(plan.includes('무거운 1세트') && plan.includes('1–3회'), `${pick.name} 줄: ${plan}`);
+  check(plan.includes('무거운 1세트') && plan.includes('1~3회'), `${pick.name} 줄: ${plan}`);
   const heavyKg = Number(plan.match(/무거운 1세트 ([\d.]+)kg/)[1]);
   check(heavyKg > 60, '무거운 세트가 지난 기록보다 가볍습니다: ' + heavyKg);
   await shot('2-plan');

@@ -54,7 +54,7 @@ export default async function ({ page, url, shot }) {
 
   // 종목 설명을 코치 목소리로
   await page.locator('.plan-row .row-menu').first().click();
-  await page.locator('dialog .menu-row', { hasText: '동작 시연' }).click();
+  await page.locator('dialog .menu-row', { hasText: '동작 보기' }).click();
   const button = page.locator('dialog .guide-listen');
   await button.click();
   check((await button.textContent()).includes('그만 듣기'), '설명 듣기 버튼이 바뀌지 않았습니다');

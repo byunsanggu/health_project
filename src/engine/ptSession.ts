@@ -76,12 +76,12 @@ export function warmupRestLine(style: CoachStyle, seconds: number): string {
   return lines[style];
 }
 
-/** 워밍업이 끝나고 본세트로. */
+/** 워밍업이 끝나고 정한 무게의 세트로. 이 말은 화면 자막에도 뜬다 — "본세트" 같은 말은 쓰지 않는다. */
 export function warmupDoneLine(style: CoachStyle): string {
   const lines: ByStyle<string> = {
-    tough: '몸 다 풀렸다. 이제 본세트 간다!',
-    energetic: '워밍업 끝! 이제 본세트 가요!',
-    gentle: '워밍업 끝났습니다. 이제 본세트 하겠습니다.',
+    tough: '몸 다 풀렸다. 이제 진짜 세트 간다!',
+    energetic: '워밍업 끝! 이제 진짜 세트 가요!',
+    gentle: '워밍업 끝났습니다. 이제 정한 무게로 하겠습니다.',
     fun: '예고편 끝! 이제 본편 시작합니다.',
   };
   return lines[style];

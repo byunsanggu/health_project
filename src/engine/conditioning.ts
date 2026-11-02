@@ -401,16 +401,16 @@ export interface WodWarmup {
 export interface WodSession {
   warmup: WodWarmup;
   workout: ConditioningWorkout;
-  /** 몸풀기까지 합친 시간 */
+  /** 몸 풀기까지 합친 시간 */
   totalMinutes: number;
   /** 무엇을 조심해야 하는가. 비어 있으면 특별히 없다 */
   cautions: string[];
 }
 
 /**
- * 몸풀기 길이.
+ * 몸 풀기 길이.
  *
- * 와드가 짧을수록 몸풀기 비중이 커진다 — 5분짜리 와드에 5분을 푸는 건
+ * 와드가 짧을수록 몸 풀기 비중이 커진다 — 5분짜리 와드에 5분을 푸는 건
  * 과해 보이지만, 5분 전력으로 들어가려면 그만큼 풀려 있어야 한다.
  */
 function warmupMinutes(wodMinutes: number): number {
@@ -458,7 +458,7 @@ export interface WodSessionInput extends ConditioningInput {
 }
 
 /**
- * 몸풀기부터 와드까지 한 판.
+ * 몸 풀기부터 와드까지 한 판.
  *
  * 경고는 실제로 위험한 조합에만 낸다 — 바벨을 켰다고 무조건 경고하면
  * 켠 사람에게 매번 같은 잔소리를 하는 꼴이고, 그러면 안 읽는다.

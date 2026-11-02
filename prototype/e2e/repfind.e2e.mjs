@@ -18,9 +18,15 @@ export default async function ({ page, url, shot }) {
   await tab(page, '오늘');
   const dialog = page.locator('dialog');
 
-  // 종목 줄을 누르면 그 종목 반복 수
+  // 종목 줄을 누르면 그 줄의 뜻(세트 · 회 · 쉬는 시간)이 먼저 — 처음 온 사람에게는 "평소 반복"이 없다.
+  // 반복 수 바꾸기는 그 창 안의 작은 링크
   const name = (await page.locator('.plan-row .name > span:first-child').nth(0).textContent()).trim();
   await page.locator('.plan-sets-btn').first().click();
+  check((await dialog.locator('#modal-title').textContent()).includes(name), '누른 종목의 설명 창이 아닙니다');
+  const explain = await dialog.textContent();
+  check(/\d세트 = \d번에 나눠서/.test(explain) && /쉽니다/.test(explain), '세트 줄 설명이 없습니다: ' + explain.slice(0, 120));
+  check(await dialog.locator('.rep-presets').count() === 0, '설명 대신 반복 수 고르기가 바로 떴습니다');
+  await dialog.locator('.rep-link').click();
   check((await dialog.locator('#modal-title').textContent()).includes(name), '누른 종목의 반복 수 창이 아닙니다');
   await dialog.locator('.rep-presets .pick', { hasText: /^10~15회$/ }).click();
   await dialog.locator('.rep-save').click();

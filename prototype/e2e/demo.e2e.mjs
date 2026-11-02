@@ -1,4 +1,4 @@
-// 동작 시연 — 종목마다 자기 동작이 돌고, 멈추고, 보는 쪽을 고르고, 흔한 실수를 동작으로 본 뒤
+// 동작 보기 — 종목마다 자기 동작이 돌고, 멈추고, 보는 쪽을 고르고, 흔한 실수를 동작으로 본 뒤
 //   바른 동작으로 돌아온다. 입체(three.js)로 뜨든 평면으로 떨어지든 같은 길이어야 한다.
 //   E2E_THREE에 three.min.js 경로를 주면 CDN이 막힌 곳에서도 입체로 본다 (run.mjs 참고).
 import { check, onboard } from './lib.mjs';
@@ -51,7 +51,7 @@ export default async function ({ page, url, shot }) {
   };
 
   await page.locator('.plan-row .row-menu').first().click();
-  await page.locator('dialog .menu-row', { hasText: '동작 시연' }).click();
+  await page.locator('dialog .menu-row', { hasText: '동작 보기' }).click();
   await page.locator('dialog .demo-canvas').waitFor();
   await advance(100);
 
@@ -90,7 +90,7 @@ export default async function ({ page, url, shot }) {
   check((await read(page)).hash === still, '멈췄는데 그림이 움직입니다');
 
   // 보는 쪽 — 옆을 고르면 그 칩만 눌리고, 그림이 옆에서 본 모습으로 바뀐다
-  check(await page.locator('dialog .demo-views .chip').count() === 5, '보는 쪽 칩이 처음 · 정면 · 옆 · 사선 · 뒤가 아닙니다');
+  check(await page.locator('dialog .demo-views .chip').count() === 5, '보는 쪽 칩이 추천 · 정면 · 옆 · 사선 · 뒤가 아닙니다');
   await page.locator('dialog .demo-views .chip', { hasText: '옆' }).click();
   await advance(400);
   const pressed = await page.locator('dialog .demo-views .chip[aria-pressed="true"]').allTextContents();
@@ -126,12 +126,28 @@ export default async function ({ page, url, shot }) {
   await advance(lap * 0.7);
   check((await read(page)).red < 5, '바른 동작으로 돌아왔는데 빨간 근육이 남았습니다');
 
-  // 닫고 다른 종목을 열어도 오류 없이 돈다
+  // 자세 요령 · 실수 카드 — 현장 용어("수행 큐")가 아니고, 실수 → 그대로 하면 → 이렇게 순서
+  const demoText = await page.locator('dialog').innerText();
+  check(!/수행 큐|주동근/.test(demoText), '동작 보기 창에 현장 용어: ' + (demoText.match(/.{0,15}(수행 큐|주동근).{0,15}/) || [''])[0]);
+  check(demoText.includes('자세 요령'), '자세 요령 제목이 없습니다');
+  const row = await page.locator('dialog .mistake-row').first().evaluate((node) => [...node.children].map((child) => child.className));
+  check(row.indexOf('mistake-why') >= 0 && row.indexOf('mistake-why') < row.indexOf('mistake-fix'),
+    '실수 카드 순서가 실수 → 그대로 하면 → 이렇게가 아닙니다: ' + row.join(','));
+
+  // 닫고 다른 종목을 — 이번에는 목록에서 이름을 눌러 연다(⋯를 몰라도 동작을 본다). 오류 없이 돈다
   await page.locator('dialog .modal-close').click();
   await advance(200);
-  await page.locator('.plan-row .row-menu').nth(1).click();
-  await page.locator('dialog .menu-row', { hasText: '동작 시연' }).click();
+  const second = (await page.locator('.plan-row .name > span:first-child').nth(1).textContent()).trim();
+  await page.locator('.plan-row .plan-name-btn').nth(1).click();
   await page.locator('dialog .demo-canvas').waitFor();
+  check((await page.locator('dialog #modal-title').textContent()).trim() === second, '이름을 눌렀는데 그 종목 동작이 아닙니다');
   await advance(200);
   check((await page.locator('dialog .demo-caption').textContent()).trim().length > 0, '두 번째 종목 시연이 돌지 않습니다');
+
+  // 그림(썸네일)을 눌러도 같은 창
+  await page.locator('dialog .modal-close').click();
+  await advance(200);
+  await page.locator('.plan-row .plan-thumb-btn').first().click();
+  await page.locator('dialog .demo-canvas').waitFor();
+  check((await page.locator('dialog .demo-views .chip').first().textContent()).trim() === '추천', '보는 쪽 첫 칩이 "추천"이 아닙니다');
 }

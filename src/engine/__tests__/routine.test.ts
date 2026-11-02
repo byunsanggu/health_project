@@ -188,7 +188,7 @@ describe('내 루틴 — 점검', () => {
   it('부위마다 주 두 번 고르게 짠 루틴은 손볼 데가 거의 없다', () => {
     const review = reviewRoutine(ppl, index, landmarks);
     assert.deepEqual(review.notes.map((note) => note.kind), []);
-    assert.equal(routineHeadline(review), '부위마다 주 최소 세트를 넘고 한계 안입니다');
+    assert.equal(routineHeadline(review), '부위마다 한 주 최소 세트를 넘고 최대 안입니다');
     assert.deepEqual(review.days.map((day) => day.sets), [16, 13, 14, 16, 13, 14]);
   });
 
@@ -206,7 +206,7 @@ describe('내 루틴 — 점검', () => {
     const under = review.notes.find((note) => note.kind === 'under')!;
     assert.deepEqual(under.muscles, ['sideDelt', 'calves']);
     assert.ok(under.text.includes('측면 삼각근 6세트(최소 8)'));
-    assert.equal(routineHeadline(reviewRoutine(broSplit, index, landmarks)), '측면 삼각근 · 종아리가 주 최소 세트에 못 미칩니다');
+    assert.equal(routineHeadline(reviewRoutine(broSplit, index, landmarks)), '측면 삼각근 · 종아리가 한 주 최소 세트에 못 미칩니다');
     // 종아리 4세트 → 5(레그컬 몫 1 포함, 최소 8)는 15% 넘게 모자라다. 6세트면 7 — 말하지 않는다
     const more: CustomRoutine = structuredClone(broSplit);
     more.days[3]!.slots[4]!.sets = 6;
@@ -225,7 +225,7 @@ describe('내 루틴 — 점검', () => {
     const over = review.notes[0]!;
     assert.equal(over.kind, 'over', '회복을 넘는 것을 먼저 말한다');
     assert.ok(over.muscles!.includes('chest'));
-    assert.match(routineHeadline(review), /가슴.*회복 한계를 넘습니다/);
+    assert.match(routineHeadline(review), /가슴.*한 주 최대 세트를 넘습니다/);
   });
 
   it('하체가 없으면 · 미는 쪽으로 치우치면 · 하루가 너무 길면 말한다', () => {
@@ -238,7 +238,7 @@ describe('내 루틴 — 점검', () => {
     };
     const upperReview = reviewRoutine(upper, index, landmarks);
     // "가슴 · 등 등이"처럼 읽히지 않게 — 둘까지 대고 나머지는 "외 N곳"
-    assert.match(routineHeadline(upperReview), / 외 \d+곳이 주 최소 세트에 못 미칩니다$/);
+    assert.match(routineHeadline(upperReview), / 외 \d+곳이 한 주 최소 세트에 못 미칩니다$/);
     assert.ok(!routineHeadline(upperReview).includes('등 등'));
     const kinds = upperReview.notes.map((note) => note.kind);
     assert.ok(kinds.includes('noLegs'));

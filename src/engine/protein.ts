@@ -125,7 +125,8 @@ export function proteinHint(targetG: number): string {
   const chicken = PROTEIN_FOODS[0] as ProteinFood;
   const egg = PROTEIN_FOODS[1] as ProteinFood;
   return (
-    `하루 ${targetG}g — 세 끼에 ${meal}g씩입니다. ` +
+    // 하루 목표는 화면 머리("단백질 하루 Ng")가 말한다 — 여기서 또 쓰면 같은 숫자가 두 번 나온다
+    `세 끼에 ${meal}g씩입니다. ` +
     `닭가슴살 ${withParticle(chicken.serving, '이/가')} ${chicken.gram}g, ` +
     `계란 ${withParticle(egg.serving, '이/가')} ${egg.gram}g입니다.`
   );

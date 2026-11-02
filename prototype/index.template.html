@@ -2744,12 +2744,23 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .alert-controls .nudge-row[aria-pressed="true"] .count-tempo { color: var(--accent); font-weight: 600; }
 .alert-controls .count-tempo, .coach-settings .nudge-row .count-tempo { white-space: nowrap; flex: none; }
 .focus { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; overflow-y: auto; background: var(--surface); }
-.focus-top { display: flex; align-items: center; gap: 8px; }
-.focus-more { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+/* 위 띠 — 손가락 크기(44px), 버튼 사이 12px. "PT 끄기"와 "운동 끝내기"가 붙어 있으면 스치기 쉽다 */
+.focus-top { display: flex; align-items: center; gap: 12px; }
+.focus-more { min-height: 44px; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 0 14px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.focus-top .pt-toggle, .focus-top .end-workout { min-height: 44px; padding: 0 12px; font-size: 13px; }
+.focus-top .pt-toggle + .end-workout { margin-left: 0; }
 .focus-elapsed { flex: 1; text-align: center; font-family: var(--mono); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
-.focus-title { display: grid; gap: 2px; }
+.focus-title { display: flex; align-items: center; gap: 10px; }
+.focus-title-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .focus-pos { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
 .focus-title b { font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+/* PT 빠르기 — 제목 옆 작은 단추. 누르면 아래에 다섯 칸 */
+.pt-rate-chip { flex: none; display: inline-flex; align-items: center; gap: 5px; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 13px; }
+.pt-rate-chip b { font-size: 13px; color: var(--accent); }
+.pt-rate-chip[aria-expanded="true"] { border-color: var(--accent); }
+.focus .pt-rate { margin: 0; }
+/* 소리가 안 날 때 — 맨 위 한 줄 */
+.focus-trouble { margin: 0; padding: 8px 12px; border-radius: 10px; border-left: 3px solid var(--zone-over); background: var(--surface-2); font-size: 13px; font-weight: 600; line-height: 1.4; }
 .focus-middle { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 0; }
 .focus-ring { position: relative; width: min(62vw, 230px, 30dvh); min-width: 150px; aspect-ratio: 1; }
 .focus-ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
@@ -2758,14 +2769,22 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-ring-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
 .focus-num { font-family: var(--mono); font-size: 76px; font-weight: 700; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
 .focus-num.wide { font-size: 40px; }
-.focus-num.rest { font-size: 54px; }
+/* 쉬는 시간은 벤치에 누운 채로 1~2m 밖에서 본다 — 64px 아래로 내리지 않는다 */
+.focus-num.rest { font-size: 64px; }
+/* 준비 중 남은 초 — 숫자는 크게, "초"는 작게. "준비"는 위에 따로 */
+.focus-num.lead { font-size: 64px; }
+.focus-num.lead small { font-size: .4em; margin-left: 2px; }
+.focus-cap { min-height: 18px; font-size: 15px; font-weight: 700; color: var(--accent); }
+.focus-hint { max-width: 320px; text-align: center; font-size: 13.5px; font-weight: 600; color: var(--accent); line-height: 1.4; }
 .focus-of { font-size: 14px; color: var(--muted); font-weight: 600; }
 .focus-what { text-align: center; font-size: 15px; }
 .focus-what b { color: var(--accent); }
 .focus-setting { font-size: 13px; color: var(--muted); }
 .focus-soon { min-height: 18px; font-size: 13px; font-weight: 600; color: var(--accent); }
-.focus-say { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line-soft); font-size: 14px; line-height: 1.5; min-height: 44px; max-height: 7.6em; overflow-y: auto; }
-.focus-say:empty { visibility: hidden; }
+/* 자막 — 코치가 방금 한 말. 두 줄까지, 누르면 다 */
+.focus-say { flex: none; margin: 0; padding: 7px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line-soft); font-size: 13.5px; line-height: 1.45; cursor: pointer; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.focus-say.open { display: block; -webkit-line-clamp: unset; max-height: 40dvh; overflow-y: auto; }
+.focus-say:empty { display: none; }
 .focus-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .focus-actions.three { grid-template-columns: 1fr 1fr 1fr; }
 .focus-btn { min-height: 54px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-size: 15px; font-weight: 600; color: var(--ink, inherit); }
@@ -2793,11 +2812,52 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-next-info span { font-size: 15px; }
 .focus-next-info .focus-muscles { font-size: 13px; color: var(--muted); }
 .focus-demo { justify-self: start; margin-top: 4px; border: 1px solid var(--accent); color: var(--accent); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
-.focus-switch-time { display: flex; align-items: baseline; gap: 10px; }
+.focus-switch-time { display: flex; align-items: baseline; justify-content: center; gap: 10px; }
 .focus-switch-time span { font-size: 13px; color: var(--muted); }
-.focus-num.small { font-size: 40px; }
+.focus-num.small { font-size: 64px; }
 .focus-next { font-size: 13px; color: var(--muted); text-align: center; }
-.focus-hurt { align-self: center; border: 0; background: none; font-size: 13px; color: var(--muted); text-decoration: underline; padding: 4px; }
+.focus-hurt { align-self: center; border: 0; background: none; font-size: 13px; color: var(--muted); text-decoration: underline; padding: 4px; min-height: 44px; }
+/* 쉬는 화면 맨 위 — 남은 시간 · 쉬고 나서 할 것 · 곧 시작 */
+.focus-rest-head { display: grid; justify-items: center; gap: 2px; width: 100%; flex: none; }
+.focus-rest-head .focus-soon { min-height: 0; }
+.focus-switch-info { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; flex: none; }
+.focus-switch-info .focus-demo { margin-top: 0; flex: none; min-height: 40px; }
+/* 방금 적은 세트 — 몇 개로 적혔는지, 틀렸으면 그 자리에서 고친다 */
+.focus-logged { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; flex: none; padding: 4px 4px 4px 12px; border: 1px solid var(--line-soft); border-radius: 10px; font-size: 14px; }
+.focus-fix { flex: none; min-height: 40px; padding: 0 14px; border: 1px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--accent); font-size: 13px; font-weight: 600; }
+.focus-fix-row { display: flex; align-items: center; gap: 6px; }
+.focus-fix-row .nudge { min-width: 44px; min-height: 44px; }
+.focus-fix-reps { min-width: 48px; text-align: center; font-family: var(--mono); font-size: 18px; }
+/* 쉬는 화면 아래 — 일시정지 · 아픈 데 있어요 */
+.focus-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.focus-btn.small { min-height: 44px; padding: 0 16px; font-size: 14px; }
+/* 화면 아래 잠깐 뜨는 한 줄 (PT를 껐습니다 · 되돌리기) */
+.pt-toast { position: fixed; left: 16px; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 12px; background: var(--ink); color: var(--surface); font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, .2); }
+.pt-toast .undo-btn { min-height: 40px; }
+/* 설정 이름 — 설명보다 크고 진하게 */
+.list-label.setting-name { font-family: inherit; font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--ink); margin-top: 6px; }
+/*
+ * 쉬는 화면 · 세트 화면의 동작 그림 크기 — 남는 높이만큼. 큰 폰에서는 크게, 작은 폰에서는 줄어들되
+ * 세 줄과 남은 시간이 늘 화면 안에 들어오게.
+ */
+.rest-guide .focus-motion { width: clamp(120px, calc(100dvh - 600px), 340px); max-height: none; }
+@media (max-height: 800px) {
+  /* 작은 폰(360×640 · 375×667 · 360×780) — 동작은 왼쪽에 작게, 세 줄은 오른쪽에 */
+  .rest-guide { grid-template-columns: minmax(104px, 34%) minmax(0, 1fr); align-items: start; gap: 10px; }
+  .rest-guide .focus-motion { width: 100%; margin: 0; }
+  .rest-guide-lines li { grid-template-columns: 1fr; gap: 0; font-size: 14px; line-height: 1.35; }
+  .rest-guide-lines b { font-size: 12px; }
+  .focus-middle.with-motion .focus-motion { max-height: 26dvh; width: min(100%, 26dvh, 320px); }
+  .focus-warm-list { display: none; }
+  .focus-title b { font-size: 18px; }
+  .focus { gap: 8px; padding-top: 10px; }
+}
+@media (max-height: 700px) {
+  .focus-middle { gap: 6px; }
+  .focus-middle.with-motion .focus-ring { width: min(40vw, 150px, 21dvh); min-width: 112px; }
+  .focus-num { font-size: 64px; }
+  .focus-btn { min-height: 48px; }
+}
 .count-live-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pt-away, .pt-resting { color: var(--accent); font-weight: 600; margin: 0; }
 .pt-panel { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--surface-2); }
@@ -2913,6 +2973,97 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .history-sets { display: grid; gap: 2px; }
 .history-set { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .history-rir { color: var(--muted); font-size: 12px; }
+
+/* ── 처음 온 사람 · 누르기 쉬운 크기 ─────────────────── */
+/* 위 상태 줄 "1주차 · 4개 남기고 멈춤" — 누르면 뜻이 한 장으로. 누르는 자리는 위아래로 넓힌다 */
+.status-help { border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; padding: 14px 0; margin: -14px 0; text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+.status-help:hover { color: var(--accent); }
+.effort-big { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.45; }
+.effort-hint { margin: 0; color: var(--ink); }
+.sets-help li { font-size: 13.5px; }
+/* 오늘 목록 — 이름 · 그림을 누르면 동작 보기 */
+.plan-thumb-btn { border: 0; background: none; padding: 0; border-radius: 10px; cursor: pointer; }
+.plan-thumb-btn:focus-visible .lift-thumb, .plan-thumb-btn:hover .lift-thumb { border-color: var(--accent); }
+.plan-name-btn { cursor: pointer; }
+.plan-name-btn:hover, .plan-name-btn:focus-visible { color: var(--accent); }
+.plan-sets-btn { min-height: 32px; }
+.rep-link { justify-self: center; border: 0; background: none; padding: 12px 8px; color: var(--muted); font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
+/* 처음이세요? — 첫 운동을 마칠 때까지 */
+.first-tips { border-color: var(--accent); }
+.first-tips .sheet-head { align-items: center; }
+.first-tips-close { margin-left: auto; min-height: 44px; padding: 0 12px; border: 0; background: none; color: var(--muted); font-size: 13px; }
+.first-tips-list { margin: 0; padding: 4px 16px 14px 34px; display: grid; gap: 6px; font-size: 13.5px; line-height: 1.5; }
+/* 요약 — 남은 것 · 자세히 · 아래에 붙은 마치기 */
+.summary-left { border-left-color: var(--accent); }
+.summary-more > summary { cursor: pointer; padding: 12px 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+.summary-more > :not(summary) { margin-top: 12px; }
+.summary-foot { position: sticky; bottom: 0; z-index: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px -14px -16px; padding: 10px 14px 14px; background: var(--surface); border-top: 1px solid var(--line-soft); }
+.summary-foot .finish { min-height: 48px; }
+/* 마지막 세트 더 세게 — 칩 글자가 길어 줄을 넘긴다 */
+.tech-row { flex-wrap: wrap; }
+
+/* 세트 줄 — 뒤 칸(✓ · ✕)은 늘 44px 이상, 숫자 칸과 겹치지 않는다 */
+.set-box, .warmup-set { grid-template-columns: 80px minmax(0, 1fr) minmax(44px, auto); }
+.set-remove, .set-undo { min-width: 44px; min-height: 44px; }
+.set-remove.armed { font-size: 13px; color: var(--zone-over); background: color-mix(in srgb, var(--zone-over) 12%, transparent); }
+.set-add { min-height: 44px; }
+@media (max-width: 380px) {
+  .set-box, .warmup-set { grid-template-columns: 56px minmax(0, 1fr) minmax(44px, auto); gap: 6px; padding: 6px 8px; }
+  .set-box .set-no, .warmup-set .set-no { font-size: 13.5px; white-space: normal; line-height: 1.2; }
+  .set-in { width: 54px; padding: 5px 5px; font-size: 17px; }
+  .set-in-reps { width: 40px; }
+  .set-unit, button.set-unit { font-size: 13px; }
+  .set-remove, .set-undo { padding: 6px 4px; }
+}
+/* 지금 종목 이름 — 길면 두 줄로, 버튼은 밀려도 겹치지 않게 */
+.progress-name { flex-wrap: wrap; row-gap: 6px; }
+.progress-name > span { flex: 1 1 150px; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
+.end-workout, .pt-toggle { min-height: 44px; padding: 0 12px; font-size: 13px; }
+.pt-toggle + .end-workout { margin-left: 4px; }
+/* 쉬는 이유 — 두 줄까지 */
+.rest-why { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
+.rest-skip { min-height: 44px; padding: 0 12px; font-size: 13px; }
+
+/* 눌러야 하는 것들 — 44px. 칩은 보이는 크기를 크게 바꾸지 않고 누르는 자리를 넓힌다 */
+.pick { position: relative; padding: 6px 12px; font-size: 13px; }
+.pick::after { content: ''; position: absolute; inset: -7px -2px; }
+.segmented button { min-height: 44px; font-size: 13px; }
+.row-menu { min-width: 44px; min-height: 44px; padding: 0 6px; text-align: center; }
+.list-order, .list-edit { min-height: 40px; padding: 6px 12px; font-size: 13px; position: relative; }
+.list-order::after, .list-edit::after { content: ''; position: absolute; inset: -2px 0; }
+.demo-open { position: relative; min-height: 32px; padding: 4px 10px; font-size: 11.5px; }
+.demo-open::after { content: ''; position: absolute; inset: -6px -2px; }
+.lift-demo { min-height: 44px; padding: 0 14px; font-family: var(--sans); font-size: 13.5px; font-weight: 600; letter-spacing: 0; color: var(--accent); border-color: var(--accent); }
+.lift-more { min-width: 44px; min-height: 44px; font-size: 16px; }
+.modal-close { position: relative; width: 36px; height: 36px; }
+.modal-close::after { content: ''; position: absolute; inset: -4px; }
+.gym-link-close { min-width: 44px; min-height: 44px; }
+.food-browse { min-height: 44px; padding: 12px 0; }
+.hurt-link { padding: 12px 10px; }
+.warm-toggle-label, .warm-toggle { padding: 12px 0; }
+
+/* 혼자 하는 몸 풀기 · 마무리 스트레칭 — 지금 할 동작 하나를 그림 · 남은 초로 */
+.stretch-now { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-soft); }
+.stretch-now-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.stretch-now-head b { font-size: 17px; }
+.stretch-left { font-family: var(--mono); font-size: 24px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stretch-now .focus-motion { width: min(100%, 260px); max-height: 32dvh; background: var(--surface); }
+.stretch-now .hint-line { margin: 0; }
+.stretch-actions { display: grid; gap: 8px; }
+.stretch-actions .finish { min-height: 48px; }
+.stretch-all-done { margin: 0; font-size: 14px; font-weight: 600; color: var(--accent); }
+.warm-step-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; border-top: 1px solid var(--line-soft); }
+.warm-step-row:first-child { border-top: 0; }
+.warm-step-row .warm-step { border-top: 0; }
+.warm-step-row.shown { box-shadow: inset 3px 0 0 var(--accent); }
+.warm-show { min-width: 56px; min-height: 44px; border: 0; border-left: 1px solid var(--line-soft); background: var(--surface); color: var(--accent); font-size: 13px; font-weight: 600; }
+.cool-offer {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; text-align: left;
+  border: 1px dashed var(--accent); border-radius: 12px;
+  background: var(--surface); color: var(--ink); padding: 11px 13px;
+}
+.cool-offer .name { color: var(--accent); font-weight: 600; }
+.cool-offer .detail { margin-left: auto; font-size: 12px; color: var(--accent); white-space: nowrap; }
 </style>
 
 <div class="wrap">

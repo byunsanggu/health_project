@@ -86,7 +86,7 @@ export default async function ({ page, url, shot }) {
   const today = await lifts.locator('.name').allTextContents();
   check(today.map((text) => text.trim()).join(',') === '바벨 벤치프레스,케이블 플라이,트라이셉스 푸시다운', '오늘 목록: ' + today.join(', '));
   const sets = await lifts.locator('.plan-sets').allTextContents();
-  check(/^5세트/.test(sets[0]) && /^3세트/.test(sets[1]) && /12–20회/.test(sets[1]), '세트 · 반복: ' + sets.join(' / '));
+  check(/^5세트/.test(sets[0]) && /^3세트/.test(sets[1]) && /12~20회/.test(sets[1]), '세트 · 반복: ' + sets.join(' / '));
   await shot('3-today');
 
   // 기록 › 자세히 — 처방 대신 루틴 점검

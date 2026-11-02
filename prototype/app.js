@@ -6041,7 +6041,8 @@
           { label: 'PT 코치', active: pt, onSelect: function () { setCoachMode('pt'); draw(); } },
         ]),
         el('p', { class: 'hint-line', text: pt
-          ? '코치가 몸 풀기부터 스트레칭까지 말로 이끕니다 — 말투는 "' + E.coachStyleInfo(state.coach.style).label + '"입니다. 내 정보에서 바꿀 수 있습니다.'
+          ? '코치가 몸 풀기부터 스트레칭까지 말로 이끕니다 — 말투는 "' + E.coachStyleInfo(state.coach.style).label + '"입니다. 내 정보에서 바꿀 수 있습니다. ' +
+            '세트는 코치가 센 개수로 적습니다 — 다 못 하면 "여기까지"를 누르세요.'
           : '무게와 횟수를 화면에 띄우고 조용히 기록합니다.' }),
         el('button', {
           type: 'button', class: 'finish start-go', text: editOnly ? '확인' : '시작',
@@ -7145,6 +7146,11 @@
     return '';
   }
 
+  // 소리가 나다 안 나다 바뀌면 PT 화면의 알림 줄을 바로 맞춘다
+  if (typeof CoachVoice !== 'undefined' && CoachVoice.onHealth) {
+    CoachVoice.onHealth(function () { if (focusOn()) renderFocus(); });
+  }
+
   /** 하던 말을 끊는다. */
   function stopSpeech() {
     if (typeof CoachVoice !== 'undefined') CoachVoice.cancel();
@@ -7180,8 +7186,10 @@
     state.coachLine = text;
     var bubble = document.getElementById('coach-say');
     if (bubble) bubble.textContent = text;
+    // PT 화면 자막 — 새 말이면 다시 두 줄로 접는다
+    state.focusSayOpen = false;
     var subtitle = document.getElementById('focus-say');
-    if (subtitle) subtitle.textContent = text;
+    if (subtitle) { subtitle.textContent = text; subtitle.classList.remove('open'); }
     speak(E.forSpeech(text));
     return text;
   }
@@ -7649,7 +7657,7 @@
       }, [el('b', { text: 'PT' }), el('span', { text: '몸 풀기부터 스트레칭까지 옆에서 이끕니다' })]),
     ]));
     if (pt) {
-      box.appendChild(el('div', { class: 'list-label', text: '코치 말투' }));
+      box.appendChild(el('div', { class: 'list-label setting-name', text: '코치 말투' }));
       var styles = el('div', { class: 'coach-styles' }, []);
       E.COACH_STYLES.forEach(function (item) {
         styles.appendChild(el('button', {
@@ -7689,11 +7697,16 @@
       CoachVoice.cancel();
       CoachVoice.speak(ptOn() ? E.coachStyleInfo(state.coach.style).sample : '하나, 둘, 셋, 넷');
     };
+    /*
+     * 설정 이름은 크고 진하게, 설명은 그 아래 흐리게 — 이름이 10px 회색이면 설명보다 약해 보여서 지나친다.
+     * 목소리가 하나뿐인 코치는 "목소리 들어 보기" 한 줄 — "코치 목소리" 제목만 있으면 고를 칸이 빠진 것처럼 보였다.
+     */
+    var energetic = state.coach.style === 'energetic';
     box.appendChild(el('div', { class: 'voice-head' }, [
-      el('div', { class: 'list-label', text: '코치 목소리' }),
+      el('div', { class: 'list-label setting-name', text: energetic ? '코치 목소리' : '목소리 들어 보기' }),
       el('button', { type: 'button', class: 'pick voice-listen', text: '들어 보기', onclick: listen }),
     ]));
-    if (state.coach.style === 'energetic') {
+    if (energetic) {
       box.appendChild(segmented([{ id: null, label: '남자 목소리' }, { id: 'f', label: '여자 목소리' }].map(function (option) {
         return {
           label: option.label,
@@ -7709,8 +7722,8 @@
       })));
     }
     // 말 빠르기 — 사람마다 알아듣기 편한 빠르기가 다르다. 높이는 그대로, 빠르기만.
-    box.appendChild(el('div', { class: 'list-label', text: 'PT 빠르기 (기본)' }));
-    box.appendChild(el('p', { class: 'hint-line', text: '말과 세는 박자가 같이 빨라집니다. 운동마다 다르게 하려면 PT를 켜고 운동 화면에서 바꾸세요 — 그 운동에 저장됩니다.' }));
+    box.appendChild(el('div', { class: 'list-label setting-name', text: 'PT 빠르기 — 모든 운동 기본' }));
+    box.appendChild(el('p', { class: 'hint-line', text: '코치가 말하고 세는 박자가 같이 바뀝니다. 운동마다 다르게 하려면 PT 화면 제목 옆 "빠르기"를 누르세요 — 그 운동에만 저장됩니다.' }));
     box.appendChild(segmented(VOICE_RATES.map(function (value) {
       return {
         label: value === 1 ? '보통' : value + '배',
@@ -7725,23 +7738,26 @@
       };
     })));
     // 쉬는 동안 다음 운동 — 동작을 띄우고 잡는 법 · 동작 · 흔한 실수를 말해 준다(PT)
-    box.appendChild(el('div', { class: 'list-label', text: '쉬는 동안 운동 설명 (PT)' }));
-    box.appendChild(el('p', { class: 'hint-line', text: '쉬는 시간마다 다음 운동 동작을 보여 주고, 잡는 법 · 동작 · 흔한 실수를 말로 알려 줍니다.' }));
+    box.appendChild(el('div', { class: 'list-label setting-name', text: '쉬는 동안 운동 설명' }));
+    box.appendChild(el('p', { class: 'hint-line', text: '쉬는 시간마다 다음 운동 동작과 세 줄(준비 · 동작 · 주의)을 화면에 보여 주고, 종목이 바뀔 때는 말로도 설명합니다.' }));
     box.appendChild(segmented([
       { label: '켜기', active: state.restGuide !== false, onSelect: function () { state.restGuide = true; persist(); onChange(); } },
       { label: '끄기', active: state.restGuide === false, onSelect: function () { state.restGuide = false; persist(); onChange(); } },
     ]));
-    box.appendChild(el('div', { class: 'list-label', text: '운동 중 동작 보기 (PT)' }));
-    box.appendChild(el('p', { class: 'hint-line', text: '세트 · 워밍업 하는 동안 그 운동 동작을 개수 위에 보여 줍니다. 끄면 개수만 크게.' }));
+    box.appendChild(el('div', { class: 'list-label setting-name', text: '운동 중 동작 보기' }));
+    box.appendChild(el('p', { class: 'hint-line', text: '세트 · 워밍업 하는 동안 그 운동 동작을 개수 위에 보여 줍니다. 끄면 개수만 크게 보입니다.' }));
     box.appendChild(segmented([
       { label: '켜기', active: state.setMotion !== false, onSelect: function () { state.setMotion = true; persist(); onChange(); } },
       { label: '끄기', active: state.setMotion === false, onSelect: function () { state.setMotion = false; persist(); onChange(); } },
     ]));
     var status = el('p', { class: 'hint-line voice-status', text: '' });
+    // 받는 일은 PT를 고르면 바로 시작한다 — "와이파이에서 받아 두면 좋습니다"라고만 쓰면 누를 버튼을 찾게 된다
     var show = function (done, total) {
+      var health = CoachVoice.health ? CoachVoice.health() : null;
       if (CoachVoice.ready(coachVoiceName())) status.textContent = '이 폰에 받아 두었습니다 — 인터넷 없이도 나옵니다.';
+      else if (health && health.failed) status.textContent = '목소리를 못 받았습니다 — 인터넷에 다시 연결되면 이어서 받습니다. 그동안은 화면 글로 안내합니다.';
       else if (total) status.textContent = '목소리 받는 중 ' + Math.floor((done / total) * 100) + '% — 처음 한 번만 받습니다(약 9MB).';
-      else status.textContent = '처음 한 번 목소리를 받습니다(약 9MB). 와이파이에서 받아 두면 좋습니다.';
+      else status.textContent = '목소리 받는 중 — 처음 한 번만 받습니다(약 9MB).';
     };
     var now = CoachVoice.progress();
     show(now.done, now.total);
@@ -10346,7 +10362,8 @@
       el('ul', { class: 'rest-guide-lines' }, [
         line('준비', guide.grip),
         line('동작', guide.move),
-        guide.mistake ? line('주의', guide.mistake.sign + ' → ' + guide.mistake.short, 'warn') : null,
+        // 말로 하는 고치는 말과 같은 문장 — 화면과 말이 다르면 어느 쪽을 따라야 할지 모른다
+        guide.mistake ? line('주의', guide.mistake.warn, 'warn') : null,
       ]),
     ]);
   }
@@ -13849,7 +13866,7 @@
     // 부위별 게이지 — 부족한 주는 부족하게 그려야 다음 장을 믿는다
     ctx.fillStyle = muted;
     ctx.font = '400 26px ' + mono;
-    ctx.fillText('부위별 주간 볼륨', pad, y);
+    ctx.fillText('부위별 한 주 세트', pad, y);
     y += 46;
 
     var zoneColor = {
@@ -14805,7 +14822,7 @@
     var barW = Math.max(6, slot * 0.6);
     var y = function (v) { return pad.top + plotH * (1 - v / max); };
 
-    var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': '주간 볼륨 추이' });
+    var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': '한 주 세트 추이' });
 
     [{ v: landmark.mev, label: '최소' }, { v: landmark.mrv, label: '한계' }].forEach(function (mark) {
       root.appendChild(svg('line', { x1: pad.left, y1: y(mark.v), x2: W - pad.right, y2: y(mark.v),
@@ -16744,8 +16761,11 @@
             },
           };
         })),
-        el('p', { class: 'hint-line', text: (picked ? picked.note + ' · ' : '직접 정함 · ') +
-          '이 범위 안에서 여러 근육을 같이 쓰는 큰 운동은 길게, 한 근육만 쓰는 작은 운동은 짧게 쉽니다.' }),
+        // "보통"의 설명은 이미 "큰 운동은 길게, 작은 운동은 짧게"다 — 같은 말을 두 번 하지 않는다
+        el('p', { class: 'hint-line', text: picked && picked.note.indexOf('큰 운동은 길게') >= 0
+          ? picked.note + '. 큰 운동은 여러 근육을 같이 쓰는 동작, 작은 운동은 한 근육만 쓰는 동작입니다.'
+          : (picked ? picked.note : '직접 정함') +
+            ' · 이 범위 안에서 여러 근육을 같이 쓰는 큰 운동은 길게, 한 근육만 쓰는 작은 운동은 짧게 쉽니다.' }),
         el('button', { type: 'button', class: 'demo-open wide', text: '종목마다 몇 초인지 보기 · 직접 정하기',
           onclick: function () { openRestSettings(); } }),
       ]),
@@ -17759,9 +17779,9 @@
         hereBody.push(el('div', { class: 'notice' }, [
           el('div', { class: 'label', text: '어느 헬스장인지 아직 모릅니다' }),
           el('div', { text:
-            '처음 설정에서 고른 기구로 만든 이름표입니다. 다니는 헬스장을 찾아 등록하면 주소가 남고' +
-            (searchIsOn() ? ', 같은 곳 다니는 분들이 적어 둔 기구 목록도 받을 수 있습니다' : '') +
-            '. 지금까지 기록과 고른 기구는 그대로 갑니다.' }),
+            '처음 설정에서 고른 기구로 만든 이름표입니다. 다니는 헬스장을 찾아 등록하면 주소가 남습니다.' +
+            (searchIsOn() ? ' 같은 곳 다니는 분들이 적어 둔 기구 목록도 받을 수 있습니다.' : '') +
+            ' 지금까지 기록과 고른 기구는 그대로 갑니다.' }),
         ]));
         hereBody.push(el('button', {
           type: 'button', class: 'finish gym-link', text: '다니는 헬스장 찾아서 등록하기',
