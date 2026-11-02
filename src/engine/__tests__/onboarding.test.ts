@@ -127,7 +127,7 @@ describe('초보에게 주지 않는 맨몸 동작', () => {
   it('기구가 거의 없어 자리가 비면 쉬운 맨몸 종목(글루트 브릿지 · 데드버그)으로 채운다', () => {
     const program = beginner(['floor', 'resistance-bands']);
     for (const template of program.templates) {
-      assert.ok(template.slots.length >= 3, `${template.name}: ${template.slots.map((slot) => slot.exerciseId).join(', ')}`);
+      assert.ok(template.slots.length >= 2, `${template.name}: ${template.slots.map((slot) => slot.exerciseId).join(', ')}`);
       // 같은 날 같은 부위 채우기 종목을 둘 넣지 않는다
       const fill = template.slots.filter((slot) => ['dead-bug', 'reverse-crunch'].includes(slot.exerciseId));
       assert.ok(fill.length <= 1, template.name);
@@ -135,6 +135,21 @@ describe('초보에게 주지 않는 맨몸 동작', () => {
     const all = exercisesOf(program).map((exercise) => exercise.id);
     assert.ok(all.includes('glute-bridge'), all.join(', '));
     assert.ok(all.includes('dead-bug'), all.join(', '));
+  });
+
+  it('하체 채우기(글루트 브릿지)는 하체 자리가 있는 날에만, 이틀 연달아 넣지 않는다', () => {
+    for (const days of [3, 4, 5, 6, 7]) {
+      const program = buildProgram(answers({
+        selfReportedLevel: 'beginner', monthsTraining: 0, bodyweightKg: 58, sex: 'female', daysPerWeek: days,
+        gym: { equipmentIds: ['floor'] },
+      }), 'beginner');
+      const bridged = program.templates.map((template) => template.slots.some((slot) => slot.exerciseId === 'glute-bridge'));
+      program.templates.forEach((template, index) => {
+        if (/상체|푸시|풀$|^풀 /.test(template.name)) assert.ok(!bridged[index], `주 ${days}회 ${template.name}에 브릿지`);
+        if (index > 0) assert.ok(!(bridged[index] && bridged[index - 1]), `주 ${days}회 ${index}·${index + 1}일째 연달아 브릿지`);
+      });
+      assert.ok(bridged.filter(Boolean).length < program.templates.length, `주 ${days}회 매일 브릿지`);
+    }
   });
 
   it('기구가 넉넉한 헬스장에는 채우기 종목을 끼우지 않는다', () => {

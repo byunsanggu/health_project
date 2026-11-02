@@ -166,6 +166,36 @@ describe('말로 적은 것 읽기', () => {
     within('energy-drink', 90, 140);
   });
 
+  it('한 글자 이름에 수 · 단위를 붙여 써도 찾는다 — 밥두공기 · 떡두개 · 김두장 · 밥세숟갈 · 밥공기', () => {
+    const one = (text: string) => parseFoodText(text).items.map((item) => `${item.food.id}:${item.grams}`);
+    assert.deepEqual(one('밥두공기'), ['rice:420']);
+    assert.deepEqual(one('떡두개'), ['rice-cake:200']);
+    assert.deepEqual(one('김두장'), ['laver:4']);
+    assert.deepEqual(one('밥세숟갈'), ['rice:45']);
+    assert.deepEqual(one('밥공기'), ['rice:210']);
+    assert.deepEqual(one('밥그릇'), ['rice:210']);
+    // 수 말만 붙었거나 한 글자 단위가 붙은 다른 낱말은 여전히 아니다
+    assert.deepEqual(one('회세트'), []);
+    assert.deepEqual(one('회장님'), []);
+  });
+
+  it('밥 · 떡은 낱말 끝에 붙어도 찾는다 — 솥밥 · 콩밥 · 계란밥 · 꿀떡 (계란밥의 밥을 빠뜨리지 않는다)', () => {
+    const ids = (text: string) => parseFoodText(text).items.map((item) => item.food.id);
+    for (const word of ['솥밥', '찰밥', '쌈밥', '콩밥', '집밥']) assert.deepEqual(ids(word), ['rice'], word);
+    assert.deepEqual(ids('계란밥'), ['egg', 'rice']);
+    assert.deepEqual(ids('꿀떡'), ['rice-cake']);
+    // 회는 그렇지 않다 — 회사 · 회식 · 회의는 그대로 아니다
+    assert.deepEqual(ids('회사 회식 회의'), []);
+  });
+
+  it('양이 말이 되게 — 라이스페이퍼 5장은 다섯 롤, 뚱카롱은 마카롱보다 크고, 몬스터는 큰 캔', () => {
+    const kcal = (text: string) => parseFoodText(text).items.reduce((sum, item) => sum + item.nutrients.kcal, 0);
+    assert.ok(kcal('라이스페이퍼 5장') <= 450, String(kcal('라이스페이퍼 5장')));
+    assert.ok(kcal('뚱카롱 1개') >= 170 && kcal('뚱카롱 1개') <= 240, String(kcal('뚱카롱 1개')));
+    assert.ok(kcal('몬스터 1캔') >= 145 && kcal('몬스터 1캔') <= 175, String(kcal('몬스터 1캔')));
+    assert.ok(kcal('레드불 1캔') < 130);
+  });
+
   it('음식을 못 찾아도 적은 끼니는 돌려준다 — "저녁 …"이면 저녁', () => {
     const result = parseFoodText('저녁 뭔가 먹음');
     assert.equal(result.items.length, 0);

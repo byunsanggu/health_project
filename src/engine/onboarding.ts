@@ -451,6 +451,8 @@ const BEGINNER_EXCLUDED: ReadonlySet<string> = new Set(['pike-push-up']);
 const EASY_FILLERS: readonly string[] = ['glute-bridge', 'dead-bug', 'reverse-crunch'];
 /** 하루에 이만큼은 있어야 운동한 날 같다 — 모자라면 EASY_FILLERS로 채운다 */
 const MIN_DAY_EXERCISES = 4;
+/** 하체 부위 — 하체 채우기 종목은 이 부위 자리가 있는 날에만 */
+const LOWER_BODY: ReadonlySet<MuscleGroup> = new Set<MuscleGroup>(['quads', 'hamstrings', 'glutes', 'calves']);
 const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge']);
 
 interface PickContext {
@@ -862,6 +864,8 @@ export function buildProgram(
   // 1단계 — 종목부터 전부 고른다. 세트 수는 주 전체를 본 뒤에 정해야
   // 로우가 이두에, 프레스가 삼두에 이미 준 볼륨을 뺄 수 있다.
   type Picked = { slot: SlotSpec; exercise: Exercise; sets: number };
+  // 앞날에 채운 하체 채우기 종목 — 다음 날은 하체를 쉬게 둔다
+  let previousLowerFillers = new Set<string>();
   const week: Picked[][] = blueprints.map((day, dayIndex) => {
     const usedToday = new Set<string>();
     const sessionLoad = new Map<Joint, number>();
@@ -911,21 +915,30 @@ export function buildProgram(
      * 자리가 비어 하루가 너무 짧으면(기구가 거의 없는 집) 쉬운 맨몸 종목으로 채운다. 그날 아직 안 쓴
      * 부위를 맡는 종목만 — 데드버그 · 리버스 크런치를 같은 날 둘 다 넣지는 않는다.
      */
+    /*
+     * 하체 채우기(글루트 브릿지)는 하체 자리가 있는 날에만, 그리고 바로 앞날에 넣지 않았을 때만 —
+     * 매트뿐인 주 4회에서 상체 날까지 브릿지가 들어가 하체가 매일 일했다.
+     */
     const wanted = Math.min(MIN_DAY_EXERCISES, day.slots.length);
     const mainMuscle = (exercise: Exercise) => (Object.entries(exercise.contribution) as [MuscleGroup, number][])
       .sort((a, b) => b[1] - a[1])[0]?.[0];
+    const dayHasLower = day.slots.some((slot) => LOWER_BODY.has(slot.muscle));
+    const lowerFillersToday = new Set<string>();
     for (const id of EASY_FILLERS) {
       if (picked.length >= wanted) break;
       const filler = pool.find((exercise) => exercise.id === id);
       if (!filler || usedToday.has(filler.id)) continue;
       const muscle = mainMuscle(filler);
       if (!muscle || picked.some((item) => mainMuscle(item.exercise) === muscle || item.slot.muscle === muscle)) continue;
+      if (LOWER_BODY.has(muscle) && (!dayHasLower || previousLowerFillers.has(filler.id))) continue;
+      if (LOWER_BODY.has(muscle)) lowerFillersToday.add(filler.id);
       usedToday.add(filler.id);
       usedThisWeek.add(filler.id);
       weekBodyweight += 1;
       addJointLoad(sessionLoad, filler);
       picked.push({ slot: { muscle, role: 'isolation' }, exercise: filler, sets: 0 });
     }
+    previousLowerFillers = lowerFillersToday;
     return picked;
   });
 
