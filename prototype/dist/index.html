@@ -2782,7 +2782,7 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-setting { font-size: 13px; color: var(--muted); }
 .focus-soon { min-height: 18px; font-size: 13px; font-weight: 600; color: var(--accent); }
 /* 자막 — 코치가 방금 한 말. 두 줄까지, 누르면 다 */
-.focus-say { flex: none; margin: 0; padding: 7px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line-soft); font-size: 13.5px; line-height: 1.45; cursor: pointer; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.focus-say { flex: none; margin: 0; padding: 0 12px; border: 7px solid transparent; border-left: 0; border-right: 0; border-radius: 12px; background: var(--surface-2); box-shadow: 0 0 0 1px var(--line-soft); font-size: 13.5px; line-height: 1.45; cursor: pointer; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .focus-say.open { display: block; -webkit-line-clamp: unset; max-height: 40dvh; overflow-y: auto; }
 .focus-say:empty { display: none; }
 .focus-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -2848,10 +2848,12 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
  * 세 줄과 남은 시간이 늘 화면 안에 들어오게.
  */
 .rest-guide .focus-motion { width: clamp(120px, calc(100dvh - 640px), 340px); max-height: none; }
+/* 다음 종목 휴식 — 그림 밑에 "크게 보기"와 위에 세팅 한 줄이 더 있다 */
+.rest-guide:has(.focus-demo) .focus-motion { width: clamp(120px, calc(100dvh - 700px), 340px); }
 @media (max-height: 800px) {
   /* 작은 폰(360×640 · 375×667 · 360×780) — 동작은 왼쪽에 작게, 세 줄은 오른쪽에 */
   .rest-guide { grid-template-columns: minmax(104px, 34%) minmax(0, 1fr); align-items: start; gap: 10px; }
-  .rest-guide .focus-motion { width: 100%; margin: 0; }
+  .rest-guide .focus-motion, .rest-guide:has(.focus-demo) .focus-motion { width: 100%; margin: 0; }
   .rest-guide-motion .focus-demo { padding: 4px 8px; font-size: 12px; }
   .rest-guide-lines li { grid-template-columns: 1fr; gap: 0; font-size: 14px; line-height: 1.35; }
   .rest-guide-lines b { font-size: 12px; }
@@ -14692,7 +14694,7 @@ var RestSound = (function () {
       { label: '켜기', active: state.restGuide !== false, onSelect: function () { state.restGuide = true; persist(); onChange(); } },
       { label: '끄기', active: state.restGuide === false, onSelect: function () { state.restGuide = false; persist(); onChange(); } },
     ]));
-    box.appendChild(el('div', { class: 'list-label setting-name', text: '운동 중 동작 보기' }));
+    box.appendChild(el('div', { class: 'list-label setting-name', text: '세트 중 동작 그림' }));
     box.appendChild(el('p', { class: 'hint-line', text: '세트 · 워밍업 하는 동안 그 운동 동작을 개수 위에 보여 줍니다. 끄면 개수만 크게 보입니다.' }));
     box.appendChild(segmented([
       { label: '켜기', active: state.setMotion !== false, onSelect: function () { state.setMotion = true; persist(); onChange(); } },

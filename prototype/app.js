@@ -7755,7 +7755,7 @@
       { label: '켜기', active: state.restGuide !== false, onSelect: function () { state.restGuide = true; persist(); onChange(); } },
       { label: '끄기', active: state.restGuide === false, onSelect: function () { state.restGuide = false; persist(); onChange(); } },
     ]));
-    box.appendChild(el('div', { class: 'list-label setting-name', text: '운동 중 동작 보기' }));
+    box.appendChild(el('div', { class: 'list-label setting-name', text: '세트 중 동작 그림' }));
     box.appendChild(el('p', { class: 'hint-line', text: '세트 · 워밍업 하는 동안 그 운동 동작을 개수 위에 보여 줍니다. 끄면 개수만 크게 보입니다.' }));
     box.appendChild(segmented([
       { label: '켜기', active: state.setMotion !== false, onSelect: function () { state.setMotion = true; persist(); onChange(); } },
