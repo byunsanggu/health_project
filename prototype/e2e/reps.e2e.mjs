@@ -41,7 +41,7 @@ export default async function ({ page, url, shot }) {
   check(/6~10회/.test(await rowReps(page, first)), '직접 정한 반복이 블록에 덮였습니다: ' + await rowReps(page, first));
   await tab(page, '내 정보');
   if (await page.locator('.block-toggle[aria-expanded="false"]').count()) await page.locator('.block-toggle').click();
-  await page.locator('.block-style .choice', { hasText: '근비대' }).first().click();
+  await page.locator('.block-style .choice', { hasText: '근육 키우기' }).first().click();
   await tab(page, '오늘');
 
   // 바꿀까요? — 지난주 두 번, 두 번째 종목을 처방보다 훨씬 많이 했다(이번 주 순서는 그대로 두려고 지난주로)

@@ -14,6 +14,8 @@ export default async function ({ page, url, shot }) {
   check(await sheet.count() === 1 && (await sheet.locator('h3').textContent()).includes('몸 풀기'), '몸 풀기 칸이 따로 없습니다');
   // 접혀 있다 — 한 줄로 무엇을 하는지만, 누르면 펼친다
   check(await sheet.locator('.warm-moves').count() === 0, '몸 풀기가 펼쳐져 있어 목록을 밀어냅니다');
+  // 목록만 펼치는 버튼이다 — "동작 보기"는 동작 그림을 여는 이름이라 여기서 쓰지 않는다
+  check((await sheet.locator('.warm-toggle-label').textContent()).trim() === '목록 펼치기', '몸 풀기 펼치기 이름: ' + await sheet.locator('.warm-toggle-label').textContent());
   await sheet.locator('.warm-summary').click();
   check(await page.locator('.warm-sheet .warm-moves li').count() >= 2, '펼쳐도 몸 풀기 동작이 안 보입니다');
   await page.locator('.warm-sheet .warm-toggle').click();
@@ -29,13 +31,22 @@ export default async function ({ page, url, shot }) {
   await page.locator('.warm-step').first().click();
   check(await page.locator('.warm-step[aria-pressed="true"]').count() === 1, '동작을 눌러도 ✓가 안 됩니다');
   check((await page.locator('.warm-done').textContent()).includes(names[0]), '다음 종목을 말하지 않습니다');
+  // 지금 할 동작 — 그림이 돌고, "따라 하기"를 누르면 초를 세고, 다 세면 저절로 ✓
+  check(await page.locator('.stretch-now .live-motion').count() === 1, '몸 풀기 동작 그림이 없습니다');
+  const secs = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1] || 60);
+  await page.locator('.stretch-go').click();
+  await page.clock.runFor(1500);
+  const ticking = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1]);
+  check(ticking < secs, `몸 풀기 초가 줄지 않습니다: ${secs} → ${ticking}`);
   await shot('2-stage');
+  await page.clock.runFor(secs * 1000 + 1000);
+  check(await page.locator('.warm-step[aria-pressed="true"]').count() === 2, '다 셌는데 다음 동작에 ✓가 안 됩니다');
 
   // 껐다 켜도 몸 풀기에서 잇는다
   await page.reload();
   await page.waitForSelector('.tabbar [role="tab"]');
   check((await page.locator('.progress-name > span').first().textContent()).trim().startsWith('몸 풀기'), '다시 켜니 몸 풀기가 사라졌습니다');
-  check(await page.locator('.warm-step[aria-pressed="true"]').count() === 1, '체크한 동작이 사라졌습니다');
+  check(await page.locator('.warm-step[aria-pressed="true"]').count() === 2, '체크한 동작이 사라졌습니다');
 
   // 끝 — 첫 종목, 이름이 크게
   await page.locator('.warm-done').click();

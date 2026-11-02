@@ -47,8 +47,9 @@ export interface StyleProfile {
 export const STYLE_PROFILES: Record<TrainingStyle, StyleProfile> = {
   hypertrophy: {
     style: 'hypertrophy',
-    label: '근비대',
-    description: '기본 블록. 적당한 반복과 볼륨으로 근육량을 늘립니다',
+    // 화면에서는 블록을 '과정'이라 부른다. 볼륨 · 블록 · 근비대 같은 말 대신 하는 일로 설명한다
+    label: '근육 키우기',
+    description: '기본 과정. 알맞은 횟수와 세트로 근육을 키웁니다',
     repRanges: {
       primary: { min: 6, max: 10 },
       accessory: { min: 8, max: 12 },
@@ -65,7 +66,7 @@ export const STYLE_PROFILES: Record<TrainingStyle, StyleProfile> = {
   strength: {
     style: 'strength',
     label: '근력',
-    description: '저반복 고중량. 드는 무게 자체를 올립니다',
+    description: '적은 횟수로 무겁게. 드는 무게 자체를 올립니다',
     repRanges: {
       primary: { min: 3, max: 5 },
       accessory: { min: 5, max: 8 },
@@ -79,12 +80,12 @@ export const STYLE_PROFILES: Record<TrainingStyle, StyleProfile> = {
     allowsIntensityTechniques: false,
     includesMaxTest: false,
     minLevel: 'intermediate',
-    caution: '자세가 잡히기 전에 저반복 고중량으로 가면 부상 위험이 큽니다',
+    caution: '자세가 잡히기 전에 적은 횟수로 무겁게 하면 다치기 쉽습니다',
   },
   density: {
     style: 'density',
     label: '고밀도 (빡세게)',
-    description: '휴식을 줄이고 볼륨을 올려 한 세션의 밀도를 끌어올립니다',
+    description: '쉬는 시간을 줄이고 세트를 늘려 한 번에 몰아서 합니다',
     repRanges: {
       primary: { min: 8, max: 12 },
       accessory: { min: 10, max: 15 },
@@ -99,12 +100,12 @@ export const STYLE_PROFILES: Record<TrainingStyle, StyleProfile> = {
     allowsIntensityTechniques: true,
     includesMaxTest: false,
     minLevel: 'intermediate',
-    caution: '회복 요구가 가장 큰 블록입니다. 끝나면 반드시 덜어내는 주로 넘어갑니다',
+    caution: '가장 지치는 과정입니다. 끝나면 반드시 덜어내는 주로 넘어갑니다',
   },
   peak: {
     style: 'peak',
     label: '한계 돌파',
-    description: '볼륨을 줄이고 강도를 올려 한계를 확인합니다. 마지막 주에 최대 중량 시도',
+    description: '세트는 줄이고 무게를 올려 한계를 확인합니다. 마지막 주에 가장 무거운 무게를 시도합니다',
     repRanges: {
       primary: { min: 1, max: 3 },
       accessory: { min: 3, max: 6 },
@@ -118,12 +119,12 @@ export const STYLE_PROFILES: Record<TrainingStyle, StyleProfile> = {
     allowsIntensityTechniques: false,
     includesMaxTest: true,
     minLevel: 'intermediate',
-    caution: '쌓는 블록과 덜어내는 주를 거친 뒤에만 들어갑니다. 피로가 남은 상태로는 기록이 안 나옵니다',
+    caution: '쌓는 과정과 덜어내는 주를 거친 뒤에만 들어갑니다. 피로가 남은 상태로는 기록이 안 나옵니다',
   },
   conditioning: {
     style: 'conditioning',
     label: '컨디셔닝',
-    description: '서킷·인터벌 중심. 심폐와 작업 능력을 올립니다',
+    description: '서킷 · 인터벌 위주. 심폐와 체력을 올립니다',
     repRanges: {
       primary: { min: 8, max: 15 },
       accessory: { min: 10, max: 20 },
@@ -136,7 +137,7 @@ export const STYLE_PROFILES: Record<TrainingStyle, StyleProfile> = {
     maxConsecutiveBlocks: 1,
     allowsIntensityTechniques: false,
     includesMaxTest: false,
-    caution: '근력 세션과 같은 부위가 붙으면 양쪽 다 손해입니다',
+    caution: '근력 운동과 같은 부위가 겹치면 양쪽 다 손해입니다',
   },
 };
 
@@ -202,7 +203,7 @@ export function availableStyles(context: StyleContext): StyleAvailability[] {
     }
 
     if (context.painPresent && (style === 'peak' || style === 'density')) {
-      return deny('3점 이상 통증이 있는 상태에서는 강도를 올리지 않습니다.');
+      return deny('통증이 3점 이상일 때는 더 세게 하지 않습니다.');
     }
 
     if (style === 'peak' && !context.justDeloaded) {
@@ -211,11 +212,11 @@ export function availableStyles(context: StyleContext): StyleAvailability[] {
 
     const streak = countTrailing(recent, style);
     if (streak >= profile.maxConsecutiveBlocks) {
-      return deny(`${profile.label} 블록을 ${streak}번 연속했습니다. 다른 블록을 한 번 거친 뒤 돌아오세요.`);
+      return deny(`${profile.label} 과정을 ${streak}번 연속했습니다. 다른 과정을 한 번 거친 뒤 돌아오세요.`);
     }
 
     if (style === 'density' && last === 'density') {
-      return deny('고밀도 블록은 연속으로 돌리지 않습니다. 회복이 따라오지 못합니다.');
+      return deny('고밀도 과정은 연달아 하지 않습니다. 회복이 따라오지 못합니다.');
     }
 
     return { style, profile, allowed: true };
@@ -239,7 +240,7 @@ export function suggestNextStyle(context: StyleContext): StyleSuggestion {
     return {
       style: 'peak',
       profile: STYLE_PROFILES.peak,
-      reason: '근력 블록과 덜어내는 주를 마쳤습니다. 지금이 기록을 확인하기 가장 좋은 시점입니다.',
+      reason: '근력 과정과 덜어내는 주를 마쳤습니다. 지금이 기록을 확인하기 가장 좋은 때입니다.',
     };
   }
 
@@ -247,7 +248,7 @@ export function suggestNextStyle(context: StyleContext): StyleSuggestion {
     return {
       style: 'hypertrophy',
       profile: STYLE_PROFILES.hypertrophy,
-      reason: `${STYLE_PROFILES[last].label} 블록 뒤에는 볼륨 블록으로 돌아와 기반을 다시 쌓습니다.`,
+      reason: `${STYLE_PROFILES[last].label} 과정 뒤에는 기본 과정으로 돌아와 바탕을 다시 쌓습니다.`,
     };
   }
 
@@ -255,14 +256,14 @@ export function suggestNextStyle(context: StyleContext): StyleSuggestion {
     return {
       style: 'strength',
       profile: STYLE_PROFILES.strength,
-      reason: '근비대 블록이 이어졌습니다. 근력 블록으로 바꿔 드는 무게 자체를 올릴 시점입니다.',
+      reason: '근육 키우기 과정이 이어졌습니다. 근력 과정으로 바꿔 드는 무게 자체를 올릴 때입니다.',
     };
   }
 
   return {
     style: 'hypertrophy',
     profile: STYLE_PROFILES.hypertrophy,
-    reason: '기반이 되는 블록입니다. 여기서 쌓은 볼륨이 다른 블록의 재료가 됩니다.',
+    reason: '기본이 되는 과정입니다. 여기서 쌓은 운동량이 다른 과정의 바탕이 됩니다.',
   };
 }
 

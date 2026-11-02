@@ -324,6 +324,8 @@ export interface BeforeSetInput {
    * 들어간다. 이걸 말하면 그 세트의 동작 포인트 · 실수는 쉰다(한 번에 하나).
    */
   guide?: readonly string[];
+  /** false — 바로 앞(PT 첫 워밍업)에서 종목 이름을 이미 불렀다. 첫 세트 앞에서 이름을 또 부르지 않는다 */
+  named?: boolean;
   /**
    * 끝까지 밀지 않는 날 — 첫날 · 덜어내는 주 · 컨디션 낮은 날 · 아픈 데 있는 날.
    * 남길 횟수가 3개 이상인 주(블록 초반)도 그렇다. 밀어붙이는 코치(빡센 · 활기찬)도
@@ -517,7 +519,7 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
   // 첫 세트
   const marker = liftMarker(style, input.liftIndex, input.totalLifts, calmDown);
   if (marker) lines.push(marker);
-  lines.push(NAME_LINE[style](input.exerciseName));
+  if (input.named !== false) lines.push(NAME_LINE[style](input.exerciseName));
 
   if (input.firstTime && input.setup && input.setup.length > 0) {
     lines.push(...setupLines(style, input.setup));

@@ -72,6 +72,6 @@ describe('planGoals', () => {
 describe('describeGoals', () => {
   it('고른 순서와 상관없이 같은 문장이 나온다', () => {
     assert.equal(describeGoals(['fatLoss', 'strength']), describeGoals(['strength', 'fatLoss']));
-    assert.equal(describeGoals(['strength', 'hypertrophy', 'fatLoss']), '근력 · 근비대 · 체지방 감량');
+    assert.equal(describeGoals(['strength', 'hypertrophy', 'fatLoss']), '근력 · 근육 키우기 · 체지방 감량');
   });
 });

@@ -1,8 +1,9 @@
-// 화면에 나가는 말 — 현장 용어(RIR · 1RM · 축적 · 디로드)와 2026-10-22 같은 날짜를 쓰지 않는다.
+// 화면에 나가는 말 — 현장 용어(RIR · 1RM · 축적 · 디로드 · 볼륨 · 처방 · PR · 수행 큐 …)와 2026-10-22 같은 날짜를 쓰지 않는다.
 //   좁은 폰(320px)에서 편집 버튼 줄이 카드 밖으로 잘리지 않고, "원래대로"가 두 줄로 쪼개지지 않는다.
 import { check, onboard, startWorkout, tab } from './lib.mjs';
 
-const JARGON = /RIR|1RM|축적|디로드|템플릿|기준선/;
+// 현장 용어 — 화면에서 쉬운 말로 바꾼 것들. 다시 들어오면 여기서 잡힌다
+const JARGON = /RIR|1RM|축적|디로드|템플릿|기준선|볼륨|처방|환산|본세트|수행 큐|\bPR\b|자극선|1회 최대|주동근|유효 세트|복합 운동|고립 운동|여유 \d개/;
 const ISO = /\d{4}-\d{2}-\d{2}/;
 
 async function visibleText(page, selector) {
@@ -49,10 +50,18 @@ export default async function ({ page, url, shot }) {
   // 두 세트 하고 마친 뒤 요약
   await startWorkout(page);
   await page.locator('.now-done').click();
+  // 쉬는 동안 — 휴식 막대의 이유 줄 · 운동 카드
+  const resting = await visibleText(page, '#screen') + ' ' + await visibleText(page, '#rest-host');
+  check(!JARGON.test(resting), '쉬는 화면에 현장 용어: ' + (resting.match(new RegExp('.{0,20}(' + JARGON.source + ').{0,20}')) || [''])[0]);
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
   await page.locator('.now-done').click();
   const doneLine = await visibleText(page, '#screen');
   check(!/RIR/.test(doneLine), '끝낸 세트 줄에 RIR: ' + (doneLine.match(/.{20}RIR.{10}/) || [''])[0]);
+  // 동작 보기 창 — 자세 요령 · 흔한 실수 · 쓰는 근육
+  await page.locator('.lift-demo').click();
+  const demo = await visibleText(page, 'dialog');
+  check(!JARGON.test(demo), '동작 보기 창에 현장 용어: ' + (demo.match(new RegExp('.{0,20}(' + JARGON.source + ').{0,20}')) || [''])[0]);
+  await page.locator('dialog .modal-close').click();
   await page.locator('button', { hasText: '운동 끝내기' }).first().click();
   await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();
   await page.getByRole('button', { name: '요약 다시 보기' }).click();
@@ -67,6 +76,10 @@ export default async function ({ page, url, shot }) {
   await tab(page, '기록');
   const week = await visibleText(page, '#screen');
   check(!JARGON.test(week), '주간 탭에 현장 용어: ' + (week.match(new RegExp('.{0,20}(' + JARGON.source + ').{0,20}')) || [''])[0]);
+  // 자세히 — 다음 주 계획 · 피로 · 부위별
+  if (await page.locator('.record-more[aria-expanded="false"]').count()) await page.locator('.record-more').click();
+  const more = await visibleText(page, '#screen');
+  check(!JARGON.test(more), '기록 › 자세히에 현장 용어: ' + (more.match(new RegExp('.{0,20}(' + JARGON.source + ').{0,20}')) || [''])[0]);
 
   // 내 정보 — 동의한 날
   await tab(page, '내 정보');

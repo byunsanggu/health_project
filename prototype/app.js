@@ -1679,10 +1679,14 @@
        * 기록이 없어 엔진이 무게를 못 정한 종목(null)도 세트 칸에는 처음 무게(fallbackWeight)가 들어간다.
        * 워밍업도 그 무게로 짠다 — 0으로 넘기면 20kg 머신 앞에서 "맨몸 종목입니다"가 떴다.
        */
-      var workingKg = !firstSet ? 0 : firstSet.weightKg === null ? fallbackWeight(item.exercise) : firstSet.weightKg;
+      var workingKg = !firstSet ? 0 : firstSet.weightKg == null ? fallbackWeight(item.exercise) : firstSet.weightKg;
+      // 기록 없이 짐작한 첫 무게(체중 비율 · 근거 없음) — 워밍업 줄이 "가볍게 해 보고 고치세요"를 같이 말한다
+      var guessed = Boolean(firstSet) && (firstSet.weightKg == null ||
+        Boolean(item.startingLoad && item.startingLoad.method !== 'related-lift'));
       var warmup = E.planWarmup({
         exercise: item.exercise,
         workingWeightKg: workingKg || 0,
+        estimatedWeight: guessed,
         workingReps: firstSet ? firstSet.targetReps.max : 10,
         level: state.lifter.level,
         alreadyWarmedMuscles: warmed.slice(),
@@ -7257,7 +7261,9 @@
     var demo = E.demoFor(lift.exercise);
     var first = !triedBefore(lift.exercise);
     // 첫 세트 앞에 하는 법을 이미 들었으면(쉬는 동안이든 바로 지금이든) 실수 하나를 또 얹지 않는다
-    var guided = setIndex === 0 && Boolean(state.coachSaid[liftIndex + ':guide']);
+    var guided = setIndex === 0 && (state.coachSaid[liftIndex + ':guide'] === true || (guide || []).length > 0);
+    // 하는 법이나 세팅을 이미 들었으면 첫 세트 앞 동작 포인트(잡는 법)는 같은 말이라 뺀다
+    var told = setIndex === 0 && (guided || Boolean(state.coachSaid[liftIndex + ':setup']));
     return {
       style: state.coach.style,
       exerciseName: lift.exercise.name,
@@ -7269,9 +7275,11 @@
       repsMax: set.targetReps.max,
       targetRir: typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir,
       last: E.lastTimeFor(state.history, lift.exercise, state.todayDate, coachScope(lift)),
-      cues: demo ? demo.cues : [],
+      cues: demo && !told ? demo.cues : [],
       firstTime: first,
       setup: setupPending(liftIndex) ? E.setupFor(lift.exercise) : [],
+      // 워밍업 첫 말에서 이름을 불렀으면 첫 세트 앞에서 또 부르지 않는다
+      named: !(setIndex === 0 && state.coachSaid[liftIndex + ':named']),
       machineSetting: state.machineSettings[settingKeyFor(lift)] || null,
       liftIndex: liftIndex,
       totalLifts: state.lifts.length,
@@ -9166,7 +9174,14 @@
          * 세팅을 말하면 하는 법의 자리 잡는 말은 뺀다 — 같은 말을 두 번 한다.
          */
         var setup = takeSetup(liftIndex);
-        var guide = takeGuide(liftIndex, { resting: false, grip: setup.length === 0 });
+        /*
+         * 세팅 순서를 말하면 하는 법은 여기서 하지 않는다 — 둘을 붙이면 30초가 넘는 강의가 된다. 자리 잡는
+         * 말은 세팅이 대신하고, 흔한 실수 하나는 첫 세트 앞에서 짚는다(그래서 "말한 것"으로만 적어 둔다).
+         */
+        var guide = [];
+        if (setup.length) { if (!state.coachSaid[liftIndex + ':guide']) state.coachSaid[liftIndex + ':guide'] = 'skipped'; }
+        else guide = takeGuide(liftIndex, { resting: false });
+        state.coachSaid[liftIndex + ':named'] = true;
         if (setup.length || guide.length) {
           line = [E.liftNameLine(state.coach.style, lift.exercise.name)].concat(setup, guide,
             [E.warmupSetLine(state.coach.style, lift.exercise.name, i, steps, inPounds(lift.exercise.id), { named: false })]).join(' ');
@@ -10883,7 +10898,14 @@
      */
     var anyDone = lift.sets.some(function (set) { return set.done; });
     // 워밍업은 세트 목록 맨 위 줄로 들어간다(setStrip). 왜 그만큼 하는지만 여기 한 줄.
-    if (!anyDone && lift.warmup && lift.warmup.note) card.appendChild(el('div', { class: 'warmup-note', text: lift.warmup.note }));
+    /*
+     * 첫 무게가 짐작이라는 말은 아래 처방 설명(lift.note)도 한다 — 같은 카드에 두 번 쓰지 않는다.
+     */
+    var warmNote = lift.warmup && lift.warmup.note ? lift.warmup.note : '';
+    if (warmNote && E.ESTIMATED_WEIGHT_NOTE_KO && lift.note && lift.note.indexOf('짐작') >= 0) {
+      warmNote = warmNote.replace(E.ESTIMATED_WEIGHT_NOTE_KO, '').trim();
+    }
+    if (!anyDone && warmNote) card.appendChild(el('div', { class: 'warmup-note', text: warmNote }));
     card.appendChild(renderSetTrack(lift, liftIndex));
 
     /*
@@ -11617,11 +11639,11 @@
       var workout = session.workout;
 
       body.appendChild(el('p', { class: 'hint-line', text:
-        '총 ' + session.totalMinutes + '분 — 몸풀기 ' + session.warmup.minutes +
+        '총 ' + session.totalMinutes + '분 — 몸 풀기 ' + session.warmup.minutes +
         '분 + ' + workout.label + ' ' + workout.durationMinutes + '분' }));
 
       // 몸풀기 — 와드 앞에 와야 하는 것이라 와드보다 먼저 그린다
-      body.appendChild(el('div', { class: 'list-label', text: '몸풀기 ' + session.warmup.minutes + '분' }));
+      body.appendChild(el('div', { class: 'list-label', text: '몸 풀기 ' + session.warmup.minutes + '분' }));
       body.appendChild(el('ul', { class: 'cue-list' }, session.warmup.steps.map(function (step) {
         return el('li', {}, [el('span', { text: step })]);
       })));
@@ -16346,7 +16368,9 @@
    */
   function truthfulSummary(plan) {
     var text = plan.summary || '';
-    if (plan.phase === 'deload' || text.indexOf('볼륨 증가') < 0 || !state.program) return text;
+    // 엔진의 "세트 늘림:" 줄(E.PLAN_INCREASE_LABEL_KO)을 첫 주와 비교한 말로 바꾼다
+    var increase = E.PLAN_INCREASE_LABEL_KO || '세트 늘림';
+    if (plan.phase === 'deload' || text.indexOf(increase) < 0 || !state.program) return text;
     try {
       var planned = E.aggregateVolume(E.plannedWeekLogs({
         templates: state.program.templates, plan: plan, index: index, landmarks: state.landmarks,
@@ -16358,9 +16382,10 @@
       }).filter(function (item) { return item.delta >= 0.5; })
         .sort(function (a, b) { return b.delta - a.delta; }).slice(0, 4);
       var said = grown.length
-        ? '첫 주보다 세트 늘림: ' + grown.map(function (item) { return E.MUSCLE_LABELS_KO[item.muscle] + ' +' + item.delta; }).join(', ')
+        // 세트는 정수로 — "+1.5세트"는 할 수 없는 숫자다
+        ? '첫 주보다 세트 늘림: ' + grown.map(function (item) { return E.MUSCLE_LABELS_KO[item.muscle] + ' +' + Math.max(1, Math.round(item.delta)); }).join(', ')
         : '첫 주와 같은 세트';
-      return text.replace(/볼륨 증가: [^·]*/, said + ' ').replace(/\s+·/g, ' ·').trim();
+      return text.replace(new RegExp(increase + ': [^·]*'), said + ' ').replace(/\s+·/g, ' ·').trim();
     } catch (err) {
       return text;
     }

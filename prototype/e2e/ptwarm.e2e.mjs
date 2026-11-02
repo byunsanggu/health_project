@@ -18,4 +18,21 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('#focus .focus-warm-row.done').count() === 1, 'PT 화면의 워밍업 줄에 ✓가 없습니다');
   check(await focusPhase(page) !== 'paused', 'PT가 멈췄습니다');
   await shot('1-warm-check');
+
+  // 마지막 워밍업이 끝나면 PT 화면이 사라지지 않고 바로 1세트 준비로 — 빈틈에 목록의 "1세트 완료"가 뜨면
+  // 누르는 순간 하지 않은 세트가 기록됐다
+  let phase = await focusPhase(page);
+  for (let i = 0; i < 1200 && phase === 'warm'; i += 1) {
+    await page.clock.runFor(250);
+    phase = await focusPhase(page);
+    check(phase !== null, '워밍업과 1세트 사이에 PT 화면이 사라졌습니다');
+  }
+  check(phase === 'count', '워밍업 뒤에 1세트로 가지 않고 ' + phase);
+  check((await page.locator('#focus .focus-what').textContent()).startsWith('1세트'), '워밍업 뒤가 1세트가 아닙니다');
+  // 준비 시간은 "준비"와 남은 초로 — "준비 40"처럼 개수로 읽히지 않게
+  check(/^\d+초$/.test(await page.locator('#focus-num').textContent()), '준비 숫자: ' + await page.locator('#focus-num').textContent());
+  check((await page.locator('#focus-cap').textContent()) === '준비', '준비 표시가 없습니다');
+  const logged = await page.evaluate(() => (JSON.parse(localStorage.getItem('volume-coach.proto.state') || '{}').settings || {}).todaySets || []);
+  check(logged.filter((set) => !set.warmup).length === 0, '하지 않은 세트가 적혔습니다: ' + JSON.stringify(logged));
+  await shot('2-set1-lead');
 }

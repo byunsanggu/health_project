@@ -11,14 +11,15 @@
 export type TrainingGoal = 'hypertrophy' | 'strength' | 'fatLoss' | 'general';
 
 export const GOAL_LABELS_KO: Record<TrainingGoal, string> = {
-  hypertrophy: '근비대',
+  // '근비대'는 처음 온 사람이 모르는 말이다. 하는 일로 부른다(' · '는 목표 사이 구분이라 이름 안에 쓰지 않는다)
+  hypertrophy: '근육 키우기',
   strength: '근력',
   fatLoss: '체지방 감량',
   general: '건강 유지',
 };
 
 export const GOAL_HINTS_KO: Record<TrainingGoal, string> = {
-  hypertrophy: '근육 크기를 늘립니다',
+  hypertrophy: '근육을 키워 몸매를 만듭니다',
   strength: '드는 무게를 늘립니다',
   fatLoss: '근육은 지키면서 체지방을 줄입니다',
   general: '무리 없이 꾸준히 합니다',
@@ -66,7 +67,7 @@ export function planGoals(input: readonly TrainingGoal[]): GoalPlan {
   } else if (has('strength')) {
     notes.push('바벨 메인 동작(스쿼트 · 벤치 · 데드 · 프레스 · 로우)은 4~6회(처음이면 5~8회)로, 덤벨 · 머신 주 종목은 6~10회로 가져갑니다.');
   } else if (has('hypertrophy')) {
-    notes.push('근비대 구간인 6~12회를 중심으로 짭니다.');
+    notes.push('근육이 잘 크는 6~12회 위주로 짭니다.');
   }
 
   if (cutting) {
@@ -77,10 +78,10 @@ export function planGoals(input: readonly TrainingGoal[]): GoalPlan {
     notes.push('적게 먹는 동안에는 회복이 느려집니다. 세트 수를 한 주 최대까지 늘리지 않고 중간에서 멈춥니다.');
 
     if (has('strength')) {
-      notes.push('적자에서 근력이 오르기는 어렵습니다. 올리기보다 지키는 것을 목표로 잡습니다.');
+      notes.push('적게 먹으면서 근력이 오르기는 어렵습니다. 올리기보다 지키는 것을 목표로 잡습니다.');
     }
     if (has('hypertrophy')) {
-      notes.push('적자에서 근육을 늘리기는 어렵습니다. 초보이거나 오래 쉬었던 경우가 아니면 유지가 현실적입니다.');
+      notes.push('적게 먹으면서 근육을 늘리기는 어렵습니다. 처음이거나 오래 쉬었던 경우가 아니면 지키는 쪽이 현실적입니다.');
     }
   }
 

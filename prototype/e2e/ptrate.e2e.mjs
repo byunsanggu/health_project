@@ -53,8 +53,10 @@ export default async function ({ page, url, shot }) {
     }
     return null;
   };
-  for (let i = 0; i < 120 && Number(await page.locator('#focus-num').textContent().catch(() => '0')) < 2; i += 1) await page.clock.runFor(500);
-  check(Number(await page.locator('#focus-num').textContent()) >= 2, '세트를 세지 않습니다');
+  // 준비 중에는 "8초"처럼 초가 붙는다 — 숫자만 있을 때가 센 개수
+  const reps = async () => { const text = await page.locator('#focus-num').textContent().catch(() => ''); return /^\d+$/.test(text) ? Number(text) : 0; };
+  for (let i = 0; i < 120 && await reps() < 2; i += 1) await page.clock.runFor(500);
+  check(await reps() >= 2, '세트를 세지 않습니다');
   await repAt();
   const slow = await repAt();
   await page.locator('#focus .pt-rate-chip').click();

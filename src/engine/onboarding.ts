@@ -361,10 +361,11 @@ const SPLIT_NAMES: Record<number, string> = {
   1: '주 1회 전신',
   2: '주 2회 전신',
   3: '주 3회 전신',
-  4: '주 4회 상하체 분할',
-  5: '주 5회 혼합 분할',
-  6: '주 6회 푸시·풀·레그 2순환',
-  7: '주 7회 푸시·풀·레그 2순환 + 보완일',
+  // '분할 · 순환'은 처음 온 사람이 모르는 말이다 — 무엇을 번갈아 하는지로 부른다
+  4: '주 4회 상체 · 하체 번갈아',
+  5: '주 5회 상체 · 하체 + 푸시 · 풀 · 레그',
+  6: '주 6회 푸시 · 풀 · 레그 두 바퀴',
+  7: '주 7회 푸시 · 풀 · 레그 두 바퀴 + 가벼운 날',
 };
 
 /* ── 종목 선택 ─────────────────────────────────────────────── */
@@ -1045,7 +1046,7 @@ export function buildProgram(
   const ranged = assignRepRanges(templates, answers.goals, level, answers.repStyle);
 
   return {
-    name: SPLIT_NAMES[days] ?? `주 ${days}회 분할`,
+    name: SPLIT_NAMES[days] ?? `주 ${days}회`,
     daysPerWeek: days,
     caution: cautionFor(days, ranged, landmarks, answers.gym.equipmentIds, levelProfile(level).startingRir, level),
     templates: ranged,
@@ -1130,7 +1131,7 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
   if (level.adjusted) notes.push(level.note);
 
   notes.push(
-    `${program.name} · ${profile.label} 볼륨으로 시작합니다. ` +
+    `${program.name} · ${profile.label}에 맞는 운동량으로 시작합니다. ` +
       `${profile.accumulationWeeks}주 동안 조금씩 늘리고, 그다음 한 주는 덜어냅니다.`,
   );
 
@@ -1149,7 +1150,7 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
       (suggestion ? ` ${withParticle(suggestion.name, '을/를')} 더하면 채워집니다.` : ''));
   }
   if (few.length > 0) {
-    notes.push(`${withParticle(labels(few), '은/는')} 이 기구로 할 종목이 한 가지뿐이라 블록이 바뀌어도 같은 종목입니다. 기구를 더 고르면 바꿔 가며 합니다.`);
+    notes.push(`${withParticle(labels(few), '은/는')} 이 기구로 할 종목이 한 가지뿐이라 과정이 바뀌어도 같은 종목입니다. 기구를 더 고르면 바꿔 가며 합니다.`);
   }
 
   /*

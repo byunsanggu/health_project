@@ -458,10 +458,10 @@ export interface CooldownStep {
 
 const STRETCHES: readonly CooldownStep[] = [
   { id: 'chest-doorway', name: '가슴 스트레칭', seconds: 40, cue: '팔을 벽이나 기둥에 대고 몸을 반대로 돌리세요', sides: true, muscles: ['chest', 'frontDelt'] },
-  { id: 'lat-hang', name: '광배 스트레칭', seconds: 40, cue: '기둥을 잡고 엉덩이를 뒤로 빼며 옆구리를 늘리세요', sides: true, muscles: ['back'] },
+  { id: 'lat-hang', name: '옆구리 · 등 스트레칭', seconds: 40, cue: '기둥을 잡고 엉덩이를 뒤로 빼며 옆구리를 늘리세요', sides: true, muscles: ['back'] },
   { id: 'cross-arm', name: '어깨 뒤쪽 스트레칭', seconds: 30, cue: '한 팔을 가슴 앞으로 당겨 반대 팔로 누르세요', sides: true, muscles: ['rearDelt', 'sideDelt', 'traps'] },
-  { id: 'triceps-overhead', name: '삼두 스트레칭', seconds: 30, cue: '팔꿈치를 머리 뒤로 접고 반대 손으로 지그시 누르세요', sides: true, muscles: ['triceps'] },
-  { id: 'biceps-wall', name: '이두 · 팔 앞쪽 스트레칭', seconds: 30, cue: '손바닥을 벽에 대고 몸을 천천히 반대로 돌리세요', sides: true, muscles: ['biceps', 'forearms'] },
+  { id: 'triceps-overhead', name: '팔 뒤쪽 스트레칭', seconds: 30, cue: '팔꿈치를 머리 뒤로 접고 반대 손으로 지그시 누르세요', sides: true, muscles: ['triceps'] },
+  { id: 'biceps-wall', name: '팔 앞쪽 스트레칭', seconds: 30, cue: '손바닥을 벽에 대고 몸을 천천히 반대로 돌리세요', sides: true, muscles: ['biceps', 'forearms'] },
   { id: 'quad-stand', name: '앞허벅지 스트레칭', seconds: 40, cue: '발목을 잡아 뒤꿈치를 엉덩이 쪽으로, 무릎은 아래를 보게 하세요', sides: true, muscles: ['quads'] },
   { id: 'hamstring-reach', name: '뒤허벅지 스트레칭', seconds: 40, cue: '다리를 펴고 등을 편 채 엉덩이부터 숙이세요', sides: true, muscles: ['hamstrings'] },
   { id: 'figure-four', name: '엉덩이 스트레칭', seconds: 40, cue: '누워서 발목을 반대 무릎에 올리고 다리를 당기세요', sides: true, muscles: ['glutes'] },
