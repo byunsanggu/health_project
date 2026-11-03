@@ -139,6 +139,13 @@ const CARRY_LEAN = m('lean', '몸이 한쪽으로 기울어요', '어깨를 수�
 const DB_AWAY = m('bar-away', '덤벨이 다리에서 멀어져요', '덤벨을 허벅지 앞에 붙여서 쓸어 내리세요', '덤벨은 다리에 붙여서', '멀어질수록 허리가 받는 무게가 커집니다', true);
 const FLOOR_BOUNCE = m('bounce', '팔꿈치를 바닥에 쿵 내려놓고 튕겨요', '팔꿈치가 바닥에 닿으면 잠깐 멈췄다가 미세요', '바닥에서 멈추고', '반동이 가슴 대신 일합니다');
 
+/* ── 5차 — 밴드 · 맨몸 · 덤벨 고립 ─────────────── */
+const APART_BEND = m('elbow-bend', '팔꿈치를 굽혀서 당겨요', '팔꿈치를 거의 편 채로 양옆으로 벌리세요', '팔은 길게', '뒤쪽 어깨 대신 팔이 당깁니다');
+const APART_SHRUG = m('shrug', '벌릴 때 어깨가 귀 쪽으로 올라가요', '어깨를 내린 채 가슴을 펴고 벌리세요', '어깨는 내리고', '뒤쪽 어깨 대신 목 옆 근육이 일합니다');
+const KICK_SWING = m('swing', '반동으로 다리를 휘둘러요', '끝에서 1초 멈췄다 천천히 돌아오세요', '천천히', '엉덩이 대신 반동이 다리를 올립니다');
+const FLY_DEEP = m('too-deep', '팔이 몸통보다 한참 아래로 내려가요', '팔이 몸통 높이에 오면 멈추세요', '몸통 높이까지', '어깨 앞쪽이 과하게 늘어나 다칩니다', true);
+const CRUNCH_SITUP = m('sit-up', '허리까지 들어 윗몸일으키기가 돼요', '어깨만 띄우고 허리는 바닥에 붙이세요', '어깨만', '배 대신 고관절 앞 근육이 당깁니다');
+
 /**
  * 종목별 흔한 실수. 앞에 둘수록 더 흔하고 더 위험하다.
  * 여기 없는 종목은 동작 패턴의 기본 목록을 쓴다.
@@ -268,6 +275,22 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'dumbbell-floor-press': [ELBOW_FLARE, FLOOR_BOUNCE],
   'standing-dumbbell-press': [OHP_ARCH, PRESS_HALF],
   'dumbbell-overhead-extension': [EXT_FLARE, OHP_ARCH],
+  // 5차
+  'dumbbell-curl': [CURL_SWING, CURL_DROP],
+  'incline-push-up': [HIPS_SAG, ELBOW_FLARE],
+  'bodyweight-squat': [KNEE_CAVE, HEELS_UP],
+  'single-leg-calf-raise': [CALF_SHORT, CALF_BOUNCE],
+  'band-row': [ROW_ROCK, PULL_SHRUG],
+  'band-pull-apart': [APART_BEND, APART_SHRUG],
+  'band-lateral-raise': [RAISE_SHRUG, RAISE_HIGH],
+  'dumbbell-hip-thrust': [THRUST_ARCH, THRUST_CHIN],
+  'dumbbell-reverse-lunge': [LUNGE_KNEE, LUNGE_LEAN],
+  'dumbbell-sumo-squat': [KNEE_CAVE, TORSO_LEAN],
+  'cable-glute-kickback': [KICKBACK_ARCH, KICK_SWING],
+  'dumbbell-fly': [FLY_ARMS, FLY_DEEP],
+  'smith-incline-press': [PRESS_SHRUG, ELBOW_FLARE, BENCH_BUTT],
+  'smith-shoulder-press': [SEATED_ARCH, PRESS_HALF],
+  'crunch': [NECK_PULL, CRUNCH_SITUP],
 };
 
 /** 종목별 목록이 없을 때 동작 패턴의 기본. */

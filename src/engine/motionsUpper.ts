@@ -538,13 +538,14 @@ function cableRow(id: string, fault?: string): Clip {
     armR: { ik: [-0.055, up, reach], in: 'chest', pole: [-pole[0], pole[1], pole[2]], hand: [0, 1, 0] },
   });
   const out = hands(body(16), 0.56, 0.16);
-  const back = hands(body(-4), 0.12, 0.04);
+  // 끝 자세 — 손잡이는 배꼽 앞(가슴 틀에서 24cm 앞), 팔꿈치는 옆구리 뒤로. 전에는 12cm라 손이 몸통에 박혔다
+  const back = hands(body(-4), 0.24, 0.04, [0.6, 0, -1]);
   const list = liftKeys(out, back, ['배꼽 쪽으로 당기기', '날개뼈 모으기', '천천히 펴기']);
   if (fault === 'rocking') {
     swap(list, [0, 3], '몸을 앞뒤로 흔듦', hands(body(42, { spine: 12 }), 0.56, 0.16));
-    swap(list, [1, 2], '몸을 앞뒤로 흔듦', hands(body(-26, { spine: -8 }), 0.12, 0.04));
+    swap(list, [1, 2], '몸을 앞뒤로 흔듦', hands(body(-26, { spine: -8 }), 0.24, 0.04, [0.6, 0, -1]));
   } else if (fault === 'shoulders-up') swap(list, [1, 2], '어깨가 귀 쪽으로', { ...back, scap: [1, 0] });
-  else if (fault === 'arms') swap(list, [1, 2], '팔로만 당김', hands(body(14), 0.18, 0.16, [0.6, -0.6, -0.5]));
+  else if (fault === 'arms') swap(list, [1, 2], '팔로만 당김', hands(body(14), 0.24, 0.16, [0.6, -0.6, -0.5]));
   return {
     id, cycle: 2.8, view: [80, 12], keys: keys(...list),
     scene: [
@@ -924,15 +925,17 @@ export function curl(id: string, kind: CurlKind, fault?: string): Clip {
     }
     case 'concentration': {
       // 벤치 끝에 앉아 숙이고, 오른 팔꿈치를 오른 넓적다리 안쪽에
-      body = seated(0.45, 0, -34, { spine: 10, neck: -20 }, 0.5, 0.3);
-      arm = (elbow: number, elev = 38): ArmSpec => ({ fk: [-14, elev, 0, elbow], turn: 0 });
+      // 더 숙이고(48°) 팔을 안쪽으로(−30°) — 팔꿈치가 넓적다리 안쪽에 닿고 덤벨은 두 발 사이로 늘어진다
+      body = seated(0.45, 0, -48, { spine: 10, neck: -20 }, 0.5, 0.3);
+      arm = (elbow: number, elev = 38): ArmSpec => ({ fk: [-30, elev, 0, elbow], turn: 0 });
       lowElev = 38;
       highElev = 40;
       lowElbow = 14;
       highElbow = 132;
       hold = { R: 'dumbbell' };
       side = 'R';
-      scene = flatBench(-0.4, 0.3, 0.45);
+      // 벤치는 엉덩이에서 끝난다 — 덤벨이 벤치 밑으로 숨지 않게
+      scene = flatBench(-0.85, 0.08, 0.45);
       break;
     }
     default:

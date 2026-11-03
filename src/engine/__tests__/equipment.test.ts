@@ -14,6 +14,11 @@ import {
   normalizeEquipmentName,
   parseEquipmentList,
   EQUIPMENT_GUIDE,
+  dumbbellLadder,
+  exercisesUsing,
+  hasEquipment,
+  missingRequirements,
+  satisfyingEquipment,
 } from '../equipment.ts';
 import { EXERCISES, exerciseById } from '../exercises.ts';
 import { loadableWeights, loadingFor, nearestLoadable } from '../gym.ts';
@@ -235,5 +240,96 @@ describe('목록 붙여넣기', () => {
   it('브이 스쿼트는 원판을 끼우는 기계로 계산한다', () => {
     const gym = gymFromCatalog({ equipmentIds: ['v-squat-machine'] });
     assert.equal((gym.overrides?.['v-squat'] as { kind: string }).kind, 'plateLoaded');
+  });
+});
+
+describe('대신 쓰는 기구', () => {
+  const opens = (ids: string[], exerciseId: string) => availableExercises(ids).some((e) => e.id === exerciseId);
+
+  it('조절식 벤치는 눕히면 평벤치다 — 거꾸로는 아니다', () => {
+    assert.ok(opens(['dumbbells', 'bench-incline'], 'dumbbell-bench-press'));
+    assert.ok(opens(['dumbbells', 'bench-incline'], 'one-arm-dumbbell-row'));
+    assert.ok(opens(['dumbbells', 'bench-incline'], 'bulgarian-split-squat'));
+    assert.ok(!opens(['dumbbells', 'bench-flat'], 'incline-dumbbell-press'));
+  });
+
+  it('EZ바가 없으면 바벨로 컬, 로우 머신이 없으면 케이블 기둥에서 로우', () => {
+    assert.ok(opens(['barbell-set'], 'barbell-curl'));
+    assert.ok(opens(['cable-station'], 'seated-cable-row'));
+    assert.ok(opens(['smith-machine'], 'inverted-row'));
+    assert.ok(opens(['kettlebells'], 'goblet-squat'));
+    assert.ok(opens(['dumbbells', 'plyo-box'], 'step-up'));
+    // 대신 쓰는 건 그 종목에서만 — 케틀벨로 덤벨 벤치프레스가 열리지는 않는다
+    assert.ok(!opens(['kettlebells', 'bench-flat'], 'dumbbell-bench-press'));
+  });
+
+  it('붙여넣은 "덤벨, 어저스터블 벤치"로 원암 로우가 열린다', () => {
+    const ids = parseEquipmentList('덤벨, 어저스터블 벤치').ids;
+    assert.deepEqual(ids, ['dumbbells', 'bench-incline']);
+    assert.ok(opens(ids, 'one-arm-dumbbell-row'));
+    assert.deepEqual(parseEquipmentList('덤벨, 조절식 벤치').ids, ['dumbbells', 'bench-incline']);
+  });
+
+  it('없는 기구는 대표 기구로, 열어 주는 기구는 실제로 고른 것으로 알려 준다', () => {
+    assert.deepEqual(missingRequirements('dumbbell-bench-press', ['dumbbells']), ['bench-flat']);
+    assert.deepEqual(missingRequirements('dumbbell-bench-press', ['dumbbells', 'bench-incline']), []);
+    assert.deepEqual(satisfyingEquipment('dumbbell-bench-press', ['dumbbells', 'bench-incline']), ['dumbbells', 'bench-incline']);
+    assert.deepEqual(satisfyingEquipment('dumbbell-bench-press', ['dumbbells', 'bench-flat', 'bench-incline']), ['dumbbells', 'bench-flat']);
+    assert.deepEqual(satisfyingEquipment('barbell-curl', ['barbell-set']), ['barbell-set']);
+    assert.equal(hasEquipment('bench-flat', new Set(['bench-incline'])), true);
+    assert.equal(hasEquipment('bench-incline', new Set(['bench-flat'])), false);
+  });
+
+  it('기구로 할 수 있는 종목에 대신 쓰는 종목도 센다', () => {
+    assert.ok(exercisesUsing('bench-incline').includes('dumbbell-bench-press'));
+    assert.ok(exercisesUsing('barbell-set').includes('barbell-curl'));
+    assert.ok(exercisesUsing('cable-station').includes('seated-cable-row'));
+    assert.ok(!exercisesUsing('bench-flat').includes('incline-dumbbell-press'));
+  });
+
+  it('밴드만 있어도 종목이 열린다', () => {
+    assert.ok(exercisesUsing('resistance-bands').length >= 3);
+    assert.ok(availableExercises(['resistance-bands']).length >= 3);
+  });
+});
+
+describe('헬스장 기구 이름', () => {
+  it('하프랙 · 멀티프레스 · 일립티컬 · 펑셔널 트레이너를 알아듣는다', () => {
+    assert.equal(matchEquipmentName('하프랙')?.id, 'power-rack');
+    assert.equal(matchEquipmentName('멀티프레스')?.id, 'smith-machine');
+    assert.equal(matchEquipmentName('일립티컬')?.id, 'elliptical-machine');
+    assert.equal(matchEquipmentName('크로스트레이너')?.id, 'elliptical-machine');
+    assert.equal(matchEquipmentName('펑셔널 트레이너')?.id, 'cable-station');
+    assert.equal(matchEquipmentName('아이소 래터럴 로우')?.id, 'chest-supported-row-machine');
+    assert.equal(matchEquipmentName('리컴번트 바이크')?.id, 'stationary-bike');
+    assert.equal(matchEquipmentName('데드리프트 플랫폼')?.id, 'barbell-set');
+  });
+});
+
+describe('가벼운 덤벨', () => {
+  it('10kg까지 1kg씩 — 2kg 다음이 4kg이 아니다', () => {
+    assert.deepEqual(dumbbellLadder(40).slice(0, 11), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12]);
+    assert.deepEqual(dumbbellLadder(40, 2).slice(0, 6), [2, 4, 6, 8, 10, 12]);
+    assert.deepEqual(dumbbellLadder(50).slice(-3), [40, 45, 50]);
+    assert.deepEqual(dumbbellLadder(10), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
+  it('적어 둔 간격과 최대 무게로 보유 덤벨을 만든다', () => {
+    const light = gymFromCatalog({ equipmentIds: ['dumbbells'] });
+    assert.deepEqual(loadableWeights(light.defaults.dumbbell).slice(0, 3), [1, 2, 3]);
+    const even = gymFromCatalog({ equipmentIds: ['dumbbells'], measurements: { dumbbells: { lightStepKg: 2, maxDumbbellKg: 20 } } });
+    const weights = loadableWeights(even.defaults.dumbbell);
+    assert.deepEqual(weights.slice(0, 3), [2, 4, 6]);
+    assert.equal(weights[weights.length - 1], 20);
+  });
+
+  it('케틀벨은 4kg부터, 덤벨이 없으면 고블릿 스쿼트도 케틀벨 무게로', () => {
+    const gym = gymFromCatalog({ equipmentIds: ['kettlebells'] });
+    const swing = gym.overrides?.['kettlebell-swing'] as { availableKg: number[] };
+    assert.deepEqual(swing.availableKg, [4, 6, 8, 12, 16, 20, 24, 28, 32]);
+    const goblet = gym.overrides?.['goblet-squat'] as { availableKg: number[] };
+    assert.deepEqual(goblet.availableKg, swing.availableKg);
+    const both = gymFromCatalog({ equipmentIds: ['kettlebells', 'dumbbells'] });
+    assert.equal(both.overrides?.['goblet-squat'], undefined, '덤벨이 있으면 덤벨 무게로');
   });
 });

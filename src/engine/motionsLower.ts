@@ -63,8 +63,10 @@ export function squat(id: string, load: SquatLoad, fault?: string): Clip {
     arms = { armL: hold(1), armR: hold(-1), bar: { at: [0, 0.27, -0.088], in: 'chest' } };
   } else if (load === 'front') {
     bar = { kind: 'barbell', plates: 0.225 };
-    const hold = (side: 1 | -1): ArmSpec => ({ bar: side * 0.25, pole: [side * 0.2, 0.35, 1], in: 'chest' });
-    arms = { armL: hold(1), armR: hold(-1), bar: { at: [0, 0.236, 0.15], in: 'chest' } };
+    // 바는 쇄골 위 어깨 앞에 얹고 팔꿈치를 앞으로 든다. 손목은 point로 젖혀 바 밑으로 접는다
+    // (예전엔 팔꿈치가 어깨보다 25cm 위로 솟아 팔뚝이 얼굴을 가렸다)
+    const hold = (side: 1 | -1): ArmSpec => ({ bar: side * 0.23, pole: [side * 0.2, 0.1, 1], point: [0, -1, -0.25], in: 'chest' });
+    arms = { armL: hold(1), armR: hold(-1), bar: { at: [0, 0.30, 0.09], in: 'chest' } };
   } else if (load === 'goblet') {
     bar = { kind: 'dumbbell' };
     const hold = (side: 1 | -1): ArmSpec => ({ ik: [side * 0.048, 0.215, 0.2], pole: [side * 0.25, -1, 0.1], in: 'chest', hand: [0, 0, 1] });
@@ -117,8 +119,10 @@ export function squat(id: string, load: SquatLoad, fault?: string): Clip {
       lean.armR = { ik: [-0.048, 0.205, 0.295], pole: [-0.25, -1, 0.1], in: 'chest', hand: [0, 0, 1] };
     }
     if (fault === 'elbows-drop' && load === 'front') {
+      // 팔꿈치가 떨어지면 바도 어깨 앞으로 밀려 나간다 (예전 바 자리)
       lean.armL = { bar: 0.25, pole: [0.2, -1, 0.25], in: 'chest' };
       lean.armR = { bar: -0.25, pole: [-0.2, -1, 0.25], in: 'chest' };
+      lean.bar = { at: [0, 0.236, 0.15], in: 'chest' };
     }
     const label = fault === 'elbows-drop' ? '팔꿈치가 떨어짐' : fault === 'goblet-lean' ? '덤벨이 떨어지며 숙여짐' : '상체가 숙여짐';
     setKey(list, 1, label, { ...low, ...lean });
@@ -247,25 +251,34 @@ export function legPress(id: string, calf: boolean, fault?: string): Clip {
     const at = madd(madd(pelvis, r, reach), along, calf ? -0.05 : 0.05);
     const foot = (x: number): LegSpec => {
       const ball = madd(add(at, [x, 0, 0]), along, BODY.ball * 0.5);
-      return footOn(madd(ball, r, BODY.ankle - 0.075), scale(r, -1), along, heel, cave ? [-x * 4, 0.3, 0.7] : [x * 1.5, 0.8, 0.5]);
+      return footOn(madd(ball, r, BODY.ankle - 0.075), scale(r, -1), along, heel, cave ? [-x * 4, 0.3, 0.7] : [x * 2, 0.8, 0.5]);
     };
-    return { legL: foot(0.17), legR: foot(-0.17) };
+    // 발은 골반보다 조금 넓게 — 무릎이 몸통 옆으로 내려와 넓적다리가 가슴을 뚫지 않는다
+    return { legL: foot(0.2), legR: foot(-0.2) };
   };
+  /*
+   * 카프 레이즈 — 발볼은 발판에 그대로 두고 발목만 편다. 발판까지 거리를 발목 각에 맞춰 바꿔야
+   * 무릎 각이 그대로다 (같은 거리로 두면 뒤꿈치를 들 때마다 무릎이 굽어 작은 레그 프레스가 된다)
+   */
+  const calfReach = (heel: number): number => 0.86
+    + BODY.ball * (Math.sin(heel * DEG) - Math.sin(-12 * DEG))
+    - BODY.ankle * (Math.cos(heel * DEG) - Math.cos(-12 * DEG));
+  const calfFeet = (heel: number) => feet(calfReach(heel), heel);
   const hold = (side: 1 | -1): ArmSpec => ({ ik: [side * 0.27, -0.02, 0.12], in: 'pelvis', pole: [side * 0.6, -0.2, -1], hand: [0, 0, 1] });
   const body = (legs: { legL: LegSpec; legR: LegSpec }, extra: Partial<Pose3> = {}): Pose3 => ({
     pelvis, pitch: -recline, spine: 0, neck: 18, ...legs, armL: hold(1), armR: hold(-1), ...extra,
   });
   const list: KeyList = calf
     ? [
-      [0, '발끝으로 밀기', body(feet(0.8, -12))],
-      [0.42, '끝까지', body(feet(0.8, 26))],
-      [0.52, '천천히 내리기', body(feet(0.8, 26))],
-      [1, undefined, body(feet(0.8, -12))],
+      [0, '발끝으로 밀기', body(calfFeet(-12))],
+      [0.42, '끝까지', body(calfFeet(26))],
+      [0.52, '천천히 내리기', body(calfFeet(26))],
+      [1, undefined, body(calfFeet(-12))],
     ]
     : [
       [0, '내리기', body(feet(0.8))],
-      [0.45, '무릎이 가슴 쪽으로', body(feet(0.4))],
-      [0.55, '밀기', body(feet(0.41))],
+      [0.45, '무릎이 가슴 쪽으로', body(feet(0.46))],
+      [0.55, '밀기', body(feet(0.47))],
       [1, undefined, body(feet(0.8))],
     ];
   if (!calf && fault === 'butt-lift') {
@@ -276,17 +289,17 @@ export function legPress(id: string, calf: boolean, fault?: string): Clip {
     setKey(list, 0, '무릎을 쫙 펴서 잠금', body(feet(0.86)));
     setKey(list, 3, undefined, body(feet(0.86)));
   } else if (!calf && fault === 'knee-cave') {
-    setKey(list, 1, '무릎이 안으로', body(feet(0.4, 0, true)));
-    setKey(list, 2, '무릎이 안으로', body(feet(0.41, 0, true)));
+    setKey(list, 1, '무릎이 안으로', body(feet(0.46, 0, true)));
+    setKey(list, 2, '무릎이 안으로', body(feet(0.47, 0, true)));
   } else if (calf && fault === 'short-range') {
-    setKey(list, 0, '조금만 움직임', body(feet(0.8, 4)));
-    setKey(list, 1, '조금만 움직임', body(feet(0.8, 14)));
-    setKey(list, 2, '조금만 움직임', body(feet(0.8, 14)));
-    setKey(list, 3, undefined, body(feet(0.8, 4)));
+    setKey(list, 0, '조금만 움직임', body(calfFeet(4)));
+    setKey(list, 1, '조금만 움직임', body(calfFeet(14)));
+    setKey(list, 2, '조금만 움직임', body(calfFeet(14)));
+    setKey(list, 3, undefined, body(calfFeet(4)));
   } else if (calf && fault === 'bounce') {
     list.splice(0, 4,
-      [0, '아래에서 튕김', body(feet(0.8, -12))], [0.18, undefined, body(feet(0.8, 26))], [0.3, undefined, body(feet(0.8, -12))],
-      [0.48, undefined, body(feet(0.8, 26))], [0.6, undefined, body(feet(0.8, -12))], [1, undefined, body(feet(0.8, -12))]);
+      [0, '아래에서 튕김', body(calfFeet(-12))], [0.18, undefined, body(calfFeet(26))], [0.3, undefined, body(calfFeet(-12))],
+      [0.48, undefined, body(calfFeet(26))], [0.6, undefined, body(calfFeet(-12))], [1, undefined, body(calfFeet(-12))]);
   }
   // 발판 — 발볼에 붙어 레일을 따라 움직이고, 방향은 그대로
   const plate = { x: [1, 0, 0] as Vec3, y: along };
@@ -294,7 +307,7 @@ export function legPress(id: string, calf: boolean, fault?: string): Clip {
   const backPad = madd(madd(pelvis, seatBack, 0.42), cross([1, 0, 0], seatBack), -0.13);
   const railCenter = madd(madd(pelvis, r, 0.62), along, -0.05);
   return {
-    id, cycle: calf ? 2.6 : 3.4, view: [100, 12], keys: keys(...list),
+    id, cycle: calf ? 2.6 : 3.4, view: calf ? [130, 15] : [100, 12], keys: keys(...list),
     scene: [
       { kind: 'pad', p: [0, 0.31, 0.04], size: [0.44, 0.08, 0.42], x: [1, 0, 0], y: normalize([0, 1, 0.25]) },
       { kind: 'pad', p: backPad, size: [0.44, 0.8, 0.08], x: [1, 0, 0], y: seatBack },
@@ -951,6 +964,8 @@ export function hipMachine(id: string, outward: boolean, fault?: string): Clip {
       { kind: 'pad', bone: 'thighL', u: 0.88, off: [-side * 0.075, 0, 0], size: [0.04, 0.2, 0.12] },
       { kind: 'pad', bone: 'thighR', u: 0.88, off: [side * 0.075, 0, 0], size: [0.04, 0.2, 0.12] },
     ],
+    // 엔진 근육 이름에 없는 근육 — 벌리기는 골반 옆(중둔근), 모으기는 허벅지 안쪽(내전근)
+    highlight: outward ? { gluteMed: 1 } : { adductors: 1 },
     work: [0, 0.42], fault,
   };
 }

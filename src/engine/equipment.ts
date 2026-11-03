@@ -23,7 +23,7 @@ export const CATEGORY_LABELS_KO: Record<EquipmentCategory, string> = {
 
 export interface EquipmentMeasurement {
   /** 이 기구에서 실측해 두면 좋은 값 */
-  field: 'barKg' | 'stepKg' | 'carriageKg' | 'maxDumbbellKg';
+  field: 'barKg' | 'stepKg' | 'carriageKg' | 'maxDumbbellKg' | 'lightStepKg';
   label: string;
   default: number;
   /** 흔한 값들 — 온보딩에서 버튼으로 고르게 한다 */
@@ -38,6 +38,8 @@ export interface EquipmentItem {
   /** 대부분의 헬스장에 있는 기구 — 온보딩 기본 선택 */
   common?: boolean;
   measurement?: EquipmentMeasurement;
+  /** 같은 기구에서 더 적어 둘 값 (덤벨의 가벼운 쪽 간격 등) */
+  extraMeasurements?: readonly EquipmentMeasurement[];
   /** 이 기구가 정하는 중량 방식 (측정값이 들어가면 덮어쓴다) */
   loading?: LoadingSpec;
 }
@@ -60,12 +62,17 @@ export const EQUIPMENT_CATALOG: readonly EquipmentItem[] = [
   {
     id: 'dumbbells', name: '덤벨 세트', category: 'freeweight', common: true,
     measurement: {
-      field: 'maxDumbbellKg', label: '가장 무거운 덤벨', default: 40, options: [30, 40, 50, 60],
+      field: 'maxDumbbellKg', label: '가장 무거운 덤벨', default: 40, options: [10, 20, 30, 40, 50, 60],
     },
+    extraMeasurements: [{
+      field: 'lightStepKg', label: '가벼운 덤벨 간격', default: 1, options: [1, 2],
+      hint: '10kg까지 1kg씩 있으면 1kg, 2·4·6kg처럼 있으면 2kg',
+    }],
   },
   { id: 'power-rack', name: '파워랙 · 스쿼트랙', category: 'rack', common: true },
   { id: 'bench-flat', name: '플랫 벤치', category: 'bench', common: true },
-  { id: 'bench-incline', name: '인클라인 벤치', category: 'bench', common: true },
+  // 등받이를 세우는 벤치는 눕히면 평벤치다 — 플랫 벤치가 필요한 종목도 연다 (SUBSTITUTES)
+  { id: 'bench-incline', name: '인클라인 · 조절식 벤치', category: 'bench', common: true },
   { id: 'pull-up-bar', name: '풀업 바', category: 'rack', common: true },
   { id: 'landmine', name: '랜드마인', category: 'rack' },
   { id: 'back-extension-bench', name: '백 익스텐션대', category: 'bench' },
@@ -157,6 +164,11 @@ export const EQUIPMENT_CATALOG: readonly EquipmentItem[] = [
   { id: 'stationary-bike', name: '실내 자전거', category: 'cardio', common: true },
   { id: 'rowing-machine', name: '로잉머신', category: 'cardio' },
   { id: 'stair-climber', name: '천국의 계단 (스텝밀)', category: 'cardio' },
+  /*
+   * id는 'elliptical-machine' — 유산소 종목 id 'elliptical'(cardio.ts)과 겹치지 않게. 다른 유산소 기계도
+   * 기구 id와 종목 id가 다르다 (treadmill / treadmill-walk, stationary-bike / bike).
+   */
+  { id: 'elliptical-machine', name: '일립티컬 · 크로스트레이너', category: 'cardio' },
   {
     id: 'smith-machine', name: '스미스머신', category: 'rack', common: true,
     measurement: {
@@ -312,12 +324,81 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'dumbbell-floor-press': ['dumbbells', 'floor'],
   'standing-dumbbell-press': ['dumbbells'],
   'dumbbell-overhead-extension': ['dumbbells'],
+  // 5차
+  'dumbbell-curl': ['dumbbells'],
+  // 벤치 끝이나 튼튼한 식탁 — 바닥 공간만 있으면 된다
+  'incline-push-up': ['floor'],
+  'bodyweight-squat': ['floor'],
+  'single-leg-calf-raise': ['floor'],
+  'band-row': ['resistance-bands'],
+  'band-pull-apart': ['resistance-bands'],
+  'band-lateral-raise': ['resistance-bands'],
+  'dumbbell-hip-thrust': ['dumbbells', 'bench-flat'],
+  'dumbbell-reverse-lunge': ['dumbbells'],
+  'dumbbell-sumo-squat': ['dumbbells'],
+  'cable-glute-kickback': ['cable-station'],
+  'dumbbell-fly': ['dumbbells', 'bench-flat'],
+  'smith-incline-press': ['smith-machine', 'bench-incline'],
+  'smith-shoulder-press': ['smith-machine', 'bench-incline'],
+  'crunch': ['floor'],
 };
+
+/**
+ * 대신 쓸 수 있는 기구. 요구 기구 목록(EXERCISE_REQUIREMENTS)은 대표 기구 하나씩만 적고,
+ * 같은 일을 하는 다른 기구는 여기서 받아 준다. '*'는 모든 종목에 해당한다.
+ *   - 조절식(인클라인) 벤치는 눕히면 평벤치다. 거꾸로는 안 된다 — 평벤치는 세울 수 없다.
+ *   - 크로스핏 박스엔 EZ바가 없어도 바벨로 컬을 한다. 케이블 기둥에서도 앉아서 로우를 한다.
+ */
+export const SUBSTITUTES: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
+  '*': { 'bench-flat': ['bench-incline'] },
+  'barbell-curl': { 'ez-bar': ['barbell-set'] },
+  'inverted-row': { 'power-rack': ['smith-machine'] },
+  'seated-cable-row': { 'seated-row-machine': ['cable-station'] },
+  'goblet-squat': { dumbbells: ['kettlebells'] },
+  'step-up': { 'bench-flat': ['plyo-box'] },
+};
+
+function substitutesFor(needId: string, exerciseId?: string): readonly string[] {
+  const own = exerciseId ? SUBSTITUTES[exerciseId]?.[needId] ?? [] : [];
+  return [...own, ...(SUBSTITUTES['*']?.[needId] ?? [])];
+}
+
+/** 필요한 기구(needId)를 가졌는가 — 대신 쓸 수 있는 기구도 받아 준다. */
+export function hasEquipment(needId: string, selected: ReadonlySet<string>, exerciseId?: string): boolean {
+  return selected.has(needId) || substitutesFor(needId, exerciseId).some((id) => selected.has(id));
+}
 
 export function requirementsMet(exerciseId: string, selected: ReadonlySet<string>): boolean {
   const required = EXERCISE_REQUIREMENTS[exerciseId];
   if (!required) return true; // 요구사항을 모르는 종목은 막지 않는다
-  return required.every((id) => selected.has(id));
+  return required.every((id) => hasEquipment(id, selected, exerciseId));
+}
+
+/** 이 종목에 아직 없는 기구 (화면에 보일 대표 기구 id). 다 있으면 빈 목록. */
+export function missingRequirements(exerciseId: string, selectedIds: readonly string[]): string[] {
+  const selected = new Set(selectedIds);
+  return (EXERCISE_REQUIREMENTS[exerciseId] ?? []).filter((id) => !hasEquipment(id, selected, exerciseId));
+}
+
+/**
+ * 고른 기구 중 지금 이 종목을 열어 주는 것. 대표 기구가 있으면 그것, 없으면 대신 쓰는 기구.
+ * "이 기구 없어요"를 누르면 이 기구들을 끈다 — 평벤치 대신 조절식 벤치로 열린 종목이면 조절식 벤치를.
+ */
+export function satisfyingEquipment(exerciseId: string, selectedIds: readonly string[]): string[] {
+  const selected = new Set(selectedIds);
+  const out: string[] = [];
+  for (const need of EXERCISE_REQUIREMENTS[exerciseId] ?? []) {
+    const found = selected.has(need) ? need : substitutesFor(need, exerciseId).find((id) => selected.has(id));
+    if (found && !out.includes(found)) out.push(found);
+  }
+  return out;
+}
+
+/** 이 기구로 할 수 있는 종목 id — 대신 쓰는 기구로 쓰이는 종목도 센다. */
+export function exercisesUsing(equipmentId: string): string[] {
+  return Object.entries(EXERCISE_REQUIREMENTS)
+    .filter(([exerciseId, needs]) => needs.some((need) => need === equipmentId || substitutesFor(need, exerciseId).includes(equipmentId)))
+    .map(([exerciseId]) => exerciseId);
 }
 
 /** 선택한 기구로 할 수 있는 종목. */
@@ -407,13 +488,22 @@ export interface GymSelection {
   plates?: number[];
 }
 
-/** 덤벨 최대 무게에 맞춰 보유 덤벨 목록을 만든다. */
-function dumbbellLadder(maxKg: number): number[] {
+/**
+ * 덤벨 최대 무게에 맞춰 보유 덤벨 목록을 만든다.
+ * 10kg까지는 가벼운 덤벨 간격(보통 1kg)씩 — 2kg 다음이 4kg이면 처음 하는 사람에겐 두 배다.
+ * 그 위로 40kg까지 2kg씩, 그 위는 5kg씩.
+ */
+export function dumbbellLadder(maxKg: number, lightStepKg = 1): number[] {
+  const step = lightStepKg > 0 ? lightStepKg : 1;
   const values: number[] = [];
-  for (let kg = 2; kg <= Math.min(maxKg, 40); kg += 2) values.push(kg);
+  for (let kg = step; kg <= Math.min(maxKg, 10) + 1e-9; kg += step) values.push(Math.round(kg * 10) / 10);
+  for (let kg = 12; kg <= Math.min(maxKg, 40); kg += 2) values.push(kg);
   for (let kg = 45; kg <= maxKg; kg += 5) values.push(kg);
   return values;
 }
+
+/** 케틀벨은 4 · 6 · 8kg 다음부터 4kg씩 뛴다. */
+export const KETTLEBELL_LADDER: readonly number[] = [4, 6, 8, 12, 16, 20, 24, 28, 32];
 
 /**
  * 온보딩에서 고른 기구와 실측값을 엔진이 쓰는 GymProfile 로 바꾼다.
@@ -422,13 +512,17 @@ function dumbbellLadder(maxKg: number): number[] {
 export function gymFromCatalog(selection: GymSelection): GymProfile {
   const selected = new Set(selection.equipmentIds);
   const measured = selection.measurements ?? {};
-  const value = (itemId: string, field: EquipmentMeasurement['field']) =>
-    measured[itemId]?.[field] ?? equipmentItem(itemId)?.measurement?.default;
+  const value = (itemId: string, field: EquipmentMeasurement['field']) => {
+    const item = equipmentItem(itemId);
+    const spec = [item?.measurement, ...(item?.extraMeasurements ?? [])].find((m) => m?.field === field);
+    return measured[itemId]?.[field] ?? spec?.default;
+  };
 
   const plates = selection.plates ?? DEFAULT_GYM.defaults.barbell.plates;
   const barKg = value('barbell-set', 'barKg') ?? 20;
   const stackStep = value('cable-station', 'stepKg') ?? 5;
   const maxDumbbell = value('dumbbells', 'maxDumbbellKg') ?? 40;
+  const lightStep = value('dumbbells', 'lightStepKg') ?? 1;
 
   const overrides: GymProfile['overrides'] = {};
 
@@ -459,7 +553,7 @@ export function gymFromCatalog(selection: GymSelection): GymProfile {
   }
   if (selected.has('smith-machine')) {
     const smithBar = value('smith-machine', 'barKg') ?? 15;
-    for (const exerciseId of ['smith-bench-press', 'smith-squat']) {
+    for (const exerciseId of ['smith-bench-press', 'smith-squat', 'smith-incline-press', 'smith-shoulder-press']) {
       overrides[exerciseId] = { kind: 'barbell', barKg: smithBar, plates };
     }
   }
@@ -473,7 +567,11 @@ export function gymFromCatalog(selection: GymSelection): GymProfile {
   }
   if (selected.has('kettlebells')) {
     // 케틀벨은 4kg씩 뛴다. 덤벨 사다리로 계산하면 없는 무게가 처방된다.
-    overrides['kettlebell-swing'] = { kind: 'dumbbell', availableKg: [8, 12, 16, 20, 24, 28, 32, 36, 40] };
+    overrides['kettlebell-swing'] = { kind: 'dumbbell', availableKg: [...KETTLEBELL_LADDER] };
+    // 덤벨 없이 케틀벨로 하는 고블릿 스쿼트도 케틀벨 무게로
+    if (!selected.has('dumbbells') && overrides['goblet-squat'] !== 'unavailable') {
+      overrides['goblet-squat'] = { kind: 'dumbbell', availableKg: [...KETTLEBELL_LADDER] };
+    }
   }
   if (selected.has('trap-bar')) {
     overrides['trap-bar-deadlift'] = { kind: 'barbell', barKg: 25, plates };
@@ -513,7 +611,7 @@ export function gymFromCatalog(selection: GymSelection): GymProfile {
     name: selection.name ?? '내 헬스장',
     defaults: {
       barbell: { kind: 'barbell', barKg, plates },
-      dumbbell: { kind: 'dumbbell', availableKg: dumbbellLadder(maxDumbbell) },
+      dumbbell: { kind: 'dumbbell', availableKg: dumbbellLadder(maxDumbbell, lightStep) },
       stack: { kind: 'stack', minKg: stackStep, stepKg: stackStep, maxKg: 100, addOnKg: [2.5] },
       plateLoaded: { kind: 'plateLoaded', carriageKg: 25, plates, sides: 2 },
       bodyweight: { kind: 'bodyweight', addedKg: [2.5, 5, 10, 15, 20] },
@@ -549,7 +647,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '바닥에 깔린 매트. 팔굽혀펴기나 플랭크를 할 수 있는 빈 공간',
   },
   'barbell-set': {
-    aka: ['긴 바벨', '봉', '원판', '바벨', '역기'],
+    aka: ['긴 바벨', '봉', '원판', '바벨', '역기', '데드리프트 플랫폼'],
     look: '2m쯤 되는 긴 쇠봉과 양쪽에 끼우는 둥근 원판',
   },
   'ez-bar': {
@@ -561,7 +659,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '한 손으로 드는 아령. 보통 벽 쪽 거치대에 무게순으로 놓여 있습니다',
   },
   'power-rack': {
-    aka: ['랙', '스쿼트랙', '철장', '파워케이지', '파워랙', '스쿼트 랙'],
+    aka: ['랙', '스쿼트랙', '철장', '파워케이지', '파워랙', '스쿼트 랙', '하프랙'],
     look: '사람이 들어가는 네모난 철제 구조물. 안에서 바벨을 들어올립니다',
   },
   'bench-flat': {
@@ -569,8 +667,8 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '평평하게 누울 수 있는 긴 의자',
   },
   'bench-incline': {
-    aka: ['기울어진 벤치', '경사 벤치', '인클라인', '인클라인 벤치프레스대', '조절 벤치', '어저스터블 벤치'],
-    look: '등받이 각도를 세울 수 있는 벤치',
+    aka: ['기울어진 벤치', '경사 벤치', '인클라인', '인클라인 벤치', '인클라인 벤치프레스대', '조절 벤치', '어저스터블 벤치', '조절식 벤치', 'FID 벤치', '각도 조절 벤치'],
+    look: '등받이 각도를 세울 수 있는 벤치. 눕히면 평벤치로도 씁니다',
   },
   'pull-up-bar': {
     aka: ['철봉', '턱걸이 봉', '풀업'],
@@ -585,7 +683,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '허벅지를 받치고 상체를 숙였다 펴는 비스듬한 받침대',
   },
   'cable-station': {
-    aka: ['케이블', '줄 당기는 기계', '도르래', '크로스오버', '케이블 크로스오버', '크로스오버 케이블'],
+    aka: ['케이블', '줄 당기는 기계', '도르래', '크로스오버', '케이블 크로스오버', '크로스오버 케이블', '펑셔널 트레이너'],
     look: '기둥에 줄(케이블)이 달려 있고 손잡이를 갈아 끼우는 기계. 추가 핀으로 조절됩니다',
   },
   'lat-pulldown-machine': {
@@ -609,7 +707,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉아서 양팔을 안으로 모으는 기계. 나비처럼 생겼습니다',
   },
   'chest-supported-row-machine': {
-    aka: ['가슴 대고 당기는 기계', '시티드 로우 머신', '레버 로우', '아이소 로우', '레버 로우 머신'],
+    aka: ['가슴 대고 당기는 기계', '시티드 로우 머신', '레버 로우', '아이소 로우', '레버 로우 머신', '아이소 래터럴 로우'],
     look: '가슴을 받침대에 대고 엎드려 당기는 기계',
   },
   'leg-press-machine': {
@@ -769,7 +867,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '벨트가 돌아가는 위를 걷거나 뛰는 기계',
   },
   'stationary-bike': {
-    aka: ['사이클', '실내 사이클', '실내자전거', '스핀 바이크', '스피닝', '자전거'],
+    aka: ['사이클', '실내 사이클', '실내자전거', '스핀 바이크', '스피닝', '자전거', '리컴번트'],
     look: '바퀴 없이 페달만 밟는 자전거',
   },
   'rowing-machine': {
@@ -780,8 +878,12 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     aka: ['천국의계단', '스텝밀', '스텝 밀', '계단 머신', '스테퍼'],
     look: '끝없이 올라오는 계단을 오르는 기계',
   },
+  'elliptical-machine': {
+    aka: ['일립티컬', '엘립티컬', '크로스트레이너', '크로스 트레이너', '일립티컬 머신'],
+    look: '양발을 긴 발판에 올리고 손잡이를 앞뒤로 밀며 타원을 그리는 기계',
+  },
   'smith-machine': {
-    aka: ['스미스', '레일 달린 바벨', '가이드 바벨', '스미스 머신', '스미스 랙'],
+    aka: ['스미스', '레일 달린 바벨', '가이드 바벨', '스미스 머신', '스미스 랙', '멀티프레스'],
     look: '바벨이 두 개의 레일을 따라서만 위아래로 움직이는 기계',
   },
 };

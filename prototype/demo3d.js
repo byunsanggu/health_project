@@ -75,6 +75,12 @@
     // 엉덩이 — 반바지 위라 평소엔 바지 색(빛날 때만 색이 든다)
     { group: 'glutes', bone: 'pelvis', u: 0.45, side: 0.072, front: -0.086, r: [0.074, 0.082, 0.054], pair: true, cloth: true },
     { group: 'calves', bone: 'shin', u: 0.28, side: 0, front: -0.036, r: [0.046, 0.1, 0.036], pair: true },
+    // 세부 근육 — 엔진 근육 비율에는 없고, 동작(Clip.highlight)이 켤 때만 나타난다(detail).
+    // 평소에도 보이면 몸 윤곽이 바뀐다 (허리띠 위 혹 등)
+    // 허벅지 안쪽 내전근 (이너 타이) — 반바지 밑단 아래로 보이게
+    { group: 'adductors', bone: 'thigh', u: 0.62, side: -0.048, front: 0.022, r: [0.032, 0.13, 0.036], pair: true, detail: true },
+    // 골반 옆 위쪽 중둔근 (아웃 타이) — 기계 손잡이를 쥔 손 위로 보이게
+    { group: 'gluteMed', bone: 'pelvis', u: 1.3, side: 0.135, front: -0.03, r: [0.04, 0.06, 0.055], pair: true, cloth: true, detail: true },
   ];
 
   /* ── three.js ────────────────────────────────── */
@@ -327,6 +333,7 @@
     var hot = colorOf(fault ? colors.fault : colors.accent);
     body.muscles.forEach(function (m) {
       var w = weights[m.spec.group] || 0;
+      if (m.spec.detail) m.mesh.visible = w > 0;
       var k = Math.min(1, w * (0.55 + 0.45 * effort) * 1.15);
       m.mat.color.copy(m.spec.cloth ? cloth : base).lerp(hot, k);
       m.mat.emissive.copy(hot);
@@ -586,7 +593,8 @@
             grp.add(bar);
             var plate = new THREE.Mesh(kit.cylinder, kit.plate);
             plate.rotation.z = Math.PI / 2;
-            plate.position.x = len / 2 - 0.12;
+            // 랜드마인은 쥔 끝 바로 아래(축 쪽)에 원판 — 머리 위로 넘어가지 않는다
+            plate.position.x = item.kind === 'landmine' ? len / 2 - 0.22 : len / 2 - 0.12;
             plate.scale.set(item.size[2] || 0.2, 0.05, item.size[2] || 0.2);
             plate.castShadow = true;
             grp.add(plate);
@@ -765,7 +773,8 @@
     var movers = movingKit(movingGroup, kit);
     movers.group = movingGroup;
 
-    var weights = muscleWeights(options.contribution, options.pattern);
+    var baseWeights = muscleWeights(options.contribution, options.pattern);
+    var weights = baseWeights;
     var state = {
       t: 0, playing: true, speed: 1, last: performance.now(), frame: 0,
       clip: null, fault: false, yaw: 0, pitch: 10, zoom: 1, target: [0, 0.9, 0], points: [],
@@ -775,6 +784,8 @@
     function setClip(next, fault) {
       state.clip = next;
       state.fault = Boolean(fault);
+      // 동작이 따로 밝히는 근육(내전근 · 중둔근 등)을 종목 근육 무게 위에 덮는다
+      weights = Object.assign({}, baseWeights, next.highlight || {});
       while (sceneGroup.children.length) sceneGroup.remove(sceneGroup.children[0]);
       next.scene.forEach(function (prim) { buildPrim(sceneGroup, kit, prim); });
       state.points = E.clipPoints(next);
@@ -957,7 +968,7 @@
     var colors = options.dark ? PALETTE.dark : PALETTE.light;
     var hex = function (n) { return '#' + ('000000' + n.toString(16)).slice(-6); };
     var state = { t: 0, playing: true, speed: 1, last: performance.now(), frame: 0, clip: clip, fault: Boolean(options.fault), yaw: clip.view[0], disposed: false };
-    var weights = muscleWeights(options.contribution, options.pattern);
+    var weights = Object.assign(muscleWeights(options.contribution, options.pattern), clip.highlight || {});
     void weights;
 
     function draw() {

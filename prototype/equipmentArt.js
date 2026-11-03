@@ -199,6 +199,15 @@
       '<path d="M14 40 V30 h8 v-6 h8 v-6 h8 V40 Z"/>' +
       '<path d="M44 40 V14 M44 14 h-6"/>',
 
+    'elliptical-machine':
+      // 옆에서 본 모습 — 뒤 바퀴에서 앞으로 뻗은 긴 발판 암과 앞뒤로 움직이는 손잡이
+      '<circle cx="47" cy="27" r="7"/>' +
+      '<path d="M47 34 V41 M40 41 h14"/>' +
+      '<path d="M12 41 h14 M19 41 V14"/>' +
+      '<path d="M19 18 L30 29"/>' +
+      '<path d="M47 27 L13 34"/>' +
+      '<rect x="10" y="32" width="12" height="4" rx="1.5"/>',
+
     'foam-roller':
       // 굵은 원통. 옆면 무늬로 스펀지인 걸 보인다
       '<rect x="12" y="18" width="40" height="14" rx="7"/>' +

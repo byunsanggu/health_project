@@ -347,3 +347,90 @@ describe('종목별 동작이 그 종목답다', () => {
     assert.ok(len(sub(once.a, again.a)) < 1e-9 && len(sub(once.b, again.b)) < 1e-9);
   });
 });
+
+describe('3D 시연 검토 반영 — 렌더러 약속', () => {
+  it("케이블은 발목 스트랩(footL · footR)에도 걸린다 — 줄 끝이 그 발의 발목", () => {
+    const base = clipOf('machine-glute-kickback');
+    const from: Vec3 = [0, 0.1, 0.7];
+    const clip: Clip = { ...base, cables: [{ from, to: 'footR' }] };
+    for (const t of [0, 0.42]) {
+      const frame = clipFrame(clip, t);
+      const line = frame.moving.find((item) => item.kind === 'cableLine')!;
+      const end: Vec3 = [line.p[0] + line.x[0] * line.size[1]! / 2, line.p[1] + line.x[1] * line.size[1]! / 2, line.p[2] + line.x[2] * line.size[1]! / 2];
+      const ankle = frame.solved.bones.shinR.b;
+      assert.ok(len(sub(end, ankle)) < 0.04, `t=${t}: 줄 끝이 발목에서 ${len(sub(end, ankle)).toFixed(3)}m`);
+      const start: Vec3 = [line.p[0] - line.x[0] * line.size[1]! / 2, line.p[1] - line.x[1] * line.size[1]! / 2, line.p[2] - line.x[2] * line.size[1]! / 2];
+      assert.ok(len(sub(start, from)) < 1e-6, '줄은 도르래에서 시작');
+    }
+  });
+
+  it('힙 어브덕션 · 어덕션은 엔진 근육에 없는 중둔근 · 내전근을 밝힌다', () => {
+    assert.deepEqual(clipOf('machine-hip-abduction').highlight, { gluteMed: 1 });
+    assert.deepEqual(clipOf('machine-hip-adduction').highlight, { adductors: 1 });
+  });
+});
+
+describe('3D 시연 검토 반영 — 몸 · 기구가 서로 뚫지 않는다', () => {
+  const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const lerp = (a: Vec3, b: Vec3, u: number): Vec3 => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
+  /** 점에서 선분까지 거리 */
+  const segDist = (p: Vec3, a: Vec3, b: Vec3) => {
+    const ab = sub(b, a);
+    const u = Math.max(0, Math.min(1, dot(sub(p, a), ab) / dot(ab, ab)));
+    return len(sub(p, lerp(a, b, u)));
+  };
+
+  it('시티드 케이블 로우 — 당긴 손잡이가 몸통 속이 아니라 배꼽 앞에 있다 (실수 동작 포함)', () => {
+    for (const fault of [undefined, 'rocking', 'shoulders-up', 'arms']) {
+      const frame = clipFrame(clipOf('seated-cable-row', fault), 0.44);
+      const b = frame.solved.bones;
+      const grip = lerp(frame.solved.hands.L.grip, frame.solved.hands.R.grip, 0.5);
+      // 몸통 반지름은 앞뒤로 12cm 안팎 — 그보다 넉넉히 떨어져야 손이 몸 밖이다
+      assert.ok(segDist(grip, b.chest.a, b.chest.b) > 0.2, `${fault ?? '바른 동작'}: 손잡이가 가슴 축에서 ${segDist(grip, b.chest.a, b.chest.b).toFixed(3)}m`);
+      assert.ok(segDist(grip, b.lumbar.a, b.lumbar.b) > 0.2, `${fault ?? '바른 동작'}: 손잡이가 배 축에서 ${segDist(grip, b.lumbar.a, b.lumbar.b).toFixed(3)}m`);
+      assert.ok(dot(sub(grip, b.chest.a), b.chest.f) > 0.2, '손잡이는 몸 앞');
+    }
+  });
+
+  it('프론트 스쿼트 — 팔꿈치는 목 아래, 어깨보다 15cm 넘게 앞 (팔뚝이 얼굴을 가리지 않는다)', () => {
+    const clip = clipOf('front-squat');
+    for (const t of [0, 0.45]) {
+      const b = clipFrame(clip, t).solved.bones;
+      for (const side of ['L', 'R'] as const) {
+        const elbow = b[`forearm${side}`].a;
+        assert.ok(elbow[1] < b.neck.a[1], `t=${t} ${side}: 팔꿈치가 목보다 위`);
+        assert.ok(dot(sub(elbow, b[`upperArm${side}`].a), b.chest.f) > 0.15, `t=${t} ${side}: 팔꿈치가 앞으로 나오지 않았다`);
+      }
+    }
+  });
+
+  it('레그 프레스 — 가장 깊은 곳에서도 넓적다리가 가슴을 뚫지 않는다 (22cm 이상)', () => {
+    const clip = clipOf('leg-press');
+    for (let i = 0; i <= 20; i += 1) {
+      const t = 0.4 + (0.2 * i) / 20;
+      const b = clipFrame(clip, t).solved.bones;
+      for (const side of ['L', 'R'] as const) {
+        const thigh = b[`thigh${side}`];
+        for (let k = 0; k <= 12; k += 1) {
+          const p = lerp(thigh.a, thigh.b, 0.4 + (0.6 * k) / 12);
+          const gap = segDist(p, b.chest.a, b.chest.b);
+          assert.ok(gap >= 0.22, `t=${t.toFixed(2)} ${side}: 넓적다리가 가슴 축에서 ${gap.toFixed(3)}m`);
+        }
+      }
+    }
+  });
+
+  it('레그 프레스 카프 레이즈 — 발목만 움직이고 무릎 각은 거의 그대로 (6° 안)', () => {
+    for (const fault of [undefined, 'short-range', 'bounce']) {
+      const clip = clipOf('leg-press-calf-raise', fault);
+      for (const side of ['L', 'R'] as const) {
+        const knees = frames(clip).map((frame) => {
+          const b = frame.solved.bones;
+          return angle(sub(b[`thigh${side}`].b, b[`thigh${side}`].a), sub(b[`shin${side}`].b, b[`shin${side}`].a));
+        });
+        const spread = Math.max(...knees) - Math.min(...knees);
+        assert.ok(spread < 6, `${fault ?? '바른 동작'} ${side}: 무릎 각이 ${spread.toFixed(1)}° 바뀐다`);
+      }
+    }
+  });
+});

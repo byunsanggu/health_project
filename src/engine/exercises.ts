@@ -832,6 +832,101 @@ export const EXERCISES: readonly Exercise[] = [
     contribution: { triceps: 1 },
     jointStress: { elbow: 0.5, shoulder: 0.4 },
   },
+
+  /*
+   * 5차 — 집 · 아파트 헬스장에서 빠지던 것. 맨몸 · 밴드만으로도 등 · 어깨 · 종아리를 하고,
+   * 덤벨만으로도 엉덩이 · 가슴 고립을 하고, 처음 하는 사람이 바닥 푸시업 대신 시작할 자리.
+   */
+  {
+    id: 'dumbbell-curl', name: '덤벨 컬', nameEn: 'Dumbbell Curl',
+    equipment: 'dumbbell', pattern: 'isolation', increment: 1,
+    contribution: { biceps: 1, forearms: 0.3 },
+    jointStress: { elbow: 0.3, wrist: 0.2 },
+  },
+  {
+    id: 'incline-push-up', name: '인클라인 푸시업', nameEn: 'Incline Push-Up',
+    equipment: 'bodyweight', pattern: 'horizontalPush', increment: 0,
+    contribution: { chest: 0.75, triceps: 0.45, frontDelt: 0.35, abs: 0.15 },
+    jointStress: { shoulder: 0.3, wrist: 0.45, elbow: 0.25 },
+  },
+  {
+    id: 'bodyweight-squat', name: '맨몸 스쿼트', nameEn: 'Bodyweight Squat',
+    equipment: 'bodyweight', pattern: 'squat', increment: 0,
+    contribution: { quads: 0.85, glutes: 0.5, abs: 0.15 },
+    jointStress: { knee: 0.35, hip: 0.25, ankle: 0.3 },
+  },
+  {
+    id: 'single-leg-calf-raise', name: '한발 카프레이즈', nameEn: 'Single-Leg Calf Raise',
+    equipment: 'bodyweight', pattern: 'isolation', increment: 0, unilateral: true,
+    contribution: { calves: 1 },
+    jointStress: { ankle: 0.35 },
+  },
+  {
+    id: 'band-row', name: '밴드 로우', nameEn: 'Band Row',
+    equipment: 'band', pattern: 'horizontalPull', increment: 0,
+    contribution: { back: 0.9, biceps: 0.45, rearDelt: 0.4, traps: 0.3 },
+    jointStress: { shoulder: 0.2, elbow: 0.2, lowBack: 0.15 },
+  },
+  {
+    id: 'band-pull-apart', name: '밴드 풀 어파트', nameEn: 'Band Pull-Apart',
+    equipment: 'band', pattern: 'isolation', increment: 0,
+    contribution: { rearDelt: 0.9, traps: 0.4, back: 0.2 },
+    jointStress: { shoulder: 0.15 },
+  },
+  {
+    id: 'band-lateral-raise', name: '밴드 레터럴 레이즈', nameEn: 'Band Lateral Raise',
+    equipment: 'band', pattern: 'isolation', increment: 0,
+    contribution: { sideDelt: 0.9, traps: 0.2 },
+    jointStress: { shoulder: 0.3 },
+  },
+  {
+    id: 'dumbbell-hip-thrust', name: '덤벨 힙 쓰러스트', nameEn: 'Dumbbell Hip Thrust',
+    equipment: 'dumbbell', pattern: 'hinge', increment: 2,
+    contribution: { glutes: 1, hamstrings: 0.45, quads: 0.2 },
+    jointStress: { hip: 0.35, lowBack: 0.2, knee: 0.15 },
+  },
+  {
+    id: 'dumbbell-reverse-lunge', name: '덤벨 리버스 런지', nameEn: 'Dumbbell Reverse Lunge',
+    equipment: 'dumbbell', pattern: 'lunge', increment: 2, unilateral: true,
+    contribution: { quads: 0.8, glutes: 0.75, hamstrings: 0.3 },
+    jointStress: { knee: 0.35, hip: 0.3 },
+  },
+  {
+    id: 'dumbbell-sumo-squat', name: '덤벨 스모 스쿼트', nameEn: 'Dumbbell Sumo Squat',
+    equipment: 'dumbbell', pattern: 'squat', increment: 2,
+    contribution: { quads: 0.75, glutes: 0.7, abs: 0.2 },
+    jointStress: { knee: 0.4, hip: 0.4, lowBack: 0.2 },
+  },
+  {
+    id: 'cable-glute-kickback', name: '케이블 글루트 킥백', nameEn: 'Cable Glute Kickback',
+    equipment: 'cable', pattern: 'isolation', increment: 2.5, unilateral: true,
+    contribution: { glutes: 0.9, hamstrings: 0.25 },
+    jointStress: { lowBack: 0.2, hip: 0.25 },
+  },
+  {
+    id: 'dumbbell-fly', name: '덤벨 플라이', nameEn: 'Dumbbell Fly',
+    equipment: 'dumbbell', pattern: 'isolation', increment: 1,
+    contribution: { chest: 1, frontDelt: 0.3 },
+    jointStress: { shoulder: 0.55, elbow: 0.15 },
+  },
+  {
+    id: 'smith-incline-press', name: '스미스 인클라인 프레스', nameEn: 'Smith Machine Incline Press',
+    equipment: 'smith', pattern: 'horizontalPush', increment: 2.5,
+    contribution: { chest: 0.9, frontDelt: 0.7, triceps: 0.5 },
+    jointStress: { shoulder: 0.7, elbow: 0.35, wrist: 0.35 },
+  },
+  {
+    id: 'smith-shoulder-press', name: '스미스 숄더프레스', nameEn: 'Smith Machine Shoulder Press',
+    equipment: 'smith', pattern: 'verticalPush', increment: 2.5,
+    contribution: { frontDelt: 1, sideDelt: 0.45, triceps: 0.5 },
+    jointStress: { shoulder: 0.65, elbow: 0.3, wrist: 0.3 },
+  },
+  {
+    id: 'crunch', name: '크런치', nameEn: 'Crunch',
+    equipment: 'bodyweight', pattern: 'core', increment: 0,
+    contribution: { abs: 0.9 },
+    jointStress: { lowBack: 0.15, neck: 0.25 },
+  },
 ]
 
 /**
@@ -884,4 +979,65 @@ export function findExercises(
     }
     return true;
   });
+}
+
+/* ── 맨몸 · 밴드 ──────────────────────────────────────── */
+
+/**
+ * 원판이나 덤벨 무게를 고르지 않는 종목 — 맨몸과 밴드. 밴드는 무게 숫자가 없고 세기(색)만 있어서,
+ * 무게 처방 · 워밍업 무게 · 휴식 계산에서 맨몸과 같은 쪽으로 다룬다.
+ */
+export function isUnloaded(exercise: Pick<Exercise, 'equipment'>): boolean {
+  return exercise.equipment === 'bodyweight' || exercise.equipment === 'band';
+}
+
+/* ── 다르게 부르는 이름 ──────────────────────────────── */
+
+/**
+ * 헬스장에서 실제로 부르는 이름. 검색은 정식 이름만으로는 안 된다 — '사레레'를 치는 사람에게
+ * '레터럴 레이즈'가 안 나오면 없는 종목인 줄 안다. 다른 종목인 것(무릎 푸시업 ≠ 인클라인 푸시업)은
+ * 넣지 않는다.
+ */
+export const EXERCISE_AKA: Record<string, readonly string[]> = {
+  'lateral-raise': ['사이드 레터럴 레이즈', '사레레', '사이드 레이즈'],
+  'neutral-grip-pulldown': ['클로즈그립 랫풀다운', 'V바 랫풀다운'],
+  'triceps-pushdown': ['케이블 푸시다운', '로프 푸시다운'],
+  'seated-cable-row': ['케이블 로우'],
+  'barbell-overhead-press': ['밀리터리 프레스', 'OHP'],
+  'romanian-deadlift': ['RDL'],
+  'hip-thrust': ['힙쓰'],
+  'back-extension': ['백익', '하이퍼익스텐션'],
+  'machine-hip-abduction': ['아웃타이'],
+  'machine-hip-adduction': ['이너타이'],
+  'barbell-curl': ['이지바 컬', 'EZ바 컬'],
+  'face-pull': ['페이스풀'],
+  // 새 종목
+  'dumbbell-curl': ['덤벨컬', '바이셉스 컬', '이두 컬'],
+  'incline-push-up': ['벤치 푸시업', '경사 푸시업', '쉬운 푸시업'],
+  'bodyweight-squat': ['에어 스쿼트', '맨몸스쿼트'],
+  'single-leg-calf-raise': ['맨몸 카프레이즈', '종아리 들기'],
+  'band-row': ['밴드 시티드 로우', '고무줄 로우'],
+  'band-pull-apart': ['밴드 벌리기'],
+  'band-lateral-raise': ['밴드 사레레', '밴드 사이드 레이즈'],
+  'dumbbell-hip-thrust': ['덤벨 힙쓰러스트', '힙쓰'],
+  'dumbbell-reverse-lunge': ['덤벨 런지', '뒤로 런지'],
+  'dumbbell-sumo-squat': ['와이드 스쿼트', '덤벨 와이드 스쿼트', '플리에 스쿼트'],
+  'cable-glute-kickback': ['케이블 킥백', '힙 킥백'],
+  'dumbbell-fly': ['플랫 덤벨 플라이', '덤벨플라이'],
+  'smith-incline-press': ['스미스 인클라인', '스미스 인클라인 벤치프레스'],
+  'smith-shoulder-press': ['스미스 오버헤드 프레스', '스미스 밀리터리 프레스'],
+  'crunch': ['복근 크런치', '윗몸 말기'],
+};
+
+/** 띄어쓰기 · 가운뎃점 · 괄호 · 줄표를 지우고 소문자로 — '덤벨 컬'과 '덤벨컬'이 같은 말이다. */
+function searchKey(text: string): string {
+  return (text ?? '').toLowerCase().replace(/[\s·()\-]/g, '');
+}
+
+/** 검색어가 종목 이름 · 영어 이름 · 다른 이름 중 하나에 들어 있는가. 빈 검색어는 전부 맞는다. */
+export function matchesExerciseQuery(exercise: Pick<Exercise, 'id' | 'name' | 'nameEn'>, query: string): boolean {
+  const want = searchKey(query);
+  if (!want) return true;
+  const names = [exercise.name, exercise.nameEn, ...(EXERCISE_AKA[exercise.id] ?? [])];
+  return names.some((name) => searchKey(name).includes(want));
 }

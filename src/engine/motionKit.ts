@@ -76,7 +76,8 @@ export interface Link {
 export interface Cable {
   /** 줄이 시작하는 곳 — 도르래 자리, 또는 손(두 손 사이에 건 밴드) */
   from: Vec3 | 'L' | 'R';
-  to: 'L' | 'R' | 'mid' | 'bar' | 'pelvis';
+  /** footL · footR — 발목에 찬 스트랩 (케이블 킥백). 발목 관절에서 발끝 쪽으로 3cm */
+  to: 'L' | 'R' | 'mid' | 'bar' | 'pelvis' | 'footL' | 'footR';
 }
 
 export interface Key {
@@ -107,6 +108,11 @@ export interface Clip {
   linear?: boolean;
   /** 흔한 실수를 보여 주는 동작이면 그 실수 id */
   fault?: string;
+  /**
+   * 그림에서 더 밝힐 근육 — 종목 근육 비율로 고른 덩어리 무게 위에 덮어쓴다 (0~1).
+   * 엔진 근육 이름에 없는 세부 근육(내전근 adductors · 중둔근 gluteMed)도 여기서 켠다.
+   */
+  highlight?: Partial<Record<string, number>>;
 }
 
 /* ── 한 주기 풀기 ─────────────────────────────────── */
@@ -172,6 +178,12 @@ function linkPoint(solved: Solved, bone: BoneName, u: number, off: Vec3): { p: V
   return { p, y: f.y };
 }
 
+/** 발목 스트랩 고리 — 발목 관절(정강이 끝)에서 발끝 쪽으로 3cm */
+export function ankleStrap(solved: Solved, side: 'L' | 'R'): Vec3 {
+  const foot = solved.bones[side === 'L' ? 'footL' : 'footR'];
+  return madd(solved.bones[side === 'L' ? 'shinL' : 'shinR'].b, normalize(sub(foot.b, foot.a)), 0.03);
+}
+
 /** 한 프레임 — 뼈와 움직이는 기구 위치. */
 export function clipFrame(clip: Clip, t: number): ClipFrame {
   const { pose, label } = clipPose(clip, t);
@@ -189,9 +201,10 @@ export function clipFrame(clip: Clip, t: number): ClipFrame {
     const { c, x } = solved.bar;
     const kind = clip.bar.kind;
     if ((kind === 'landmine' || kind === 'tbar') && clip.bar.pivot) {
-      // 바닥 축에서 쥔 곳까지 — 쥔 곳 너머로 슬리브와 원판이 이어진다
+      // 바닥 축에서 쥔 곳까지 — 티바는 쥔 곳 너머로 슬리브와 원판이 이어진다.
+      // 랜드마인은 슬리브 끝을 쥐므로 손 바로 너머에서 끝나고, 원판은 손 아래(축 쪽)에 있다
       const along = normalize(sub(c, clip.bar.pivot));
-      const len = distance(c, clip.bar.pivot) + 0.32;
+      const len = distance(c, clip.bar.pivot) + (kind === 'landmine' ? 0.06 : 0.32);
       moving.push({ kind, p: madd(clip.bar.pivot, along, len / 2), size: [0.014, len, clip.bar.plates ?? 0.2], x: along, y: normalize(perpendicular(up, along), [0, 0, 1]) });
     } else {
       moving.push({ kind, p: c, size: [0.014, 0, clip.bar.plates ?? 0], x, y: normalize(perpendicular(up, x), [0, 0, 1]) });
@@ -246,7 +259,8 @@ export function clipFrame(clip: Clip, t: number): ClipFrame {
       : cable.to === 'R' ? solved.hands.R.grip
         : cable.to === 'bar' && solved.bar ? solved.bar.c
           : cable.to === 'pelvis' ? madd(solved.bones.pelvis.a, solved.bones.pelvis.f, 0.12)
-            : scale(add(solved.hands.L.grip, solved.hands.R.grip), 0.5);
+            : cable.to === 'footL' || cable.to === 'footR' ? ankleStrap(solved, cable.to === 'footL' ? 'L' : 'R')
+              : scale(add(solved.hands.L.grip, solved.hands.R.grip), 0.5);
     const from = cable.from === 'L' || cable.from === 'R' ? solved.hands[cable.from].grip : cable.from;
     const along = normalize(sub(end, from));
     const len = distance(end, from);
