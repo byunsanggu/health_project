@@ -53,7 +53,29 @@ export default async function ({ page, url, shot }) {
   });
   const [start, end] = await elapsed();
   check(start && end && end > start, '운동 끝 시각이 적히지 않았습니다');
+  const clock = () => page.locator('#session-elapsed').textContent().catch(() => null);
+  const shown = await clock();
+  check(shown, '운동 시계가 안 보입니다');
   await page.clock.runFor(600000);
   const [, endLater] = await elapsed();
   check(endLater === end, '10분 뒤 운동 끝 시각이 바뀌었습니다');
+  if (shown) check(await clock() === shown, `10분 뒤 운동 시계가 갑니다: ${shown} → ${await clock()}`);
+
+  // 앱을 다시 열어도 멈춘 그대로 — 끝난 시각이 저장된다
+  await page.reload();
+  await page.clock.runFor(2000);
+  const reopened = await clock();
+  check(reopened, '다시 연 뒤 운동 시계가 안 보입니다');
+  await page.clock.runFor(600000);
+  if (reopened) check(await clock() === reopened, `다시 연 뒤 운동 시계가 갑니다: ${reopened} → ${await clock()}`);
+  if (shown && reopened) check(reopened === shown, `다시 열었더니 시계가 달라졌습니다: ${shown} → ${reopened}`);
+
+  // 몇 분 뒤에 "오늘 마치기"를 눌러도 끝 시각이 밀리지 않는다
+  if (!(await page.locator('dialog[open]').count())) {
+    await page.getByRole('button', { name: /요약 보기|운동 끝내기/ }).first().click();
+  }
+  await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();
+  await page.clock.runFor(1000);
+  const [, endClosed] = await elapsed();
+  check(endClosed === end, `오늘 마치기를 누르니 끝 시각이 밀렸습니다: ${end} → ${endClosed}`);
 }

@@ -1968,6 +1968,8 @@
     set.rir = rir;
     set.done = true;
     if (!state.sessionStartedAt) state.sessionStartedAt = Date.now();
+    // 스트레칭까지 끝낸 뒤 세트를 더 했으면 운동은 아직 하는 중이다 — 멈춰 둔 시계를 다시 돌린다
+    if (!state.sessionClosed) state.sessionEndedAt = null;
 
     var logged = {
       exerciseId: lift.exercise.id,
@@ -2288,12 +2290,18 @@
    * 남은 시간을 세는 대신 시작한 시각을 저장해두고 매번 지금과 뺀다.
    * 화면이 꺼져 있던 동안도 정확하고, 앱이 다시 떠도 이어진다.
    */
+  /** 오늘 운동 시계가 멈췄는가 — 오늘을 마쳤거나, PT가 마무리 스트레칭까지 끝냈다. */
+  function sessionFrozen() {
+    return Boolean(state.sessionStartedAt && state.sessionEndedAt && state.sessionEndedAt >= state.sessionStartedAt);
+  }
+
   function elapsedSeconds() {
     if (!state.sessionStartedAt) return 0;
     // 오늘을 마쳤으면 시계도 거기서 멈춘다 — 두 시간 뒤에 요약을 열면 "94분 동안"이 되면 안 된다
-    // PT가 마무리 스트레칭까지 끝냈어도 멈춘다 — 그 뒤로 폰을 넣고 나간 시간은 운동이 아니다
-    var ptDone = Boolean(state.ptRun && state.ptRun.cooled && state.ptRun.day === state.todayDate);
-    var end = (state.sessionClosed || ptDone) && state.sessionEndedAt ? state.sessionEndedAt : Date.now();
+    // PT가 마무리 스트레칭까지 끝냈어도 멈춘다 — 그 뒤로 폰을 넣고 나간 시간은 운동이 아니다.
+    // 끝난 시각(sessionEndedAt)은 저장되므로 다시 열어도 멈춘 그대로다. 그 뒤에 세트를 더 하거나
+    // "이어서 하기"를 누르면 지운다. 이번 운동보다 앞선 값(지난 운동의 끝)은 보지 않는다.
+    var end = sessionFrozen() ? state.sessionEndedAt : Date.now();
     return Math.max(0, Math.round((end - state.sessionStartedAt) / 1000));
   }
 
@@ -3171,7 +3179,7 @@
    */
   function openSummary() {
     // 스트레칭 중에 요약을 열면 스트레칭은 거기서 끝낸다 — 말이 요약 위로 계속 나오면 안 된다.
-    if (state.ptRun && state.ptRun.cool) endCooldown(false);
+    if (state.ptRun && state.ptRun.cool) endCooldown(false, true);
     var summary = E.summarizeSession({
       date: state.todayDate,
       name: state.session.name,
@@ -9498,7 +9506,11 @@
     later(function () { cooldownStep(run, i + 1); }, talk + item.seconds * 1000);
   }
 
-  function endCooldown(spoken) {
+  /**
+   * 스트레칭을 끝낸다. spoken — 끝까지 했다(끝인사 뒤 요약을 띄운다). quiet — 요약을 열면서 끝내는 것이라
+   * 아무 말도 하지 않는다(요약 위로 10초짜리 정리 말이 나오면 안 된다). "스트레칭 끝내기"는 정리 말을 한다.
+   */
+  function endCooldown(spoken, quiet) {
     var pt = state.ptRun;
     if (!pt || !pt.cool) return;
     pt.cool.timers.forEach(function (id) { clearTimeout(id); });
@@ -9515,7 +9527,7 @@
      * 그리고 시계를 멈춘다. 예전에는 "오늘 PT 끝입니다" 뒤에도 운동이 열린 채라, 폰을 넣고 나가면
      * 10분 뒤에 5:01이 15:01이 되어 있었다. 끝까지 했으면 오늘 요약을 바로 띄운다.
      */
-    coachSay([E.cooldownDoneLine(state.coach.style)].concat(coachWrapUp()));
+    if (!quiet) coachSay([E.cooldownDoneLine(state.coach.style)].concat(coachWrapUp()));
     state.sessionEndedAt = Date.now();
     persist();
     render();
@@ -11098,7 +11110,8 @@
      * 다 쉬었다고 알림이 한 번 더 울린다.
      */
     state.sessionClosed = true;
-    state.sessionEndedAt = Date.now();
+    // PT가 스트레칭까지 끝내며 이미 멈춰 둔 시각이 있으면 그대로 — "오늘 마치기"를 몇 분 뒤에 눌러도 끝 시각이 밀리지 않는다
+    if (!sessionFrozen()) state.sessionEndedAt = Date.now();
     state.started = false;
     stopRest();
     modal.close();
