@@ -1,4 +1,4 @@
-import { EXERCISES, HEAVY_PULLS, exerciseById } from './exercises.ts';
+import { EXERCISES, HEAVY_PULLS, exerciseById, isUnloaded } from './exercises.ts';
 import { availableExercises, coverageReport, gymFromCatalog, type GymSelection } from './equipment.ts';
 import { assessLevel, levelProfile, type LevelAssessment } from './levels.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO, landmarksFor } from './muscles.ts';
@@ -422,6 +422,8 @@ const HEAVY_HINGE_LOW_BACK = 0.5;
  */
 const WEAK_MAIN: Readonly<Record<string, 'all' | 'notBeginner'>> = {
   'goblet-squat': 'notBeginner',
+  // 덤벨 스모 스쿼트도 덤벨 하나가 상한이다
+  'dumbbell-sumo-squat': 'notBeginner',
   'cable-pull-through': 'all',
 };
 
@@ -445,15 +447,32 @@ const HARD_BODYWEIGHT: ReadonlySet<string> = new Set([
  */
 const BEGINNER_EXCLUDED: ReadonlySet<string> = new Set(['pike-push-up']);
 /**
- * 기구가 거의 없어 자리가 비는 날을 채우는 쉬운 맨몸 종목 — 누구나 첫날부터 할 수 있는 것.
- * 매트 · 밴드뿐인 집에서 전신 B가 파이크 푸시업과 런지 두 종목으로 끝났다.
+ * 초보에게는 쉬운 쪽이 있으면 그쪽만 준다. 바닥 푸시업 12~20회는 처음 온 여성 회원 대부분이 몇 개 못 한다 —
+ * 손을 벤치에 짚는 인클라인 푸시업으로 시작하고, 위 끝을 채우면 바닥 푸시업으로 옮기라고 알려 준다(load.ts).
+ * 점수로 뒤로 미는 것만으로는 같은 날 둘째 가슴 자리에 다시 들어왔다.
  */
-const EASY_FILLERS: readonly string[] = ['glute-bridge', 'dead-bug', 'reverse-crunch'];
+const BEGINNER_EASIER: Readonly<Record<string, string>> = { 'push-up': 'incline-push-up' };
+/**
+ * 같은 동작의 맨몸 · 덤벨 판. 하루에 둘 다 넣으면 같은 런지를 두 번 하는 셈이다(덤벨 리버스 런지 뒤 맨몸 리버스 런지).
+ */
+const SAME_MOVEMENT: readonly (readonly string[])[] = [
+  ['bodyweight-reverse-lunge', 'dumbbell-reverse-lunge'],
+];
+/**
+ * 기구가 거의 없어 자리가 비는 날을 채우는 쉬운 맨몸 종목 — 누구나 첫날부터 할 수 있는 것.
+ * 매트 · 밴드뿐인 집에서 전신 B가 파이크 푸시업과 런지 두 종목으로 끝났다. 밴드 종목이 생겨 밴드가 있으면
+ * 거의 안 쓰이고, 매트뿐인 집에서 하체 날은 맨몸 스쿼트 · 한발 카프레이즈, 미는 날은 인클라인 푸시업으로 채운다.
+ */
+const EASY_FILLERS: readonly string[] = [
+  'glute-bridge', 'dead-bug', 'reverse-crunch', 'bodyweight-squat', 'single-leg-calf-raise', 'incline-push-up',
+];
 /** 하루에 이만큼은 있어야 운동한 날 같다 — 모자라면 EASY_FILLERS로 채운다 */
 const MIN_DAY_EXERCISES = 4;
 /** 하체 부위 — 하체 채우기 종목은 이 부위 자리가 있는 날에만 */
 const LOWER_BODY: ReadonlySet<MuscleGroup> = new Set<MuscleGroup>(['quads', 'hamstrings', 'glutes', 'calves']);
-const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge']);
+/** 미는 부위 — 상체 채우기 종목(인클라인 푸시업)은 이 부위 자리가 있는 날에만. 당기는 날에 푸시업을 끼우지 않는다 */
+const PUSH_MUSCLES: ReadonlySet<MuscleGroup> = new Set<MuscleGroup>(['chest', 'triceps', 'frontDelt']);
+const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge', 'bodyweight-squat']);
 
 interface PickContext {
   level: TrainingLevel;
@@ -496,7 +515,15 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
    */
   const sameKit = context.today.filter((item) => item.equipment === exercise.equipment).length;
   if (sameKit >= 2) score -= 1.5 * (sameKit - 1);
-  if (slot.role !== 'primary' && exercise.equipment === 'bodyweight' && !BODYWEIGHT_PULLS.has(exercise.id)) {
+  /*
+   * 밴드는 여기 넣지 않는다 — 몸을 다루는 힘이 느는 것도 아니고, 넣으면 기구 많은 헬스장에서 케이블 로우 대신
+   * 밴드 로우가 들어왔다. 집에서는 밴드 말고 다른 게 없어서 이 점수 없이도 들어간다.
+   * 가벼운 맨몸 하체(브릿지 · 런지 · 맨몸 스쿼트)도 초보가 아니면 여기서 앞으로 당기지 않는다 — 중급 둔근 고립 자리에
+   * 케이블 킥백 대신 브릿지가, 레그프레스 자리에 맨몸 스쿼트가 들어왔다.
+   */
+  const varietyBodyweight = exercise.equipment === 'bodyweight' && !BODYWEIGHT_PULLS.has(exercise.id) &&
+    (level === 'beginner' || !LIGHT_BODYWEIGHT.has(exercise.id));
+  if (slot.role !== 'primary' && varietyBodyweight) {
     const bodyweightToday = context.today.filter((item) => item.equipment === 'bodyweight').length;
     // 주에 하나도 없으면 더 앞으로 — 주 3회 전신처럼 자리가 적어도 한 번은 들어가게.
     // 근력 목표는 예외 — 무게를 못 올리는 푸시업 · 파이크 푸시업은 드는 무게를 올리는 데 도움이 안 된다.
@@ -516,6 +543,8 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
   if (HOLDS.has(exercise.id)) score -= 3;
   // 거꾸로 맨몸 런지 · 브릿지는 하체가 이미 강한 사람에게 자극이 모자란다 — 덤벨 쪽을 먼저.
   if (level !== 'beginner' && LIGHT_BODYWEIGHT.has(exercise.id)) score -= 3;
+  // 메인 자리는 더 — 케틀벨 하나뿐인 중급도 맨몸 스쿼트보다 고블릿 스쿼트가 메인이다(매트뿐이면 그래도 맨몸 스쿼트)
+  if (level !== 'beginner' && LIGHT_BODYWEIGHT.has(exercise.id) && slot.role === 'primary') score -= 4;
 
   // 초보자에게는 같은 값이면 관절 부담이 적은 쪽을 고른다.
   // 기본 동작을 밀어낼 만큼 크게 주지는 않는다 — 초보일수록 기본을 배워야 한다.
@@ -546,7 +575,7 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
    * 푸시업을 25개 넘게 해야 두 개 남긴다. 파이크 푸시업은 중급부터 유일한 머리 위 프레스가 되면 안 된다.
    * 무게를 싣는 종목이 있는 헬스장이면 그쪽을 먼저(홈짐은 대안이 없으니 그대로 남는다).
    */
-  if (exercise.increment <= 0 && exercise.equipment === 'bodyweight' && !BODYWEIGHT_PULLS.has(exercise.id)) {
+  if (exercise.increment <= 0 && isUnloaded(exercise) && !BODYWEIGHT_PULLS.has(exercise.id)) {
     if (exercise.id === 'pike-push-up' && level !== 'beginner') score -= 4;
     else if (level === 'advanced' || level === 'expert') score -= 4;
   }
@@ -643,8 +672,20 @@ function pickExercise(
   const candidates = pool
     .filter((exercise) => !used.has(exercise.id))
     .filter((exercise) => context.level !== 'beginner' || !BEGINNER_EXCLUDED.has(exercise.id))
+    .filter((exercise) => {
+      const easier = context.level === 'beginner' ? BEGINNER_EASIER[exercise.id] : undefined;
+      return !easier || !pool.some((other) => other.id === easier);
+    })
     .filter((exercise) => slot.role !== 'primary' || (exercise.pattern !== 'isolation' && exercise.pattern !== 'core'))
     .filter((exercise) => !hingedToday || !heavyHinge(exercise))
+    .filter((exercise) => !SAME_MOVEMENT.some((group) => group.includes(exercise.id) &&
+      context.today.some((item) => item.id !== exercise.id && group.includes(item.id))))
+    /*
+     * 무게를 실은 스쿼트 · 런지를 이미 한 날에는 가벼운 맨몸판(맨몸 스쿼트 · 맨몸 런지)을 또 넣지 않는다 —
+     * 고블릿 스쿼트 뒤의 맨몸 스쿼트는 같은 동작을 가볍게 한 번 더 하는 셈이다. 레그프레스 · 런지 쪽으로 간다.
+     */
+    .filter((exercise) => !(LIGHT_BODYWEIGHT.has(exercise.id) && (exercise.pattern === 'squat' || exercise.pattern === 'lunge') &&
+      context.today.some((item) => item.pattern === exercise.pattern && !isUnloaded(item))))
     .filter((exercise) => (exercise.contribution[slot.muscle] ?? 0) >= minContribution);
   /*
    * 고립 자리에는 고립 종목이 먼저다. 레그컬 기계가 없는 곳에서 "뒤허벅지 고립" 자리에
@@ -705,12 +746,19 @@ function withPriorities(blueprints: readonly DayBlueprint[], priorities: readonl
       .map((item) => ({ ...item, already: days[item.index]!.slots.filter((slot) => slot.muscle === muscle).length }))
       .sort((a, b) => Number(b.direct) - Number(a.direct) || a.already - b.already || a.size - b.size);
 
-    for (const { index } of candidates.slice(0, Math.min(2, days.length))) {
+    candidates.slice(0, Math.min(2, days.length)).forEach(({ index }, nth) => {
       const day = days[index]!;
-      const spec: SlotSpec = { ...(PRIORITY_SLOT[muscle] ?? { muscle, role: 'isolation' }), priority: true };
+      /*
+       * 둔근은 둘째 날 자리를 고립(힙 어브덕션 · 킥백 · 브릿지)으로 둔다. 두 자리 다 힌지 · 런지면
+       * 둔근을 고른 사람에게 런지만 하나 더 들어가고, 기대하는 엉덩이 고립 운동은 한 번도 안 나왔다.
+       */
+      const base: SlotSpec = muscle === 'glutes' && nth === 1
+        ? { muscle: 'glutes', role: 'accessory', patterns: ['isolation'] }
+        : PRIORITY_SLOT[muscle] ?? { muscle, role: 'isolation' };
+      const spec: SlotSpec = { ...base, priority: true };
       const afterPrimary = day.slots.reduce((at, slot, i) => (slot.role === 'primary' ? i + 1 : at), 0);
       day.slots.splice(afterPrimary, 0, spec);
-    }
+    });
   }
   return days;
 }
@@ -901,6 +949,14 @@ export function buildProgram(
           pickExercise(slot, pool, fresh, context) ??
           pickExercise(slot, pool, base, context) ??
           pickExercise(slot, pool, usedToday, context);
+        /*
+         * 메인 하체 자리에 맨몸 스쿼트 · 런지가 왔으면, 이번 주에 이미 쓴 무게 싣는 종목이라도 그쪽을 다시 쓴다 —
+         * 메인 종목은 주 2회 겹쳐도 된다. 케틀벨 하나뿐인 집의 레그 날이 맨몸 스쿼트 + 고블릿 스쿼트가 되던 것.
+         */
+        if (exercise && slot.role === 'primary' && LIGHT_BODYWEIGHT.has(exercise.id)) {
+          const loaded = pickExercise(slot, pool.filter((item) => !isUnloaded(item)), new Set([...usedToday, ...reserved]), context);
+          if (loaded) exercise = loaded;
+        }
       }
       if (!exercise) return;
 
@@ -916,13 +972,15 @@ export function buildProgram(
      * 부위를 맡는 종목만 — 데드버그 · 리버스 크런치를 같은 날 둘 다 넣지는 않는다.
      */
     /*
-     * 하체 채우기(글루트 브릿지)는 하체 자리가 있는 날에만, 그리고 바로 앞날에 넣지 않았을 때만 —
-     * 매트뿐인 주 4회에서 상체 날까지 브릿지가 들어가 하체가 매일 일했다.
+     * 하체 채우기(글루트 브릿지 · 맨몸 스쿼트 · 한발 카프레이즈)는 하체 자리가 있는 날에만, 그리고 같은 종목을 바로
+     * 앞날에 넣지 않았을 때만 — 매트뿐인 주 4회에서 상체 날까지 브릿지가 들어가 하체가 매일 일했다.
+     * 상체 채우기(인클라인 푸시업)는 미는 부위 자리가 있는 날에만 — 당기는 날에 푸시업을 끼우지 않는다.
      */
     const wanted = Math.min(MIN_DAY_EXERCISES, day.slots.length);
     const mainMuscle = (exercise: Exercise) => (Object.entries(exercise.contribution) as [MuscleGroup, number][])
       .sort((a, b) => b[1] - a[1])[0]?.[0];
     const dayHasLower = day.slots.some((slot) => LOWER_BODY.has(slot.muscle));
+    const dayHasPush = day.slots.some((slot) => PUSH_MUSCLES.has(slot.muscle));
     const lowerFillersToday = new Set<string>();
     for (const id of EASY_FILLERS) {
       if (picked.length >= wanted) break;
@@ -931,6 +989,7 @@ export function buildProgram(
       const muscle = mainMuscle(filler);
       if (!muscle || picked.some((item) => mainMuscle(item.exercise) === muscle || item.slot.muscle === muscle)) continue;
       if (LOWER_BODY.has(muscle) && (!dayHasLower || previousLowerFillers.has(filler.id))) continue;
+      if (PUSH_MUSCLES.has(muscle) && !dayHasPush) continue;
       if (LOWER_BODY.has(muscle)) lowerFillersToday.add(filler.id);
       usedToday.add(filler.id);
       usedThisWeek.add(filler.id);
@@ -1154,7 +1213,20 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
    * 있는 사람도 등을 못 하는 줄 안다.
    */
   const gaps = coverageReport(answers.gym.equipmentIds).filter((item) => !item.sufficient);
-  const none = gaps.filter((gap) => gap.directOptions === 0);
+  /*
+   * 기구 목록으로는 "직접 종목 없음"이어도 프로그램에 그 부위를 주로 쓰는 종목(가슴 0.75인 인클라인 푸시업)이
+   * 들어갔으면 없다고 말하지 않는다 — 매트뿐인 집에서 인클라인 푸시업을 하는데 "가슴 종목을 할 기구가 없어"라고 했다.
+   */
+  const trained = new Set<MuscleGroup>();
+  for (const template of program.templates) {
+    for (const slot of template.slots) {
+      const exercise = EXERCISE_INDEX.get(slot.exerciseId);
+      for (const [muscle, value] of Object.entries(exercise?.contribution ?? {}) as [MuscleGroup, number][]) {
+        if (value >= 0.75) trained.add(muscle);
+      }
+    }
+  }
+  const none = gaps.filter((gap) => gap.directOptions === 0 && !trained.has(gap.muscle));
   const few = gaps.filter((gap) => gap.directOptions > 0);
   const labels = (list: typeof gaps) => list.slice(0, 3).map((gap) => MUSCLE_LABELS_KO[gap.muscle]).join(' · ');
   if (none.length > 0) {
@@ -1316,6 +1388,14 @@ const BODYWEIGHT_REPS: Readonly<Record<string, { min: number; max: number }>> = 
   'bodyweight-reverse-lunge': { min: 10, max: 15 },
   'inverted-row': { min: 8, max: 12 },
   'pike-push-up': { min: 8, max: 12 },
+  'incline-push-up': { min: 8, max: 15 },
+  'bodyweight-squat': { min: 12, max: 20 },
+  'single-leg-calf-raise': { min: 10, max: 20 },
+  'crunch': { min: 12, max: 20 },
+  // 밴드도 무게 숫자가 없다 — 횟수로 올리고, 위 끝에 닿으면 센 밴드로 바꾼다
+  'band-row': { min: 12, max: 20 },
+  'band-lateral-raise': { min: 12, max: 20 },
+  'band-pull-apart': { min: 15, max: 25 },
 };
 
 /** 무겁게 드는 칸의 범위 — 초보는 5~8회. */

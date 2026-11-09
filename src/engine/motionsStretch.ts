@@ -186,12 +186,18 @@ function mirrorLink(link: Link): Link {
   return out;
 }
 
+/** 말 속 왼 · 오른을 바꾼다 */
+export function mirrorLabel(label: string): string {
+  return label.replace(/왼|오른/g, (side) => (side === '왼' ? '오른' : '왼'));
+}
+
 /** 시연 하나의 좌우를 뒤집는다 — 한쪽씩 하는 스트레칭의 반대쪽 */
 export function mirrorClip(clip: Clip): Clip {
   const out: Clip = {
     ...clip,
     view: [-clip.view[0], clip.view[1]],
-    keys: clip.keys.map((key) => ({ ...key, pose: mirrorPose(key.pose) })),
+    // 말도 좌우를 바꾼다 — '왼무릎 → 오른팔꿈치'가 오른쪽 그림에 그대로 뜨면 반대로 따라 한다
+    keys: clip.keys.map((key) => ({ ...key, ...(key.label ? { label: mirrorLabel(key.label) } : {}), pose: mirrorPose(key.pose) })),
     scene: clip.scene.map(mirrorPrim),
   };
   if (clip.side) out.side = swapSide(clip.side);
@@ -258,7 +264,9 @@ function bikeEasy(id: string): Clip {
     const a = 2 * Math.PI * s;
     return { pelvis: [0, saddle + 0.09, -0.12], pitch: 28, spine: 6, neck: -12, legL: pedal(0.13, a), legR: pedal(-0.13, a + Math.PI), ...hands };
   };
-  const pedalLink = (bone: BoneName): Link => ({ kind: 'pad', bone, u: 0.55, off: [0, 0, -0.015], size: [0.1, 0.12, 0.025], pivot: crank });
+  // 페달 — 크랭크 축 양 끝(발 바로 안쪽)에서 나온 크랭크 팔(17cm) 끝에 달린다.
+  // 축 가운데에 팔을 꽂으면 쇠 팔이 몸 쪽으로 비스듬히 뻗어 크랭크로 읽히지 않는다
+  const pedalLink = (bone: BoneName, x: number): Link => ({ kind: 'pad', bone, u: 0.55, off: [0, 0, -0.015], size: [0.1, 0.12, 0.025], pivot: [x, crank[1], crank[2]] });
   return {
     id, cycle: 1.1, view: [70, 8], keys: keys(...sampled(8, at, [[0, '가볍게 페달 밟기']])), linear: true, work: [0, 1],
     scene: [
@@ -270,7 +278,7 @@ function bikeEasy(id: string): Clip {
       { kind: 'frame', p: [0, 0.03, 0.15], size: [0.5, 0.06, 1.1] },
       { kind: 'frame', p: [0, 0.2, 0.18], size: [0.05, 0.3, 0.05] },
     ],
-    links: [pedalLink('footL'), pedalLink('footR')],
+    links: [pedalLink('footL', 0.1), pedalLink('footR', -0.1)],
   };
 }
 
@@ -562,7 +570,8 @@ function thoracic(id: string): Clip {
   const closed = body(-14, 4);
   const open = body(48, -18);
   const list: KeyList = [[0, '팔꿈치를 천장 쪽으로 열기', closed], [0.45, '끝에서 멈춤', open], [0.58, '천천히 아래로', open], [1, undefined, closed]];
-  return { id, cycle: 3.4, view: [38, 26], keys: keys(...list), scene: [mat([0, 0, 0.2], 0.8, 1.3)], side: 'L', work: [0, 0.45] };
+  // 옆에서 — 앞 위에서 보면 머리가 화면을 채워 몸통 돌림이 안 보인다 (오른쪽은 mirrorClip이 −80)
+  return { id, cycle: 3.4, view: [80, 20], keys: keys(...list), scene: [mat([0, 0, 0.2], 0.8, 1.3)], side: 'L', work: [0, 0.45] };
 }
 
 /** 서서 몸통 돌리기 — 골반은 앞, 가슴 앞에 팔을 모으고 좌우로 */
@@ -752,11 +761,18 @@ function ankleRock(id: string): Clip {
 function standingKnee(id: string): Clip {
   const arms = { armL: behindHead(1), armR: behindHead(-1) };
   const stand = standing({ ...arms, neck: 0 }, 0.12, 8);
+  /*
+   * 무릎을 높이 들고(115°) 몸통을 숙여 돌린다. 반대 팔은 손을 관자놀이에 둔 채 팔꿈치를 아래 앞으로
+   * 내려 무릎에 댄다 — 두 손을 머리 뒤에 벌려 둔 채로는 팔꿈치가 무릎에 닿지 않는다(행진처럼 보였다).
+   */
   const lift = (side: Side): Pose3 => {
     const sign = side === 'L' ? 1 : -1;
+    // 반대 팔 (들어 올린 무릎의 반대쪽) — sign이 +면 왼무릎 · 오른팔. 손은 관자놀이, 팔꿈치는 아래 앞으로
+    const elbowArm: ArmSpec = { ik: [-sign * 0.09, 0.4, 0.06], in: 'chest', pole: [0, -1, 1] };
     const raised: Pose3 = {
-      ...stand, pelvis: [-sign * 0.02, STANDING_Y + 0.005, -0.02], twist: sign * 28, spine: 22, bend: sign * 6, neck: 10,
-      [side === 'L' ? 'legL' : 'legR']: { fk: [104, -sign * 0, 0, 100, 0] },
+      ...stand, pelvis: [-sign * 0.02, STANDING_Y + 0.005, -0.02], twist: sign * 35, spine: 40, bend: sign * 6, neck: 10,
+      [side === 'L' ? 'legL' : 'legR']: { fk: [115, 0, 0, 100, 0] },
+      [side === 'L' ? 'armR' : 'armL']: elbowArm,
     };
     const leg = legAsIk(raised, side);
     return side === 'L' ? { ...raised, legL: leg } : { ...raised, legR: leg };

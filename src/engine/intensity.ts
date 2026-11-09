@@ -131,7 +131,7 @@ export interface TechniqueAvailability {
  * MRV 근처에서 드롭세트를 붙이면 자극이 아니라 회복 부채만 쌓인다.
  */
 /** 실패까지 가도 허리 · 균형이 무너질 일이 적은 힌지 — 등을 대고 엉덩이로 미는 것 · 맨몸 백익스텐션. */
-const SAFE_HINGES = new Set(['hip-thrust', 'machine-hip-thrust', 'back-extension']);
+const SAFE_HINGES = new Set(['hip-thrust', 'dumbbell-hip-thrust', 'machine-hip-thrust', 'back-extension']);
 
 /** 실패 지점에서 위험한 동작 — 힌지 · 런지 · 캐리 · 머신이 아닌 스쿼트. */
 function riskyAtFailure(exercise: Exercise): boolean {

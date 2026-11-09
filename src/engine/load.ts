@@ -1,3 +1,4 @@
+import { isUnloaded } from './exercises.ts';
 import type { Exercise, SetLog } from './types.ts';
 
 export interface RepRange {
@@ -69,16 +70,30 @@ export function floorToIncrement(weightKg: number, increment: number): number {
  * 0(맨몸)까지, 나머지는 가장 가벼운 한 칸 밑으로는 안 내린다.
  */
 function lowered(exercise: Exercise, weightKg: number): number {
-  const step = exercise.increment;
+  const step = stepFor(exercise, weightKg);
   if (step <= 0) return round1(weightKg * 0.9);
-  const floor = exercise.equipment === 'bodyweight' ? 0 : step;
+  const floor = isUnloaded(exercise) ? 0 : step;
   const reduced = Math.min(floorToIncrement(weightKg * 0.9, step), round1(weightKg - step));
   return Math.max(floor, reduced);
 }
 
+/** 이 무게 아래의 덤벨은 가벼운 덤벨 — 보통 1kg씩(가벼운 덤벨 간격 1 · 2kg) 있다. */
+const LIGHT_DUMBBELL_KG = 10;
+
+/**
+ * 한 칸의 크기. 보통은 종목의 증량 단위인데, 10kg 아래 덤벨은 1kg로 본다 — 2kg 레터럴 레이즈에
+ * 증량 단위 2kg를 더하면 4kg, 한 번에 두 배다. 1kg를 더하라고 하면 세션이 그 헬스장 덤벨 목록에서
+ * 지난 무게보다 무거운 가장 가벼운 덤벨(1kg 간격이면 3kg, 2kg 간격이면 4kg)을 고른다.
+ */
+function stepFor(exercise: Exercise, weightKg: number): number {
+  const step = exercise.increment;
+  if (exercise.equipment === 'dumbbell' && step > 1 && weightKg > 0 && weightKg < LIGHT_DUMBBELL_KG) return 1;
+  return step;
+}
+
 /** 한 번에 올리는 폭 — 두 칸은 무게의 10% 안쪽일 때만. 6kg 덤벨이 한 번에 10kg이 되지 않게. */
 function jumpFor(exercise: Exercise, weightKg: number, surplus: number): number {
-  const step = exercise.increment;
+  const step = stepFor(exercise, weightKg);
   if (surplus >= 2 && step * 2 <= weightKg * 0.1) return step * 2;
   return step;
 }
@@ -124,7 +139,7 @@ export function prescribeLoad(
     };
   }
 
-  const step = exercise.increment;
+  const step = stepFor(exercise, last.weightKg);
   const atTop = attempts.filter((set) => set.reps > 0 && set.weightKg === last.weightKg);
   const fewestReps = Math.min(...atTop.map((set) => set.reps));
   const tightest = atTop.reduce((worst, set) => (set.rir < worst.rir ? set : worst), atTop[0]!);
@@ -190,7 +205,7 @@ export function prescribeLoad(
   // 4) 가장 잘된 세트도 목표 반복 하단에 못 미쳤다 → 감량해 수행 품질을 되찾는다.
   if (belowBottom) {
     // 맨몸으로 못 채웠으면 낮출 무게가 없다 — 되는 만큼 하고 보조를 권한다
-    if (exercise.equipment === 'bodyweight' && last.weightKg <= 0) return bodyweightShort(exercise, last.reps, rule, base);
+    if (isUnloaded(exercise) && last.weightKg <= 0) return bodyweightShort(exercise, last.reps, rule, base);
     const reduced = lowered(exercise, last.weightKg);
     return {
       ...base,
@@ -217,7 +232,7 @@ type PrescriptionBase = Pick<LoadPrescription, 'exerciseId' | 'targetReps' | 'ta
 
 /** 한 개도 못 한 세션 — 낮추거나, 맨몸이면 되는 만큼 + 보조. */
 function failedOutright(exercise: Exercise, tried: SetLog, rule: LoadRule, base: PrescriptionBase): LoadPrescription {
-  if (exercise.equipment === 'bodyweight' && tried.weightKg <= 0) return bodyweightShort(exercise, 0, rule, base);
+  if (isUnloaded(exercise) && tried.weightKg <= 0) return bodyweightShort(exercise, 0, rule, base);
   const reduced = lowered(exercise, tried.weightKg);
   return {
     ...base,
@@ -228,39 +243,92 @@ function failedOutright(exercise: Exercise, tried: SetLog, rule: LoadRule, base:
   };
 }
 
-/** 맨몸으로 목표 하단을 못 채웠다 — 무게로는 더 낮출 수 없다. */
+/** 밴드 종목 — 무게 숫자 없이 밴드 세기와 잡는 길이로 맞춘다. */
+const BAND_HARDER = '한 단계 센 밴드로, 더 짧게 잡고';
+const BAND_EASIER = '한 단계 약한 밴드로, 더 길게 잡고';
+
 /** 맨몸 종목을 더 어렵게 하는 법 — 무게 대신. */
 const HARDER: Record<string, string> = {
   'push-up': '발을 의자나 벤치에 올린 푸시업',
+  'incline-push-up': '바닥 푸시업으로',
   'pike-push-up': '발을 상자에 올린 파이크 푸시업',
   'inverted-row': '발을 앞으로 더 빼서(몸을 더 눕혀) 하는 인버티드 로우',
   'chest-dip': '원판이나 덤벨을 다리 사이에 끼운 딥스',
   'triceps-dip': '발을 벤치에 올린 딥스',
+  'bodyweight-squat': '3초 내려가 1초 멈추는 스쿼트',
+  'single-leg-calf-raise': '계단 끝에서, 덤벨을 한 손에',
+  'glute-bridge': '한 다리로 하는 브릿지',
+  'bodyweight-reverse-lunge': '양손에 물병이나 덤벨을 들고',
+  'band-row': BAND_HARDER,
+  'band-pull-apart': BAND_HARDER,
+  'band-lateral-raise': BAND_HARDER,
 };
+
+/**
+ * 맨몸으로 목표 하단을 못 채웠을 때 더 쉽게 하는 법 — "보조 기계 · 네거티브"는 풀업 이야기다.
+ * 푸시업을 못 채운 사람에게 보조 기계를 권하면 따라 할 수가 없다. 뒤에 "하세요"가 붙는다.
+ */
+const EASIER: Record<string, string> = {
+  'push-up': '손을 벤치·식탁에 올린 인클라인 푸시업으로',
+  'incline-push-up': '손을 더 높은 곳(벽·싱크대)에 대고',
+  'pike-push-up': '손을 더 높은 곳에 대고, 엉덩이를 덜 올려서',
+  'bodyweight-reverse-lunge': '의자 등받이를 잡고 보폭을 줄여서',
+  'bodyweight-squat': '뒤에 의자를 두고 앉았다 일어서는 것으로',
+  'single-leg-calf-raise': '두 발로 함께',
+  'glute-bridge': '양발을 몸 쪽으로 당기고 범위를 줄여서',
+  'chest-dip': '머신 딥스나 보조 기계로',
+  'triceps-dip': '머신 딥스나 보조 기계로',
+  'hanging-leg-raise': '캡틴 체어에서 무릎 올리기로',
+  'inverted-row': '발을 몸 쪽으로 당겨(몸을 더 세워서)',
+  'band-row': BAND_EASIER,
+  'band-pull-apart': BAND_EASIER,
+  'band-lateral-raise': BAND_EASIER,
+};
+
+/** 보조 기계 · 밴드 보조 · 네거티브가 맞는 매달리는 종목 */
+const ASSISTED_PULLS: ReadonlySet<string> = new Set(['pull-up', 'chin-up']);
 
 function bodyweightHarder(exercise: Exercise, rule: LoadRule, base: PrescriptionBase): LoadPrescription {
   const harder = HARDER[exercise.id];
+  const done = `${rule.repRange.max}회를 채우고도 여유가 남았습니다.`;
   return {
     ...base,
     weightKg: 0,
     change: 'hold',
     deltaKg: 0,
-    reason: `${rule.repRange.max}회를 채우고도 여유가 남았습니다. 맨몸이라 무게를 더할 수 없으니 더 어렵게 하세요 — ` +
-      (harder ? `${harder}, ` : '') + '내려갈 때 3초 천천히, 또는 조끼 · 배낭에 무게를 넣어서. 계속 쉬우면 무게를 싣는 종목으로 바꾸는 게 낫습니다.',
+    reason: exercise.equipment === 'band'
+      ? `${done} 밴드는 무게 숫자가 없으니 더 어렵게 하세요 — ${harder ?? BAND_HARDER}, 또는 돌아올 때 3초 천천히.`
+      : `${done} 맨몸이라 무게를 더할 수 없으니 더 어렵게 하세요 — ` +
+        (harder ? `${harder}, ` : '') + '내려갈 때 3초 천천히, 또는 조끼 · 배낭에 무게를 넣어서. 계속 쉬우면 무게를 싣는 종목으로 바꾸는 게 낫습니다.',
   };
 }
 
+/** 맨몸 · 밴드로 목표 하단을 못 채웠다 — 무게로는 더 낮출 수 없다. */
 function bodyweightShort(exercise: Exercise, reps: number, rule: LoadRule, base: PrescriptionBase): LoadPrescription {
   const aim = Math.max(1, reps);
+  const easier = EASIER[exercise.id] ?? (exercise.equipment === 'band' ? BAND_EASIER : undefined);
+  const how = exercise.equipment === 'band' ? '밴드로' : '맨몸으로';
+  let reason: string;
+  if (ASSISTED_PULLS.has(exercise.id) || !easier) {
+    reason = ASSISTED_PULLS.has(exercise.id)
+      ? reps > 0
+        ? `맨몸으로 ${reps}회 — 목표 하단(${rule.repRange.min}회)에 못 미쳤습니다. 되는 만큼 하고, 보조 기계나 밴드가 있으면 그쪽(어시스트)으로 바꾸는 게 낫습니다.`
+        : `맨몸으로 한 개가 안 됩니다. 보조 기계나 밴드로 하거나, 위에서 천천히 내려오는 동작(네거티브)으로 시작하세요.`
+      : reps > 0
+        ? `${how} ${reps}회 — 목표 하단(${rule.repRange.min}회)에 못 미쳤습니다. 되는 만큼 하고, 동작 범위를 조금 줄여 횟수부터 채워 보세요.`
+        : `${how} 한 개가 안 됩니다. 동작 범위를 줄여 되는 만큼부터 시작하세요.`;
+  } else {
+    reason = reps > 0
+      ? `${how} ${reps}회 — 목표 하단(${rule.repRange.min}회)에 못 미쳤습니다. 되는 만큼 하고, 다음에는 ${easier} 하세요.`
+      : `${how} 한 개가 안 됩니다. ${easier} 시작하세요.`;
+  }
   return {
     ...base,
     weightKg: 0,
     targetReps: { min: aim, max: rule.repRange.max },
     change: 'hold',
     deltaKg: 0,
-    reason: reps > 0
-      ? `맨몸으로 ${reps}회 — 목표 하단(${rule.repRange.min}회)에 못 미쳤습니다. 되는 만큼 하고, 보조 기계나 밴드가 있으면 그쪽(어시스트)으로 바꾸는 게 낫습니다.`
-      : `맨몸으로 한 개가 안 됩니다. 보조 기계나 밴드로 하거나, 위에서 천천히 내려오는 동작(네거티브)으로 시작하세요.`,
+    reason,
   };
 }
 
@@ -279,7 +347,7 @@ export function adjustWithinSession(
   lastSet: SetLog,
   rule: LoadRule,
 ): WithinSessionAdjustment {
-  const step = exercise.increment;
+  const step = stepFor(exercise, lastSet.weightKg);
   const observedRir = correctRir(lastSet.rir, rule.rirOffset);
   const surplus = observedRir - rule.targetRir;
   // 다섯 개 넘게 남았으면(RIR 5) 목표가 4여도 가벼운 것이다 — RIR은 5에서 끊기므로 차이가 1로 보일 뿐

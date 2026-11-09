@@ -1,4 +1,4 @@
-import { EXERCISES } from './exercises.ts';
+import { EXERCISES, isUnloaded } from './exercises.ts';
 import { withParticle } from './korean.ts';
 import { availableExercises } from './equipment.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO } from './muscles.ts';
@@ -87,14 +87,21 @@ const WOD_BARBELL = [
   'conventional-deadlift', 'sumo-deadlift', 'front-squat', 'barbell-overhead-press',
 ];
 
-/** 컨디셔닝에 잘 맞는 동작 — 배우기 쉽고 반복해도 자세가 덜 무너진다. */
+/**
+ * 컨디셔닝에 잘 맞는 동작 — 배우기 쉽고 반복해도 자세가 덜 무너진다.
+ *
+ * 집에서 할 수 있는 맨몸 · 밴드 동작이 빠져 있어서 매트뿐인 초보의 15분 서킷이 플랭크 하나로 끝났다.
+ * 케틀벨 스윙은 와드의 기본인데 목록에 없어 한 번도 안 나왔다(초보는 관절 한도에서 걸러진다).
+ * 워킹 런지는 붐비는 헬스장에서 길게 걸을 자리가 없다 — 제자리에서 하는 동작보다 뒤로.
+ */
 const PREFERRED = [
-  'goblet-squat', 'walking-lunge', 'step-up', 'bulgarian-split-squat',
-  'push-up', 'dumbbell-bench-press', 'seated-dumbbell-press', 'landmine-press',
+  'goblet-squat', 'kettlebell-swing', 'step-up', 'push-up', 'walking-lunge', 'bulgarian-split-squat',
+  'dumbbell-bench-press', 'seated-dumbbell-press', 'landmine-press',
   'one-arm-dumbbell-row', 'lat-pulldown', 'seated-cable-row', 'face-pull',
   'hip-thrust', 'cable-pull-through', 'machine-hip-thrust', 'back-extension',
   'farmers-walk', 'plank', 'side-plank', 'hanging-leg-raise', 'ab-wheel-rollout',
   'dead-bug', 'cable-crunch', 'standing-calf-raise', 'leg-press',
+  'bodyweight-squat', 'glute-bridge', 'bodyweight-reverse-lunge', 'incline-push-up', 'band-row',
 ];
 
 export interface ConditioningInput {
@@ -119,6 +126,11 @@ export interface ConditioningInput {
    * 들어가고, 켜면 무게 상한과 주의가 같이 나간다.
    */
   allowBarbell?: boolean;
+  /**
+   * 날마다 다른 구성을 위한 값(예: 날짜 문자열의 해시). 같은 부위 갈래(상체 · 하체 · 몸통) 후보 안에서
+   * 시작 순서를 돌린다. 없으면 늘 같은 구성 — 매일 고블릿 스쿼트 / 워킹 런지 / 푸시업이었다.
+   */
+  seed?: number;
 }
 
 /** 동작 수 — 시간이 길수록 늘리되 다섯을 넘기지 않는다. 외우지 못하면 못 한다. */
@@ -172,7 +184,7 @@ export function buildConditioning(input: ConditioningInput): ConditioningWorkout
     const primary = primaryOf(entry.exercise);
     return !primary || !avoid.has(primary);
   });
-  const candidates = withoutAvoided.length >= wanted ? withoutAvoided : safe;
+  const candidates = rotateWithinRegions(withoutAvoided.length >= wanted ? withoutAvoided : safe, input.seed);
 
   // 부위가 겹치지 않게 고른다. 같은 부위 두 종목이면 라운드가 안 돈다.
   const picked: Exercise[] = [];
@@ -231,8 +243,34 @@ export function buildConditioning(input: ConditioningInput): ConditioningWorkout
   };
 }
 
+/**
+ * 같은 갈래(상체 · 하체 · 몸통) 후보끼리 순서를 seed만큼 돌린다. 갈래가 놓인 자리는 그대로라
+ * 상체 · 하체가 섞이는 모양은 같고, 그 자리에 오는 동작만 날마다 바뀐다.
+ */
+function rotateWithinRegions<T extends { exercise: Exercise }>(entries: readonly T[], seed: number | undefined): T[] {
+  if (seed === undefined || !Number.isFinite(seed)) return [...entries];
+  const turn = Math.abs(Math.trunc(seed));
+  const buckets = new Map<string, T[]>();
+  for (const entry of entries) {
+    const region = regionOf(entry.exercise);
+    buckets.set(region, [...(buckets.get(region) ?? []), entry]);
+  }
+  const rotated = new Map<string, T[]>();
+  for (const [region, list] of buckets) {
+    const shift = turn % list.length;
+    rotated.set(region, [...list.slice(shift), ...list.slice(0, shift)]);
+  }
+  const taken = new Map<string, number>();
+  return entries.map((entry) => {
+    const region = regionOf(entry.exercise);
+    const at = taken.get(region) ?? 0;
+    taken.set(region, at + 1);
+    return rotated.get(region)![at]!;
+  });
+}
+
 function toMovement(exercise: Exercise, input: ConditioningInput): ConditioningMovement {
-  const isBodyweight = exercise.equipment === 'bodyweight';
+  const isBodyweight = isUnloaded(exercise);
   const base = input.level === 'beginner' ? 8 : input.level === 'intermediate' ? 10 : 12;
 
   if (ISOMETRIC.has(exercise.id)) {

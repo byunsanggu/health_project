@@ -235,3 +235,35 @@ describe('주간 부담', () => {
     assert.match(weeklyLoad([]).text, /없음/);
   });
 });
+
+describe('오늘 하기 좋은 순서 — 내 기구', () => {
+  it('집(매트 · 덤벨)에서는 빠르게 걷기가 먼저고, 없는 러닝머신은 안 보인다', () => {
+    const ranked = rankForToday([], { equipmentIds: ['floor', 'dumbbells'], home: true });
+    assert.equal(ranked[0]?.id, 'brisk-walk');
+    assert.ok(!ranked.some((exercise) => exercise.id === 'treadmill-walk' || exercise.id === 'treadmill-run'));
+    assert.ok(ranked.some((exercise) => exercise.id === 'stairs-climb'));
+  });
+
+  it('헬스장에서는 없는 기구를 빼지 않고 뒤로만 민다 — 기구 목록이 틀릴 수 있다', () => {
+    const ranked = rankForToday([], { equipmentIds: ['treadmill', 'stationary-bike'] });
+    const firstMissing = ranked.findIndex((exercise) => exercise.equipmentId && !['treadmill', 'stationary-bike'].includes(exercise.equipmentId));
+    const lastOwnedOrFree = ranked.map((exercise) => !exercise.equipmentId || ['treadmill', 'stationary-bike'].includes(exercise.equipmentId)).lastIndexOf(true);
+    assert.ok(firstMissing > lastOwnedOrFree, ranked.map((exercise) => exercise.id).join(','));
+    assert.ok(ranked.some((exercise) => exercise.id === 'row'));
+  });
+
+  it('기구 유산소마다 기구 목록 id가 있다', async () => {
+    const { EQUIPMENT_CATALOG } = await import('../equipment.ts');
+    const known = new Set(EQUIPMENT_CATALOG.map((item) => item.id));
+    for (const exercise of CARDIO) {
+      if (exercise.needsMachine) assert.ok(exercise.equipmentId && known.has(exercise.equipmentId), exercise.id);
+      if (exercise.equipmentId) assert.ok(known.has(exercise.equipmentId), exercise.id);
+    }
+    assert.equal(by('elliptical').equipmentId, 'elliptical-machine');
+  });
+
+  it('계단 오르기는 내려올 때 엘리베이터를 타라고 한다', () => {
+    assert.match(by('stairs-climb').note, /엘리베이터/);
+    assert.equal(by('brisk-walk').needsMachine, false);
+  });
+});

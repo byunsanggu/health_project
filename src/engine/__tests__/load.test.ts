@@ -142,7 +142,8 @@ describe('prescribeLoad — 검토에서 나온 경우', () => {
 
   it('가벼운 덤벨은 한 번에 두 칸 뛰지 않는다 — 6kg이 바로 10kg이 되지 않게', () => {
     const result = prescribeLoad(dumbbell, [{ exerciseId: dumbbell.id, weightKg: 6, reps: 10, rir: 5 }], strengthish);
-    assert.equal(result.weightKg, 8);
+    // 10kg 아래 덤벨은 1kg씩 — 실제 덤벨은 세션이 그 헬스장 덤벨 목록(1kg · 2kg 간격)에서 고른다
+    assert.equal(result.weightKg, 7);
   });
 
   it('낮출 때는 실제로 낮춘다 — 10kg 덤벨의 "10% 감량"이 다시 10kg이 되지 않는다', () => {
@@ -222,5 +223,89 @@ describe('올리는 폭 — 칸에 맞추느라 두 배로 오르지 않는다',
     const result = prescribeLoad(squat, logs, rule);
     assert.equal(result.change, 'increase');
     assert.equal(result.weightKg, 67.5 + result.deltaKg);
+  });
+});
+
+describe('가벼운 덤벨 — 2kg 다음이 4kg(두 배)이 되지 않게', () => {
+  const lateral = exerciseById('lateral-raise') as Exercise;
+  const press = exerciseById('dumbbell-bench-press') as Exercise;
+  const raiseRule: LoadRule = { repRange: { min: 12, max: 15 }, targetRir: 2 };
+
+  it('10kg 아래 덤벨은 1kg씩 올린다(종목 증량 단위가 2kg여도)', () => {
+    assert.ok(press.increment >= 2);
+    const logs: SetLog[] = [1, 2, 3].map(() => ({ exerciseId: press.id, weightKg: 4, reps: 15, rir: 2 }));
+    const result = prescribeLoad(press, logs, raiseRule);
+    assert.equal(result.change, 'increase');
+    assert.equal(result.weightKg, 5);
+    assert.equal(result.deltaKg, 1);
+  });
+
+  it('10kg부터는 종목 증량 단위 그대로', () => {
+    const logs: SetLog[] = [1, 2, 3].map(() => ({ exerciseId: press.id, weightKg: 12, reps: 15, rir: 2 }));
+    assert.equal(prescribeLoad(press, logs, raiseRule).deltaKg, press.increment);
+  });
+
+  it('낮출 때도 1kg씩 — 5kg에서 3kg로 뚝 떨어지지 않는다', () => {
+    const result = prescribeLoad(press, [{ exerciseId: press.id, weightKg: 5, reps: 6, rir: 0 }], raiseRule);
+    assert.equal(result.change, 'decrease');
+    assert.equal(result.weightKg, 4);
+  });
+
+  it('세트 사이에도 1kg', () => {
+    const result = adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 3, reps: 15, rir: 5 }, raiseRule);
+    assert.ok(result.deltaKg > 0 && result.deltaKg <= 2, String(result.deltaKg));
+    assert.ok(result.weightKg <= 5);
+  });
+});
+
+describe('맨몸 · 밴드 — 못 채웠을 때 따라 할 수 있는 쉬운 방법', () => {
+  const pushUp = exerciseById('push-up') as Exercise;
+  const bodyRule: LoadRule = { repRange: { min: 12, max: 20 }, targetRir: 2 };
+
+  it('푸시업 3회면 보조 기계가 아니라 인클라인 푸시업을 권한다', () => {
+    const result = prescribeLoad(pushUp, [{ exerciseId: pushUp.id, weightKg: 0, reps: 3, rir: 0 }], bodyRule);
+    assert.ok(!/보조 기계|어시스트|네거티브/.test(result.reason), result.reason);
+    assert.match(result.reason, /인클라인 푸시업/);
+    assert.equal(result.targetReps.min, 3);
+  });
+
+  it('한 개도 못 했으면 그 쉬운 방법으로 시작하라고 한다', () => {
+    const result = prescribeLoad(pushUp, [{ exerciseId: pushUp.id, weightKg: 0, reps: 0, rir: 0 }], bodyRule);
+    assert.match(result.reason, /한 개가 안 됩니다/);
+    assert.match(result.reason, /인클라인 푸시업으로 시작하세요/);
+  });
+
+  it('브릿지 · 런지 · 인클라인 푸시업도 각자 맞는 쉬운 방법', () => {
+    for (const [id, word] of [['glute-bridge', '범위'], ['bodyweight-reverse-lunge', '의자'], ['incline-push-up', '높은 곳']] as const) {
+      const exercise = exerciseById(id) as Exercise;
+      const result = prescribeLoad(exercise, [{ exerciseId: id, weightKg: 0, reps: 2, rir: 0 }], bodyRule);
+      assert.ok(result.reason.includes(word), `${id}: ${result.reason}`);
+      assert.ok(!/보조 기계/.test(result.reason), `${id}: ${result.reason}`);
+    }
+  });
+
+  it('풀업은 지금처럼 보조 기계 · 네거티브', () => {
+    const pullUp = exerciseById('pull-up') as Exercise;
+    const result = prescribeLoad(pullUp, [{ exerciseId: pullUp.id, weightKg: 0, reps: 0, rir: 0 }], bodyRule);
+    assert.match(result.reason, /네거티브/);
+  });
+
+  it('밴드 종목은 무게 대신 밴드 세기로 — 못 채우면 약한 밴드, 쉬우면 센 밴드', () => {
+    const row = exerciseById('band-row') as Exercise;
+    const short = prescribeLoad(row, [{ exerciseId: row.id, weightKg: 0, reps: 5, rir: 0 }], bodyRule);
+    assert.equal(short.weightKg, 0);
+    assert.match(short.reason, /약한 밴드/);
+    assert.ok(!/맨몸/.test(short.reason), short.reason);
+    const easy = prescribeLoad(row, [1, 2, 3].map(() => ({ exerciseId: row.id, weightKg: 0, reps: 20, rir: 3 })), bodyRule);
+    assert.match(easy.reason, /센 밴드/);
+    assert.ok(!/0kg|조끼/.test(easy.reason), easy.reason);
+  });
+
+  it('새 맨몸 종목은 위 끝을 채우면 더 어렵게 하는 법이 따로 있다', () => {
+    for (const [id, word] of [['incline-push-up', '바닥 푸시업'], ['bodyweight-squat', '3초'], ['single-leg-calf-raise', '계단']] as const) {
+      const exercise = exerciseById(id) as Exercise;
+      const result = prescribeLoad(exercise, [1, 2, 3].map(() => ({ exerciseId: id, weightKg: 0, reps: 20, rir: 3 })), bodyRule);
+      assert.ok(result.reason.includes(word), `${id}: ${result.reason}`);
+    }
   });
 });

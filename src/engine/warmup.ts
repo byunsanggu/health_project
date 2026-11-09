@@ -1,3 +1,4 @@
+import { isUnloaded } from './exercises.ts';
 import { nearestLoadable, type LoadingSpec } from './gym.ts';
 import { MUSCLE_GROUPS } from './muscles.ts';
 import type { Exercise, MuscleGroup, TrainingLevel } from './types.ts';
@@ -110,8 +111,10 @@ export function planWarmup(input: WarmupInput): WarmupPlan {
       sets: [],
       estimatedSeconds: 0,
       // 짐작이라는 말은 정말 짐작일 때만(estimatedWeight) — 아니면 맨몸이라고도, 짐작이라고도 하지 않는다
-      note: exercise.equipment === 'bodyweight'
-        ? '맨몸 운동입니다. 가볍게 한 세트로 동작을 익히고 시작하세요.'
+      note: isUnloaded(exercise)
+        ? exercise.equipment === 'band'
+          ? '밴드 운동입니다. 약하게 잡고 가볍게 한 세트로 동작을 익히고 시작하세요.'
+          : '맨몸 운동입니다. 가볍게 한 세트로 동작을 익히고 시작하세요.'
         : input.estimatedWeight
           ? ESTIMATED_WEIGHT_NOTE_KO
           : '워밍업 세트 없이 시작합니다. 첫 세트를 가볍게 해 보고 무게를 맞추세요.',

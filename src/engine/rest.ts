@@ -1,3 +1,4 @@
+import { isUnloaded } from './exercises.ts';
 import { particle } from './korean.ts';
 import type { Exercise } from './types.ts';
 
@@ -282,7 +283,7 @@ export function restFor(input: RestInput): RestPrescription {
    */
   const notShorter = !custom || (band.minSeconds >= DEFAULT_BAND.minSeconds && band.maxSeconds >= DEFAULT_BAND.maxSeconds);
   if (notShorter && !isIsolation) {
-    const light = reps > 12 || exercise.equipment === 'bodyweight';
+    const light = reps > 12 || isUnloaded(exercise);
     const big = isBigLift(exercise);
     const baseFloor = light && !big ? 90 : big ? BIG_LIFT_REST_SECONDS : HEAVY_COMPOUND_REST_SECONDS;
     const floor = targetRir <= 1 ? baseFloor + 30 : baseFloor;
@@ -295,7 +296,7 @@ export function restFor(input: RestInput): RestPrescription {
     const base = formatDurationKo(baseFloor);
     const atLeast = exact ? `${base}${particle(base, '은/는')} 쉬어야` : '넉넉히 쉬어야';
     reason = big ? `여러 근육을 같이 쓰는 무거운 운동이라 ${atLeast} 다음 세트도 같은 횟수가 나옵니다`
-      : exercise.equipment === 'bodyweight' ? '맨몸 운동이라 덜 지쳐서 조금 짧게 쉽니다'
+      : isUnloaded(exercise) ? '맨몸 · 밴드 운동이라 덜 지쳐서 조금 짧게 쉽니다'
       : light ? '가볍게 여러 번 하는 큰 운동이라 조금 짧게 쉽니다'
       : `여러 근육을 같이 쓰는 큰 운동이라 ${atLeast} 다음 세트도 같은 횟수가 나옵니다`;
     if (targetRir <= 1) reason += ' · 힘을 거의 다 쓴 세트라 30초 더 쉽니다';

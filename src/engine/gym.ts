@@ -92,10 +92,11 @@ export const DEFAULT_GYM: GymProfile = {
   name: '일반 헬스장',
   defaults: {
     barbell: { kind: 'barbell', barKg: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25], collarKg: 0 },
+    // 10kg까지는 1kg씩 — 기구 목록의 기본 덤벨(equipment.ts dumbbellLadder)과 같다. 2kg 다음이 4kg이면 두 배다.
     dumbbell: {
       kind: 'dumbbell',
       availableKg: [
-        2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30,
         32, 34, 36, 38, 40, 45, 50,
       ],
     },
@@ -120,7 +121,9 @@ const EQUIPMENT_TO_DEFAULT: Record<Equipment, keyof GymProfile['defaults'] | nul
   cable: 'stack',
   smith: 'barbell',
   bodyweight: 'bodyweight',
-  band: null,
+  // 밴드는 무게 숫자 없이 세기(색)와 잡는 길이로 맞춘다 — 맨몸처럼 횟수로 진행한다.
+  // null이면 화면이 "기구 없음"으로 읽어 밴드 종목이 전부 막혔다.
+  band: 'bodyweight',
 };
 
 /** 이 헬스장에서 그 종목을 어떻게 싣는가. 없는 기구면 null. */

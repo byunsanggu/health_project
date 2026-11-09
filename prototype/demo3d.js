@@ -68,12 +68,15 @@
     { group: 'rearDelt', bone: 'upperArm', u: 0.13, side: 0.008, front: -0.034, r: [0.034, 0.076, 0.03], pair: true },
     { group: 'biceps', bone: 'upperArm', u: 0.55, side: 0, front: 0.031, r: [0.032, 0.105, 0.029], pair: true },
     { group: 'triceps', bone: 'upperArm', u: 0.48, side: 0, front: -0.031, r: [0.034, 0.125, 0.03], pair: true },
+    // 삼두 바깥 갈래 — 위팔 뒤쪽이 패드에 눌려도 옆에서 보이게
+    { group: 'triceps', bone: 'upperArm', u: 0.42, side: 0.03, front: -0.014, r: [0.02, 0.1, 0.026], pair: true },
     { group: 'forearms', bone: 'forearm', u: 0.28, side: 0.01, front: 0.014, r: [0.033, 0.095, 0.031], pair: true },
     // 허벅지 — 반바지 밑으로 앞쪽 근육(무릎 위 물방울)이 보이게 조금 아래로
     { group: 'quads', bone: 'thigh', u: 0.6, side: 0.004, front: 0.044, r: [0.046, 0.17, 0.034], pair: true },
     { group: 'hamstrings', bone: 'thigh', u: 0.58, side: 0, front: -0.044, r: [0.044, 0.16, 0.034], pair: true },
     // 엉덩이 — 반바지 위라 평소엔 바지 색(빛날 때만 색이 든다)
-    { group: 'glutes', bone: 'pelvis', u: 0.45, side: 0.072, front: -0.086, r: [0.074, 0.082, 0.054], pair: true, cloth: true },
+    // 반바지 밖으로 2~3cm 넘게 솟으면 풍선 두 개처럼 보인다 — 빛날 때만 살짝 보일 만큼
+    { group: 'glutes', bone: 'pelvis', u: 0.45, side: 0.066, front: -0.08, r: [0.064, 0.074, 0.046], pair: true, cloth: true },
     { group: 'calves', bone: 'shin', u: 0.28, side: 0, front: -0.036, r: [0.046, 0.1, 0.036], pair: true },
     // 세부 근육 — 엔진 근육 비율에는 없고, 동작(Clip.highlight)이 켤 때만 나타난다(detail).
     // 평소에도 보이면 몸 윤곽이 바뀐다 (허리띠 위 혹 등)
@@ -186,6 +189,7 @@
     };
     var unit = {
       sphere: new THREE.SphereGeometry(1, 20, 14),
+      headSphere: new THREE.SphereGeometry(1, 32, 24),
       thigh: latheUnit(PROFILE.thigh),
       shin: latheUnit(PROFILE.shin),
       upperArm: latheUnit(PROFILE.upperArm),
@@ -210,8 +214,9 @@
     add('lumbar', unit.lumbar, mats.skin);
     add('chest', unit.chest, mats.skin);
     add('neck', unit.cylinder, mats.skin);
-    add('head', unit.sphere, mats.skin);
-    add('hair', unit.sphere, mats.hair);
+    // 머리 · 머리카락은 화면 가운데라 각진 면이 눈에 띈다 — 이 둘만 촘촘한 공
+    add('head', unit.headSphere, mats.skin);
+    add('hair', unit.headSphere, mats.hair);
     // 귀 · 코 — 얼굴이 어느 쪽인지 바로 보이게
     add('earL', unit.sphere, mats.skin);
     add('earR', unit.sphere, mats.skin);
@@ -252,10 +257,10 @@
   }
 
   /** 뼈 하나에 회전체를 씌운다. width/depth는 단면 배율, ahead는 앞으로 비켜 놓기(m). */
-  function wrap(mesh, bone, width, depth, ahead) {
+  function wrap(mesh, bone, width, depth, ahead, extra) {
     var basis = boneBasis(bone);
     var at = ahead ? add3(bone.a, mul3(basis.z, ahead)) : bone.a;
-    place(mesh, at, basis.x, basis.y, width, basis.len, depth);
+    place(mesh, at, basis.x, basis.y, width, basis.len + (extra || 0), depth);
   }
 
   function ball(mesh, p, r) {
@@ -267,14 +272,16 @@
     var pelvis = boneBasis(bones.pelvis);
     var pelvisCenter = add3(add3(bones.pelvis.a, mul3(pelvis.y, pelvis.len * 0.45)), mul3(pelvis.z, -0.012));
     place(parts.pelvis, pelvisCenter, pelvis.x, pelvis.y, 0.168, 0.118, 0.118);
-    wrap(parts.lumbar, bones.lumbar, 1, 0.66, 0.036);
+    // 허리를 가슴 속으로 2cm 더 — 두 회전체가 맞닿는 곳에 고리 모양 이음매가 보이지 않게
+    wrap(parts.lumbar, bones.lumbar, 1, 0.66, 0.036, 0.02);
     wrap(parts.chest, bones.chest, 1, 0.62, 0.042);
     var neck = boneBasis(bones.neck);
     place(parts.neck, add3(bones.neck.a, mul3(neck.y, neck.len * 0.5)), neck.x, neck.y, 0.05, neck.len + 0.03, 0.052);
     var head = boneBasis(bones.head);
     var headCenter = add3(add3(bones.head.a, mul3(head.y, 0.088)), mul3(head.z, 0.012));
     place(parts.head, headCenter, head.x, head.y, 0.088, 0.112, 0.1);
-    place(parts.hair, add3(add3(headCenter, mul3(head.y, 0.022)), mul3(head.z, -0.018)), head.x, head.y, 0.092, 0.1, 0.094);
+    // 머리카락 — 이마선을 눈썹 4cm 위까지 내린다. 정수리에만 얹으면 이마가 넓어 늘 턱을 든 얼굴로 보인다
+    place(parts.hair, add3(add3(headCenter, mul3(head.y, 0.03)), mul3(head.z, -0.004)), head.x, head.y, 0.093, 0.085, 0.1);
     place(parts.earL, add3(add3(headCenter, mul3(head.x, 0.086)), mul3(head.z, -0.006)), head.x, head.y, 0.016, 0.03, 0.022);
     place(parts.earR, add3(add3(headCenter, mul3(head.x, -0.086)), mul3(head.z, -0.006)), head.x, head.y, 0.016, 0.03, 0.022);
     place(parts.nose, add3(add3(headCenter, mul3(head.z, 0.098)), mul3(head.y, -0.012)), head.x, head.y, 0.014, 0.022, 0.016);
@@ -322,7 +329,9 @@
       // 몸통 곡면을 따라 바깥으로 돌린다 (뼈 축 둘레로) — 앞면이 바깥쪽을 향하게
       var turn = (spec.turn || 0) * Math.PI / 180 * outward;
       var x = turn ? add3(mul3(basis.x, Math.cos(turn)), mul3(basis.z, -Math.sin(turn))) : basis.x;
-      place(m.mesh, p, x, basis.y, spec.r[0], spec.r[1], spec.r[2] * 0.88);
+      // 등 · 승모 · 허리 덩어리는 등판에 납작하게 — 0.88이면 등에 혹이 줄지어 솟아 보인다
+      var flat = spec.group === 'back' || spec.group === 'traps' || spec.group === 'lowBack' ? 0.5 : 0.88;
+      place(m.mesh, p, x, basis.y, spec.r[0], spec.r[1], spec.r[2] * flat);
     });
   }
 
@@ -479,7 +488,8 @@
       g.add(m);
       parts.push(m);
     }
-    piece(kit.cylinder, kit.steel, 0, 0.014, len);
+    // 육각 바는 가운데 봉이 없다 (len 0.01) — 1cm짜리 봉 토막을 그리지 않는다
+    if (len > 0.01) piece(kit.cylinder, kit.steel, 0, 0.014, len);
     if (plate > 0) {
       [-1, 1].forEach(function (s) {
         piece(kit.cylinder, kit.steel, s * (sleeve + 0.2), 0.025, 0.4);
@@ -579,6 +589,15 @@
               grp.add(m);
             }
             barbellGroup(grp, kit, 0.01, 0.225, 0.62);
+            // 손잡이 두 개 — 육각 틀 안 양옆에서 앞뒤로
+            [-1, 1].forEach(function (side) {
+              var handle = new THREE.Mesh(kit.cylinder, kit.steel);
+              handle.position.set(side * 0.28, 0, 0);
+              handle.rotation.set(Math.PI / 2, 0, 0);
+              handle.scale.set(0.016, 0.24, 0.016);
+              handle.castShadow = true;
+              grp.add(handle);
+            });
           });
           setGroup(g, item.p, item.x, item.y);
           return;
@@ -702,7 +721,8 @@
 
   /* ── 카메라 · 손 조작 ─────────────────────────── */
 
-  var VIEWS = { front: [0, 10], side: [90, 8], diag: [38, 14], back: [180, 12] };
+  // 옆은 정면에서 조금 덜 돈 72° — 딱 90°면 기둥 · 원판이 몸을 가리고 앞뒤 깊이가 안 보인다
+  var VIEWS = { front: [0, 10], side: [72, 8], diag: [38, 14], back: [180, 12] };
 
   function mount(canvas, clip, options) {
     options = options || {};

@@ -84,7 +84,7 @@ export function squat(id: string, load: SquatLoad, fault?: string): Clip {
       { kind: 'post', p: [0.78, 1.1, footZ - 0.1], size: [0.06, 2.2, 0.06] },
       { kind: 'post', p: [-0.78, 1.1, footZ - 0.1], size: [0.06, 2.2, 0.06] },
       { kind: 'frame', p: [0, 2.2, footZ - 0.1], size: [1.62, 0.07, 0.07] },
-      { kind: 'frame', p: [0, 0.03, footZ - 0.1], size: [1.62, 0.06, 0.5] },
+      { kind: 'frame', p: [0, 0.006, footZ - 0.1], size: [1.62, 0.012, 0.5] },
     ];
   } else if (load === 'back' || load === 'front') {
     scene = rack(-0.55, 1.32);
@@ -383,7 +383,8 @@ function splitSquat(id: string, fault?: string): Clip {
   const caved = fault === 'knee-cave';
   const front = plant(0.11, 0.34, 6, caved ? { pole: [-0.8, 0.1, 0.6] } : {});
   // 뒷발 — 발등을 벤치에 얹는다. 발끝이 뒤를, 발등이 아래를 본다
-  const backFoot: LegSpec = { ankle: [-0.12, benchTop + 0.06, -0.58], fwd: normalize([0, -0.22, -1]), up: normalize([0, -1, 0.22]), pole: [0, -0.4, 1] };
+  // 발등이 벤치 패드 위에 얹힌다 (전엔 발목이 6cm 위라 신발이 패드에 묻혔다)
+  const backFoot: LegSpec = { ankle: [-0.12, benchTop + 0.015, -0.58], fwd: normalize([0, -0.1, -1]), up: normalize([0, -1, 0.1]), pole: [0, -0.4, 1] };
   const body = (y: number, extra: Partial<Pose3> = {}): Pose3 => ({
     pelvis: [0, y, -0.06], pitch: 9, spine: 0, legL: front, legR: backFoot, ...hangingArms(90), ...extra,
   });
@@ -415,12 +416,16 @@ function stepUp(id: string, fault?: string): Clip {
   const start: Pose3 = { pelvis: [0.01, 0.8, 0.02], pitch: 14, spine: 0, neck: -6, legL: onBox, legR: floor, ...arms };
   const topPose: Pose3 = { pelvis: [0.01, box + STAND_HEIGHT - 0.005, 0.33], pitch: 2, legL: onBox, legR: plant(-0.11, 0.36, 6, { y: box }), ...arms };
   const passing: Pose3 = { ...topPose, pelvis: [0.01, box + 0.86, 0.3], legR: { ankle: [-0.12, box + 0.12, 0.22], fwd: [0, -0.3, 0.95], up: [0, 0.95, 0.3], pole: [0, 0, 1] } };
+  // 뒷발은 박스 모서리 뒤로 들어 올렸다 내린다 — 곧장 이으면 발끝이 박스 뒤 모서리를 뚫는다
+  const behind: Pose3 = { ...halfway(halfway(start, passing), passing), legR: { ankle: [-0.115, 0.6, 0.0], fwd: normalize([0, -0.45, 0.9]), up: normalize([0, 0.9, 0.45]), pole: [0, 0, 1] } };
   const list: KeyList = [
     [0, '앞발로 딛고 올라가기', start],
+    [0.15, undefined, behind],
     [0.3, undefined, passing],
     [0.42, '박스 위에 서기', topPose],
     [0.55, '천천히 내려오기', topPose],
     [0.7, undefined, passing],
+    [0.85, undefined, behind],
     [1, undefined, start],
   ];
   if (fault === 'back-leg') {
@@ -689,7 +694,8 @@ export function hipThrust(id: string, kind: ThrustKind, fault?: string): Clip {
     ];
   if (kind === 'machine') scene.push(...machineFrame(-0.75, 1.0, 1.0));
   return {
-    id, cycle: 3, view: [70, 14], keys: keys(...list), scene,
+    // 바벨은 앞 위에서 — 옆에서 보면 원판이 엉덩이를 가린다
+    id, cycle: 3, view: kind === 'barbell' ? [25, 25] : [70, 14], keys: keys(...list), scene,
     bar: kind === 'barbell' ? { kind: 'barbell', plates: 0.225 } : undefined,
     links: kind === 'machine' ? [{ kind: 'pad', bone: 'pelvis', u: 0.4, off: [0, 0, 0.16], size: [0.5, 0.1, 0.16], pivot: [0.45, 0.25, -0.5], leverAt: 0.25 }] : undefined,
     work: [0, 0.42], fault,
@@ -792,7 +798,7 @@ export function legExtension(id: string, fault?: string): Clip {
     list.splice(0, 4, [0, '차고 툭 떨어뜨림', bent], [0.2, undefined, straight], [0.3, undefined, straight], [0.5, undefined, bent], [1, undefined, bent]);
   }
   return {
-    id, cycle: 3, view: [90, 8], keys: keys(...list),
+    id, cycle: 3, view: [110, 10], keys: keys(...list),
     scene: [
       ...seatBench(0, 80, { seat, seatLen: 0.4 }),
       { kind: 'post', p: [0.34, kneeY / 2 + 0.05, kneeZ], size: [0.07, kneeY + 0.1, 0.07] },
@@ -903,12 +909,13 @@ export function calfRaise(id: string, kind: CalfKind, fault?: string): Clip {
       armR: { ik: [-0.12, -0.02, 0.36], in: 'pelvis', pole: [-1, 0, -0.3], hand: [0, 0, 1] },
     });
     return {
-      id, cycle: 2.4, view: [80, 10], keys: keys(...calfKeys(body, lowHeel, highHeel, fault)),
+      id, cycle: 2.4, view: [140, 10], keys: keys(...calfKeys(body, lowHeel, highHeel, fault)),
       scene: [
         { kind: 'pad', p: [0, 0.415, 0.0], size: [0.36, 0.07, 0.36] },
-        block([0, step / 2, 0.42], [0.5, step, 0.22]),
+        // 스텝은 발볼부터 앞쪽 — 뒤꿈치를 내릴 때 발 가운데가 스텝에 묻히지 않게
+        block([0, step / 2, 0.51], [0.5, step, 0.2]),
         { kind: 'post', p: [0.36, 0.35, 0.3], size: [0.07, 0.7, 0.07] },
-        { kind: 'frame', p: [0, 0.03, 0.2], size: [0.8, 0.06, 0.9] },
+        { kind: 'frame', p: [0, 0.006, 0.2], size: [0.8, 0.012, 0.9] },
       ],
       links: [{ kind: 'pad', bone: ['thighL', 'thighR'], u: 0.85, off: [0, 0, 0.075], size: [0.44, 0.06, 0.12], pivot: [0.36, 0.7, 0.3], leverAt: 0.22 }],
       work: [0, 0.42], fault,
@@ -926,7 +933,8 @@ export function calfRaise(id: string, kind: CalfKind, fault?: string): Clip {
       : { armL: { ik: [0.24, 0.3, 0.22], in: 'chest', pole: [1, -1, -0.2], hand: [1, 0, 0] }, armR: { ik: [-0.24, 0.3, 0.22], in: 'chest', pole: [-1, -1, -0.2], hand: [1, 0, 0] } };
     return { pelvis, pitch: 2, spine: 0, neck: 0, legL, legR, ...arms };
   };
-  const scene: Prim[] = [block([0, step / 2, ballZ - 0.06], [single ? 0.4 : 0.6, step, 0.25])];
+  // 스텝은 발볼부터 앞쪽 — 뒤꿈치는 스텝 뒤로 떠서 아래로 내려간다 (전엔 뒤꿈치가 스텝에 묻혔다)
+  const scene: Prim[] = [block([0, step / 2, ballZ + 0.08], [single ? 0.4 : 0.6, step, 0.2])];
   if (single) scene.push({ kind: 'post', p: [0.5, 1.0, 0.32], size: [0.08, 2.0, 0.08] });
   else scene.push(...machineFrame(-0.35, 2.0, 0.9));
   return {
@@ -961,8 +969,9 @@ export function hipMachine(id: string, outward: boolean, fault?: string): Clip {
   return {
     id, cycle: 2.8, view: [12, 18], keys: keys(...list), scene: [...seatBench(0, 70, { seat, seatLen: 0.42 }), ...machineFrame(-0.65, 1.3, 0.9)],
     links: [
-      { kind: 'pad', bone: 'thighL', u: 0.88, off: [-side * 0.075, 0, 0], size: [0.04, 0.2, 0.12] },
-      { kind: 'pad', bone: 'thighR', u: 0.88, off: [side * 0.075, 0, 0], size: [0.04, 0.2, 0.12] },
+      // 패드는 넓적다리 겉면에 — 0.075면 허벅지 속으로 2cm 묻혔다
+      { kind: 'pad', bone: 'thighL', u: 0.88, off: [-side * 0.1, 0, 0], size: [0.04, 0.2, 0.12] },
+      { kind: 'pad', bone: 'thighR', u: 0.88, off: [side * 0.1, 0, 0], size: [0.04, 0.2, 0.12] },
     ],
     // 엔진 근육 이름에 없는 근육 — 벌리기는 골반 옆(중둔근), 모으기는 허벅지 안쪽(내전근)
     highlight: outward ? { gluteMed: 1 } : { adductors: 1 },
@@ -993,7 +1002,7 @@ export function gluteKickback(id: string, fault?: string): Clip {
       { kind: 'pad', p: [padAt[0], padAt[1] - 0.17, padAt[2] + 0.03], size: [0.36, 0.08, 0.42], x: [1, 0, 0], y: normalize([0, 1, -0.75]) },
       { kind: 'frame', p: [0, 0.55, 0.38], size: [0.08, 1.1, 0.08] },
       { kind: 'bar', p: [0, 1.18, 0.64], size: [0.016, 0.6] },
-      { kind: 'frame', p: [0, 0.03, 0.15], size: [0.7, 0.06, 1.0] },
+      { kind: 'frame', p: [0, 0.006, 0.15], size: [0.7, 0.012, 1.0] },
     ],
     links: [{ kind: 'pad', bone: 'footR', u: 0.4, off: [0, 0, -0.03], size: [0.18, 0.28, 0.04] }],
     side: 'R', work: [0, 0.42], fault,

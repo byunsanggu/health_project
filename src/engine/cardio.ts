@@ -26,7 +26,9 @@ export type CardioMode =
   | 'stair'
   | 'jump-rope'
   | 'outdoor-run'
-  | 'swim';
+  | 'swim'
+  | 'brisk-walk'
+  | 'stairs-climb';
 
 export interface CardioExercise {
   id: CardioMode;
@@ -41,6 +43,8 @@ export interface CardioExercise {
   needsMachine: boolean;
   /** 수영장이 있어야 하는가 — 헬스장 대부분에는 없다 */
   poolOnly?: boolean;
+  /** 이 유산소를 하는 기구(기구 목록 id). 집에서는 없는 기구를 빼고, 헬스장에서는 뒤로 민다 */
+  equipmentId?: string;
   note: string;
 }
 
@@ -60,7 +64,21 @@ export const CARDIO: readonly CardioExercise[] = [
     impact: 'low',
     muscles: ['glutes', 'hamstrings', 'calves'],
     needsMachine: true,
+    equipmentId: 'treadmill',
     note: '경사를 올리고 속도를 낮춥니다. 무릎에 제일 편하면서 심박은 올라갑니다.',
+  },
+  /*
+   * 기구 없이 하는 걷기 · 계단. 집에서 운동하는 사람에게 감량 중 가장 오래 할 수 있는 유산소인데
+   * 목록에 없어서 홈짐 사용자에게 러닝머신 · 실내 자전거가 맨 위에 떴다.
+   */
+  {
+    id: 'brisk-walk',
+    name: '빠르게 걷기 (밖에서)',
+    legLoad: 0.25,
+    impact: 'low',
+    muscles: ['glutes', 'calves'],
+    needsMachine: false,
+    note: '숨이 조금 찰 만큼 빠르게 걷습니다. 다리 한 날에도 괜찮습니다.',
   },
   {
     id: 'bike',
@@ -69,6 +87,7 @@ export const CARDIO: readonly CardioExercise[] = [
     impact: 'low',
     muscles: ['quads'],
     needsMachine: true,
+    equipmentId: 'stationary-bike',
     note: '근력 세션과 제일 덜 부딪힙니다. 다리 한 날에도 이건 괜찮습니다.',
   },
   {
@@ -78,6 +97,7 @@ export const CARDIO: readonly CardioExercise[] = [
     impact: 'low',
     muscles: ['quads', 'glutes'],
     needsMachine: true,
+    equipmentId: 'elliptical-machine',
     note: '발이 떨어지지 않아 충격이 없습니다. 무릎·발목이 안 좋을 때.',
   },
   {
@@ -87,6 +107,7 @@ export const CARDIO: readonly CardioExercise[] = [
     impact: 'low',
     muscles: ['back', 'quads', 'glutes'],
     needsMachine: true,
+    equipmentId: 'rowing-machine',
     note: '전신입니다. 등 한 날에는 피하세요 — 당기는 힘을 또 씁니다.',
   },
   {
@@ -96,6 +117,7 @@ export const CARDIO: readonly CardioExercise[] = [
     impact: 'high',
     muscles: ['quads', 'hamstrings', 'calves'],
     needsMachine: true,
+    equipmentId: 'treadmill',
     note: '착지 충격이 있습니다. 다리 한 날에 하면 회복이 늦습니다.',
   },
   {
@@ -105,7 +127,17 @@ export const CARDIO: readonly CardioExercise[] = [
     impact: 'mid',
     muscles: ['glutes', 'quads', 'calves'],
     needsMachine: true,
+    equipmentId: 'stair-climber',
     note: '엉덩이와 허벅지를 크게 씁니다. 사실상 가벼운 하체 운동입니다.',
+  },
+  {
+    id: 'stairs-climb',
+    name: '계단 오르기 (아파트·지하철)',
+    legLoad: 0.7,
+    impact: 'mid',
+    muscles: ['glutes', 'quads', 'calves'],
+    needsMachine: false,
+    note: '올라갈 때만 계단, 내려올 때는 엘리베이터를 타세요. 내려가는 계단이 무릎에 더 부담입니다.',
   },
   {
     id: 'outdoor-run',
@@ -287,11 +319,23 @@ export function interference(input: CardioInterferenceInput): CardioInterference
   };
 }
 
+export interface CardioRankOptions {
+  /** false면 기구 없이 되는 것만 */
+  needsMachine?: boolean;
+  /** 지금 헬스장의 기구 id. 주면 그 기구가 없는 유산소를 빼거나(집) 뒤로 민다(헬스장) */
+  equipmentIds?: readonly string[];
+  /** 집(홈짐)이다 — 없는 기구는 아예 보여 주지 않는다. 헬스장은 기구 목록이 틀릴 수 있어 뒤로만 민다 */
+  home?: boolean;
+}
+
 /** 오늘 하기 좋은 순서대로 — 겹치는 것을 뒤로 민다. */
 export function rankForToday(
   todayMuscles: readonly MuscleGroup[],
-  options: { needsMachine?: boolean } = {},
+  options: CardioRankOptions = {},
 ): CardioExercise[] {
+  const owned = options.equipmentIds ? new Set(options.equipmentIds) : undefined;
+  const missing = (exercise: CardioExercise): boolean =>
+    Boolean(owned && exercise.equipmentId && !owned.has(exercise.equipmentId));
   const rank = (exercise: CardioExercise): number => {
     const result = interference({
       exercise,
@@ -308,12 +352,14 @@ export function rankForToday(
 
   return CARDIO
     .filter((exercise) => (options.needsMachine === false ? !exercise.needsMachine : true))
+    .filter((exercise) => !(options.home && missing(exercise)))
     .slice()
     /*
-     * 겹치는 것 → 다리를 덜 쓰는 것 순. 다만 수영은 맨 뒤로 민다 —
+     * 없는 기구 → 맨 뒤(헬스장). 그다음 겹치는 것 → 다리를 덜 쓰는 것 순. 다만 수영은 맨 뒤로 민다 —
      * 헬스장 대부분에 수영장이 없는데 맨 위에 띄우면 목록이 쓸모없어진다.
      */
-    .sort((a, b) => rank(a) - rank(b)
+    .sort((a, b) => Number(missing(a)) - Number(missing(b))
+      || rank(a) - rank(b)
       || Number(Boolean(a.poolOnly)) - Number(Boolean(b.poolOnly))
       || a.legLoad - b.legLoad);
 }

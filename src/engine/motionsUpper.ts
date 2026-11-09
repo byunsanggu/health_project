@@ -67,7 +67,7 @@ export function press(id: string, opts: PressOpts, fault?: string): Clip {
     const padTop = (z: number) => 0.54 + (z + 0.05) * slope;
     const hipZ = 0.34;
     const hook = (x: number): LegSpec => ({ ankle: [x, 0.5, 0.86], fwd: normalize([0, -0.55, 0.84]), up: normalize([0, 0.84, 0.55]), pole: [x * 1.5, 1, 0.4] });
-    body = { pelvis: [0, padTop(hipZ) + 0.11, hipZ], pitch: -90 - tilt, spine: -4, neck: 8, legL: hook(0.13), legR: hook(-0.13) };
+    body = { pelvis: [0, padTop(hipZ) + 0.11, hipZ], pitch: -90 - tilt, spine: -4, neck: 20, legL: hook(0.13), legR: hook(-0.13) };
     scene = [
       { kind: 'pad', p: [0, 0.505, -0.05], size: [0.28, 0.07, 1.25], x: [1, 0, 0], y: normalize([0, Math.cos(tilt * DEG), -Math.sin(tilt * DEG)]) },
       { kind: 'roller', p: [0, 0.6, 0.93], size: [0.05, 0.36] },
@@ -129,7 +129,7 @@ export function press(id: string, opts: PressOpts, fault?: string): Clip {
     list.splice(0, 4, [0, '가슴에서 튕김', top], [0.38, undefined, low], [0.44, undefined, pose([0, bottomBar[1] + 0.07, bottomBar[2]])], [0.5, undefined, low], [0.62, undefined, pose([0, bottomBar[1] + 0.1, bottomBar[2]])], [1, undefined, top]);
   }
   return {
-    id, cycle: 3, view: floor ? [40, 26] : incline > 0 ? [64, 16] : [36, 24], keys: keys(...list), scene,
+    id, cycle: 3, view: floor ? [40, 26] : incline > 0 ? [64, 16] : [36, 46], keys: keys(...list), scene,
     bar: dumbbell ? undefined : { kind: opts.implement === 'smith' ? 'smith' : 'barbell', plates: 0.225 },
     hold: dumbbell ? { L: 'dumbbell', R: 'dumbbell' } : undefined,
     work: [0.53, 1], fault,
@@ -518,6 +518,8 @@ function supportedRow(id: string, high: boolean, fault?: string): Clip {
     scene: [
       ...stool(0, 0.5),
       { kind: 'pad', p: pad, size: [0.36, 0.42, 0.08], x: [1, 0, 0], y: normalize(sub(chest.b, chest.a)) },
+      // 가슴 패드 받침 기둥 — 없으면 패드가 공중에 뜬다
+      { kind: 'frame', p: [0, pad[1] / 2, pad[2] + 0.1], size: [0.07, pad[1], 0.07] },
       ...machineFrame(0.75, 1.9, 1.0),
     ],
     hold: { L: 'dHandle', R: 'dHandle' },
@@ -616,7 +618,7 @@ export function verticalPull(id: string, kind: PullKind, fault?: string): Clip {
   const scene = pullupBar(barY, 0);
   if (assisted) scene.push(...machineFrame(0.25, barY + 0.05, 1.0), { kind: 'frame', p: [0, 0.04, 0], size: [1.0, 0.08, 0.8] });
   return {
-    id, cycle: 3.2, view: [34, 6], keys: keys(...list), scene,
+    id, cycle: 3.2, view: [150, 8], keys: keys(...list), scene,
     links: assisted ? [{ kind: 'pad', bone: ['shinL', 'shinR'], u: 0.3, off: [0, 0, 0.07], size: [0.42, 0.06, 0.24], pivot: [0.45, 0.55, 0.35], leverAt: 0.22 }] : undefined,
     work: [0, 0.42], fault,
   };
@@ -659,6 +661,8 @@ function pulldown(id: string, neutral: boolean, fault?: string): Clip {
     scene: [
       ...stool(0, 0.48),
       { kind: 'roller', p: [0, knee[1] + 0.09, knee[2] - 0.08], size: [0.05, 0.5] },
+      // 무릎 받침 기둥
+      { kind: 'frame', p: [0, (knee[1] + 0.09) / 2, knee[2] - 0.08], size: [0.06, knee[1] + 0.09, 0.06] },
       { kind: 'post', p: [0, 1.2, -0.35], size: [0.1, 2.4, 0.1] },
       { kind: 'frame', p: [0, 2.4, -0.13], size: [0.1, 0.08, 0.5] },
       { kind: 'pulley', p: pulley, size: [0.045, 0.03], x: [1, 0, 0] },
@@ -682,7 +686,8 @@ export function fly(id: string, kind: 'cable' | 'lowToHigh' | 'pecDeck', fault?:
     return {
       id, cycle: 2.8, view: [20, 16], keys: keys(...list),
       scene: [...seatBench(0, 84, { seat: 0.46, backLen: 0.9 }), ...machineFrame(-0.4, 1.9, 1.2)],
-      hold: { L: 'dHandle', R: 'dHandle' }, links: levers([0.2, s[1] + 0.4, s[2] - 0.1], [-0.2, s[1] + 0.4, s[2] - 0.1]),
+      // 회전축은 어깨 바깥 위 — 안쪽(±0.2)이면 쇠 팔이 머리 옆을 지난다
+      hold: { L: 'dHandle', R: 'dHandle' }, links: levers([0.32, s[1] + 0.4, s[2] - 0.1], [-0.32, s[1] + 0.4, s[2] - 0.1]),
       work: [0, 0.42], fault,
     };
   }
@@ -740,20 +745,21 @@ export function rearDelt(id: string, kind: 'machine' | 'cable' | 'dumbbell', fau
         { kind: 'pad', p: pad, size: [0.34, 0.5, 0.08], x: [1, 0, 0], y: normalize(sub(chest.b, chest.a)) },
         ...machineFrame(0.6, 1.9, 1.2),
       ],
-      hold: { L: 'dHandle', R: 'dHandle' }, links: levers([0.12, s[1] + 0.35, s[2] + 0.2], [-0.12, s[1] + 0.35, s[2] + 0.2]),
+      hold: { L: 'dHandle', R: 'dHandle' }, links: levers([0.3, s[1] + 0.35, s[2] + 0.2], [-0.3, s[1] + 0.35, s[2] + 0.2]),
       work: [0, 0.42], fault,
     };
   }
   if (kind === 'cable') {
     const body = standing({}, 0.15, 10);
     const pulley: Vec3 = [0.8, 1.45, 0.25];
-    const start = { ...body, armL: handsOnHips().armL, armR: arm(-38, 82) };
-    const end = { ...body, armL: handsOnHips().armL, armR: arm(96, 84) };
+    // 반대쪽 어깨 앞에서 시작 — 날개뼈를 앞으로 내민 채(scapR). 뒤에서 보아야 뒤쪽 어깨가 보인다
+    const start = { ...body, armL: handsOnHips().armL, armR: arm(-24, 82), scapR: [0, 1] };
+    const end = { ...body, armL: handsOnHips().armL, armR: arm(96, 84), scapR: [0, 0] };
     const list = liftKeys(start, end, ['반대쪽에서 옆으로 당기기', '끝에서 멈춤', '천천히 돌아오기']);
     if (fault === 'traps') swap(list, [1, 2], '날개뼈를 모으며 등으로', { ...end, scapR: [0.3, -1], twist: -16 });
     else if (fault === 'swing') swap(list, [1, 2], '몸을 흔들어 당김', { ...end, twist: -30, pitch: -6 });
     return {
-      id, cycle: 2.8, view: [20, 10], keys: keys(...list), scene: cableTower(pulley, [1, 0, 0]),
+      id, cycle: 2.8, view: [-150, 14], keys: keys(...list), scene: cableTower(pulley, [1, 0, 0]),
       hold: { R: 'dHandle' }, cables: [{ from: pulley, to: 'R' }], side: 'R', work: [0, 0.42], fault,
     };
   }
@@ -768,7 +774,7 @@ export function rearDelt(id: string, kind: 'machine' | 'cable' | 'dumbbell', fau
     list.splice(1, 0, [0.14, '몸을 흔들어 올림', { ...down, pitch: 40, armL: arm(84, 40), armR: arm(84, 40) }]);
   }
   return {
-    id, cycle: 2.8, view: [20, 20], keys: keys(...list), scene: [mat([0, 0, 0.05], 1.2, 1.0)],
+    id, cycle: 2.8, view: [140, 24], keys: keys(...list), scene: [mat([0, 0, 0.05], 1.2, 1.0)],
     hold: { L: 'dumbbell', R: 'dumbbell' }, work: [0, 0.42], fault,
   };
 }
@@ -787,7 +793,7 @@ export function facePull(id: string, fault?: string): Clip {
   if (fault === 'too-low') swap(list, [1, 2], '줄을 가슴 쪽으로', hands(1.25, 0.14, 0.16, [0.6, -0.6, -0.6]));
   else if (fault === 'traps') swap(list, [1, 2], '날개뼈를 모으며 등으로', { ...hands(1.6, 0.18, 0.14, [0.5, 0.1, -1]), scap: [0.2, -1] });
   return {
-    id, cycle: 2.6, view: [-40, 8], keys: keys(...list), scene: cableTower(pulley, [0, 0, 1]),
+    id, cycle: 2.6, view: [-140, 12], keys: keys(...list), scene: cableTower(pulley, [0, 0, 1]),
     bar: { kind: 'rope' }, cables: [{ from: pulley, to: 'mid' }], work: [0, 0.42], fault,
   };
 }
@@ -823,12 +829,14 @@ export function raise(id: string, kind: RaiseKind, fault?: string): Clip {
     cables = [{ from: pulley, to: 'R' }];
   }
   if (machine) scene.push(...seatBench(0, 86, { seat: 0.48 }), ...machineFrame(-0.42, 1.6, 1.1));
+  const machineShoulder = shoulderMid(body);
   return {
     id, cycle: 2.8, view: front ? [60, 8] : uni ? [-10, 8] : [12, 8], keys: keys(...list), scene,
     hold: machine ? undefined : uni ? { R: 'dHandle' } : { L: 'dumbbell', R: 'dumbbell' },
+    // 기계 — 팔 패드는 어깨 뒤 회전축에서 나온 쇠 팔에 달려 있다
     links: machine ? [
-      { kind: 'pad', bone: 'upperArmL', u: 0.85, off: [-0.05, 0, 0], size: [0.04, 0.16, 0.12] },
-      { kind: 'pad', bone: 'upperArmR', u: 0.85, off: [0.05, 0, 0], size: [0.04, 0.16, 0.12] },
+      { kind: 'pad', bone: 'upperArmL', u: 0.85, off: [-0.05, 0, 0], size: [0.04, 0.16, 0.12], pivot: [0.2, machineShoulder[1] + 0.02, machineShoulder[2] - 0.12] },
+      { kind: 'pad', bone: 'upperArmR', u: 0.85, off: [0.05, 0, 0], size: [0.04, 0.16, 0.12], pivot: [-0.2, machineShoulder[1] + 0.02, machineShoulder[2] - 0.12] },
     ] : undefined,
     cables, side: uni ? 'R' : undefined, work: [0, 0.42], fault,
   };
@@ -843,7 +851,7 @@ export function shrug(id: string, barbell: boolean, fault?: string): Clip {
     list.splice(3, 0, [0.48, '어깨를 돌림', pose(0.8, { scap: [0.8, -1] })]);
   }
   return {
-    id, cycle: 2.4, view: [40, 6], keys: keys(...list), scene: [],
+    id, cycle: 2.4, view: [150, 10], keys: keys(...list), scene: [],
     bar: barbell ? { kind: 'barbell', plates: 0.225 } : undefined,
     hold: barbell ? undefined : { L: 'dumbbell', R: 'dumbbell' }, work: [0, 0.42], fault,
   };
@@ -914,7 +922,7 @@ export function curl(id: string, kind: CurlKind, fault?: string): Clip {
         { kind: 'frame', p: [0, padAt[1] / 2, padAt[2] + 0.1], size: [0.07, padAt[1], 0.07] },
         { kind: 'pad', p: [0, 0.515, -0.05], size: [0.3, 0.07, 0.32] },
         { kind: 'frame', p: [0, 0.25, -0.05], size: [0.06, 0.48, 0.06] },
-        { kind: 'frame', p: [0, 0.03, 0.05], size: [0.5, 0.06, 0.8] },
+        { kind: 'frame', p: [0, 0.006, 0.05], size: [0.5, 0.012, 0.8] },
       ];
       if (kind === 'machinePreacher') {
         const elbowL = solved.bones.forearmL.a;
@@ -975,7 +983,7 @@ export function triceps(id: string, kind: TricepsKind, fault?: string): Clip {
         swap(list, [1, 2], '팔꿈치가 앞뒤로', pose(10, {}, -16));
       } else if (fault === 'lean') swap(list, [1, 2], '상체로 누름', pose(20, { pitch: 38, neck: -14 }, 30));
       return {
-        id, cycle: 2.6, view: [62, 8], keys: keys(...list), scene: cableTower(pulley, [0, 0, 1]),
+        id, cycle: 2.6, view: [120, 10], keys: keys(...list), scene: cableTower(pulley, [0, 0, 1]),
         bar: { kind: 'cable' }, cables: [{ from: pulley, to: 'mid' }], work: [0, 0.42], fault,
       };
     }
@@ -994,12 +1002,13 @@ export function triceps(id: string, kind: TricepsKind, fault?: string): Clip {
     }
     case 'skull': {
       const body = lying();
-      const arm = (elbow: number, elev = 104, plane = 4): ArmSpec => ({ fk: [plane, elev, 0, elbow], turn: 180 });
-      const pose = (elbow: number, extra: Partial<Pose3> = {}, plane = 4): Pose3 => ({ ...body, armL: arm(elbow, 104, plane), armR: arm(elbow, 104, plane), ...extra });
-      const list = pressKeys(pose(14), pose(122), ['이마 쪽으로 굽히기', '이마 위', '펴기']);
-      if (fault === 'elbow-flare') swap(list, [1, 2], '팔꿈치가 옆으로', pose(118, {}, 58));
-      else if (fault === 'drop') list.splice(0, 4, [0, '툭 떨어뜨림', pose(14)], [0.18, undefined, pose(122)], [0.3, undefined, pose(122)], [1, undefined, pose(14)]);
-      return { id, cycle: 2.8, view: [36, 24], keys: keys(...list), scene: flatBench(-0.72, 0.5), bar: { kind: 'ez' }, work: [0.53, 1], fault };
+      // 바는 이마 위 · 정수리 너머까지만 — 예전 각(104°, 122°)은 바가 머리 속으로 들어갔다
+      const arm = (elbow: number, elev = 98, plane = 4): ArmSpec => ({ fk: [plane, elev, 0, elbow], turn: 180 });
+      const pose = (elbow: number, extra: Partial<Pose3> = {}, plane = 4): Pose3 => ({ ...body, armL: arm(elbow, 98, plane), armR: arm(elbow, 98, plane), ...extra });
+      const list = pressKeys(pose(14), pose(108), ['이마 쪽으로 굽히기', '이마 위', '펴기']);
+      if (fault === 'elbow-flare') swap(list, [1, 2], '팔꿈치가 옆으로', pose(106, {}, 58));
+      else if (fault === 'drop') list.splice(0, 4, [0, '툭 떨어뜨림', pose(14)], [0.18, undefined, pose(108)], [0.3, undefined, pose(108)], [1, undefined, pose(14)]);
+      return { id, cycle: 2.8, view: [36, 46], keys: keys(...list), scene: flatBench(-0.72, 0.5), bar: { kind: 'ez' }, work: [0.53, 1], fault };
     }
     case 'kickback': {
       const legs = { legL: plant(0.15, 0.12, 10), legR: plant(-0.15, -0.1, 10) };
@@ -1012,7 +1021,7 @@ export function triceps(id: string, kind: TricepsKind, fault?: string): Clip {
       const list = liftKeys(pose(96), pose(6), ['뒤로 펴기', '끝까지 펴기', '천천히 굽히기']);
       if (fault === 'elbow-move') swap(list, [0, 3], '팔꿈치가 앞뒤로', pose(100, 30));
       else if (fault === 'drop') list.splice(2, 2, [0.5, '툭 떨어뜨림', pose(6)], [0.6, undefined, pose(96)], [1, undefined, pose(96)]);
-      return { id, cycle: 2.6, view: [-70, 10], keys: keys(...list), scene: [], hold: { R: 'dumbbell' }, side: 'R', work: [0, 0.42], fault };
+      return { id, cycle: 2.6, view: [-120, 14], keys: keys(...list), scene: [], hold: { R: 'dumbbell' }, side: 'R', work: [0, 0.42], fault };
     }
     case 'dbOverhead': {
       const body = seated(0.45, 0, 2, {}, 0.48);
@@ -1022,7 +1031,8 @@ export function triceps(id: string, kind: TricepsKind, fault?: string): Clip {
         armR: { ik: [-0.035, at[1] + 0.07, at[2]], in: 'chest', pole: [-pole[0], pole[1], pole[2]], hand: [1, 0, 0] },
         bar: { at, dir: [0, 1, 0], in: 'chest' },
       });
-      const low = hands([0, 0.42, -0.14]);
+      // 덤벨은 머리 뒤 아래로 — 팔뚝이 머리를 뚫지 않고 위팔은 거의 수직(16°쯤)
+      const low = hands([0, 0.40, -0.20], [0.2, 1, 0.4]);
       const high = hands([0, 0.74, 0.02]);
       const list = liftKeys(low, high, ['머리 위로 펴기', '끝까지 펴기', '천천히 내리기']);
       if (fault === 'elbow-flare') swap(list, [0, 3], '팔꿈치가 옆으로', hands([0, 0.46, -0.1], [1, 0.4, 0.3]));

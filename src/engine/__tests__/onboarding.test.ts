@@ -124,17 +124,42 @@ describe('초보에게 주지 않는 맨몸 동작', () => {
     assert.ok(exercisesOf(intermediate).some((exercise) => exercise.id === 'pike-push-up'));
   });
 
-  it('기구가 거의 없어 자리가 비면 쉬운 맨몸 종목(글루트 브릿지 · 데드버그)으로 채운다', () => {
-    const program = beginner(['floor', 'resistance-bands']);
-    for (const template of program.templates) {
-      assert.ok(template.slots.length >= 2, `${template.name}: ${template.slots.map((slot) => slot.exerciseId).join(', ')}`);
-      // 같은 날 같은 부위 채우기 종목을 둘 넣지 않는다
-      const fill = template.slots.filter((slot) => ['dead-bug', 'reverse-crunch'].includes(slot.exerciseId));
-      assert.ok(fill.length <= 1, template.name);
+  it('기구가 거의 없어 자리가 비면 쉬운 맨몸 종목으로 채운다 — 매트뿐이어도 하루 4종목', () => {
+    // 매트 + 밴드면 밴드 종목이 자리를 채워 채우기 종목이 거의 필요 없다
+    for (const ids of [['floor'], ['floor', 'resistance-bands']]) {
+      for (const days of [2, 3]) {
+        const program = beginner(ids, days);
+        for (const template of program.templates) {
+          const list = template.slots.map((slot) => slot.exerciseId).join(', ');
+          assert.ok(template.slots.length >= 4, `${ids.join(',')} 주 ${days}회 ${template.name}: ${list}`);
+          // 같은 날 같은 부위 채우기 종목을 둘 넣지 않는다
+          const fill = template.slots.filter((slot) => ['dead-bug', 'reverse-crunch'].includes(slot.exerciseId));
+          assert.ok(fill.length <= 1, template.name);
+          assert.equal(new Set(template.slots.map((slot) => slot.exerciseId)).size, template.slots.length, list);
+        }
+      }
     }
-    const all = exercisesOf(program).map((exercise) => exercise.id);
-    assert.ok(all.includes('glute-bridge'), all.join(', '));
-    assert.ok(all.includes('dead-bug'), all.join(', '));
+    // 매트뿐인 주 3회 전신 B — 전에는 런지 · 데드버그 두 종목이었다
+    const floorB = beginner(['floor'], 3).templates.find((template) => template.name === '전신 B')!;
+    assert.ok(floorB.slots.length >= 4, floorB.slots.map((slot) => slot.exerciseId).join(', '));
+    const bands = exercisesOf(beginner(['floor', 'resistance-bands'])).map((exercise) => exercise.id);
+    for (const id of ['band-row', 'band-lateral-raise', 'band-pull-apart']) assert.ok(bands.includes(id), bands.join(', '));
+  });
+
+  it('상체 채우기(인클라인 푸시업)는 미는 부위 자리가 있는 날에만 — 당기는 날 · 하체 날에는 넣지 않는다', () => {
+    for (const ids of [['floor'], ['floor', 'kettlebells']]) {
+      for (const days of [4, 5, 6]) {
+        const program = buildProgram(answers({
+          selfReportedLevel: 'beginner', monthsTraining: 0, bodyweightKg: 58, sex: 'female', daysPerWeek: days,
+          gym: { equipmentIds: ids },
+        }), 'beginner');
+        for (const template of program.templates) {
+          if (!/^풀|하체|레그/.test(template.name)) continue;
+          assert.ok(!template.slots.some((slot) => ['incline-push-up', 'push-up'].includes(slot.exerciseId)),
+            `${ids.join(',')} 주 ${days}회 ${template.name}: ${template.slots.map((slot) => slot.exerciseId).join(', ')}`);
+        }
+      }
+    }
   });
 
   it('하체 채우기(글루트 브릿지)는 하체 자리가 있는 날에만, 이틀 연달아 넣지 않는다', () => {
@@ -146,6 +171,11 @@ describe('초보에게 주지 않는 맨몸 동작', () => {
       const bridged = program.templates.map((template) => template.slots.some((slot) => slot.exerciseId === 'glute-bridge'));
       program.templates.forEach((template, index) => {
         if (/상체|푸시|풀$|^풀 /.test(template.name)) assert.ok(!bridged[index], `주 ${days}회 ${template.name}에 브릿지`);
+        // 맨몸 스쿼트 · 한발 카프레이즈 채우기도 하체 종목이다 — 상체 날에는 없다
+        if (/상체|푸시|풀$|^풀 /.test(template.name)) {
+          assert.ok(!template.slots.some((slot) => ['bodyweight-squat', 'single-leg-calf-raise', 'glute-bridge'].includes(slot.exerciseId)),
+            `주 ${days}회 ${template.name}: ${template.slots.map((slot) => slot.exerciseId).join(', ')}`);
+        }
         if (index > 0) assert.ok(!(bridged[index] && bridged[index - 1]), `주 ${days}회 ${index}·${index + 1}일째 연달아 브릿지`);
       });
       assert.ok(bridged.filter(Boolean).length < program.templates.length, `주 ${days}회 매일 브릿지`);
@@ -714,3 +744,101 @@ describe('기구 골고루 · 맨몸 섞기', () => {
 function slotIsPrimaryRow(id: string, role?: string): boolean {
   return role === 'primary' && exerciseById(id)?.pattern === 'horizontalPull';
 }
+
+describe('새 종목으로 짜는 집 · 초보 프로그램', () => {
+  const woman = (equipmentIds: readonly string[], days: number, level: 'beginner' | 'intermediate' = 'beginner', priorities?: OnboardingAnswers['priorities']) =>
+    buildProgram(answers({
+      selfReportedLevel: level, monthsTraining: level === 'beginner' ? 0 : 18, bodyweightKg: 55, sex: 'female', daysPerWeek: days,
+      gym: { equipmentIds: [...equipmentIds] }, priorities,
+    }), level);
+  const RESIDENCE = ['floor', 'bench-flat', 'dumbbells', 'bench-incline', 'cable-station', 'lat-pulldown-machine',
+    'chest-press-machine', 'leg-press-machine', 'leg-extension-machine', 'leg-curl-machine', 'smith-machine'];
+
+  it('처음 온 55kg 여성에게 바닥 푸시업 12~20회가 아니라 인클라인 푸시업을 준다', () => {
+    for (const ids of [['floor'], ['floor', 'dumbbells'], RESIDENCE, COMMON_EQUIPMENT_IDS]) {
+      for (const days of [2, 3, 4]) {
+        const program = woman(ids, days);
+        const slots = program.templates.flatMap((template) => template.slots);
+        assert.ok(!slots.some((slot) => slot.exerciseId === 'push-up'), `${ids.length}개 기구 주 ${days}회`);
+        const incline = slots.find((slot) => slot.exerciseId === 'incline-push-up');
+        if (incline) assert.deepEqual(incline.repRange, { min: 8, max: 15 });
+      }
+    }
+    // 매트뿐인 집에서는 인클라인 푸시업이 가슴 운동이다
+    assert.ok(exercisesOf(woman(['floor'], 3)).some((exercise) => exercise.id === 'incline-push-up'));
+    // 중급은 바닥 푸시업도 받는다
+    assert.ok(exercisesOf(woman(['floor'], 3, 'intermediate')).some((exercise) => exercise.id === 'push-up'));
+  });
+
+  it('밴드뿐인 집에서도 등 · 측면 · 후면 삼각근 세트가 있다', () => {
+    for (const days of [2, 3, 4]) {
+      const program = woman(['floor', 'resistance-bands'], days);
+      const volume = new Map<string, number>();
+      for (const slot of program.templates.flatMap((template) => template.slots)) {
+        const exercise = exerciseById(slot.exerciseId)!;
+        for (const [muscle, value] of Object.entries(exercise.contribution)) {
+          if (value >= 0.85) volume.set(muscle, (volume.get(muscle) ?? 0) + slot.sets);
+        }
+      }
+      for (const muscle of ['back', 'sideDelt', 'rearDelt']) assert.ok((volume.get(muscle) ?? 0) > 0, `주 ${days}회 ${muscle}`);
+    }
+  });
+
+  it('밴드 · 새 맨몸 종목은 횟수로 올리는 넓은 범위를 받는다', () => {
+    const slots = woman(['floor', 'resistance-bands'], 3).templates.flatMap((template) => template.slots);
+    const range = (id: string) => slots.find((slot) => slot.exerciseId === id)?.repRange;
+    assert.deepEqual(range('band-row'), { min: 12, max: 20 });
+    assert.deepEqual(range('band-pull-apart'), { min: 15, max: 25 });
+    assert.deepEqual(range('bodyweight-squat'), { min: 12, max: 20 });
+  });
+
+  it('둔근을 고르면 엉덩이 고립 운동(킥백 · 어브덕션 · 브릿지)이 들어간다', () => {
+    const NEIGHBORHOOD = [...RESIDENCE, 'barbell-set', 'ez-bar', 'power-rack', 'pull-up-bar', 'dip-station', 'pec-deck-machine'];
+    const isolation = new Set(['machine-hip-abduction', 'machine-glute-kickback', 'cable-glute-kickback', 'glute-bridge']);
+    const machines = new Set(['machine-hip-abduction', 'machine-glute-kickback', 'cable-glute-kickback']);
+    let machineSeen = 0;
+    for (const ids of [NEIGHBORHOOD, RESIDENCE, EQUIPMENT_CATALOG.map((item) => item.id), ['floor', 'dumbbells', 'bench-flat', 'bench-incline']]) {
+      for (const days of [2, 3, 4, 5]) {
+        for (const level of ['beginner', 'intermediate'] as const) {
+          const all = exercisesOf(woman(ids, days, level, ['glutes', 'hamstrings'])).map((exercise) => exercise.id);
+          assert.ok(all.some((id) => isolation.has(id)), `${ids.length}개 기구 주 ${days}회 ${level}: ${all.join(', ')}`);
+          if (all.some((id) => machines.has(id))) machineSeen += 1;
+        }
+      }
+    }
+    assert.ok(machineSeen > 0);
+  });
+
+  it('무게 실은 스쿼트 · 런지를 한 날에는 맨몸판을 또 넣지 않는다', () => {
+    for (const ids of [COMMON_EQUIPMENT_IDS, ['floor', 'dumbbells'], ['floor', 'kettlebells']]) {
+      for (const days of [2, 3, 4, 5]) {
+        for (const level of ['beginner', 'intermediate'] as const) {
+          for (const template of woman(ids, days, level).templates) {
+            const day = template.slots.map((slot) => exerciseById(slot.exerciseId)!);
+            for (const light of day.filter((exercise) => ['bodyweight-squat', 'bodyweight-reverse-lunge'].includes(exercise.id))) {
+              assert.ok(!day.some((other) => other.pattern === light.pattern && other.equipment !== 'bodyweight' && other.equipment !== 'band'),
+                `${template.name}: ${day.map((exercise) => exercise.id).join(', ')}`);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('기구가 넉넉한 헬스장의 중급에게 맨몸 스쿼트를 메인 하체 대신 주지 않는다', () => {
+    for (const days of [3, 4, 5]) {
+      const ids = exercisesOf(buildProgram(answers({ daysPerWeek: days }), 'intermediate')).map((exercise) => exercise.id);
+      assert.ok(!ids.includes('bodyweight-squat'), `주 ${days}회: ${ids.join(', ')}`);
+    }
+  });
+
+  it('매트뿐인 집에서 "가슴 종목을 할 기구가 없다"고 하지 않는다 — 인클라인 푸시업을 하고 있다', () => {
+    const result = runOnboarding(answers({
+      selfReportedLevel: 'beginner', monthsTraining: 0, bodyweightKg: 55, sex: 'female', daysPerWeek: 3,
+      gym: { equipmentIds: ['floor'] },
+    }));
+    const gear = result.notes.find((note) => note.includes('기구가 없어'));
+    assert.ok(gear, result.notes.join(' / '));
+    assert.ok(!gear!.includes('가슴'), gear);
+  });
+});

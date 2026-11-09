@@ -420,6 +420,48 @@ describe('3D 시연 검토 반영 — 몸 · 기구가 서로 뚫지 않는다',
     }
   });
 
+  it('스컬 크러셔 — 바가 머리 속으로 들어가지 않는다 (머리 가운데에서 14cm 이상)', () => {
+    for (const fault of [undefined, 'elbow-flare', 'drop']) {
+      const clip = clipOf('skull-crusher', fault);
+      for (const frame of frames(clip)) {
+        const head = frame.solved.bones.head;
+        // 렌더러의 머리 공 가운데 — 머리뼈 시작에서 8.8cm (반지름 11cm 안팎)
+        const center = lerp(head.a, head.b, 0.088 / len(sub(head.b, head.a)));
+        const bar = frame.moving.find((item) => item.kind === 'ez')!;
+        assert.ok(len(sub(bar.p, center)) >= 0.14, `${fault ?? '바른 동작'}: 바가 머리 가운데에서 ${len(sub(bar.p, center)).toFixed(3)}m`);
+      }
+    }
+  });
+
+  it('덤벨 오버헤드 익스텐션 — 내린 곳에서 위팔은 거의 수직 (25° 안)', () => {
+    const b = clipFrame(clipOf('dumbbell-overhead-extension'), 0).solved.bones;
+    for (const side of ['L', 'R'] as const) {
+      const upper = sub(b[`upperArm${side}`].b, b[`upperArm${side}`].a);
+      assert.ok(angle(upper, [0, 1, 0]) < 25, `${side}: 위팔이 수직에서 ${angle(upper, [0, 1, 0]).toFixed(0)}°`);
+    }
+  });
+
+  it('발이 기구 바닥판 · 스텝 · 패드에 묻히지 않는다 (1.5cm 넘게)', () => {
+    for (const exercise of EXERCISES) {
+      const clip = motionFor(exercise)!;
+      // 돌리지 않은 상자 조각만 (기울인 등판 등은 x · y 축이 따로 있다)
+      const boxes = clip.scene.filter((prim) => ['frame', 'box', 'pad'].includes(prim.kind) && !prim.x && !prim.y);
+      for (let i = 0; i < 8; i += 1) {
+        const b = clipFrame(clip, i / 8).solved.bones;
+        for (const side of ['L', 'R'] as const) {
+          const foot = b[`foot${side}`];
+          for (const [name, p] of [['뒤꿈치', foot.a], ['발끝', foot.b], ['발 가운데', lerp(foot.a, foot.b, 0.5)]] as const) {
+            for (const prim of boxes) {
+              const inside = [0, 1, 2].every((k) => Math.abs(p[k]! - prim.p[k]!) < prim.size[k]! / 2);
+              const depth = prim.p[1] + prim.size[1]! / 2 - p[1];
+              assert.ok(!inside || depth <= 0.015, `${exercise.id} t=${i / 8} ${side} ${name}: ${prim.kind}에 ${depth.toFixed(3)}m 묻힘`);
+            }
+          }
+        }
+      }
+    }
+  });
+
   it('레그 프레스 카프 레이즈 — 발목만 움직이고 무릎 각은 거의 그대로 (6° 안)', () => {
     for (const fault of [undefined, 'short-range', 'bounce']) {
       const clip = clipOf('leg-press-calf-raise', fault);

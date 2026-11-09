@@ -263,3 +263,12 @@ describe('restFor — 저장된 띠 · 배수', () => {
     }
   });
 });
+
+describe('restFor — 밴드', () => {
+  it('밴드 운동도 맨몸처럼 조금 짧게 쉬고, 그 이유를 밴드까지 말한다', () => {
+    const bandRow = exerciseById('band-row') as Exercise;
+    const result = restFor({ exercise: bandRow, reps: 15, targetRir: 2 });
+    assert.match(result.reason, /맨몸 · 밴드 운동이라/);
+    assert.ok(result.seconds <= restFor({ exercise: pulldown, reps: 10, targetRir: 2 }).seconds);
+  });
+});

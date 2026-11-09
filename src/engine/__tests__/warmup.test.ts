@@ -186,3 +186,11 @@ describe('근육은 데워졌어도 처음 하는 동작이면 두 단계', () =
     assert.equal(incline.sets.length, 0);
   });
 });
+
+describe('밴드 종목 워밍업', () => {
+  it('밴드는 램프 없이, 밴드라고 말한다(맨몸이라고 하지 않는다)', () => {
+    const result = planWarmup({ exercise: exerciseById('band-lateral-raise') as Exercise, workingWeightKg: 0, workingReps: 15 });
+    assert.equal(result.sets.length, 0);
+    assert.match(result.note, /밴드 운동입니다/);
+  });
+});

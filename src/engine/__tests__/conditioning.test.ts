@@ -108,10 +108,68 @@ describe('컨디셔닝 세션', () => {
     assert.ok(workout.notes.some((note) => note.includes('세트 수에는 안 들어가고 피로에만')));
   });
 
-  it('기구가 거의 없으면 그 사실을 알려준다', () => {
-    const workout = buildConditioning({ ...base, equipmentIds: ['floor'] });
+  it('쓸 동작이 거의 없으면 그 사실을 알려준다', () => {
+    // 매트뿐이어도 이제 맨몸 동작이 넉넉하다 — 동작이 정말 모자란 경우(통증 · 좁은 후보)만 알린다
+    const pool = [index.get('plank')!, index.get('dead-bug')!];
+    const workout = buildConditioning({ ...base, equipmentIds: ['floor'], pool });
     assert.ok(workout.movements.length < 3);
     assert.ok(workout.notes.some((note) => note.includes('기구를 더 등록')));
+  });
+});
+
+describe('집에서 하는 서킷 — 플랭크 하나로 끝나지 않는다', () => {
+  const circuit = (equipmentIds: readonly string[], level: 'beginner' | 'intermediate', seed?: number) =>
+    buildConditioning({ format: 'circuit', minutes: 15, level, equipmentIds, seed });
+
+  it('매트 · 밴드뿐인 초보도 15분 서킷에 3동작 이상, 중급은 4동작', () => {
+    for (const ids of [['floor'], ['floor', 'resistance-bands'], ['floor', 'kettlebells']]) {
+      const beginner = circuit(ids, 'beginner');
+      assert.ok(beginner.movements.length >= 3, `${ids.join(',')} 초보: ${beginner.movements.map((m) => m.name).join(' / ')}`);
+      const intermediate = circuit(ids, 'intermediate');
+      assert.equal(intermediate.movements.length, 4, `${ids.join(',')} 중급: ${intermediate.movements.map((m) => m.name).join(' / ')}`);
+    }
+  });
+
+  it('밴드 동작은 맨몸처럼 횟수를 조금 더 준다', () => {
+    const workout = buildConditioning({ format: 'circuit', minutes: 15, level: 'intermediate', equipmentIds: ['resistance-bands'],
+      pool: [index.get('band-row')!] });
+    const row = workout.movements.find((movement) => movement.exerciseId === 'band-row');
+    assert.equal(row?.amount, 12);
+  });
+
+  it('케틀벨이 있으면 초보가 아닌 사람에게 스윙을 넣는다 — 초보는 허리 부담으로 뺀다', () => {
+    const kettlebell = presetEquipment('crossfit');
+    assert.ok(kettlebell.includes('kettlebells'));
+    const intermediate = buildConditioning({ format: 'amrap', minutes: 12, level: 'intermediate', equipmentIds: kettlebell });
+    assert.ok(intermediate.movements.some((movement) => movement.exerciseId === 'kettlebell-swing'),
+      intermediate.movements.map((m) => m.name).join(' / '));
+    const beginner = buildConditioning({ format: 'amrap', minutes: 12, level: 'beginner', equipmentIds: kettlebell });
+    assert.ok(!beginner.movements.some((movement) => movement.exerciseId === 'kettlebell-swing'));
+  });
+
+  it('seed가 다르면 다른 와드가 나오고, 같으면 같다', () => {
+    const names = (seed?: number) => buildConditioning({ ...base, minutes: 12, seed }).movements.map((m) => m.exerciseId).join(',');
+    assert.notEqual(names(1), names(2));
+    assert.equal(names(5), names(5));
+    // seed가 없으면 전과 같은 구성(고정)
+    assert.equal(names(undefined), names(undefined));
+    // 날마다 바꿔도 규칙은 지킨다 — 동작 수 · 부위 겹침 없음
+    for (let seed = 0; seed < 10; seed += 1) {
+      const workout = buildConditioning({ ...base, minutes: 12, seed });
+      assert.equal(workout.movements.length, 4, `seed ${seed}`);
+      const primaries = workout.movements.map((movement) => {
+        const exercise = index.get(movement.exerciseId)!;
+        return MUSCLE_GROUPS.reduce<MuscleGroup | undefined>((best, muscle) =>
+          (exercise.contribution[muscle] ?? 0) > (best ? exercise.contribution[best] ?? 0 : 0) ? muscle : best, undefined);
+      });
+      assert.equal(new Set(primaries).size, primaries.length, `seed ${seed}`);
+    }
+  });
+
+  it('붐비는 헬스장에서 워킹 런지를 앞세우지 않는다 — 제자리 동작이 먼저', () => {
+    const workout = buildConditioning({ ...base, minutes: 12 });
+    assert.ok(!workout.movements.some((movement) => movement.exerciseId === 'walking-lunge'),
+      workout.movements.map((m) => m.name).join(' / '));
   });
 });
 

@@ -86,7 +86,7 @@ function machineCrunch(id: string, fault?: string): Clip {
   return {
     id, cycle: 2.6, view: [72, 10], keys: keys(...list),
     scene: [...seatBench(0, 84, { seat: 0.48 }), ...machineFrame(-0.42, 1.7, 0.9)],
-    links: [{ kind: 'pad', bone: 'chest', u: 0.8, off: [0, 0, 0.17], size: [0.36, 0.08, 0.08], pivot: [0.36, 1.55, -0.3], leverAt: 0.2 }],
+    links: [{ kind: 'pad', bone: 'chest', u: 0.8, off: [0, 0, 0.17], size: [0.36, 0.08, 0.08], pivot: [0.42, 1.55, -0.3], leverAt: 0.3 }],
     work: [0, 0.42], fault,
   };
 }

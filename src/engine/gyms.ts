@@ -1,11 +1,11 @@
 import {
   COMMON_EQUIPMENT_IDS,
-  EXERCISE_REQUIREMENTS,
   availableExercises,
   coverageReport,
   equipmentItem,
   gymFromCatalog,
   requirementsMet,
+  satisfyingEquipment,
   type GymSelection,
 } from './equipment.ts';
 import { EXERCISES } from './exercises.ts';
@@ -797,8 +797,9 @@ export function setEquipmentPresent(
  * "이 기구 없어요"를 눌렀을 때 무엇을 꺼야 하는지 알려준다.
  */
 export function equipmentBehind(exercise: Exercise, entry: GymSelection): string[] {
-  const required = EXERCISE_REQUIREMENTS[exercise.id];
-  if (!required || required.length === 0) return [];
-  // 지금 켜져 있는 것 중에서만 고른다 — 이미 꺼진 걸 또 끌 수는 없다.
-  return required.filter((id) => entry.equipmentIds.includes(id));
+  /*
+   * 지금 켜져 있는 것 중에서 이 종목을 열어 주는 것 — 이미 꺼진 걸 또 끌 수는 없다. 평벤치 대신
+   * 조절식 벤치로 열린 덤벨 벤치프레스면 조절식 벤치를 가리킨다(전에는 아무것도 못 가리켰다).
+   */
+  return satisfyingEquipment(exercise.id, entry.equipmentIds);
 }

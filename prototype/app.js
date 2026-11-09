@@ -582,9 +582,14 @@
    * 사람에게 레그프레스 160kg이 나온다. 가볍게 시작해 첫 세트에서 맞춘다.
    */
   function fallbackWeight(exercise) {
-    if (exercise.equipment === 'bodyweight') return 0;
+    if (E.isUnloaded(exercise)) return 0;
     if (LIVE) return 20;
     return Object.prototype.hasOwnProperty.call(START_WEIGHT, exercise.id) ? START_WEIGHT[exercise.id] : 40;
+  }
+
+  /** 무게 0인 종목의 무게 칸 말 — 밴드는 무게 숫자가 없고 밴드 세기만 있다. "맨몸"이라 하면 밴드를 빼라는 줄 안다. */
+  function unloadedWord(exercise) {
+    return exercise && exercise.equipment === 'band' ? '밴드' : '맨몸';
   }
 
   function trainingDays() {
@@ -4649,7 +4654,8 @@
     var range = (first && first.targetReps) || lift.repRange || { min: 8, max: 12 };
     var times = range.min === range.max ? range.max + '번' : range.min + '~' + range.max + '번';
     var kg = first ? first.weightKg : 0;
-    var load = lift.exercise.equipment === 'bodyweight'
+    var load = lift.exercise.equipment === 'band' ? '밴드를 잡고'
+      : lift.exercise.equipment === 'bodyweight'
       ? (kg > 0 ? '맨몸에 ' + kg + 'kg을 더 달고' : '맨몸으로')
       : pairOfDumbbells(lift.exercise) ? '양손에 ' + kg + 'kg 덤벨을 하나씩 들고'
       : kg + 'kg으로';
@@ -4900,7 +4906,8 @@
     var reps = E.repLabel(first.targetReps);
     // 맨몸 종목에 붙은 무게는 더한 무게다. "풀업 2.5kg"이라고 쓰면 2.5kg을 든다는 말이 된다.
     var bodyweight = lift.exercise && lift.exercise.equipment === 'bodyweight';
-    var load = first.weightKg > 0 ? (bodyweight ? '맨몸 +' : '') + first.weightKg + 'kg' : '맨몸';
+    var load = first.weightKg > 0 && !(lift.exercise && lift.exercise.equipment === 'band')
+      ? (bodyweight ? '맨몸 +' : '') + first.weightKg + 'kg' : unloadedWord(lift.exercise);
     return sets + '세트 · ' + load + ' · ' + reps;
   }
 
@@ -6392,8 +6399,8 @@
     var candidates = E.EXERCISES.filter(function (exercise) {
       if (skip[exercise.id]) return false;
       if (!query) return true;
-      return exercise.name.indexOf(query) >= 0
-        || (exercise.nameEn || '').toLowerCase().indexOf(query.toLowerCase()) >= 0;
+      // '사레레' · '덤벨컬'처럼 흔히 부르는 이름과 띄어쓰기 다른 것도 찾는다
+      return E.matchesExerciseQuery(exercise, query);
     });
 
     /*
@@ -6409,9 +6416,8 @@
      */
     var gymIds = entry ? entry.equipmentIds : [];
     var missingFor = function (exercise) {
-      var required = E.EXERCISE_REQUIREMENTS[exercise.id] || [];
-      return required
-        .filter(function (id) { return gymIds.indexOf(id) < 0; })
+      // 대신 쓰는 기구(조절식 벤치 → 평벤치 등)가 있으면 없는 것으로 치지 않는다
+      return E.missingRequirements(exercise.id, gymIds)
         .map(function (id) {
           var item = E.equipmentItem(id);
           return item ? item.name : id;
@@ -8744,7 +8750,7 @@
     var each = pairOfDumbbells(lift.exercise) ? '씩' : '';
     var unit = (pounds ? 'lb' : 'kg') + each;
     var load = function (kg, reps) {
-      return (kg > 0 ? E.weightLabelIn(kg, pounds) + each : '맨몸') + ' × ' + reps + '회';
+      return (kg > 0 ? E.weightLabelIn(kg, pounds) + each : unloadedWord(lift.exercise)) + ' × ' + reps + '회';
     };
     /*
      * 세트마다 한 줄 — "1세트 [35]kg × [10]회 ✓ / 2세트 지금 / 3세트 [35]kg × [10]회".
@@ -8797,7 +8803,7 @@
       var label = (order + 1) + '세트' + (set.top ? ' · 무거운' : '');
       var cells = [el('span', { class: 'set-no', text: label })];
       var fields = [];
-      if (set.weightKg > 0 || lift.exercise.equipment !== 'bodyweight') {
+      if (set.weightKg > 0 || !E.isUnloaded(lift.exercise)) {
         fields.push(el('input', {
           type: 'number', class: 'set-in set-in-weight', inputmode: 'decimal', min: '0', step: 'any',
           value: String(pounds ? E.kgToLb(set.weightKg) : set.weightKg),
@@ -8813,7 +8819,7 @@
             })
           : el('span', { class: 'set-unit', text: unit + ' ×' }));
       } else {
-        fields.push(el('span', { class: 'set-unit', text: '맨몸 ×' }));
+        fields.push(el('span', { class: 'set-unit', text: unloadedWord(lift.exercise) + ' ×' }));
       }
       fields.push(el('input', {
         type: 'number', class: 'set-in set-in-reps', inputmode: 'numeric', min: '1', step: '1',
@@ -8924,7 +8930,7 @@
     if (!set) return;
     var value = key === 'weight' ? parseFloat(raw) : parseInt(raw, 10);
     // 무게를 싣는 종목에 0kg은 받지 않는다 — 기록이 0kg으로 남고 무게 칸이 사라졌다
-    var lowest = key === 'weight' ? (lift.exercise.equipment === 'bodyweight' ? 0 : 0.01) : 1;
+    var lowest = key === 'weight' ? (E.isUnloaded(lift.exercise) ? 0 : 0.01) : 1;
     if (!Number.isFinite(value) || value < lowest) return render();
     if (key === 'weight') value = inPounds(lift.exercise.id) ? E.lbToKg(Math.min(2200, value)) : Math.min(999, value);
     else value = Math.min(100, value);
@@ -8948,7 +8954,7 @@
     }
     updateDecision(lift);
     pushLog('기록 고침', '<b>' + lift.exercise.name + '</b> ' + (setIndex + 1) + '세트 — ' +
-      (set.weightKg > 0 ? set.weightKg + 'kg' : '맨몸') + ' × ' + set.reps + '회');
+      (set.weightKg > 0 ? set.weightKg + 'kg' : unloadedWord(lift.exercise)) + ' × ' + set.reps + '회');
     persist();
     render();
   }
@@ -9936,7 +9942,7 @@
   }
 
   function loadText(lift, weightKg) {
-    return weightKg > 0 ? E.weightLabelIn(weightKg, inPounds(lift.exercise.id)) : '맨몸';
+    return weightKg > 0 ? E.weightLabelIn(weightKg, inPounds(lift.exercise.id)) : unloadedWord(lift.exercise);
   }
 
   function repsText(range) {
@@ -11419,6 +11425,13 @@
    * 맞춰 올라가는 램프지만, 와드는 시작하자마자 최대 강도로 들어간다 —
    * 들어가기 전에 다 풀려 있어야 하고, 와드 중간에는 풀 시간이 없다.
    */
+  /** 날짜 글자('2026-11-03')를 작은 정수로 — 서킷 동작을 날마다 돌리는 데 쓴다. */
+  function dateSeed(text) {
+    var hash = 0;
+    for (var i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) % 100003;
+    return hash;
+  }
+
   function buildWod(format, todayMuscles) {
     var gym = currentGymEntry();
     state.conditioning = E.buildWodSession({
@@ -11430,6 +11443,8 @@
       avoidMuscles: todayMuscles || [],
       allowBarbell: state.wodBarbell,
       standalone: !todayMuscles || todayMuscles.length === 0,
+      // 날짜마다 다른 동작 — 같은 기구면 매일 똑같은 서킷이 나왔다. 같은 날 다시 짜면 그대로다
+      seed: dateSeed(todayISO()),
     });
     state.conditioningFormat = format;
 
@@ -11479,7 +11494,13 @@
         '오늘 근력으로 쓴 부위와 겹치는 것은 아래로 내려 둡니다. ' +
         '겹치는 유산소는 방금 한 운동의 효과를 깎습니다.' }));
 
-      var ranked = E.rankForToday(muscles);
+      /*
+       * 가진 기구 위주로 — 집이면 없는 기계(러닝머신 등)는 아예 빼고, 헬스장은 등록한 목록이
+       * 틀릴 수 있어 뒤로만 민다.
+       */
+      var cardioGym = currentGymEntry();
+      var ranked = E.rankForToday(muscles, cardioGym && cardioGym.equipmentIds
+        ? { equipmentIds: cardioGym.equipmentIds, home: isHomeGym(cardioGym) } : {});
       var list = el('div', { class: 'summary-list' }, ranked.map(function (exercise) {
         var check = E.interference({
           exercise: exercise, zone: 'steady', minutes: 25,
@@ -14661,7 +14682,7 @@
       var rows = el('div', { class: 'history-sets' }, group.sets.map(function (set, i) {
         return el('div', { class: 'history-set' }, [
           el('span', { class: 'set-no', text: String(i + 1) }),
-          el('span', { text: (set.weightKg > 0 ? E.weightLabelIn(set.weightKg, inPounds(group.id)) : '맨몸') + ' × ' + set.reps + '회' }),
+          el('span', { text: (set.weightKg > 0 ? E.weightLabelIn(set.weightKg, inPounds(group.id)) : unloadedWord(exercise)) + ' × ' + set.reps + '회' }),
           el('span', { class: 'history-rir', text: leftText(set.rir) }),
         ]);
       }));
@@ -18013,10 +18034,15 @@
       return Boolean(item && (item.category === 'cable' || item.category === 'machine'));
     });
     var barSpec = hasBar ? (E.loadingFor(index.get('barbell-bench-press'), gym) || E.loadingFor(index.get('back-squat'), gym)) : null;
-    if (hasBar || hasStack) screen.appendChild(el('div', { class: 'sheet gym-weights' }, [
+    // 덤벨 — 집 덤벨은 1kg씩 있는 집도, 2kg씩 있는 집도 있다. 가진 대로 맞춰야 없는 무게를 안 준다
+    var hasDumbbells = kit.indexOf('dumbbells') >= 0;
+    var dumbbellRows = hasDumbbells ? dumbbellWeightRows(active) : [];
+    var weightParts = [hasBar ? '빈 바' : null, hasStack ? '머신 한 칸' : null, hasDumbbells ? '덤벨' : null]
+      .filter(Boolean);
+    if (hasBar || hasStack || hasDumbbells) screen.appendChild(el('div', { class: 'sheet gym-weights' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: (active ? active.name : '내 헬스장') + ' 무게 설정' }),
-        el('span', { class: 'meta', text: hasBar && hasStack ? '빈 바 · 머신 한 칸' : hasBar ? '빈 바' : '머신 한 칸' }),
+        el('span', { class: 'meta', text: weightParts.join(' · ') }),
       ]),
       el('div', { class: 'sheet-body' }, [
         hasBar ? el('div', { class: 'list-label', text: '빈 바 무게' }) : null,
@@ -18043,7 +18069,7 @@
           };
         })) : null,
         hasStack ? el('p', { class: 'hint-line', text: '머신 옆에 쌓인 무게 판에서 핀을 한 칸 내리면 늘어나는 무게입니다.' }) : null,
-      ]),
+      ].concat(dumbbellRows)),
     ]));
 
     screen.appendChild(el('div', { class: 'sheet' }, [
@@ -20185,7 +20211,7 @@
    * 케틀벨 · 스텝박스는 "덜 흔한 기구 더 보기" 안에 묻혀서 못 찾는다.
    */
   var HOME_GEAR = ['floor', 'dumbbells', 'kettlebells', 'resistance-bands', 'plyo-box', 'foam-roller',
-    'ab-wheel', 'bench-flat', 'pull-up-bar'];
+    'ab-wheel', 'bench-flat', 'bench-incline', 'pull-up-bar'];
 
   /** 지금 고치는 목록이 집인가 — 설문에서 홈짐을 골랐거나, 홈짐으로 등록한 곳. */
   function equipHomeMode() {
@@ -20203,17 +20229,11 @@
    * 이 기구를 쓰는 종목 수. 0이면 켜도 열리는 종목이 없다(밴드 · 폼롤러 같은 것).
    * 켰는데 아무 일도 안 일어나면 고장 난 줄 안다 — 칸에 그렇게 적는다.
    */
-  var equipUseCount = null;
+  var equipUseCount = {};
   function equipmentUsedBy(id) {
-    if (!equipUseCount) {
-      equipUseCount = {};
-      E.EXERCISES.forEach(function (exercise) {
-        (E.EXERCISE_REQUIREMENTS[exercise.id] || []).forEach(function (need) {
-          equipUseCount[need] = (equipUseCount[need] || 0) + 1;
-        });
-      });
-    }
-    return equipUseCount[id] || 0;
+    // 대신 쓰는 기구로 열리는 종목도 센다 — 조절식 벤치는 평벤치 종목도 연다
+    if (!(id in equipUseCount)) equipUseCount[id] = E.exercisesUsing(id).length;
+    return equipUseCount[id];
   }
 
   function equipTileNote(item, unlocks) {

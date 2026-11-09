@@ -280,6 +280,16 @@ export function clipPoints(clip: Clip): Vec3[] {
   for (let i = 0; i < 12; i += 1) {
     const frame = clipFrame(clip, i / 12);
     for (const bone of Object.values(frame.solved.bones)) points.push(bone.a, bone.b);
+    // 뼈 끝만 넣으면 엉덩이 · 머리 겉면이 화면 밖으로 잘린다 — 두 덩어리의 겉면 점도 넣는다
+    const { pelvis, head } = frame.solved.bones;
+    const pelvisUp = normalize(sub(pelvis.b, pelvis.a));
+    const pelvisCenter = madd(pelvis.a, pelvisUp, distance(pelvis.a, pelvis.b) * 0.45);
+    const headUp = normalize(sub(head.b, head.a));
+    const headCenter = madd(head.a, headUp, 0.088);
+    for (const s of [1, -1]) {
+      points.push(madd(pelvisCenter, pelvisUp, s * 0.17), madd(pelvisCenter, normalize(pelvis.f), s * 0.17));
+      points.push(madd(headCenter, headUp, s * 0.12), madd(headCenter, normalize(head.f), s * 0.12));
+    }
     for (const item of frame.moving) {
       if (item.kind === 'cableLine') continue;
       // 바는 원판 끝까지가 아니라 손 바깥 조금까지만 — 바 끝을 다 넣으면 사람이 작아진다
@@ -386,13 +396,18 @@ export function seatBench(hipZ: number, angle: number, opts: { seat?: number; se
   const normal: Vec3 = [0, Math.cos(t), Math.sin(t)];
   const start: Vec3 = [x, seat + 0.02, hipZ - 0.1];
   const center = add(madd(start, dir, backLen / 2), scale(normal, -0.035));
+  // 눕힌 등판(80° 아래)은 뒤 받침 다리에서 세운 기둥이 받친다 — 없으면 등판 끝이 공중에 뜬다
+  const footZ = hipZ - 0.1 - Math.cos(t) * backLen * 0.75;
+  const backTop = seat + 0.02 + Math.sin(t) * backLen * 0.75 - 0.09 * Math.cos(t);
+  const rearPost: Prim[] = angle < 80 ? [{ kind: 'frame', p: [x, (backTop + 0.05) / 2, footZ], size: [0.05, backTop - 0.05, 0.05] }] : [];
   return [
+    ...rearPost,
     { kind: 'pad', p: [x, seat - 0.035, hipZ + seatLen / 2 - 0.08], size: [0.3, 0.07, seatLen] },
     { kind: 'pad', p: center, size: [0.28, backLen, 0.07], x: X, y: dir },
     { kind: 'frame', p: [x, (seat - 0.07) / 2, hipZ + 0.05], size: [0.05, seat - 0.07, 0.05] },
     { kind: 'frame', p: [x, 0.025, hipZ + 0.05], size: [0.42, 0.05, 0.06] },
     { kind: 'frame', p: add(madd(start, dir, backLen * 0.55), scale(normal, -0.09)), size: [0.05, backLen * 0.7, 0.04], x: X, y: dir },
-    { kind: 'frame', p: [x, 0.025, hipZ - 0.1 - Math.cos(t) * backLen * 0.75], size: [0.42, 0.05, 0.06] },
+    { kind: 'frame', p: [x, 0.025, footZ], size: [0.42, 0.05, 0.06] },
   ];
 }
 
@@ -455,7 +470,8 @@ export function machineFrame(z: number, h = 1.7, w = 0.9, x = 0): Prim[] {
     { kind: 'post', p: [x + w / 2, h / 2, z], size: [0.08, h, 0.08] },
     { kind: 'post', p: [x - w / 2, h / 2, z], size: [0.08, h, 0.08] },
     { kind: 'frame', p: [x, h, z], size: [w + 0.08, 0.08, 0.08] },
-    { kind: 'frame', p: [x, 0.04, z], size: [w + 0.08, 0.08, 0.5] },
+    // 바닥 판은 얇게 — 두꺼우면 그 위를 디딘 발이 판에 묻힌다
+    { kind: 'frame', p: [x, 0.006, z], size: [w + 0.08, 0.012, 0.5] },
   ];
 }
 
@@ -520,7 +536,7 @@ export function standing(extra: Partial<Pose3> = {}, stance = 0.14, toe = 8): Po
 export function lying(extra: Partial<Pose3> = {}, pelvisZ = 0.3, top = 0.43): Pose3 {
   const feet = top < 0.2 ? 0.32 : 0.42;
   return {
-    pelvis: [0, top + 0.118, pelvisZ], pitch: -90, spine: -5, neck: 0,
+    pelvis: [0, top + 0.118, pelvisZ], pitch: -90, spine: -5, neck: 12,
     legL: plant(top < 0.2 ? 0.16 : 0.3, pelvisZ + feet, 22, { pole: [0.35, 1, 0.5] }),
     legR: plant(top < 0.2 ? -0.16 : -0.3, pelvisZ + feet, 22, { pole: [-0.35, 1, 0.5] }),
     ...extra,

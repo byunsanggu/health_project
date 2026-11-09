@@ -155,3 +155,17 @@ describe('아파트 헬스장 등록', () => {
     assert.equal(toGymEntry(f3).note, '3층');
   });
 });
+
+describe('프리셋에 흔한 기구', () => {
+  it('잘 모르겠어요 · 동네 · 아파트 헬스장에도 러닝머신 · 실내 자전거가 있다', () => {
+    for (const id of ['unknown', 'neighborhood', 'residence']) {
+      const ids = presetEquipment(id);
+      assert.ok(ids.includes('treadmill') && ids.includes('stationary-bike'), id);
+    }
+  });
+
+  it('크로스핏 박스에는 케틀벨 · 로잉머신이 있다', () => {
+    const ids = presetEquipment('crossfit');
+    assert.ok(ids.includes('kettlebells') && ids.includes('rowing-machine'));
+  });
+});

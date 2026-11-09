@@ -196,3 +196,17 @@ describe('EZ바 종목', () => {
     }
   });
 });
+
+describe('밴드 종목', () => {
+  it('밴드는 "기구 없음"이 아니다 — 맨몸처럼 횟수로 하는 명세가 나온다', () => {
+    const row = exerciseById('band-row') as Exercise;
+    const spec = loadingFor(row, DEFAULT_GYM);
+    assert.ok(spec, 'band-row loading');
+    assert.equal(spec!.kind, 'bodyweight');
+  });
+
+  it('기본 덤벨도 10kg까지 1kg씩 — 2kg 다음이 4kg이 아니다', () => {
+    const spec = loadingFor(exerciseById('lateral-raise') as Exercise, DEFAULT_GYM)!;
+    assert.deepEqual(loadableWeights(spec).slice(0, 11), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12]);
+  });
+});

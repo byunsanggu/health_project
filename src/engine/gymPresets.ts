@@ -41,6 +41,9 @@ const BASE = ['floor', 'bench-flat'];
 
 const FREE_WEIGHT = ['barbell-set', 'ez-bar', 'dumbbells', 'power-rack', 'bench-incline'];
 
+/** 아파트 헬스장까지 거의 어디에나 있는 유산소 기구 — 없으면 PT 몸 풀기에 러닝머신 걷기가 안 나왔다. */
+const CARDIO_BASICS = ['treadmill', 'stationary-bike'];
+
 const CORE_MACHINES = [
   'cable-station', 'lat-pulldown-machine', 'seated-row-machine',
   'chest-press-machine', 'leg-press-machine', 'leg-extension-machine', 'leg-curl-machine',
@@ -57,7 +60,7 @@ export const GYM_PRESETS: readonly GymPreset[] = [
      * 아무것도 모르는 사람에게 기구 31개를 보여주는 것보다 훨씬 낫다.
      */
     equipmentIds: [...BASE, ...FREE_WEIGHT, 'pull-up-bar', 'cable-station',
-      'lat-pulldown-machine', 'leg-press-machine'],
+      'lat-pulldown-machine', 'leg-press-machine', ...CARDIO_BASICS],
     visibility: 'public',
   },
   {
@@ -75,7 +78,7 @@ export const GYM_PRESETS: readonly GymPreset[] = [
     equipmentIds: [
       ...BASE, ...FREE_WEIGHT, ...CORE_MACHINES,
       'pull-up-bar', 'dip-station', 'smith-machine', 'pec-deck-machine',
-      'shoulder-press-machine', 'calf-raise-machine', 'preacher-bench',
+      'shoulder-press-machine', 'calf-raise-machine', 'preacher-bench', ...CARDIO_BASICS,
     ],
     visibility: 'public',
   },
@@ -85,7 +88,7 @@ export const GYM_PRESETS: readonly GymPreset[] = [
     hint: '바벨과 랙 위주, 머신은 거의 없는 곳',
     equipmentIds: [
       ...BASE, 'barbell-set', 'dumbbells', 'power-rack', 'pull-up-bar',
-      'dip-station', 'ab-wheel', 'landmine',
+      'dip-station', 'ab-wheel', 'landmine', 'kettlebells', 'rowing-machine',
     ],
     visibility: 'public',
   },
@@ -97,7 +100,7 @@ export const GYM_PRESETS: readonly GymPreset[] = [
     equipmentIds: [
       ...BASE, 'dumbbells', 'bench-incline',
       'cable-station', 'lat-pulldown-machine', 'chest-press-machine',
-      'leg-press-machine', 'leg-extension-machine', 'leg-curl-machine', 'smith-machine',
+      'leg-press-machine', 'leg-extension-machine', 'leg-curl-machine', 'smith-machine', ...CARDIO_BASICS,
     ],
     /*
      * 나눈다. 아파트 헬스장에 뭐가 있는지는 밖에서 알 길이 없고, 그래서

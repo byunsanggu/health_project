@@ -154,3 +154,15 @@ describe('헬스장 전환 비교', () => {
     assert.equal(diff.gained.length, 0);
   });
 });
+
+describe('equipmentBehind — 대신 쓰는 기구', () => {
+  it('조절식 벤치로 열린 덤벨 벤치프레스는 조절식 벤치를 가리킨다', async () => {
+    const { equipmentBehind } = await import('../gyms.ts');
+    const press = exerciseById('dumbbell-bench-press') as Exercise;
+    const behind = equipmentBehind(press, { equipmentIds: ['dumbbells', 'bench-incline'] });
+    assert.ok(behind.includes('bench-incline'), behind.join(','));
+    assert.ok(behind.includes('dumbbells'));
+    // 평벤치가 켜져 있으면 평벤치
+    assert.ok(equipmentBehind(press, { equipmentIds: ['dumbbells', 'bench-flat', 'bench-incline'] }).includes('bench-flat'));
+  });
+});

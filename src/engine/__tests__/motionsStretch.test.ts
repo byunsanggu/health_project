@@ -263,7 +263,8 @@ describe('한쪽씩 하는 동작 — 반대쪽은 좌우를 뒤집은 그림', 
           const other = hand === 'L' ? 'R' : 'L';
           assert.ok(len(sub(mirror(a.solved.hands[hand].palm), b.solved.hands[other].palm)) < 1e-6, `${step.id}: ${hand} 손바닥`);
         }
-        assert.equal(a.label, b.label);
+        // 말은 왼 · 오른만 바뀐다 ('왼무릎' → '오른무릎')
+        assert.equal(b.label, a.label?.replace(/왼|오른/g, (side) => (side === '왼' ? '오른' : '왼')));
         assert.equal(a.moving.length, b.moving.length);
         for (const [n, item] of a.moving.entries()) assert.ok(len(sub(mirror(item.p), b.moving[n]!.p)) < 1e-6, `${step.id}: 움직이는 기구`);
       }
@@ -405,5 +406,34 @@ describe('동작이 그 스트레칭답다 (설명과 맞다)', () => {
     const hand = (t: number) => clipFrame(clip, t).solved.hands.L.grip[1];
     assert.ok(hand(0.4) - hand(0) > 0.4, '팔이 오르지 않는다');
     assert.ok(hand(0.2) > hand(0) && hand(0.7) < hand(0.4), '숨 쉬는 박자가 아니다');
+  });
+});
+
+describe('3D 시연 검토 반영 — 스트레칭', () => {
+  it('무릎 들어 반대 팔꿈치 — 무릎이 반대 팔꿈치에 닿는다 (행진처럼 무릎만 드는 그림이 아니다)', () => {
+    const left = at('standing-knee', 0.27);
+    assert.ok(len(sub(left.bones.shinL.a, left.bones.forearmR.a)) < 0.2, `왼무릎-오른팔꿈치 ${len(sub(left.bones.shinL.a, left.bones.forearmR.a)).toFixed(3)}m`);
+    const right = at('standing-knee', 0.77);
+    assert.ok(len(sub(right.bones.shinR.a, right.bones.forearmL.a)) < 0.2, `오른무릎-왼팔꿈치 ${len(sub(right.bones.shinR.a, right.bones.forearmL.a)).toFixed(3)}m`);
+  });
+
+  it('흉추 돌리기는 옆에서 보고, 오른쪽은 반대 옆에서 본다', () => {
+    assert.deepEqual(clipOf('thoracic', 'L').view, [80, 20]);
+    assert.deepEqual(clipOf('thoracic', 'R').view, [-80, 20]);
+  });
+});
+
+describe('3D 시연 검토 반영 — 좌우 뒤집기', () => {
+  it('오른쪽 시연의 말은 왼쪽 시연 말에서 왼 · 오른만 바꾼 것', () => {
+    let checked = 0;
+    for (const step of STEPS.filter((item) => item.sides)) {
+      const left = clipOf(step.id, 'L').keys.map((key) => key.label);
+      const right = clipOf(step.id, 'R').keys.map((key) => key.label);
+      const swapped = left.map((label) => label?.replace(/왼|오른/g, (side) => (side === '왼' ? '오른' : '왼')));
+      assert.deepEqual(right, swapped, step.id);
+      if (left.some((label) => /왼|오른/.test(label ?? ''))) checked += 1;
+    }
+    assert.ok(checked > 0, '왼 · 오른이 든 말이 있는 한쪽 동작이 하나도 없다');
+    assert.equal(mirrorClip(clipOf('roll-glutes')).keys[0]!.label, '오른쪽 엉덩이로 기대 굴리기');
   });
 });

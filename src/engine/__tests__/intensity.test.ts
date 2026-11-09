@@ -19,3 +19,12 @@ describe('실패까지 가는 기법 — 동작 종류로도 막는다', () => {
     }
   });
 });
+
+describe('덤벨 힙 쓰러스트', () => {
+  it('등을 대고 미는 힌지라 지쳐서 무너질 이유로는 막지 않는다', async () => {
+    const { availableTechniques } = await import('../intensity.ts');
+    const { exerciseById } = await import('../exercises.ts');
+    const list = availableTechniques({ exercise: exerciseById('dumbbell-hip-thrust')!, level: 'advanced', style: 'hypertrophy', isLastSet: true });
+    assert.ok(list.every((item) => !(item.reason || '').startsWith('지쳐서 자세가 무너지면')));
+  });
+});

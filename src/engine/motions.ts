@@ -9,6 +9,7 @@ import type { Clip } from './motionKit.ts';
 import * as L from './motionsLower.ts';
 import * as U from './motionsUpper.ts';
 import * as C from './motionsCore.ts';
+import { EXTRA_MOTIONS } from './motionsExtra.ts';
 
 interface Entry {
   make: (fault?: string) => Clip;
@@ -145,6 +146,7 @@ const MOTIONS: Record<string, Entry> = {
   'torso-rotation': entry((f) => C.torsoRotation('torso-rotation', f), ['swing']),
   'farmers-walk': entry((f) => C.farmersWalk('farmers-walk', f), ['lean']),
 };
+Object.assign(MOTIONS, EXTRA_MOTIONS);
 
 /** 시연 동작이 있는 종목 id */
 export function motionIds(): string[] {

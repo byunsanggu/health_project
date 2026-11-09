@@ -538,6 +538,20 @@
       '<path d="M32 19 v4 M31 28 v5 M30 37 v6"/>' +
       '<circle cx="51" cy="13" r="5"/>',
 
+    'brisk-walk':
+      // 밖에서 걷기. 기구가 없으니 길 위에 엇갈린 발자국 둘과 길가 나무로 알아본다
+      '<path d="M4 42 H60"/>' +
+      '<ellipse cx="17" cy="33" rx="3.5" ry="6" transform="rotate(-20 17 33)"/>' +
+      '<ellipse cx="30" cy="24" rx="3.5" ry="6" transform="rotate(-20 30 24)"/>' +
+      '<circle cx="50" cy="17" r="8"/>' +
+      '<path d="M50 25 V42"/>',
+
+    'stairs-climb':
+      // 건물 계단 — 손잡이 달린 스텝밀(stair)과 달리 맨 계단에 올라가는 화살표만
+      '<path d="M6 42 h10 v-7 h10 v-7 h10 v-7 h10 v-7 h10"/>' +
+      '<path d="M14 24 L30 12"/>' +
+      '<path d="M23 11 L30 12 L28 19"/>',
+
     'jump-rope':
       // 손잡이 둘과 아래로 늘어진 줄
       '<rect x="8" y="10" width="5" height="13" rx="2.5"/>' +
