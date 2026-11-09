@@ -1,5 +1,6 @@
 import { screenOnly, type CoachStyle } from './coach.ts';
 import { weightLabelIn } from './units.ts';
+import { holdFeedbackLine } from './hold.ts';
 import type { MuscleGroup } from './types.ts';
 
 /**
@@ -170,6 +171,8 @@ export interface RestFeedbackInput {
   weightKg?: number;
   lastWeightKg?: number | null;
   at?: number;
+  /** 버티는 종목(플랭크) — reps · repsMin · repsMax가 초 */
+  seconds?: boolean;
 }
 
 const FEEDBACK_TOP: ByStyle<readonly ((reps: number, max: number) => string)[]> = {
@@ -203,6 +206,7 @@ const HEAVIER: ByStyle<(kg: string) => string> = {
  */
 export function restFeedbackLine(style: CoachStyle, input: RestFeedbackInput): string {
   const at = input.at ?? 0;
+  if (input.seconds) return holdFeedbackLine(style, { seconds: input.reps, min: input.repsMin, max: input.repsMax });
   const lines: string[] = [];
   if (input.reps >= input.repsMax) lines.push(pickAt(FEEDBACK_TOP[style], at)(input.reps, input.repsMax));
   else if (input.reps >= input.repsMin) lines.push(pickAt(FEEDBACK_IN[style], at)(input.reps));

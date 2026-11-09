@@ -1,3 +1,4 @@
+import { countLabel, isTimed } from './exercises.ts';
 import type { LoadRule } from './load.ts';
 import type { SetLog, VolumeZone } from './types.ts';
 
@@ -77,14 +78,16 @@ export function decideNextSet(input: SetDecisionInput): SetDecision {
   if (done >= minSets && dropRatio >= REP_DROP_LIMIT) {
     return decide(
       'stop',
-      `첫 세트 ${first.reps}회에서 ${last.reps}회로 떨어졌습니다. ` +
+      `첫 세트 ${countLabel(first.exerciseId, first.reps)}에서 ${countLabel(last.exerciseId, last.reps)}로 떨어졌습니다. ` +
         '더 하면 근육은 안 크고 피로만 쌓습니다.',
     );
   }
 
   // 3) 목표 하단도 못 채우면서 실패까지 갔다.
   if (done >= minSets && lastRir <= 0 && last.reps < input.rule.repRange.min) {
-    return decide('stop', `더 들 수 없을 때까지 해서 ${last.reps}회로, 목표 최소 ${input.rule.repRange.min}회에 못 미쳤습니다. 오늘은 여기까지 합니다.`);
+    const held = isTimed(last.exerciseId);
+    return decide('stop', `더 ${held ? '버틸' : '들'} 수 없을 때까지 해서 ${countLabel(last.exerciseId, last.reps)}로, ` +
+      `목표 최소 ${countLabel(last.exerciseId, input.rule.repRange.min)}에 못 미쳤습니다. 오늘은 여기까지 합니다.`);
   }
 
   // 4) 이미 회복 범위를 넘긴 부위라면 최소만 채운다.

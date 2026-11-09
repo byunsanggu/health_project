@@ -1,7 +1,8 @@
 import { prescribeLoad, roundToIncrement, type LoadRule, type RepRange } from './load.ts';
 import { JOINT_LABELS_KO, findSubstitutes, screenExercise, type PainRuling } from './pain.ts';
 import { planWeekSets } from './weekSets.ts';
-import { HEAVY_PULLS, HEAVY_PULL_MIN_RIR } from './exercises.ts';
+import { HEAVY_PULLS, HEAVY_PULL_MIN_RIR, isTimed } from './exercises.ts';
+import { holdRange, holdRangeFrom } from './hold.ts';
 import { addDays, sessionsInWeek } from './volume.ts';
 import { MUSCLE_GROUPS } from './muscles.ts';
 import {
@@ -28,6 +29,7 @@ import type {
   MuscleGroup,
   PainReport,
   SessionLog,
+  TrainingLevel,
 } from './types.ts';
 
 export interface SessionSlot {
@@ -315,7 +317,9 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
      * 대체 종목의 반복 범위. 백 스쿼트 4~6회 자리에 스텝업이 들어오면 스텝업 4~6회가 된다 —
      * 한 발 종목 · 고립 종목은 그 종목에 맞는 범위로 바꾼다.
      */
-    const repRange = substitutedFrom ? substituteRange(slot.repRange, substitutedFrom, exercise) : slot.repRange;
+    const picked = substitutedFrom ? substituteRange(slot.repRange, substitutedFrom, exercise, input.lifter?.level) : slot.repRange;
+    // 버티는 종목은 초 — 내 루틴에 "8~12회"로 적힌 플랭크는 초보 기본(20~30초)으로 읽는다
+    const repRange = isTimed(exercise) ? holdRangeFrom(picked, input.lifter?.level) : picked;
 
     /*
      * 4) 중량 — 마지막 수행 기록 기준, 그 헬스장이 만들 수 있는 값으로 맞춘다.
@@ -487,7 +491,10 @@ function failedTwice(history: readonly SessionLog[], exerciseId: string, minReps
 }
 
 /** 대체 종목에 맞는 반복 범위 — 고립은 10~15회, 한 발 종목은 무거운 범위(6회 이하)를 8~12회로. */
-function substituteRange(range: RepRange, original: Exercise, replacement: Exercise): RepRange {
+function substituteRange(range: RepRange, original: Exercise, replacement: Exercise, level?: TrainingLevel): RepRange {
+  // 초(플랭크) ↔ 회 — 크런치 자리에 들어온 플랭크는 버티는 범위로, 플랭크 자리의 데드버그는 반복 범위로
+  if (isTimed(replacement) && !isTimed(original)) return holdRange(level);
+  if (isTimed(original) && !isTimed(replacement)) return { min: 10, max: 15 };
   const light = (exercise: Exercise) => exercise.pattern === 'isolation' || exercise.pattern === 'core';
   if (light(replacement) && !light(original) && range.max < 10) return { min: 10, max: 15 };
   if ((replacement.pattern === 'lunge' || replacement.unilateral) && range.max <= 6) return { min: 8, max: 12 };

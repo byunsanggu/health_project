@@ -1098,7 +1098,8 @@ describe('buildProgram — 초보 제외 · 무릎 갈래 · 덤벨 스쿼트 �
 
   it('복근 · 코어 종목은 그날 마지막 — 데드버그가 파이크 푸시업 앞에 오지 않는다', () => {
     const upperB = dayOf(build(['floor', 'kettlebells'], 'intermediate', 4), '상체 B');
-    assert.deepEqual(upperB, ['push-up', 'incline-push-up', 'pike-push-up', 'dead-bug']);
+    // 등 자리는 슈퍼맨(매트 · 케틀벨뿐이라 당기기가 없다) — 데드버그는 여전히 맨 끝
+    assert.deepEqual(upperB, ['push-up', 'incline-push-up', 'superman', 'dead-bug']);
     for (const [name, ids] of Object.entries({ ...HOMES, mat: ['floor'], franchise: presetEquipment('franchise') })) {
       for (const days of [1, 2, 3, 4, 5, 6]) {
         for (const level of ['beginner', 'intermediate'] as const) {

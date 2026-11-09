@@ -16,6 +16,7 @@
  */
 import { weightHistoryFor, type HistoryScope } from './gymWeight.ts';
 import { weightLabelIn } from './units.ts';
+import { HOLD_MIDDLE, HOLD_NEXT, HOLD_RESOLVE, holdWords } from './hold.ts';
 import type { Exercise, MovementPattern, SessionLog } from './types.ts';
 import type { MistakeMoment } from './mistakes.ts';
 
@@ -326,6 +327,8 @@ export interface BeforeSetInput {
   guide?: readonly string[];
   /** false — 바로 앞(PT 첫 워밍업)에서 종목 이름을 이미 불렀다. 첫 세트 앞에서 이름을 또 부르지 않는다 */
   named?: boolean;
+  /** 버티는 종목(플랭크) — repsMin · repsMax · last.reps가 초다. "목표 개수" 대신 자세 · 숨을 말한다 */
+  seconds?: boolean;
   /**
    * 끝까지 밀지 않는 날 — 첫날 · 덜어내는 주 · 컨디션 낮은 날 · 아픈 데 있는 날.
    * 남길 횟수가 3개 이상인 주(블록 초반)도 그렇다. 밀어붙이는 코치(빡센 · 활기찬)도
@@ -480,7 +483,10 @@ const SETTING_SAVED: ByStyle<string> = {
 export function beforeSetLines(input: BeforeSetInput): string[] {
   const { style } = input;
   const today = load(input.weightKg, input.pounds);
-  const reps = repsWords(input.repsMin, input.repsMax);
+  const held = Boolean(input.seconds);
+  const reps = held ? holdWords(input.repsMin, input.repsMax) : repsWords(input.repsMin, input.repsMax);
+  // 지난번 기록의 단위 — 버티는 종목은 초
+  const unit = held ? '초' : '개';
   const isLast = input.setIndex === input.totalSets - 1;
   const cues = input.cues ?? [];
   const cue = cues.length > 0 ? cues[input.setIndex % cues.length] : undefined;
@@ -488,7 +494,9 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
   const lines: string[] = [];
   const turn = (input.liftIndex ?? 0) + input.setIndex;
 
-  const resolve = (at: number): string => pick(calmDown ? CONTROLLED_RESOLVE[style] : RESOLVE[style], at);
+  const resolvePool = held ? HOLD_RESOLVE[style] : calmDown ? CONTROLLED_RESOLVE[style] : RESOLVE[style];
+  const middlePool = held ? HOLD_MIDDLE[style] : calmDown ? CONTROLLED_MIDDLE[style] : MIDDLE[style];
+  const resolve = (at: number): string => pick(resolvePool, at);
   /*
    * 반말 코치는 짧은 말로만 짚는다 — 실수의 "무릎을 발끝 방향으로 밀어 주세요"나 시연의 "…내립니다"를
    * 반말 머리 뒤에 붙이면 말투가 한 문장 안에서 바뀐다. 짧은 말("무릎은 바깥으로")이 있으면 그것, 없으면 생략.
@@ -504,13 +512,13 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
     const head = `${input.setIndex + 1}세트`;
     if (style === 'gentle') {
       lines.push(`${head}. ${today}, ${reps}.${isLast ? ' 마지막 세트입니다.' : ''}`);
-      if (!isLast && !cue) lines.push(pick(MIDDLE.gentle, turn));
+      if (!isLast && !cue) lines.push(pick(middlePool, turn));
     } else {
       lines.push(`${head}! ${today}, ${reps}!`);
       const lastWords: ByStyle<string> = { tough: '마지막이야!', energetic: '마지막 세트예요!', gentle: '', fun: '마지막 세트! 끝나면 물 마실 수 있어요.' };
       lines.push(isLast
         ? `${lastWords[style]} ${style === 'fun' ? '' : resolve(turn + 1)}`.trim()
-        : pick(calmDown ? CONTROLLED_MIDDLE[style] : MIDDLE[style], turn));
+        : pick(middlePool, turn));
     }
     tail();
     return lines;
@@ -537,38 +545,40 @@ export function beforeSetLines(input: BeforeSetInput): string[] {
   const diff = last ? Math.round((input.weightKg - last.weightKg) * 10) / 10 : 0;
   const then = last ? load(last.weightKg, input.pounds) : '';
   const delta = `${Math.abs(diff)}kg`;
+  // 무게를 견주는 말("같은 무게로 · 올려서") — 버티는 종목은 무게가 늘 맨몸이라 하지 않는다
+  const same = held ? null : last;
 
   if (style === 'tough') {
     if (last) {
-      lines.push(`지난번 ${then}, ${last.reps}개.`);
+      lines.push(`지난번 ${then}, ${last.reps}${unit}.`);
       lines.push(diff > 0 ? `이번엔 ${delta} 더! ${today}, ${reps}.` : `${today}, ${reps}. 지난번보다 깔끔하게.`);
     } else {
       lines.push(`${today}, ${reps}.`);
     }
     // 바로 앞 줄이 "오늘"로 시작하면 "오늘"로 시작하지 않는 각오를 고른다.
-    const pool = calmDown ? CONTROLLED_RESOLVE.tough : RESOLVE.tough;
+    const pool = resolvePool;
     let words = pick(pool, turn);
     const before = lines[lines.length - 1] ?? '';
     for (let step = 1; /^오늘/.test(before) && /^오늘/.test(words) && step < pool.length; step += 1) words = pick(pool, turn + step);
     lines.push(words);
   } else if (style === 'energetic') {
-    if (last) lines.push(`지난번엔 ${then}, ${last.reps}개!`);
-    if (last && diff > 0) lines.push(`이번엔 ${delta} 올려서, ${today}, ${reps}!`);
-    else if (last && diff < 0) lines.push(`오늘은 살짝 내려서, ${today}, ${reps}. 괜찮아요!`);
-    else if (last) lines.push(`같은 무게, ${today}, ${reps}! 이번엔 더 깔끔하게!`);
+    if (last) lines.push(`지난번엔 ${then}, ${last.reps}${unit}!`);
+    if (same && diff > 0) lines.push(`이번엔 ${delta} 올려서, ${today}, ${reps}!`);
+    else if (same && diff < 0) lines.push(`오늘은 살짝 내려서, ${today}, ${reps}. 괜찮아요!`);
+    else if (same) lines.push(`같은 무게, ${today}, ${reps}! 이번엔 더 깔끔하게!`);
     else lines.push(`오늘은 ${today}, ${reps}! 가 봅시다!`);
     lines.push(resolve(turn));
   } else if (style === 'gentle') {
-    if (last) lines.push(`지난번엔 ${then}, ${last.reps}개 하셨습니다.`);
-    if (last && diff > 0) lines.push(`오늘은 ${delta}만 올려서, ${today}, ${reps} 해 보겠습니다.`);
-    else if (last && diff < 0) lines.push(`오늘은 조금 내려서, ${today}, ${reps} 가겠습니다. 괜찮습니다.`);
-    else if (last) lines.push(`오늘도 같은 무게로, ${reps} 해 보겠습니다.`);
+    if (last) lines.push(`지난번엔 ${then}, ${last.reps}${unit} 하셨습니다.`);
+    if (same && diff > 0) lines.push(`오늘은 ${delta}만 올려서, ${today}, ${reps} 해 보겠습니다.`);
+    else if (same && diff < 0) lines.push(`오늘은 조금 내려서, ${today}, ${reps} 가겠습니다. 괜찮습니다.`);
+    else if (same) lines.push(`오늘도 같은 무게로, ${reps} 해 보겠습니다.`);
     else lines.push(`오늘은 ${today}, ${reps} 해 보겠습니다.`);
   } else {
-    if (last) lines.push(`지난번엔 ${then}, ${last.reps}개! 기억하시죠?`);
-    if (last && diff > 0) lines.push(`오늘은 ${delta} 추가! ${today}, ${reps}. 기구한테 미리 사과해 두세요.`);
-    else if (last && diff < 0) lines.push(`오늘은 살짝 내려서, ${today}, ${reps}. 무게도 쉬는 날이 있어야죠.`);
-    else if (last) lines.push(`같은 무게, ${today}, ${reps}. 익숙한 친구랑 한 번 더!`);
+    if (last) lines.push(`지난번엔 ${then}, ${last.reps}${unit}! 기억하시죠?`);
+    if (same && diff > 0) lines.push(`오늘은 ${delta} 추가! ${today}, ${reps}. 기구한테 미리 사과해 두세요.`);
+    else if (same && diff < 0) lines.push(`오늘은 살짝 내려서, ${today}, ${reps}. 무게도 쉬는 날이 있어야죠.`);
+    else if (same) lines.push(`같은 무게, ${today}, ${reps}. 익숙한 친구랑 한 번 더!`);
     else lines.push(`오늘은 ${today}, ${reps}! 가 볼까요?`);
   }
 
@@ -717,6 +727,8 @@ export interface AfterSetInput {
   at?: number;
   /** 불러 줄 이름 ("민수") — 축하할 때 부른다. 화면에만 */
   name?: string | null;
+  /** 버티는 종목(플랭크) — "같은 무게로 · 가벼웠다"가 아니라 버티기 말로 */
+  seconds?: boolean;
 }
 
 /** "민수님, " — 이름이 없으면 빈 문자열. 사람이 적은 이름이라 화면에만 보인다. */
@@ -827,7 +839,7 @@ export function afterSetLines(input: AfterSetInput): string[] {
   else if (input.growth) lines.push(growthLine(style, input.growth, at));
   else {
     // 체감 대답에 대꾸한다 — 매번은 아니고, 대답이 "딱 좋았어요"가 아닐 때만.
-    const acks = FEEL_ACK[style][input.feel];
+    const acks = input.seconds ? undefined : FEEL_ACK[style][input.feel];
     if (acks) lines.push(pick(acks, at));
   }
 
@@ -841,6 +853,10 @@ export function afterSetLines(input: AfterSetInput): string[] {
   if (input.lastOfLift) {
     // 목표에 못 미친 마지막 세트 뒤에 "깔끔하게 끝냈어요"는 맞지 않는다
     lines.push(pick(input.feel === 'heavy' ? LIFT_DONE_HARD[style] : LIFT_DONE[style], at));
+    return lines;
+  }
+  if (input.seconds) {
+    lines.push(pick(HOLD_NEXT[style], at));
     return lines;
   }
   const next = load(input.nextWeightKg ?? 0, input.pounds);

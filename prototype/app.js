@@ -292,6 +292,8 @@
         topSet: state.topSet,
         repSuggestSkip: state.repSuggestSkip,
         mobility: state.mobility,
+        // PT 몸 풀기를 어디까지 했는지 — 오늘만(날짜가 붙어 있다). 다시 켜도 목록이 "3/7 하다 멈춤"을 말하고 그 동작부터 잇는다
+        ptPrep: state.ptPrep,
         skipToday: state.skipToday,
         // 오늘 컨디션 — 이 폰에만, 하루짜리
         dayFeel: state.dayFeel,
@@ -398,6 +400,7 @@
       state.topSet = Boolean(settings.topSet);
       state.repSuggestSkip = settings.repSuggestSkip || {};
       state.mobility = settings.mobility || null;
+      state.ptPrep = settings.ptPrep || null;
       state.skipToday = settings.skipToday || null;
       state.dayFeel = settings.dayFeel || null;
       state.todayExtras = settings.todayExtras || null;
@@ -601,6 +604,19 @@
   /** 무게 0인 종목의 무게 칸 말 — 밴드는 무게 숫자가 없고 밴드 세기만 있다. "맨몸"이라 하면 밴드를 빼라는 줄 안다. */
   function unloadedWord(exercise) {
     return exercise && exercise.equipment === 'band' ? '밴드' : '맨몸';
+  }
+
+  /**
+   * 버티는 종목(플랭크 · 사이드 플랭크)인가 — 세트 기록의 횟수 칸이 초다. 세트 칸 · 목록 · 요약 · 기록 · PT
+   * 화면이 "30회"가 아니라 "30초"로 쓰고, 혼자 할 때는 세트 줄에 버티기 시작 버튼이 붙는다.
+   */
+  function isHold(exercise) {
+    return Boolean(exercise && E.isTimed(exercise));
+  }
+
+  /** 세는 단위 — 버티는 종목은 '초', 나머지는 '회' */
+  function countUnit(exercise) {
+    return isHold(exercise) ? '초' : '회';
   }
 
   function trainingDays() {
@@ -902,6 +918,10 @@
     lastRoutine: null,
     /* 오늘 PT 세션 진행 — 워밍업 · 스트레칭 · 한 말 · 일시정지. 하루짜리 */
     ptRun: null,
+    // PT 몸 풀기를 어디까지 했는지 { date, index, total, done, skipped } — 저장된다
+    ptPrep: null,
+    // PT 화면의 "세트 고치기" 칸 { liftIndex, pick } — 열려 있을 때만
+    ptSets: null,
     /*
      * 오늘 어느 기계로 하는가. { 종목id: 기계열쇠 }
      *
@@ -1802,6 +1822,18 @@
       carryForward(liftIndex, edit.order, edit.key, edit.value);
       if (edit.key === 'weightKg') { rescaleWarmup(lift, edit.order, before, set.weightKg); set.estimated = false; }
     });
+    // PT 화면에서 직접 고친 워밍업 무게 — 첫 세트 무게를 따라 다시 맞춘 뒤에 얹는다(고칠 때 그 값까지 적어 둔다)
+    Object.keys(extras.warmKg || {}).forEach(function (id) {
+      var lift = state.lifts.filter(function (one) { return one.exercise.id === id; })[0];
+      var kgs = extras.warmKg[id] || [];
+      if (!lift || !lift.warmup) return;
+      lift.warmup = Object.assign({}, lift.warmup, {
+        sets: lift.warmup.sets.map(function (one, i) {
+          return typeof kgs[i] === 'number' && kgs[i] !== one.weightKg
+            ? Object.assign({}, one, { weightKg: kgs[i], note: one.note === '빈 바' ? '' : one.note }) : one;
+        }),
+      });
+    });
   }
 
   /** 안 한 세트를 미리 고친 것을 적어 둔다 — 같은 자리 · 같은 칸은 마지막 값만. */
@@ -1850,13 +1882,14 @@
   }
 
   /** 안 한 세트 하나 빼기 — 오늘만. 끝낸 세트는 빼지 않는다(✓를 눌러 기록을 지운다). */
-  function removeSet(lift, order) {
+  /** force = PT 쉬는 중의 "− 세트" — 쉬고 나서 할 다음 세트도 뺄 수 있다(세는 중인 세트는 여전히 안 뺀다). */
+  function removeSet(lift, order, force) {
     var set = lift.sets[order];
     if (!set || set.done || lift.sets.length <= 1) return;
     // 지금 세트 · 세는 중인 세트는 빼지 않는다 — PT가 끝낼 세트를 잃고 멈춘다
     var liftIndex = state.lifts.indexOf(lift);
     if (state.counting && state.counting.liftIndex === liftIndex && state.counting.setIndex === order) return;
-    if (liftIndex === state.liftCursor && lift.sets.findIndex(function (one) { return !one.done; }) === order) return;
+    if (!force && liftIndex === state.liftCursor && lift.sets.findIndex(function (one) { return !one.done; }) === order) return;
     var extras = todayExtras();
     extras.sets[lift.exercise.id] = (extras.sets[lift.exercise.id] || 0) - 1;
     // 뺀 자리 뒤로 적어 둔 고침은 한 칸씩 당긴다
@@ -1884,16 +1917,18 @@
     if (!lift.warmup || !lift.warmup.sets.length) return;
     var id = lift.exercise.id;
     var extras = todayExtras();
-    var count = all ? lift.warmup.sets.length : 1;
+    // all이 숫자면 뒤에서부터 그만큼(PT의 "워밍업 빼기" — 남은 워밍업만)
+    var count = typeof all === 'number' ? Math.min(all, lift.warmup.sets.length) : all ? lift.warmup.sets.length : 1;
     for (var k = 0; k < count; k += 1) lift.warmup = withoutLastWarmup(lift);
     extras.warmups[id] = (extras.warmups[id] || 0) - count;
+    syncWarmKg(lift);
     // 뺀 자리의 ✓ 표시도 지운다 — 다시 더했을 때 안 한 워밍업이 한 것으로 보이지 않게
     if (extras.warmDone && extras.warmDone[id]) extras.warmDone[id] = extras.warmDone[id].slice(0, lift.warmup.sets.length);
     var liftIndex = state.lifts.indexOf(lift);
     // PT가 이 종목 워밍업을 하는 중인데 다 뺐거나 지금 하던 것을 뺐으면 본세트로
     var warm = state.ptRun && state.ptRun.warm;
     if (warm && warm.liftIndex === liftIndex && warm.index >= lift.warmup.sets.length) skipWarmup(liftIndex);
-    pushLog('워밍업 뺌', '<b>' + lift.exercise.name + '</b> ' + (lift.warmup.sets.length ? '워밍업 한 세트를 뺐습니다' : '워밍업 없이 바로 본세트로 갑니다') + ' — 오늘만.');
+    pushLog('워밍업 뺌', '<b>' + lift.exercise.name + '</b> ' + (!lift.warmup.sets.length ? '워밍업 없이 바로 본세트로 갑니다' : count > 1 ? '남은 워밍업 ' + count + '세트를 뺐습니다' : '워밍업 한 세트를 뺐습니다') + ' — 오늘만.');
     persist();
     render();
   }
@@ -1902,6 +1937,7 @@
     var extras = todayExtras();
     extras.warmups[lift.exercise.id] = (extras.warmups[lift.exercise.id] || 0) + 1;
     lift.warmup = withExtraWarmup(lift);
+    syncWarmKg(lift);
     state.warmupOpen[lift.exercise.id] = true;
     persist();
     render();
@@ -2801,6 +2837,7 @@
     var before = set.weightKg;
     carryForward(liftIndex, setIndex, 'weightKg', Math.round(weightKg * 100) / 100);
     rescaleWarmup(state.lifts[liftIndex], setIndex, before, set.weightKg);
+    syncWarmKg(state.lifts[liftIndex]);
     // 직접 정한 값이므로 더 이상 추정이 아니다. 화면의 "추정" 표시가 사라진다.
     set.estimated = false;
     render();
@@ -2896,7 +2933,7 @@
   function leaveToList() {
     var pt = ptOn() ? state.ptRun : null;
     var untouched = state.todaySets.length === 0 &&
-      (pt ? !pt.prepped && !pt.cooled && (!pt.prep || pt.prep.index <= 0)
+      (pt ? !pt.prepped && !pt.cooled && (!pt.prep || pt.prep.index <= 0) && !(ptPrepToday() && ptPrepToday().index > 0)
         : !(state.mobility && state.mobility.date === state.todayDate && (state.mobility.checked || []).length > 0));
     if (untouched) {
       if (pt) pausePt(null);
@@ -2904,6 +2941,8 @@
       stopRest();
       releaseWakeLock();
       state.ptRun = null;
+      // 첫 동작에서 바로 나왔다 — 목록은 다시 "시작 전"
+      if (ptPrepToday() && !ptPrepToday().done) state.ptPrep = null;
       state.sessionStartedAt = null;
       state.sessionEndedAt = null;
       if (mobilityActive()) state.mobility = null;
@@ -3290,6 +3329,8 @@
     var todayMap = todayMuscleMap(summary.byMuscle);
     if (todayMap) body.push(todayMap);
     if (summary.durationMinutes) body.push(el('p', { class: 'asset-note', text: '걸린 시간 · ' + summary.durationMinutes + '분' }));
+    // 플랭크처럼 버틴 초는 "총 반복"에 섞지 않고 따로 — 30초 버티기가 반복 30회로 더해지면 안 된다
+    if (summary.holdSeconds > 0) body.push(el('p', { class: 'asset-note hold-total', text: '버틴 시간 · ' + E.formatDurationKo(summary.holdSeconds) }));
 
     /*
      * 첫 운동 뒤 근육통 — 처음 하는 사람은 이틀 뒤 뻐근한 것을 다친 줄 알고 그만둔다.
@@ -3481,6 +3522,7 @@
 
     openModal(state.session.name, dateText(state.todayDate), body);
     pushLog('세션 요약', '<b>' + summary.setsCompleted + '세트</b> · ' + summary.totalReps + '회 · ' +
+      (summary.holdSeconds > 0 ? '버틴 시간 ' + E.formatDurationKo(summary.holdSeconds) + ' · ' : '') +
       fmt(summary.tonnageKg / 1000) + '톤' +
       (summary.records.length > 0 ? ' · 개인 기록 ' + summary.records.length + '건' : ''));
   }
@@ -4747,7 +4789,8 @@
           ? el('li', {}, [el('span', { text: '처음이라 무게는 짐작입니다. 가볍거나 무거우면 운동할 때 숫자를 눌러 바꾸세요.' })]) : null,
       ]),
       el('button', { type: 'button', class: 'finish quiet', text: '▶ 동작 보기', onclick: function () { openDemo(lift.exercise); } }),
-      el('button', {
+      // 버티는 종목은 초로 세고 위 끝을 채우면 저절로 늘어난다 — 반복 수를 바꿀 칸이 없다
+      isHold(lift.exercise) ? null : el('button', {
         type: 'button', class: 'link-btn rep-link', text: '평소 하는 반복 수가 있으면 — 반복 수 바꾸기',
         onclick: function () { openRepOverride(lift.exercise); },
       }),
@@ -4975,7 +5018,8 @@
     var first = lift.sets[0];
     if (!first) return sets + '세트';
     // 반복 범위는 앱 어디서나 E.repLabel 한 가지("6~10회") — 6-10 · 6–10 · 6~10이 섞여 있었다
-    var reps = E.repLabel(first.targetReps);
+    // 버티는 종목(플랭크)은 "20~30초"
+    var reps = lift.exercise ? E.countRangeLabel(lift.exercise, first.targetReps) : E.repLabel(first.targetReps);
     // 맨몸 종목에 붙은 무게는 더한 무게다. "풀업 2.5kg"이라고 쓰면 2.5kg을 든다는 말이 된다.
     var bodyweight = lift.exercise && lift.exercise.equipment === 'bodyweight';
     var load = first.weightKg > 0 && !(lift.exercise && lift.exercise.equipment === 'band')
@@ -6664,7 +6708,8 @@
         run: function () { modal.close(); removeExtraLift(extraIdFor(lift)); },
       });
     }
-    options.push({
+    // 버티는 종목(플랭크)은 초 — 반복 수 칸을 열지 않는다
+    if (!isHold(lift.exercise)) options.push({
       label: '이 종목 반복 수',
       hint: (state.repOverrides[lift.exercise.id] ? '직접 정함 · ' : '') + E.repLabel(lift.repRange) +
         ' — 평소 하시는 횟수로 바꿉니다',
@@ -7462,6 +7507,8 @@
       watch: guided ? null : watchFor(lift, setIndex, first, liftIndex),
       guide: guide || [],
       restrained: holdingBack(),
+      // 버티는 종목(플랭크) — 목표 · 지난번이 초다("20에서 30초")
+      seconds: isHold(lift.exercise),
     };
   }
 
@@ -7611,6 +7658,8 @@
       weightPr: firstTimeWeight(lift, setIndex, weight),
       at: liftIndex + setIndex,
       name: state.friendName,
+      // 버티기 뒤에는 "같은 무게로 한 번 더"가 아니라 버티기 말
+      seconds: isHold(lift.exercise),
     });
     if (allSetsDone()) {
       coachSay(lines);
@@ -7850,7 +7899,8 @@
         var then = E.lastTimeFor(state.history, lift.exercise, state.todayDate, coachScope(lift));
         if (then && set.weightKg > then.weightKg) { last = then.weightKg; state.coachSaid[liftIndex + ':heavier'] = true; }
       }
-      return E.restFeedbackLine(style, { reps: set.reps, repsMin: set.targetReps.min, repsMax: set.targetReps.max, weightKg: set.weightKg, lastWeightKg: last, at: at });
+      return E.restFeedbackLine(style, { reps: set.reps, repsMin: set.targetReps.min, repsMax: set.targetReps.max, weightKg: set.weightKg, lastWeightKg: last, at: at,
+        seconds: isHold(lift.exercise) });
     }
     if (kind === 'cue' && next) {
       // 오늘 이 종목에서 아직 안 한 고치는 말 하나 — 없으면 동작 설명(빡센 코치는 짧은 말만), 그것도 없으면 격려
@@ -8293,6 +8343,9 @@
   }
 
   function startCounting(liftIndex, setIndex, leadSeconds, fromRep, options) {
+    // 버티는 종목(플랭크)은 개수가 아니라 초를 센다
+    var holdLift = state.lifts[liftIndex];
+    if (holdLift && isHold(holdLift.exercise)) { startHold(liftIndex, setIndex, leadSeconds, fromRep, options); return; }
     var retime = Boolean(options && options.retime);
     if (retime && state.counting) {
       state.counting.timers.forEach(function (id) { clearTimeout(id); });
@@ -8388,6 +8441,86 @@
     render();
   }
 
+  /**
+   * 버티기(플랭크)를 센다 — 개수 대신 초.
+   *
+   * 준비 시간 뒤 목표 초(처방 위 끝)에서 화면 숫자를 1초씩 줄이고, 버틴 초는 run.rep에 쌓인다. 멈추면(여기까지 ·
+   * 멈추기) 그때까지 버틴 초가, 끝까지 가면 목표 초가 기록 칸에 들어간다(stopCounting). PT는 시작 · 절반 · 5초 전 ·
+   * 넷 셋 둘 하나 · 끝을 말하고(E.buildHoldCues), 혼자 할 때는 말없이 화면 숫자만 — 세트 줄의 시작 버튼으로 연다.
+   */
+  function startHold(liftIndex, setIndex, leadSeconds, fromRep, options) {
+    var retime = Boolean(options && options.retime);
+    if (retime && state.counting) {
+      state.counting.timers.forEach(function (id) { clearTimeout(id); });
+      state.counting = null;
+    } else stopCounting(false);
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set) return;
+    var seconds = Math.max(1, Math.round(set.targetReps.max) || 30);
+    var lead = typeof leadSeconds === 'number' ? leadSeconds : 3;
+    var talk = ptOn();
+    var from = Math.max(0, Math.min(fromRep | 0, seconds - 1));
+    var cues = E.buildHoldCues({ seconds: seconds, leadInSeconds: lead, style: state.coach.style || 'gentle' });
+    if (from > 0) {
+      cues = cues.filter(function (cue) { return cue.rep === 0 || cue.rep > from; })
+        .map(function (cue) { return cue.rep === 0 ? cue : { atMs: cue.atMs - from * 1000, say: cue.say, rep: cue.rep }; });
+    }
+    state.focusHidden = false;
+    // cues · lead는 화면이 꺼질 때 남은 말을 소리 파일로 잇는 데 쓴다(lockPlan) — 혼자 할 때는 말이 없다
+    var run = {
+      liftIndex: liftIndex, setIndex: setIndex, rep: from, timers: [], startedAt: Date.now(), cues: talk ? cues : [],
+      lead: lead, leadLeft: lead, hold: true, holdSeconds: seconds,
+    };
+    state.counting = run;
+    for (var left = lead; left > 0; left -= 1) {
+      (function (remaining) {
+        run.timers.push(setTimeout(function () {
+          if (state.counting !== run) return;
+          run.leadLeft = remaining;
+          showCount(remaining + '초', '준비');
+        }, (lead - remaining) * 1000));
+      })(left);
+    }
+    run.timers.push(setTimeout(function () {
+      if (state.counting !== run) return;
+      run.leadLeft = 0;
+      showCount((seconds - from) + '초', '버티기');
+      // 빠르기만 바꿔 다시 세는 것이면 시작 말을 또 하지 않는다
+      if (talk && !(retime && from > 0)) speak(E.forSpeech(cues[0].say));
+    }, lead * 1000));
+    // 1초마다 버틴 초를 올리고 남은 초를 줄인다 — 소리가 안 나는 기기에서도 화면으로 센다
+    for (var s = from + 1; s <= seconds; s += 1) {
+      (function (held) {
+        run.timers.push(setTimeout(function () {
+          if (state.counting !== run) return;
+          run.rep = held;
+          showCount((seconds - held) + '초', held >= seconds ? '끝' : '남음');
+          if (held >= seconds) {
+            run.timers.push(setTimeout(function () {
+              if (state.counting === run) stopCounting(true);
+            }, 700));
+          }
+        }, (lead + held - from) * 1000));
+      })(s);
+    }
+    if (talk) {
+      cues.forEach(function (cue) {
+        if (cue.rep === 0) return;
+        run.timers.push(setTimeout(function () {
+          if (state.counting === run) speak(E.forSpeech(cue.say));
+        }, cue.atMs));
+      });
+    }
+    render();
+  }
+
+  /** 세는 중 화면의 큰 숫자 — 버티기는 남은 초, 개수는 센 개수 */
+  function countShown(run) {
+    if (!run) return '';
+    return run.hold ? String(Math.max(0, (run.holdSeconds || 0) - run.rep)) : String(run.rep);
+  }
+
   /** 운동 중 세트 카드의 세어 주기 칸 — PT만. 혼자 모드는 세어 주지 않는다(세어 주는 건 PT가 한다). */
   function countPanel(liftIndex, setIndex) {
     return ptOn() ? ptPanel(liftIndex, setIndex) : null;
@@ -8401,8 +8534,8 @@
 
     return el('div', { class: 'count-live' }, [
       el('div', { class: 'count-num' }, [
-        el('b', { id: 'count-now', text: run.rep > 0 ? String(run.rep) : '준비' }),
-        el('span', { id: 'count-say', text: '' }),
+        el('b', { id: 'count-now', text: run.rep > 0 ? countShown(run) + (run.hold ? '초' : '') : '준비' }),
+        el('span', { id: 'count-say', text: run.hold && run.rep > 0 ? '남음' : '' }),
       ]),
       /*
        * PT에서는 두 가지 멈춤이 다르다. "여기까지"는 세트를 끝내는 것(몇 개
@@ -8417,7 +8550,9 @@
               onclick: function () { stopCounting(true); } }),
           ])
         : el('button', {
-            type: 'button', class: 'finish quiet', text: '멈추기',
+            type: 'button', class: 'finish quiet' + (run.hold ? ' hold-stop' : ''), text: run.hold ? '여기서 멈추기' : '멈추기',
+            // 버티기는 자세가 무너진 자리에서 멈춘다 — 그때까지 버틴 초가 칸에 들어간다
+            'aria-label': run.hold ? '버티기 멈추기 — 지금까지 버틴 초를 적습니다' : null,
             onclick: function () { stopCounting(true); },
           }),
     ]);
@@ -8590,10 +8725,19 @@
   /** 오늘 목록 위 — "시작 전 몸 풀기". 종목이 아니라 준비라는 걸 제목이 말한다. */
   function mobilitySheet(moves) {
     var done = mobilityDone();
+    /*
+     * 하다 멈춘 몸 풀기는 "시작 전"이 아니다 — PT는 몇 번째 동작에서 멈췄는지, 혼자 하면 몇 개를 ✓했는지.
+     * 예전에는 PT 몸 풀기를 일곱 중 셋까지 하고 목록에 나와도 "시작 전 · 5분"이었다.
+     */
+    var soloChecked = state.mobility && state.mobility.date === state.todayDate ? (state.mobility.checked || []).length : 0;
+    var status = done ? '오늘 했음'
+      : ptOn() && ptPrepStatus() ? ptPrepStatus()
+      : !ptOn() && soloChecked > 0 ? soloChecked + '/' + moves.length + ' 하다 멈춤'
+      : '시작 전 · ' + E.mobilityMinutes(moves) + '분';
     return el('div', { class: 'sheet warm-sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '몸 풀기' }),
-        el('span', { class: 'meta', text: done ? '오늘 했음' : '시작 전 · ' + E.mobilityMinutes(moves) + '분' }),
+        el('span', { class: 'meta warm-status', text: status }),
       ]),
       /*
        * 접어 둔다 — 동작 일곱 줄을 다 펴 두면 정작 "오늘 할 것"이 화면 밖으로
@@ -9025,7 +9169,7 @@
     var each = pairOfDumbbells(lift.exercise) ? '씩' : '';
     var unit = (pounds ? 'lb' : 'kg') + each;
     var load = function (kg, reps) {
-      return (kg > 0 ? E.weightLabelIn(kg, pounds) + each : unloadedWord(lift.exercise)) + ' × ' + reps + '회';
+      return (kg > 0 ? E.weightLabelIn(kg, pounds) + each : unloadedWord(lift.exercise)) + ' × ' + reps + countUnit(lift.exercise);
     };
     /*
      * 세트마다 한 줄 — "1세트 [35]kg × [10]회 ✓ / 2세트 지금 / 3세트 [35]kg × [10]회".
@@ -9099,10 +9243,10 @@
       fields.push(el('input', {
         type: 'number', class: 'set-in set-in-reps', inputmode: 'numeric', min: '1', step: '1',
         value: String(set.reps),
-        'aria-label': (order + 1) + '세트 횟수',
+        'aria-label': (order + 1) + (isHold(lift.exercise) ? '세트 버틴 초' : '세트 횟수'),
         onfocus: function (event) { event.target.select(); },
         onchange: function (event) { editSetInline(liftIndex, order, 'reps', event.target.value); },
-      }), el('span', { class: 'set-unit', text: '회' }));
+      }), el('span', { class: 'set-unit', text: countUnit(lift.exercise) }));
       cells.push(el('span', { class: 'set-fields' }, fields));
       // 지금 줄은 테두리 · 색으로 이미 보인다 — 글자 "지금"은 뺐다(빈 칸으로 줄 맞춤만)
       cells.push(now ? el('span', { class: 'set-state', 'aria-hidden': 'true' }) : set.done
@@ -9175,7 +9319,7 @@
     return el('div', { class: 'set-strip-wrap' }, [
       cursor >= 0
         ? el('div', { class: 'set-strip-head' }, [
-          el('b', { text: lift.repRange ? '목표 ' + E.repLabel(lift.repRange) : sets.length + '세트' }),
+          el('b', { text: lift.repRange ? '목표 ' + E.countRangeLabel(lift.exercise, lift.repRange) : sets.length + '세트' }),
           el('span', { class: 'meta', text: '숫자를 눌러 바꿀 수 있습니다' }),
         ])
         : el('div', { class: 'set-strip-head' }, [
@@ -9208,7 +9352,8 @@
     var lowest = key === 'weight' ? (E.isUnloaded(lift.exercise) ? 0 : 0.01) : 1;
     if (!Number.isFinite(value) || value < lowest) return render();
     if (key === 'weight') value = inPounds(lift.exercise.id) ? E.lbToKg(Math.min(2200, value)) : Math.min(999, value);
-    else value = Math.min(100, value);
+    // 버티는 종목은 초 — 10분까지 받는다
+    else value = Math.min(isHold(lift.exercise) ? 600 : 100, value);
     if (!set.done) {
       if (key === 'weight') setWeight(liftIndex, setIndex, value);
       else { carryForward(liftIndex, setIndex, 'reps', value); render(); }
@@ -9229,7 +9374,7 @@
     }
     updateDecision(lift);
     pushLog('기록 고침', '<b>' + lift.exercise.name + '</b> ' + (setIndex + 1) + '세트 — ' +
-      (set.weightKg > 0 ? set.weightKg + 'kg' : unloadedWord(lift.exercise)) + ' × ' + set.reps + '회');
+      (set.weightKg > 0 ? set.weightKg + 'kg' : unloadedWord(lift.exercise)) + ' × ' + set.reps + countUnit(lift.exercise));
     persist();
     render();
   }
@@ -9327,6 +9472,8 @@
       var set = lift && lift.sets[setIndex];
       if (!set || set.done) return;
       // PT는 종목 첫 세트 전에 워밍업부터 같이 한다.
+      // 앱을 다시 켰는데 몸 풀기를 하다 멈춘 채였다 — 워밍업으로 건너뛰지 않고 그 동작부터
+      if (ptPrepPending()) { state.autoCountedFor = null; startPrep(0); return; }
       if (ptOn() && setIndex === 0 && needsWarmup(lift)) { runWarmup(liftIndex); return; }
       beginSet(liftIndex, setIndex);
     }, 0);
@@ -9452,7 +9599,8 @@
       return { weightKg: set.weightKg, reps: set.reps, restSeconds: Math.min(60, set.restSeconds || 45) };
     });
     var pt = ensurePtRun();
-    var run = { liftIndex: liftIndex, index: 0, phase: 'set', endsAt: null, timers: [] };
+    // steps는 PT 화면에서 워밍업 무게를 바꿀 때 같이 고친다(setWarmWeight) — 다음 워밍업을 바뀐 무게로 부른다
+    var run = { liftIndex: liftIndex, index: 0, phase: 'set', endsAt: null, timers: [], steps: steps };
     pt.warm = run;
     var later = function (fn, ms) { run.timers.push(setTimeout(function () { if (ptAlive(run, 'warm')) fn(); }, ms)); };
 
@@ -9707,10 +9855,46 @@
   function startPrep(delayMs) {
     var pt = ensurePtRun();
     if (pt.prep || pt.prepped) return;
+    // 앱을 다시 켰어도 오늘 한 몸 풀기는 그대로 — 끝냈으면 다시 하지 않고, 하다 멈췄으면 그 동작부터
+    var saved = ptPrepToday();
+    if (saved && saved.done) { pt.prepped = true; return; }
     var run = { steps: E.mobilityFor(plannedMusclesToday(), { equipment: warmupEquipment(), budgetSeconds: mobilitySeconds() }), index: -1, endsAt: null, timers: [] };
+    var from = saved && saved.total === run.steps.length ? Math.max(0, Math.min(run.steps.length - 1, saved.index | 0)) : 0;
     pt.prep = run;
-    run.timers.push(setTimeout(function () { if (ptAlive(run, 'prep')) prepStep(run, 0); }, delayMs || 0));
+    run.timers.push(setTimeout(function () { if (ptAlive(run, 'prep')) prepStep(run, from); }, delayMs || 0));
     render();
+  }
+
+  /** 오늘 PT 몸 풀기를 어디까지 했는지(저장된 것). 없거나 다른 날 것이면 null. */
+  function ptPrepToday() {
+    var saved = state.ptPrep;
+    return saved && saved.date === state.todayDate ? saved : null;
+  }
+
+  /** 저장된 몸 풀기가 하다 멈춘 채인가 — 세트를 하나도 안 했고, 지금 PT가 몸 풀기를 끝내거나 하는 중이 아니다. */
+  function ptPrepPending() {
+    var saved = ptPrepToday();
+    var pt = state.ptRun;
+    return Boolean(ptOn() && saved && !saved.done && saved.index >= 0 && state.todaySets.length === 0 &&
+      !(pt && pt.day === state.todayDate && (pt.prep || pt.prepped)));
+  }
+
+  function notePtPrep(index, total, end) {
+    state.ptPrep = { date: state.todayDate, index: index, total: total, done: Boolean(end), skipped: end === 'skipped' };
+    persist();
+  }
+
+  /** 목록의 몸 풀기 한 줄 — PT가 어디까지 했는지. 아직 안 했으면 null. */
+  function ptPrepStatus() {
+    var pt = state.ptRun && state.ptRun.day === state.todayDate ? state.ptRun : null;
+    var saved = ptPrepToday();
+    // 운동 중에 PT를 켜서 건너뛴 것(prepped만 있고 적은 것이 없음)은 몸 풀기를 한 게 아니다
+    if (saved && saved.done) return saved.skipped ? '건너뜀' : '끝';
+    var index = pt && pt.prep ? pt.prep.index : saved ? saved.index : -1;
+    var total = pt && pt.prep ? pt.prep.steps.length : saved ? saved.total : 0;
+    if (!(index >= 0) || !total) return null;
+    var running = pt && pt.prep && !pt.paused;
+    return (index + 1) + '/' + total + (running ? ' 하는 중' : ' 하다 멈춤');
   }
 
   function prepStep(run, i) {
@@ -9719,6 +9903,7 @@
     if (i >= run.steps.length) return endPrep(true);
     var later = function (fn, ms) { run.timers.push(setTimeout(function () { if (ptAlive(run, 'prep')) fn(); }, ms)); };
     run.index = i;
+    notePtPrep(i, run.steps.length, false);
     var item = run.steps[i];
     var line = E.mobilityLine(state.coach.style, item, i, run.steps.length, E.mobilityMinutes(run.steps));
     coachSay([line]);
@@ -9735,6 +9920,7 @@
     var pt = state.ptRun;
     if (!pt || !pt.prep) return;
     pt.prep.timers.forEach(function (id) { clearTimeout(id); });
+    notePtPrep(pt.prep.steps.length, pt.prep.steps.length, spoken ? 'done' : 'skipped');
     pt.prep = null;
     pt.prepped = true;
     if (spoken) coachSay([E.mobilityDoneLine(state.coach.style)]);
@@ -9932,7 +10118,8 @@
         // 세는 중이던 세트 — 같은 박자표(run.cues)를 그 세트가 시작된 시각에 맞춰 놓는다
         beforeAt = (run.startedAt - anchor) / 1000;
         cues = run.cues;
-        events.push({ at: beforeAt + run.lead, text: '시작' });
+        // 버티기는 "시작" 대신 코치의 시작 말(0번 신호)
+        events.push({ at: beforeAt + run.lead, text: run.hold && cues[0] ? E.forSpeech(cues[0].say) : '시작' });
       } else {
         t += restLeft;
         events.push({ at: t, chime: true });
@@ -9941,11 +10128,13 @@
         var said = beforeText(liftIndex, k);
         if (said) events.push({ at: t, text: E.forSpeech(said) });
         var lead = said ? Math.max(AUTO_LEAD_SECONDS, Math.ceil(spokenSeconds(said)) + 3) : AUTO_LEAD_SECONDS;
-        cues = E.buildCues({
-          repRange: set.targetReps, tempo: tempoOf(lift.exercise), leadInSeconds: lead,
-          lastCall: E.lastCallLine(style), slowdown: true,
-        });
-        events.push({ at: beforeAt + lead, text: '시작' });
+        cues = isHold(lift.exercise)
+          ? E.buildHoldCues({ seconds: set.targetReps.max, leadInSeconds: lead, style: style })
+          : E.buildCues({
+            repRange: set.targetReps, tempo: tempoOf(lift.exercise), leadInSeconds: lead,
+            lastCall: E.lastCallLine(style), slowdown: true,
+          });
+        events.push({ at: beforeAt + lead, text: isHold(lift.exercise) ? E.forSpeech(cues[0].say) : '시작' });
       }
       var easyRir = (typeof set.targetRir === 'number' ? set.targetRir : lift.targetRir) >= 3;
       var repTimes = [];
@@ -9953,8 +10142,9 @@
         if (cue.rep === 0) return;
         var at = beforeAt + cue.atMs / 1000;
         repTimes.push({ rep: cue.rep, at: at });
-        events.push({ at: at, text: cue.say });
-        if (set.targetReps.max >= 5 && cue.rep === set.targetReps.max - 2) {
+        events.push({ at: at, text: E.forSpeech(cue.say) });
+        // 버티기에는 "두 개 더!"가 없다 — 5초 전 말이 대신한다
+        if (!isHold(lift.exercise) && set.targetReps.max >= 5 && cue.rep === set.targetReps.max - 2) {
           events.push({ at: at + 0.6, text: E.forSpeech(E.pushLine(style, liftIndex + k, holdingBack() || easyRir)) });
         }
       });
@@ -9967,6 +10157,7 @@
       var after = E.afterSetLines({
         style: style, feel: 'right', lastOfLift: isLast, nextWeightKg: next ? next.weightKg : undefined, deltaKg: 0,
         pounds: inPounds(lift.exercise.id), setsDone: doneCount, at: liftIndex + k, name: state.friendName,
+        seconds: isHold(lift.exercise),
       });
       if (!isLast) after = after.concat([E.restAnnounceLine(style, { seconds: rest, nextSet: k + 2 })]);
       var afterText = E.forSpeech(after.filter(Boolean).join(' '));
@@ -10139,12 +10330,12 @@
     var after = lift.sets.findIndex(function (set, at) { return at > setIndex && !set.done; });
     if (after >= 0) {
       var set = lift.sets[after];
-      return '다음 · ' + (after + 1) + '세트 ' + loadText(lift, set.weightKg) + ' × ' + repsText(set.targetReps);
+      return '다음 · ' + (after + 1) + '세트 ' + loadText(lift, set.weightKg) + ' × ' + repsText(set.targetReps, lift.exercise);
     }
     for (var i = liftIndex + 1; i < state.lifts.length; i += 1) {
       var other = state.lifts[i];
       var open = other.sets.findIndex(function (one) { return !one.done; });
-      if (open >= 0) return '다음 · ' + other.exercise.name + ' ' + loadText(other, other.sets[open].weightKg) + ' × ' + repsText(other.sets[open].targetReps);
+      if (open >= 0) return '다음 · ' + other.exercise.name + ' ' + loadText(other, other.sets[open].weightKg) + ' × ' + repsText(other.sets[open].targetReps, other.exercise);
     }
     return '오늘 마지막 세트';
   }
@@ -10220,8 +10411,9 @@
     return weightKg > 0 ? E.weightLabelIn(weightKg, inPounds(lift.exercise.id)) : unloadedWord(lift.exercise);
   }
 
-  function repsText(range) {
-    return E.repLabel(range);
+  /** "6–10회" — 종목을 주면 버티는 종목은 "20~30초" */
+  function repsText(range, exercise) {
+    return exercise ? E.countRangeLabel(exercise, range) : E.repLabel(range);
   }
 
   /** 숫자 · 고리 · 남은 초만 바꾼다. 매초 전체를 다시 그리면 버튼이 눌리다 만다. */
@@ -10237,7 +10429,7 @@
       var max = ref && ref.set ? ref.set.targetReps.max : 10;
       // 첫 개수가 나오면 "바로 시작"을 "여기까지"로, 준비 칸을 개수 칸으로 바꾼다
       if (state.counting.rep > 0 && (document.querySelector('.focus-go-now') || num.classList.contains('lead'))) { renderFocus(); return; }
-      if (state.counting.rep > 0) num.textContent = String(state.counting.rep);
+      if (state.counting.rep > 0) num.textContent = countShown(state.counting);
       else setLeadNum(num, state.counting.leadLeft);
       if (cap) cap.textContent = state.counting.rep > 0 || !(state.counting.leadLeft > 0) ? '' : '준비';
       setRingFraction('focus-ring-bar', state.counting.rep / max);
@@ -10292,6 +10484,11 @@
     // 집중 화면이 없으면 도는 동작은 보통 화면(마무리 스트레칭) 몫 — render()가 정리한다
     if (!phase) return;
     state.motionWanted = null;
+    // 세트 고치기 칸은 쉬는 동안 · 워밍업 사이 · 준비 중에만 — 세기 시작하면 접는다
+    var warmNow = state.ptRun && state.ptRun.warm;
+    var editable = phase === 'rest' || (phase === 'count' && state.counting && !(state.counting.rep > 0)) ||
+      (phase === 'warm' && warmNow && (warmNow.phase === 'rest' || !(warmNow.rep > 0)));
+    if (!editable) state.ptSets = null;
 
     var ref = focusSetRef();
     var lift = ref ? ref.lift : state.lifts[state.liftCursor];
@@ -10344,20 +10541,25 @@
     if (phase === 'count' && ref) {
       var max = ref.set.targetReps.max;
       var rep = state.counting.rep;
+      if (state.ptSets && !ptSetsOpenFor(ref.liftIndex)) state.ptSets = null;
+      // 준비 중에 세트 고치기를 열면 동작 그림 자리에 고치는 칸이 들어간다
+      var leadEditing = rep === 0 && ptSetsOpenFor(ref.liftIndex);
+      if (leadEditing) middle.classList.add('with-sets');
       // 동작을 위에, 개수는 그 아래 — 개수 원은 조금 작아져도 멀리서 읽히는 크기
-      var countMotion = setMotionBox(ref.lift.exercise);
+      var countMotion = leadEditing ? null : setMotionBox(ref.lift.exercise);
       if (countMotion) { middle.classList.add('with-motion'); middle.appendChild(countMotion); }
       /*
        * 준비 중에는 남은 초를 개수만큼 크게 — "준비 40"은 40이 개수처럼 읽히고, 40px로 원 밖까지 삐져나갔다.
        * 숫자 뒤에 "초"를 붙이고 "준비"는 위에 작게.
        */
       middle.appendChild(focusRing(rep / max, 'focus-ring-bar', rep > 0 ? [
-        el('b', { class: 'focus-num', id: 'focus-num', text: String(rep) }),
-        el('span', { class: 'focus-of', text: '/ ' + max + '회' }),
+        el('b', { class: 'focus-num', id: 'focus-num', text: countShown(state.counting) }),
+        // 버티기는 남은 초를 크게 — "/ 30회"가 아니라 "초 남음"
+        el('span', { class: 'focus-of', text: state.counting.hold ? '초 남음' : '/ ' + max + '회' }),
       ] : [
         el('span', { class: 'focus-cap', id: 'focus-cap', text: state.counting.leadLeft > 0 ? '준비' : '' }),
         leadNum(state.counting.leadLeft),
-        el('span', { class: 'focus-of', text: '목표 ' + repsText(ref.set.targetReps) }),
+        el('span', { class: 'focus-of', text: '목표 ' + repsText(ref.set.targetReps, ref.lift.exercise) }),
       ]));
       // 무게 — 준비 중에는 − / + 로 바꾸고, 세기 시작하면 보기만
       middle.appendChild(el('div', { class: 'focus-what' }, [
@@ -10365,8 +10567,11 @@
         el('span', { text: ' / ' + ref.lift.sets.length + ' · ' }),
         ptWeightRow(ref.liftIndex, ref.setIndex, rep === 0),
       ]));
+      // 준비 중 — 세트 수 · 개수 고치기(접혀 있다)
+      if (leadEditing) middle.appendChild(ptSetsPanel(ref.liftIndex));
+      else if (rep === 0) middle.appendChild(el('div', { class: 'focus-edits' }, [ptSetsToggle(ref.liftIndex, ref.setIndex)]));
       // PT로 처음 세는 세트 — 다 못 하면 "여기까지"를 누르라는 말을 화면에도
-      if (state.ptStopHint === ref.liftIndex + ':' + ref.setIndex) {
+      if (!leadEditing && state.ptStopHint === ref.liftIndex + ':' + ref.setIndex) {
         middle.appendChild(el('div', { class: 'focus-hint', text: '다 못 하면 "여기까지"를 누르세요 — 누른 개수까지 적습니다.' }));
       }
       // 준비 중에는 무게 칸이 한 줄을 더 쓴다 — "다음 · …"은 세기 시작하면 보인다
@@ -10409,7 +10614,11 @@
         demoButton = el('button', { type: 'button', class: 'focus-demo', text: state.restGuide !== false ? '▶ 크게 보기' : '▶ 사용법 보기',
           onclick: function () { openDemo(nextLift.exercise); } });
       }
-      var guideBox = nextLift ? restGuideBox(nextLift.exercise, demoButton) : null;
+      // 세트 고치기를 열면 설명 칸(그림 · 세 줄) 대신 고치는 칸 — 작은 폰에도 들어가게
+      var restLiftIndex = state.lifts.findIndex(function (item) { return item.exercise.id === state.rest.exerciseId; });
+      var restEditing = ptSetsOpenFor(restLiftIndex);
+      if (state.ptSets && !restEditing) state.ptSets = null;
+      var guideBox = nextLift && !restEditing ? restGuideBox(nextLift.exercise, demoButton) : null;
       var soon = el('div', { class: 'focus-soon', text: restSoon() ? '곧 시작합니다 · 더 쉬려면 +30초' : '' });
       var what = el('div', { class: 'focus-what' }, [
         el('b', { text: '쉬고 → ' + (state.rest.next || '다음') }),
@@ -10417,7 +10626,7 @@
         // 다음 세트 무게 — 쉬는 동안 여기서 바로 바꾼다
         nextSet ? ptWeightRow(ref.liftIndex, ref.setIndex, true) : null,
       ]);
-      if (guideBox) {
+      if (guideBox || restEditing) {
         middle.classList.add('with-guide');
         middle.appendChild(el('div', { class: 'focus-rest-head' }, [
           el('div', { class: 'focus-rest-clock' }, [
@@ -10441,7 +10650,7 @@
       // 방금 적은 세트 — 몇 개로 적혔는지 보고, 틀렸으면 여기서 바로 고친다(묻지는 않는다)
       var logged = justLoggedBox();
       if (logged) middle.appendChild(logged);
-      if (switching && nextLift && !guideBox) {
+      if (switching && nextLift && !guideBox && !restEditing) {
         // 설명 칸을 끈 사람 — 세팅 · 사용법 보기를 한 줄로, 그 아래 쓰는 근육
         middle.appendChild(el('div', { class: 'focus-switch-info' }, [el('span', { class: 'focus-setting', text: note }), demoButton]));
         var map = window.FitBodyMap;
@@ -10493,7 +10702,12 @@
       var warm = pt.warm;
       var step = warm.step || { weightKg: 0, reps: 0 };
       var resting = warm.phase === 'rest';
-      var warmMotion = lift ? setMotionBox(lift.exercise) : null;
+      // 워밍업 사이 · 워밍업 준비 중에는 무게 − / + · 워밍업 빼기 · 세트 고치기
+      var warmEditable = resting || !(warm.rep > 0);
+      if (state.ptSets && !ptSetsOpenFor(warm.liftIndex)) state.ptSets = null;
+      var warmEditing = warmEditable && ptSetsOpenFor(warm.liftIndex);
+      if (warmEditing) middle.classList.add('with-sets');
+      var warmMotion = lift && !warmEditing ? setMotionBox(lift.exercise) : null;
       if (warmMotion) { middle.classList.add('with-motion'); middle.appendChild(warmMotion); }
       var warmLead = !resting && !(warm.rep > 0) && warm.leadEndsAt ? Math.max(0, Math.ceil((warm.leadEndsAt - Date.now()) / 1000)) : 0;
       middle.appendChild(focusRing(resting ? 1 : (warm.rep || 0) / (warm.reps || 1), 'focus-ring-bar', !resting && !(warm.rep > 0) ? [
@@ -10504,18 +10718,35 @@
         el('b', { class: 'focus-num' + (resting ? ' wide' : ''), id: 'focus-num', text: resting ? '휴식' : String(warm.rep) }),
         el('span', { class: 'focus-of', text: resting ? '' : '/ ' + (warm.reps || 0) + '회' }),
       ]));
+      var leadRow = !resting && !(warm.rep > 0) ? ptWarmWeightRow(warm.liftIndex, warm.index) : null;
       middle.appendChild(el('div', { class: 'focus-what' }, [
         el('b', { text: '워밍업 ' + (warm.index + 1) + ' / ' + (warm.total || 1) }),
-        el('span', { text: ' · ' + loadText(lift, step.weightKg) + ' × ' + step.reps + '회' }),
+        el('span', { text: ' · ' + (leadRow ? '' : loadText(lift, step.weightKg) + ' × ' + step.reps + '회') }),
+        leadRow,
       ]));
       if (resting) middle.appendChild(el('div', { class: 'focus-setting', id: 'focus-warm-left', text: '' }));
-      var nextWarm = warm.index + 1 < (warm.total || 1);
+      var nextWarm = warm.index + 1 < (warm.total || 1) && lift && lift.warmup && warm.index + 1 < lift.warmup.sets.length;
       var first = lift ? lift.sets.findIndex(function (one) { return !one.done; }) : -1;
-      middle.appendChild(el('div', { class: 'focus-next', text: nextWarm
-        ? '다음 · 워밍업 ' + (warm.index + 2)
-        : (first >= 0 ? '다음 · ' + (first + 1) + '세트 ' + loadText(lift, lift.sets[first].weightKg) + ' × ' + repsText(lift.sets[first].targetReps) : '') }));
+      // 쉬는 동안에는 다음 워밍업 무게를 여기서 바꾼다
+      var nextRow = resting && nextWarm ? ptWarmWeightRow(warm.liftIndex, warm.index + 1) : null;
+      if (nextRow) {
+        middle.appendChild(el('div', { class: 'focus-next focus-warm-next' }, [el('span', { text: '다음 · 워밍업 ' + (warm.index + 2) + ' · ' }), nextRow]));
+      } else if (!warmEditing) {
+        middle.appendChild(el('div', { class: 'focus-next', text: nextWarm
+          ? '다음 · 워밍업 ' + (warm.index + 2)
+          : (first >= 0 ? '다음 · ' + (first + 1) + '세트 ' + loadText(lift, lift.sets[first].weightKg) + ' × ' + repsText(lift.sets[first].targetReps, lift.exercise) : '') }));
+      }
+      if (warmEditing) middle.appendChild(ptSetsPanel(warm.liftIndex));
+      else if (warmEditable) {
+        middle.appendChild(el('div', { class: 'focus-edits' }, [
+          el('button', { type: 'button', class: 'focus-fix pt-warm-drop', text: '워밍업 빼기',
+            'aria-label': '남은 워밍업을 오늘 목록에서 빼고 바로 본세트로',
+            onclick: function () { ptDropWarmups(warm.liftIndex); } }),
+          ptSetsToggle(warm.liftIndex, Math.max(0, first)),
+        ]));
+      }
       // 워밍업 체크 — 다 센 것은 ✓, 지금 하는 것은 "지금". 몇 개 남았는지 한눈에.
-      if (lift && lift.warmup && lift.warmup.sets.length > 1) {
+      if (!warmEditing && lift && lift.warmup && lift.warmup.sets.length > 1) {
         var ticks = warmupChecked(lift);
         middle.appendChild(el('div', { class: 'focus-warm-list' }, lift.warmup.sets.map(function (one, i) {
           var done = Boolean(ticks[i]);
@@ -10595,7 +10826,7 @@
     var set = lift && lift.sets[setIndex];
     if (!set) return null;
     var label = loadText(lift, set.weightKg);
-    var tail = ' × ' + repsText(set.targetReps);
+    var tail = ' × ' + repsText(set.targetReps, lift.exercise);
     var unloaded = !(set.weightKg > 0) && E.isUnloaded(lift.exercise);
     if (!editable || unloaded || set.done) return el('span', { class: 'pt-weight-text', text: label + tail });
     var key = liftIndex + ':' + setIndex;
@@ -10622,15 +10853,7 @@
           if (input) { input.focus(); input.select(); }
         } });
     var step = function (dir) {
-      return function () {
-        var kg = lift.loading ? E.neighborLoad(set.weightKg, lift.loading, dir)
-          : Math.max(0, Math.round((set.weightKg + dir * (lift.exercise.increment > 0 ? lift.exercise.increment : 2.5)) * 100) / 100);
-        if (Math.abs(kg - set.weightKg) < 0.001) return;
-        setWeight(liftIndex, setIndex, kg);
-        rememberEdit(lift, setIndex, 'weightKg', set.weightKg);
-        persist();
-        ptWeightChanged(liftIndex, setIndex);
-      };
+      return function () { ptStepWeight(liftIndex, setIndex, dir); };
     };
     return el('div', { class: 'pt-weight' }, [
       el('button', { type: 'button', class: 'pt-weight-step', text: '−', 'aria-label': '무게 한 칸 내리기', onclick: step(-1) }),
@@ -10669,29 +10892,362 @@
     var setIndex = rest.setNumber - 1;
     var set = lift && lift.sets[setIndex];
     if (!set || !set.done) return null;
-    var key = liftIndex + ':' + setIndex;
-    var text = '방금 ' + rest.setNumber + '세트 ' + loadText(lift, set.weightKg) + ' × ' + set.reps + '회 기록';
-    if (state.focusFix !== key) {
-      return el('div', { class: 'focus-logged' }, [
-        el('span', { text: text }),
-        el('button', { type: 'button', class: 'focus-fix', text: '고치기',
-          'aria-label': '방금 기록한 ' + rest.setNumber + '세트 개수 고치기',
-          onclick: function () { state.focusFix = key; renderFocus(); } }),
-      ]);
-    }
-    var fix = function (value) { editSetInline(liftIndex, setIndex, 'reps', String(value)); };
-    return el('div', { class: 'focus-logged open' }, [
-      el('span', { text: rest.setNumber + '세트 ' + loadText(lift, set.weightKg) + ' ×' }),
-      el('div', { class: 'focus-fix-row' }, [
-        el('button', { type: 'button', class: 'nudge', text: '−', 'aria-label': '한 개 줄이기',
-          onclick: function () { if (set.reps > 1) fix(set.reps - 1); } }),
-        el('b', { class: 'focus-fix-reps', text: set.reps + '회' }),
-        el('button', { type: 'button', class: 'nudge', text: '+', 'aria-label': '한 개 늘리기',
-          onclick: function () { fix(set.reps + 1); } }),
-      ]),
-      el('button', { type: 'button', class: 'focus-fix', text: '확인',
-        onclick: function () { state.focusFix = null; renderFocus(); } }),
+    // 열면 이 종목의 세트 고치기 칸 — 방금 세트가 골라진 채로. 앞 세트 · 남은 세트 · 세트 수도 여기서
+    if (ptSetsOpenFor(liftIndex)) return ptSetsPanel(liftIndex);
+    var text = '방금 ' + rest.setNumber + '세트 ' + loadText(lift, set.weightKg) + ' × ' + set.reps + countUnit(lift.exercise) + ' 기록';
+    return el('div', { class: 'focus-logged' }, [
+      el('span', { text: text }),
+      el('button', { type: 'button', class: 'focus-fix', text: '세트 고치기',
+        'aria-label': '방금 기록한 ' + rest.setNumber + '세트와 ' + lift.exercise.name + ' 세트 고치기',
+        onclick: function () { openPtSets(liftIndex, setIndex); } }),
     ]);
+  }
+
+  /* ── PT 화면에서 세트 고치기 ─────────────────────
+   *
+   * 쉬는 동안 · 워밍업 사이 · 세트 준비 중에 이 종목의 세트를 고친다 — 한 세트 더 / 덜, 앞에 적은 세트의
+   * 무게 · 개수, 남은 세트의 무게 · 목표 개수. 목록(혼자 화면)과 같은 함수(addSet · removeSet ·
+   * editSetInline · setWeight · carryForward · rememberEdit)를 쓰므로 목록과 PT가 같은 값을 보고,
+   * 오늘 것(todayExtras)에 적혀 다시 켜도 남는다. 세는 중인 세트는 빼지도 고치지도 않는다.
+   */
+
+  /** 그 기구에서 한 칸 위 · 아래 무게 — 원판 · 덤벨 · 핀 칸(loading)이 있으면 그 칸으로. */
+  function nextLoad(lift, kg, dir) {
+    return lift.loading ? E.neighborLoad(kg, lift.loading, dir)
+      : Math.max(0, Math.round((kg + dir * (lift.exercise.increment > 0 ? lift.exercise.increment : 2.5)) * 100) / 100);
+  }
+
+  /** 안 한 세트 무게 한 칸 — 목록에서 고친 것과 같은 길(setWeight · rememberEdit). */
+  function ptStepWeight(liftIndex, setIndex, dir) {
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set || set.done) return;
+    var kg = nextLoad(lift, set.weightKg, dir);
+    if (Math.abs(kg - set.weightKg) < 0.001) return;
+    setWeight(liftIndex, setIndex, kg);
+    rememberEdit(lift, setIndex, 'weightKg', set.weightKg);
+    persist();
+    ptWeightChanged(liftIndex, setIndex);
+  }
+
+  /** 끝낸 세트 무게 한 칸 — 목록의 숫자 칸과 같이 기록까지 고친다(editSetInline). */
+  function ptStepLoggedWeight(liftIndex, setIndex, dir) {
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set || !set.done) return;
+    var kg = nextLoad(lift, set.weightKg, dir);
+    if (!(kg > 0) || Math.abs(kg - set.weightKg) < 0.001) return;
+    editSetInline(liftIndex, setIndex, 'weight', String(inPounds(lift.exercise.id) ? E.kgToLb(kg) : kg));
+  }
+
+  /**
+   * 안 한 세트의 목표 개수 한 칸 — PT가 세는 끝 숫자(목표 범위의 위쪽)를 옮긴다. 목록 칸에 미리 들어 있는
+   * 횟수도 같이 맞춘다(그래서 목록과 PT가 같은 숫자). 아래 안 한 세트도 같이 바뀐다 — 목록에서 고친 것처럼.
+   */
+  function ptRepsStep(liftIndex, setIndex, dir) {
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set || set.done) return;
+    var run = state.counting && state.counting.liftIndex === liftIndex && state.counting.setIndex === setIndex ? state.counting : null;
+    if (run && run.rep > 0) return;
+    // 버티는 종목(플랭크)은 초 — 5초씩
+    var unit = ptTimed(lift) ? 5 : 1;
+    var max = Math.max(unit, Math.min(ptTimed(lift) ? 300 : 100, set.targetReps.max + dir * unit));
+    if (max === set.targetReps.max) return;
+    var range = { min: Math.min(set.targetReps.min, max), max: max };
+    carryForward(liftIndex, setIndex, 'targetReps', range);
+    rememberEdit(lift, setIndex, 'targetReps', range);
+    lift.decision = null;
+    editSetInline(liftIndex, setIndex, 'reps', String(max));
+    // 준비 중이었으면 새 목표로 다시 센다(남은 준비 시간 그대로)
+    if (run && state.counting === run) retimeCounting();
+    ptEditSpoken(liftIndex, setIndex, 'reps');
+  }
+
+  /** 버티는 종목(플랭크) — 개수가 아니라 초. */
+  function ptTimed(lift) {
+    return Boolean(lift && typeof E.isTimed === 'function' && E.isTimed(lift.exercise));
+  }
+
+  /** 세트 고치기 칸의 개수 글자 — "8회" · "6~10회", 버티는 종목이면 "30초" · "30~45초". */
+  function ptCountText(lift, value) {
+    if (typeof value === 'number') return value + (ptTimed(lift) ? '초' : '회');
+    if (!ptTimed(lift)) return repsText(value);
+    return (value.min === value.max ? value.max : value.min + '~' + value.max) + '초';
+  }
+
+  function ptOpenCount(lift) {
+    return lift.sets.filter(function (one) { return !one.done; }).length;
+  }
+
+  /** "세트 고치기" 칸이 이 종목에 열려 있는가. */
+  function ptSetsOpenFor(liftIndex) {
+    return Boolean(state.ptSets && state.ptSets.liftIndex === liftIndex);
+  }
+
+  function openPtSets(liftIndex, pick) {
+    state.ptSets = { liftIndex: liftIndex, pick: pick };
+    state.ptWeightEdit = null;
+    renderFocus();
+  }
+
+  /** 접힌 "세트 고치기" 단추 — 준비 중 · 워밍업 사이에. */
+  function ptSetsToggle(liftIndex, pick) {
+    return el('button', { type: 'button', class: 'focus-fix pt-sets-open', text: '세트 고치기',
+      'aria-label': state.lifts[liftIndex].exercise.name + ' 세트 수 · 무게 · 개수 고치기',
+      onclick: function () { openPtSets(liftIndex, pick); } });
+  }
+
+  /**
+   * − 세트로 뺄 세트 — 맨 뒤의 안 한 세트. 세는 중인 세트, 워밍업 다음에 할 첫 세트, 준비 중인 지금 세트는
+   * 빼지 않는다. 쉬는 동안에는 다음 세트도 뺄 수 있다(남은 게 그것뿐이면 "이 종목은 여기까지"). 없으면 -1.
+   */
+  function ptRemovableSet(liftIndex) {
+    var lift = state.lifts[liftIndex];
+    if (!lift || lift.sets.length <= 1) return -1;
+    var order = -1;
+    for (var k = lift.sets.length - 1; k >= 0 && order < 0; k -= 1) if (!lift.sets[k].done) order = k;
+    if (order < 0) return -1;
+    if (state.counting && state.counting.liftIndex === liftIndex && state.counting.setIndex === order) return -1;
+    var first = lift.sets.findIndex(function (one) { return !one.done; });
+    var warm = state.ptRun && state.ptRun.warm;
+    if (order === first && ((warm && warm.liftIndex === liftIndex) || !state.rest)) return -1;
+    return order;
+  }
+
+  /** 쉬고 나서 할 것("쉬고 → 4세트")을 지금 세트에 맞춘다. 슈퍼세트 휴식은 짝이 정하므로 그대로. */
+  function refreshRestNext() {
+    var rest = state.rest;
+    if (!rest || E.groupOf(state.supersets, rest.exerciseId)) return;
+    var ref = focusSetRef();
+    rest.next = ref ? (ref.lift.exercise.id === rest.exerciseId ? (ref.setIndex + 1) + '세트' : ref.lift.exercise.name) : '마무리';
+  }
+
+  function ptAddSet(liftIndex) {
+    var lift = state.lifts[liftIndex];
+    if (!lift) return;
+    var before = { sets: lift.sets.length, open: ptOpenCount(lift) };
+    // 종목이 바뀌는 휴식에서 방금 끝낸 종목에 한 세트 더 — 다음 종목으로 가기 전에 그 세트부터 한다
+    var back = Boolean(state.rest && !state.counting && before.open === 0 && liftIndex !== state.liftCursor);
+    addSet(lift);
+    if (back) {
+      state.liftCursor = liftIndex;
+      if (state.rest.guide && state.rest.guide.liftIndex !== liftIndex) state.rest.guide = null;
+      persist();
+    }
+    refreshRestNext();
+    ptEditSpoken(liftIndex, -1, back ? 'back' : 'sets', before);
+    render();
+  }
+
+  function ptRemoveSet(liftIndex) {
+    var order = ptRemovableSet(liftIndex);
+    if (order < 0) return;
+    var lift = state.lifts[liftIndex];
+    var before = { sets: lift.sets.length, open: ptOpenCount(lift) };
+    var first = lift.sets.findIndex(function (one) { return !one.done; });
+    removeSet(lift, order, order === first);
+    if (lift.sets.length === before.sets) return;
+    // 이 종목에 남은 세트가 없으면 다음 종목으로 — 세트를 다 끝냈을 때(completeSet)와 같이
+    if (ptOpenCount(lift) === 0 && state.liftCursor === liftIndex) {
+      var next = state.lifts.findIndex(function (item, at) { return at > liftIndex && item.sets.some(function (one) { return !one.done; }); });
+      if (next >= 0) state.liftCursor = next;
+      persist();
+    }
+    if (state.ptSets && state.ptSets.pick >= lift.sets.length) state.ptSets.pick = lift.sets.length - 1;
+    refreshRestNext();
+    ptEditSpoken(liftIndex, -1, 'sets', before);
+    // 오늘 남은 세트가 없다 — 마무리 스트레칭으로
+    if (ptOn() && allSetsDone()) {
+      state.ptSets = null;
+      startCooldown(4000);
+    }
+    render();
+  }
+
+  /**
+   * 세트 수 · 목표 개수를 바꾼 뒤 코치가 한 번 말한다 — 세트 전 말을 이미 했을 때만(아직이면 그 말이 새 값으로
+   * 나온다). 이 종목을 여기서 끝냈거나, 다음 종목으로 가려다 방금 종목으로 돌아왔으면 늘 말한다.
+   * 여러 번 누르는 동안은 기다렸다가 마지막 상태로 한 번.
+   */
+  function ptEditSpoken(liftIndex, setIndex, kind, before) {
+    state.lockTrack = null;
+    if (state.rest) state.rest.pre = null;
+    if (!ptOn()) return;
+    var lift = state.lifts[liftIndex];
+    var pend = state.ptEditTalk;
+    if (!pend || pend.liftIndex !== liftIndex) {
+      if (pend) clearTimeout(pend.timer);
+      pend = state.ptEditTalk = {
+        liftIndex: liftIndex, sets: before ? before.sets : lift.sets.length, open: before ? before.open : ptOpenCount(lift),
+        reps: -1, back: false, timer: null,
+      };
+    }
+    if (kind === 'reps') pend.reps = setIndex;
+    if (kind === 'back') pend.back = true;
+    clearTimeout(pend.timer);
+    pend.timer = setTimeout(function () {
+      if (state.ptEditTalk !== pend) return;
+      state.ptEditTalk = null;
+      var now = state.lifts[liftIndex];
+      if (!ptOn() || !now || !state.started || (state.ptRun && state.ptRun.paused)) return;
+      var style = state.coach.style;
+      var ref = focusSetRef();
+      var said = Boolean(ref && (state.coachSaid[ref.liftIndex + ':' + ref.setIndex + ':before'] ||
+        (state.counting && state.counting.liftIndex === ref.liftIndex && state.counting.setIndex === ref.setIndex)));
+      var lines = [];
+      if (ptOpenCount(now) === 0 && pend.open > 0) lines.push(E.setsChangedLine(style, 'end', now.sets.length));
+      else if (now.sets.length !== pend.sets && (said || pend.back)) {
+        lines.push(E.setsChangedLine(style, now.sets.length > pend.sets ? 'more' : 'less', now.sets.length));
+      }
+      var target = pend.reps >= 0 ? now.sets[pend.reps] : null;
+      // 버티는 종목의 초는 "목표 N개"로 말하면 틀린다 — 화면에만
+      if (target && !target.done && said && !ptTimed(now)) lines.push(E.repsChangedLine(style, target.targetReps.max));
+      if (!lines.length) return;
+      var text = coachSay(lines);
+      if (state.rest && text) state.rest.talkEnds = Date.now() + spokenSeconds(text) * 1000;
+    }, 1200);
+  }
+
+  /**
+   * 세트 고치기 칸 — 위에 세트 번호(✓는 끝낸 세트), 고른 세트의 무게 − / + 와 개수 − / +, 아래에 − 세트 · + 세트 · 확인.
+   * 끝낸 세트는 기록을, 안 한 세트는 계획(무게 · 목표 개수)을 고친다.
+   */
+  function ptSetsPanel(liftIndex) {
+    var lift = state.lifts[liftIndex];
+    if (!lift || !state.ptSets) return null;
+    var sets = lift.sets;
+    var pick = state.ptSets.pick;
+    if (!(pick >= 0 && pick < sets.length)) {
+      pick = sets.findIndex(function (one) { return !one.done; });
+      if (pick < 0) pick = sets.length - 1;
+      state.ptSets.pick = pick;
+    }
+    var set = sets[pick];
+    var done = set.done;
+    var unloaded = !(set.weightKg > 0) && E.isUnloaded(lift.exercise);
+    var weightStep = function (dir) {
+      return function () { if (done) ptStepLoggedWeight(liftIndex, pick, dir); else ptStepWeight(liftIndex, pick, dir); };
+    };
+    var repsStep = function (dir) {
+      return function () {
+        if (!done) { ptRepsStep(liftIndex, pick, dir); return; }
+        var unit = ptTimed(lift) ? 5 : 1;
+        if (set.reps + dir * unit >= 1) editSetInline(liftIndex, pick, 'reps', String(set.reps + dir * unit));
+      };
+    };
+    var removable = ptRemovableSet(liftIndex) >= 0;
+    return el('div', { class: 'pt-sets', role: 'group', 'aria-label': lift.exercise.name + ' 세트 고치기' }, [
+      el('div', { class: 'pt-sets-chips' }, [el('span', { class: 'pt-sets-label', text: done ? (pick + 1) + '세트 기록' : (pick + 1) + '세트 계획' })].concat(
+        sets.map(function (one, i) {
+          return el('button', {
+            type: 'button', class: 'pt-set-chip' + (one.done ? ' done' : '') + (i === pick ? ' picked' : ''),
+            'aria-pressed': String(i === pick),
+            'aria-label': (i + 1) + '세트 ' + (one.done ? '기록 고치기' : '계획 고치기'),
+            text: (i + 1) + (one.done ? '✓' : ''),
+            onclick: function () { state.ptSets.pick = i; renderFocus(); },
+          });
+        }))),
+      el('div', { class: 'pt-sets-edit' }, [
+        unloaded ? el('span', { class: 'pt-fix-kg', text: loadText(lift, set.weightKg) }) : el('div', { class: 'pt-fix-weight' }, [
+          el('button', { type: 'button', class: 'pt-fix-step', text: '−', 'aria-label': (pick + 1) + '세트 무게 한 칸 내리기', onclick: weightStep(-1) }),
+          el('b', { class: 'pt-fix-kg', text: loadText(lift, set.weightKg) }),
+          el('button', { type: 'button', class: 'pt-fix-step', text: '+', 'aria-label': (pick + 1) + '세트 무게 한 칸 올리기', onclick: weightStep(1) }),
+        ]),
+        el('div', { class: 'focus-fix-row' }, [
+          el('button', { type: 'button', class: 'nudge', text: '−', 'aria-label': (done ? '' : '목표 ') + (ptTimed(lift) ? '5초 줄이기' : '한 개 줄이기'), onclick: repsStep(-1) }),
+          el('b', { class: 'focus-fix-reps', text: ptCountText(lift, done ? set.reps : set.targetReps) }),
+          el('button', { type: 'button', class: 'nudge', text: '+', 'aria-label': (done ? '' : '목표 ') + (ptTimed(lift) ? '5초 늘리기' : '한 개 늘리기'), onclick: repsStep(1) }),
+        ]),
+      ]),
+      el('div', { class: 'pt-sets-foot' }, [
+        el('button', { type: 'button', class: 'pt-sets-btn minus', text: '− 세트', disabled: removable ? null : '',
+          'aria-label': lift.exercise.name + ' 마지막 안 한 세트 빼기', onclick: function () { ptRemoveSet(liftIndex); } }),
+        el('button', { type: 'button', class: 'pt-sets-btn plus', text: '+ 세트',
+          'aria-label': lift.exercise.name + ' 한 세트 더하기', onclick: function () { ptAddSet(liftIndex); } }),
+        el('button', { type: 'button', class: 'focus-fix', text: '확인',
+          onclick: function () { state.ptSets = null; renderFocus(); } }),
+      ]),
+    ]);
+  }
+
+  /* ── PT 워밍업 무게 ──────────────────────────── */
+
+  /** 워밍업 한 세트 무게 − / + — 지금(준비 중) 또는 다음(워밍업 사이) 워밍업. 맨몸이면 글자만. */
+  function ptWarmWeightRow(liftIndex, index) {
+    var lift = state.lifts[liftIndex];
+    var one = lift && lift.warmup && lift.warmup.sets[index];
+    if (!one) return null;
+    var tail = ' × ' + one.reps + '회';
+    if (!(one.weightKg > 0) && E.isUnloaded(lift.exercise)) return el('span', { class: 'pt-weight-text', text: loadText(lift, one.weightKg) + tail });
+    var step = function (dir) {
+      return function () {
+        var kg = nextLoad(lift, one.weightKg, dir);
+        if (!(kg > 0) || Math.abs(kg - one.weightKg) < 0.001) return;
+        setWarmWeight(liftIndex, index, kg);
+      };
+    };
+    return el('span', { class: 'pt-weight pt-warm-weight' }, [
+      el('button', { type: 'button', class: 'pt-weight-step pt-warm-step', text: '−', 'aria-label': '워밍업 ' + (index + 1) + ' 무게 한 칸 내리기', onclick: step(-1) }),
+      el('b', { class: 'pt-warm-kg', text: loadText(lift, one.weightKg) }),
+      el('button', { type: 'button', class: 'pt-weight-step pt-warm-step', text: '+', 'aria-label': '워밍업 ' + (index + 1) + ' 무게 한 칸 올리기', onclick: step(1) }),
+      el('span', { class: 'pt-weight-reps', text: tail }),
+    ]);
+  }
+
+  /** 워밍업 한 세트 무게를 바꾼다 — 오늘 것(todayExtras.warmKg)에 적어 다시 켜도 남고, PT가 하는 중이면 그 무게로 부른다. */
+  function setWarmWeight(liftIndex, index, kg) {
+    var lift = state.lifts[liftIndex];
+    if (!lift || !lift.warmup || !lift.warmup.sets[index]) return;
+    lift.warmup = Object.assign({}, lift.warmup, {
+      sets: lift.warmup.sets.map(function (one, i) {
+        // "빈 바"를 넘겼으면 더는 빈 바가 아니다
+        return i === index ? Object.assign({}, one, { weightKg: kg, note: one.note === '빈 바' ? '' : one.note }) : one;
+      }),
+    });
+    var extras = todayExtras();
+    if (!extras.warmKg) extras.warmKg = {};
+    extras.warmKg[lift.exercise.id] = lift.warmup.sets.map(function (one) { return one.weightKg; });
+    var warm = state.ptRun && state.ptRun.warm;
+    if (warm && warm.liftIndex === liftIndex && warm.steps && warm.steps[index]) {
+      warm.steps[index].weightKg = kg;
+      // 준비 중 — 이 워밍업 무게를 이미 불렀다. 바뀐 무게를 한 번 다시
+      if (index === warm.index && warm.phase === 'set' && !(warm.rep > 0)) ptWarmWeightSpoken(warm, index);
+    }
+    persist();
+    render();
+  }
+
+  function ptWarmWeightSpoken(warm, index) {
+    if (!ptOn()) return;
+    if (state.ptWeightTimer) clearTimeout(state.ptWeightTimer);
+    state.ptWeightTimer = setTimeout(function () {
+      state.ptWeightTimer = null;
+      var pt = state.ptRun;
+      if (!ptOn() || !pt || pt.warm !== warm || warm.index !== index || warm.phase !== 'set' || warm.rep > 0) return;
+      var lift = state.lifts[warm.liftIndex];
+      coachSay([E.weightChangedLine(state.coach.style, warm.steps[index].weightKg, inPounds(lift.exercise.id))]);
+    }, 1200);
+  }
+
+  /** 첫 세트 무게를 바꿔 워밍업이 따라 바뀌었으면, 직접 고친 워밍업 무게 기록도 지금 값으로. */
+  function syncWarmKg(lift) {
+    var extras = state.todayExtras;
+    if (!extras || extras.date !== state.todayDate || !extras.warmKg || !extras.warmKg[lift.exercise.id]) return;
+    extras.warmKg[lift.exercise.id] = lift.warmup ? lift.warmup.sets.map(function (one) { return one.weightKg; }) : [];
+  }
+
+  /** PT 화면의 "워밍업 빼기" — 남은 워밍업을 오늘 목록에서 빼고 바로 본세트로. */
+  function ptDropWarmups(liftIndex) {
+    var lift = state.lifts[liftIndex];
+    var warm = state.ptRun && state.ptRun.warm;
+    if (!lift || !lift.warmup || !warm || warm.liftIndex !== liftIndex) return;
+    var from = warm.index + (warm.phase === 'rest' ? 1 : 0);
+    var count = lift.warmup.sets.length - from;
+    stopSpeech();
+    if (count > 0) removeWarmup(lift, count);
+    // 쉬는 중이었으면 다음 워밍업이 아직 예약돼 있다 — 남은 게 없으니 본세트로
+    if (state.ptRun && state.ptRun.warm && state.ptRun.warm.liftIndex === liftIndex) skipWarmup(liftIndex);
   }
 
   /*
@@ -10951,6 +11507,18 @@
     if (ptOn()) body.push(countPanel(liftIndex, setIndex));
 
     /*
+     * 혼자 하는 버티기(플랭크) — 세트 줄 아래 시작 버튼. 누르면 3초 준비 뒤 목표 초부터 화면에서 줄여 가고,
+     * 멈춘 자리(끝까지 가면 목표 초)가 칸에 들어간다. 숫자는 손으로 고쳐도 된다. 쉬는 중에는 숨긴다.
+     */
+    if (!ptOn() && isHold(lift.exercise) && !set.done && !state.rest) {
+      body.push(el('button', {
+        type: 'button', class: 'finish quiet hold-start',
+        'aria-label': (setIndex + 1) + '세트 버티기 시작 — ' + set.targetReps.max + '초를 셉니다',
+        onclick: function () { startHold(liftIndex, setIndex, 3); },
+      }, [el('span', { text: '▶ 버티기 시작 · ' + set.targetReps.max + '초' })]));
+    }
+
+    /*
      * PT가 워밍업을 이끄는 동안에는 본세트를 끝내는 버튼을 숨긴다.
      * 워밍업 중에 "무거웠어요"를 누르면 아직 하지도 않은 1세트가 기록됐다.
      */
@@ -11005,7 +11573,10 @@
        * 짜내거나, 손대지 않은 숫자를 그대로 적는다. 혼자 할 때만(PT는 세어서 적는다).
        */
       if (!ptOn() && !set.top && earlyWeeks()) {
-        body.push(el('p', { class: 'hint-line effort-hint', text: '목표 ' + E.repLabel(set.targetReps) +
+        body.push(el('p', { class: 'hint-line effort-hint', text: isHold(lift.exercise)
+          ? '목표 ' + E.countRangeLabel(lift.exercise, set.targetReps) + ' · 버티기 시작을 누르고, 자세가 무너지면 멈추세요. ' +
+            '버틴 초가 칸에 들어갑니다 — 직접 고쳐도 됩니다.'
+          : '목표 ' + E.repLabel(set.targetReps) +
           (state.plan.targetRir > 0 ? ' · ' + state.plan.targetRir + '개쯤 남기고 멈춘 뒤, ' : ' · 멈춘 뒤 ') +
           '실제로 한 횟수로 숫자를 고치고 완료를 누르세요.' }));
       }
@@ -15047,8 +15618,9 @@
       var rows = el('div', { class: 'history-sets' }, group.sets.map(function (set, i) {
         return el('div', { class: 'history-set' }, [
           el('span', { class: 'set-no', text: String(i + 1) }),
-          el('span', { text: (set.weightKg > 0 ? E.weightLabelIn(set.weightKg, inPounds(group.id)) : unloadedWord(exercise)) + ' × ' + set.reps + '회' }),
-          el('span', { class: 'history-rir', text: leftText(set.rir) }),
+          el('span', { text: (set.weightKg > 0 ? E.weightLabelIn(set.weightKg, inPounds(group.id)) : unloadedWord(exercise)) + ' × ' + set.reps + countUnit(exercise) }),
+          // 버틴 초에는 "몇 개 남김"이 없다
+          el('span', { class: 'history-rir', text: isHold(exercise) ? '' : leftText(set.rir) }),
         ]);
       }));
       body.push(el('div', { class: 'history-lift' }, [
@@ -21004,7 +21576,7 @@
         body.appendChild(el('div', { class: 'delta' }, [
           el('span', { text: exercise ? exercise.name : slot.exerciseId }),
           el('span', { class: 'num', text: slot.sets + '세트' }),
-          el('span', { class: 'num flat', text: E.repLabel(slot.repRange) }),
+          el('span', { class: 'num flat', text: E.countRangeLabel(slot.exerciseId, slot.repRange) }),
         ]));
       });
       screen.appendChild(el('div', { class: 'sheet' }, [

@@ -1,4 +1,5 @@
-import { isUnloaded } from './exercises.ts';
+import { isTimed, isUnloaded } from './exercises.ts';
+import { prescribeHold } from './hold.ts';
 import type { Exercise, SetLog } from './types.ts';
 import { loadableWeights, type LoadingSpec } from './gym.ts';
 
@@ -117,6 +118,8 @@ export function prescribeLoad(
   lastSession: readonly SetLog[] | undefined,
   rule: LoadRule,
 ): LoadPrescription {
+  // 버티는 종목(플랭크)은 무게가 아니라 버틴 초로 진행한다
+  if (isTimed(exercise)) return prescribeHold(exercise, lastSession, rule);
   const base = {
     exerciseId: exercise.id,
     targetReps: rule.repRange,
@@ -348,6 +351,8 @@ export function adjustWithinSession(
   lastSet: SetLog,
   rule: LoadRule,
 ): WithinSessionAdjustment {
+  // 버티는 종목은 세트 사이에 바꿀 무게가 없다 — 처방(초)대로 다음 세트
+  if (isTimed(exercise)) return { weightKg: lastSet.weightKg, deltaKg: 0, reason: '' };
   const step = stepFor(exercise, lastSet.weightKg);
   const observedRir = correctRir(lastSet.rir, rule.rirOffset);
   const surplus = observedRir - rule.targetRir;

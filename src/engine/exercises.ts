@@ -940,7 +940,7 @@ export const EXERCISES: readonly Exercise[] = [
   },
   {
     id: 'bird-dog', name: '버드독', nameEn: 'Bird Dog',
-    equipment: 'bodyweight', pattern: 'core', increment: 0, unilateral: true,
+    equipment: 'bodyweight', pattern: 'core', increment: 0,
     contribution: { abs: 0.6, glutes: 0.4, back: 0.25 },
     jointStress: { lowBack: 0.1, wrist: 0.2, knee: 0.1 },
   },

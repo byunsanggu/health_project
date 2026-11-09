@@ -16,7 +16,7 @@ import {
 import * as L from './motionsLower.ts';
 import * as U from './motionsUpper.ts';
 import { stretchMotionFor } from './motionsStretch.ts';
-import { BODY, type ArmSpec, type LegSpec, type Pose3, type Vec3 } from './rig.ts';
+import { BODY, normalize, type ArmSpec, type LegSpec, type Pose3, type Vec3 } from './rig.ts';
 
 type KeyList = [number, string | undefined, Pose3][];
 
@@ -325,6 +325,141 @@ function crunch(id: string, fault?: string): Clip {
   return { id, cycle: 2.6, view: [70, 18], keys: keys(...list), scene: [mat([0, 0, -0.15], 0.75, 1.8)], work: [0, 0.42], fault };
 }
 
+/* ── 매트 초보 종목 — 무릎 푸시업 · 버드독 · 슈퍼맨 ─────────── */
+
+/** 바닥을 짚은 손바닥 가운데 높이 · 거의 편 팔로 바닥을 짚었을 때 어깨 높이 (motionsStretch와 같은 값) */
+const PALM_Y = 0.022;
+const SHOULDER_ON_HANDS = PALM_Y + (BODY.upperArm + BODY.forearm) * 0.975;
+
+/** 바닥을 짚은 손 — 손가락은 머리 쪽 */
+const floorHand = (at: Vec3, side: 1 | -1, pole: Vec3 = [side * 0.45, 0.2, -1]): ArmSpec => ({
+  ik: [at[0], PALM_Y, at[2]], pole, point: [side * 0.12, 0, 1],
+});
+
+/** 무릎 꿇은 다리 — 무릎은 kneeZ에서 바닥, 정강이 · 발등도 바닥(발끝이 뒤) */
+function kneelLegs(kneeZ: number, width = 0.11): { legL: LegSpec; legR: LegSpec } {
+  const foot = (x: number): LegSpec => ({
+    ankle: [x, 0.07, kneeZ - BODY.shin + 0.01], fwd: normalize([0, -0.12, -1]), up: normalize([0, -1, 0.12]), pole: [0, -0.6, 1],
+  });
+  return { legL: foot(width), legR: foot(-width) };
+}
+
+/**
+ * 무릎 푸시업 — 푸시업과 같은 몸놀림인데 받침점이 발끝이 아니라 무릎이다. 무릎에서 어깨까지 한 줄로 기울기만
+ * 바꾼다(angle = 바닥과 이룬 각). 손 자리는 위에서 정하고 내려갈 때 그대로 둔다.
+ */
+function kneePushUp(id: string, fault?: string): Clip {
+  const kneeZ = -0.55;
+  const KNEE_Y = 0.055;
+  const body = (angle: number, extra: Partial<Pose3> = {}): Pose3 => {
+    const a = (angle * Math.PI) / 180;
+    return {
+      pelvis: [0, KNEE_Y + Math.sin(a) * (BODY.thigh + 0.02), kneeZ + Math.cos(a) * (BODY.thigh + 0.02)],
+      pitch: 90 - angle, spine: 0, neck: -16, ...kneelLegs(kneeZ), ...extra,
+    };
+  };
+  const shoulderHeight = (angle: number) => shoulderMid(body(angle))[1];
+  const topAngle = solveFor(shoulderHeight, 10, 70, 0.035 + PRESS_REACH * 0.975);
+  const lowAngle = solveFor(shoulderHeight, 2, 50, 0.19);
+  const s = shoulderMid(body(topAngle));
+  const hands = (flare = false): { armL: ArmSpec; armR: ArmSpec } => ({
+    armL: floorHand([0.25, 0, s[2] + 0.06], 1, flare ? [1, 0.25, 0] : undefined),
+    armR: floorHand([-0.25, 0, s[2] + 0.06], -1, flare ? [-1, 0.25, 0] : undefined),
+  });
+  const top = body(topAngle, hands());
+  const low = body(lowAngle, hands());
+  const list: KeyList = [[0, '내려가기', top], [0.45, '가슴이 바닥 가까이', low], [0.53, '밀기', low], [1, undefined, top]];
+  if (fault === 'hips-back') {
+    // 엉덩이가 뒤로 빠진 ㅅ자 — 골반이 무릎 위로 물러나고 몸통만 숙인다
+    const piked = (p: Pose3): Pose3 => ({ ...p, pelvis: [0, p.pelvis[1] + 0.09, p.pelvis[2] - 0.04], spine: 24 });
+    const half = body((topAngle + lowAngle) / 2, hands());
+    list[0] = [0, '엉덩이가 뒤로 빠짐', piked(top)];
+    list[1] = [0.45, undefined, piked(half)];
+    list[2] = [0.53, undefined, piked(half)];
+    list[3] = [1, undefined, piked(top)];
+  } else if (fault === 'elbow-flare') {
+    list[1] = [0.45, '팔꿈치가 벌어짐', { ...low, ...hands(true) }];
+    list[2] = [0.53, undefined, { ...low, ...hands(true) }];
+  }
+  return { id, cycle: 2.6, view: [70, 12], keys: keys(...list), scene: [mat([0, 0, -0.2], 0.8, 1.6)], work: [0.53, 1], fault };
+}
+
+/** 네발 자세 몸통 — 무릎은 골반 밑, 어깨가 거의 편 팔 높이에 오게 기울기를 맞춘다 */
+function allFours(extra: Partial<Pose3> = {}): Pose3 {
+  const base: Pose3 = { pelvis: [0, 0.5, 0], pitch: 88, spine: 0, neck: -6, ...kneelLegs(0), ...extra };
+  const pitch = solveFor((p) => shoulderMid({ ...base, pitch: p })[1], 45, 135, SHOULDER_ON_HANDS);
+  return { ...base, pitch };
+}
+
+/** 버드독 — 네발 자세에서 반대쪽 팔과 다리를 바닥과 나란히 뻗었다 돌아온다 */
+function birdDog(id: string, fault?: string): Clip {
+  const base = allFours();
+  const s = shoulderMid(base);
+  const handL = floorHand([0.2, 0, s[2] + 0.03], 1);
+  const handR = floorHand([-0.2, 0, s[2] + 0.03], -1);
+  const kneel = kneelLegs(0);
+  /*
+   * 뻗은 팔 · 다리도 닿을 곳(ik)으로 준다 — 한 동작 안에서 팔다리 푸는 방식을 바꾸면(짚은 손 ik → 뻗은 팔 fk)
+   * 앞 키 자세가 덮여 쉬는 자세가 사라졌다. 팔은 어깨 높이에서 머리 앞으로, 다리는 엉덩이 높이에서 뒤로.
+   */
+  const solved = solvePose({ ...base, armL: handL, armR: handR, ...kneel });
+  const shoulder = (side: 'L' | 'R') => solved.bones[`upperArm${side}`].a;
+  const hip = (side: 'L' | 'R') => solved.bones[`thigh${side}`].a;
+  const reach = (side: 'L' | 'R'): ArmSpec => {
+    const a = shoulder(side);
+    const sign = side === 'L' ? 1 : -1;
+    return { ik: [a[0] * 0.8, a[1] + 0.02, a[2] + ARM_REACH * 0.96], pole: [sign * 0.3, -1, 0], point: [0, 0, 1] };
+  };
+  const leg = (side: 'L' | 'R', lift: number): LegSpec => {
+    const h = hip(side);
+    const len = (BODY.thigh + BODY.shin) * 0.97;
+    const a = (lift * Math.PI) / 180;
+    return { ankle: [h[0], h[1] + Math.sin(a) * len, h[2] - Math.cos(a) * len], fwd: [0, -1, 0], up: [0, 0, 1], pole: [0, -1, 0] };
+  };
+  const pose = (extra: Partial<Pose3>): Pose3 => ({ ...base, armL: handL, armR: handR, ...kneel, ...extra });
+  const rest = pose({});
+  // 오른팔 · 왼다리
+  const rightArm = (lift = 0, extra: Partial<Pose3> = {}) => pose({ armR: reach('R'), legL: leg('L', lift), ...extra });
+  const leftArm = (lift = 0, extra: Partial<Pose3> = {}) => pose({ armL: reach('L'), legR: leg('R', lift), ...extra });
+  const list: KeyList = [
+    [0, '오른팔 · 왼다리 뻗기', rest], [0.2, undefined, rightArm()], [0.32, '1초 멈추고 돌아오기', rightArm()],
+    [0.5, '왼팔 · 오른다리 뻗기', rest], [0.7, undefined, leftArm()], [0.82, '1초 멈추고 돌아오기', leftArm()], [1, undefined, rest],
+  ];
+  if (fault === 'back-arch') {
+    const arch = { spine: -20, neck: -22 };
+    list[1] = [0.2, '허리가 꺾임', rightArm(24, arch)];
+    list[2] = [0.32, undefined, rightArm(24, arch)];
+    list[4] = [0.7, '허리가 꺾임', leftArm(24, arch)];
+    list[5] = [0.82, undefined, leftArm(24, arch)];
+  } else if (fault === 'hip-tilt') {
+    list[1] = [0.2, '골반이 기울어짐', rightArm(6, { twist: -16, roll: 8 })];
+    list[2] = [0.32, undefined, rightArm(6, { twist: -16, roll: 8 })];
+    list[4] = [0.7, '골반이 기울어짐', leftArm(6, { twist: 16, roll: -8 })];
+    list[5] = [0.82, undefined, leftArm(6, { twist: 16, roll: -8 })];
+  }
+  return { id, cycle: 5, view: [80, 16], keys: keys(...list), scene: [mat([0, 0, 0.15], 0.8, 1.4)], work: [0, 1], fault };
+}
+
+/** 슈퍼맨 — 엎드려 팔은 머리 위로 뻗고, 팔과 다리를 같이 바닥에서 살짝 들었다 내린다 */
+function superman(id: string, fault?: string): Clip {
+  const body = (spine: number, legLift: number, armLift: number, neck = 2): Pose3 => {
+    const leg: LegSpec = { fk: [-legLift, 3, 0, 2, -72] };
+    const arm: ArmSpec = { fk: [8, 168 + armLift, 0, 4], turn: 90 };
+    return { pelvis: [0, 0.115, 0], pitch: 90, spine, neck, legL: leg, legR: { ...leg }, armL: arm, armR: { ...arm } };
+  };
+  const rest = body(0, 0, 0);
+  const up = body(-12, 10, 6);
+  const list: KeyList = [[0, '팔다리를 같이 들기', rest], [0.38, '1초 멈춤', up], [0.6, '천천히 내리기', up], [1, undefined, rest]];
+  if (fault === 'neck') {
+    list[1] = [0.38, '고개를 들어 앞을 봄', body(-12, 10, 6, -34)];
+    list[2] = [0.6, undefined, body(-12, 10, 6, -34)];
+  } else if (fault === 'too-high') {
+    list[1] = [0.38, '너무 높이 차올림', body(-30, 26, 12, -10)];
+    list[2] = [0.6, undefined, body(-30, 26, 12, -10)];
+  }
+  return { id, cycle: 3.2, view: [70, 14], keys: keys(...list), scene: [mat([0, 0, 0.1], 0.75, 2.0)], work: [0, 0.6], fault };
+}
+
 /* ── 표 ──────────────────────────────────────────── */
 
 export const EXTRA_MOTIONS: Record<string, Entry> = {
@@ -343,4 +478,7 @@ export const EXTRA_MOTIONS: Record<string, Entry> = {
   'smith-incline-press': entry((f) => smithInclinePress('smith-incline-press', f), ['shoulders-up', 'elbow-flare', 'butt-off']),
   'smith-shoulder-press': entry((f) => smithShoulderPress('smith-shoulder-press', f), ['arch', 'half-rep']),
   'crunch': entry((f) => crunch('crunch', f), ['neck', 'sit-up']),
+  'knee-push-up': entry((f) => kneePushUp('knee-push-up', f), ['hips-back', 'elbow-flare']),
+  'bird-dog': entry((f) => birdDog('bird-dog', f), ['back-arch', 'hip-tilt']),
+  'superman': entry((f) => superman('superman', f), ['neck', 'too-high']),
 };

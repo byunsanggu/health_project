@@ -1,4 +1,4 @@
-import { exerciseById } from './exercises.ts';
+import { exerciseById, isTimed } from './exercises.ts';
 import { HEAVY_PULLS } from './exercises.ts';
 import { heavyPullRange, isStrengthLift } from './onboarding.ts';
 import type { RepRange } from './load.ts';
@@ -69,6 +69,8 @@ export function applyRepRules(
   return {
     ...template,
     slots: template.slots.map((slot) => {
+      // 버티는 종목(플랭크)의 범위는 초다 — 반복 칸(1~30회) · 블록 반복을 씌우지 않는다
+      if (isTimed(slot.exerciseId)) return slot;
       const own = cleanRange(overrides[slot.exerciseId]);
       if (own) return { ...slot, repRange: own };
       if (!profile) return slot;
@@ -119,6 +121,8 @@ export function suggestRepRange(
   current: RepRange,
   beforeDate: string,
 ): RepSuggestion | null {
+  // 버티는 종목은 초로 세고 위 끝을 채우면 저절로 늘어난다 — 반복 칸을 바꾸자고 묻지 않는다
+  if (isTimed(exerciseId)) return null;
   const sessions = history
     .filter((session) => session.date < beforeDate)
     .map((session) => ({

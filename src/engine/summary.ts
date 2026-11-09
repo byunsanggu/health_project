@@ -1,3 +1,4 @@
+import { isTimed } from './exercises.ts';
 import { withParticle } from './korean.ts';
 import { MUSCLE_LABELS_KO, zoneLabelKo, zoneOf } from './muscles.ts';
 import { oneRepMax } from './repmax.ts';
@@ -44,7 +45,10 @@ export interface SessionSummary {
   date: string;
   name: string;
   setsCompleted: number;
+  /** 반복 종목의 반복 합 — 버티는 종목(플랭크)의 초는 holdSeconds로 따로 센다 */
   totalReps: number;
+  /** 버틴 초 합 (플랭크 · 사이드 플랭크). 없으면 0 */
+  holdSeconds: number;
   /** 총 들어올린 무게 (kg·회 합계) */
   tonnageKg: number;
   durationMinutes?: number;
@@ -118,7 +122,8 @@ export function summarizeSession(input: SummaryInput): SessionSummary {
   }
   byMuscle.sort((a, b) => b.today - a.today);
 
-  const totalReps = working.reduce((sum, set) => sum + set.reps, 0);
+  const totalReps = working.reduce((sum, set) => sum + (isTimed(set.exerciseId) ? 0 : set.reps), 0);
+  const holdSeconds = working.reduce((sum, set) => sum + (isTimed(set.exerciseId) ? set.reps : 0), 0);
   const tonnageKg = Math.round(working.reduce((sum, set) => sum + set.weightKg * set.reps, 0));
 
   return {
@@ -126,6 +131,7 @@ export function summarizeSession(input: SummaryInput): SessionSummary {
     name: input.name,
     setsCompleted: working.length,
     totalReps,
+    holdSeconds,
     tonnageKg,
     durationMinutes: input.durationSeconds ? Math.round(input.durationSeconds / 60) : undefined,
     byMuscle,
@@ -150,6 +156,16 @@ function findHighlights(working: readonly SetLog[], input: SummaryInput): LiftHi
 
   for (const [exerciseId, sets] of byExercise) {
     const name = input.index.get(exerciseId)?.name ?? exerciseId;
+    // 버티는 종목은 무게가 아니라 버틴 초가 늘었는지
+    if (isTimed(exerciseId)) {
+      const longest = Math.max(...sets.map((set) => set.reps));
+      const before = Math.max(0, ...input.history.flatMap((session) => session.sets)
+        .filter((set) => set.exerciseId === exerciseId && !set.warmup).map((set) => set.reps));
+      if (before > 0 && longest > before) {
+        highlights.push({ exerciseId, name, kind: 'increase', message: `${before}초 → ${longest}초로 더 오래 버텼습니다` });
+      }
+      continue;
+    }
     const todayTop = Math.max(...sets.map((set) => set.weightKg));
 
     let previousTop = 0;

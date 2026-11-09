@@ -18,12 +18,15 @@ const NEW_IDS = [
   'dumbbell-fly', 'smith-incline-press', 'smith-shoulder-press', 'crunch',
 ] as const;
 
+/** 매트 하나뿐인 초보를 위해 더한 바닥 종목 */
+const FLOOR_IDS = ['knee-push-up', 'bird-dog', 'superman'] as const;
+
 const clipOf = (id: string, fault?: string) => motionFor({ id }, fault) as Clip;
 const dist = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 describe('새 종목 15개', () => {
   it('종목 · 필요 기구 · 큐 · 실수 · 자리 잡기 · 다른 이름 · 동작이 다 있다', () => {
-    for (const id of NEW_IDS) {
+    for (const id of [...NEW_IDS, ...FLOOR_IDS]) {
       const exercise = exerciseById(id);
       assert.ok(exercise, `${id}: 종목이 없다`);
       assert.ok(EXERCISE_REQUIREMENTS[id]?.length, `${id}: 필요 기구`);
@@ -38,7 +41,7 @@ describe('새 종목 15개', () => {
   });
 
   it('새 동작 표는 있던 종목의 동작을 덮어쓰지 않는다', () => {
-    assert.deepEqual(Object.keys(EXTRA_MOTIONS).sort(), [...NEW_IDS].sort());
+    assert.deepEqual(Object.keys(EXTRA_MOTIONS).sort(), [...NEW_IDS, ...FLOOR_IDS].sort());
   });
 
   it('다른 이름으로 찾아진다 — 띄어쓰기를 몰라도', () => {
@@ -54,7 +57,7 @@ describe('새 종목 15개', () => {
     assert.ok(find('ohp').includes('barbell-overhead-press'), '영어 이름은 대소문자를 가리지 않는다');
     assert.ok(find('힙쓰').includes('hip-thrust') && find('힙쓰').includes('dumbbell-hip-thrust'));
     assert.equal(find('').length, EXERCISES.length, '빈 검색어는 전부');
-    assert.deepEqual(find('무릎 푸시업'), [], '무릎 푸시업은 다른 동작이다');
+    assert.deepEqual(find('무릎 푸시업'), ['knee-push-up'], '무릎 푸시업은 인클라인 푸시업과 다른 종목이다');
   });
 
   it('맨몸 · 밴드는 무게를 고르지 않는 종목이다', () => {

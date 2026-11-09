@@ -1,4 +1,5 @@
-import { EXERCISES, HEAVY_PULLS, exerciseById, isUnloaded } from './exercises.ts';
+import { EXERCISES, HEAVY_PULLS, exerciseById, isTimed, isUnloaded } from './exercises.ts';
+import { holdRange } from './hold.ts';
 import { availableExercises, coverageReport, gymFromCatalog, type GymSelection } from './equipment.ts';
 import { assessLevel, levelProfile, type LevelAssessment } from './levels.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO, landmarksFor } from './muscles.ts';
@@ -458,7 +459,8 @@ const BEGINNER_EASIER: Readonly<Record<string, string>> = { 'push-up': 'incline-
  */
 const SAME_MOVEMENT: readonly (readonly string[])[] = [
   ['bodyweight-reverse-lunge', 'dumbbell-reverse-lunge', 'walking-lunge'],
-  ['push-up', 'incline-push-up'],
+  // 무릎 푸시업도 같은 푸시업의 쉬운 판이다
+  ['push-up', 'incline-push-up', 'knee-push-up'],
   // 힙 쓰러스트 세 판(바벨 · 덤벨 · 머신) — 둔근 자리가 둘인 날 메인 덤벨 힙 쓰러스트 뒤에 바벨 · 머신 힙 쓰러스트가 또 들어갔다
   ['hip-thrust', 'dumbbell-hip-thrust', 'machine-hip-thrust'],
 ];
@@ -472,6 +474,21 @@ const EASY_FILLERS: readonly string[] = [
 ];
 /** EASY_FILLERS로도 모자란 미는 날(매트 · 케틀벨뿐) — 푸시업 뒤 인클라인 푸시업(가벼운 마무리), 파이크 푸시업 */
 const SPARSE_PUSH_FILLERS: readonly string[] = ['incline-push-up', 'pike-push-up'];
+/**
+ * 그래도 짧은 날(매트 · 케틀벨뿐인 집의 상체 · 푸시 · 풀 날)을 채우는 바닥 종목. 초보 상체 날이 인클라인 푸시업 ·
+ * 데드버그 두 종목으로 끝났고, 매트뿐인 풀 날은 크런치 하나였다.
+ *  · 슈퍼맨 — 엎드려 등 위아래(하체 자리가 없는 날만 — 하체 날에는 브릿지가 이미 엉덩이를 쓴다)
+ *  · 플랭크 — 초로 버티는 코어(hold.ts)
+ *  · 버드독 — 몸통을 흔들리지 않게 잡는 힘
+ * 코어는 하루 두 종목까지 — 데드버그 · 플랭크 · 버드독을 한날 다 넣지 않는다(당기는 날의 버드독은 등 뒤쪽 몫으로 따로).
+ */
+const FLOOR_FILLERS: readonly { id: string; upperOnly?: boolean }[] = [
+  { id: 'superman', upperOnly: true },
+  { id: 'plank' },
+  { id: 'bird-dog', upperOnly: true },
+];
+/** 하루 코어 종목 상한 — 채우기에서만 본다 */
+const MAX_CORE_FILLED = 2;
 /** 하루에 이만큼은 있어야 운동한 날 같다 — 모자라면 EASY_FILLERS로 채운다 */
 const MIN_DAY_EXERCISES = 4;
 /** 무게를 실을 수 있는 다리 복합 동작 */
@@ -484,7 +501,7 @@ const PUSH_MUSCLES: ReadonlySet<MuscleGroup> = new Set<MuscleGroup>(['chest', 't
  * 초보가 아니면 자극이 모자란 가벼운 맨몸 종목 — 중급 이상에게는 뒤로 밀고, 메인 자리에는 무게를 실을 수 있는 쪽을 준다.
  * 인클라인 푸시업도 여기 — 덤벨이 있는 집의 중급 가슴 메인이 덤벨 플로어 프레스 대신 인클라인 푸시업이 됐다.
  */
-const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge', 'bodyweight-squat', 'incline-push-up']);
+const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge', 'bodyweight-squat', 'incline-push-up', 'knee-push-up']);
 
 interface PickContext {
   level: TrainingLevel;
@@ -555,8 +572,16 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
   // 어깨 앞쪽이 먼저 아프다. 행잉 레그레이즈도 매달려 버틸 악력부터 필요하다.
   // 초보에게는 푸시업 · 데드버그 · 머신 쪽을 먼저 둔다.
   if (level === 'beginner' && HARD_BODYWEIGHT.has(exercise.id)) score -= 4;
-  // 플랭크처럼 버티는 동작은 "몇 회"로 세기 어색하다 — 세트 기록이 횟수라 뒤로.
+  /*
+   * 플랭크처럼 버티는 동작은 자리 고르기에서는 움직이는 복근 운동(데드버그 · 크런치) 뒤로 — 초로 세고 기록하지만
+   * (hold.ts), 복근 자리 하나라면 움직이는 쪽이 먼저다. 기구가 적어 하루가 짧으면 FLOOR_FILLERS로 들어온다.
+   */
   if (HOLDS.has(exercise.id)) score -= 3;
+  /*
+   * 무릎 푸시업은 매트뿐인 초보의 첫 푸시업(메인 자리)이다 — 보조 · 고립 가슴 자리에서는 펙덱 · 플라이가 먼저.
+   * 맨몸 골고루 점수로 기구 많은 헬스장 푸시 날의 펙덱 자리에 들어왔다.
+   */
+  if (exercise.id === 'knee-push-up' && slot.role !== 'primary') score -= 6;
   // 거꾸로 맨몸 런지 · 브릿지는 하체가 이미 강한 사람에게 자극이 모자란다 — 덤벨 쪽을 먼저.
   if (level !== 'beginner' && LIGHT_BODYWEIGHT.has(exercise.id)) score -= 3;
   // 메인 자리는 더 — 케틀벨 하나뿐인 중급도 맨몸 스쿼트보다 고블릿 스쿼트가 메인이다(매트뿐이면 그래도 맨몸 스쿼트)
@@ -1247,6 +1272,28 @@ export function buildProgram(
         picked.splice(after, 0, entry);
       }
     }
+    /*
+     * 그래도 모자라면 바닥 종목(FLOOR_FILLERS). 같은 동작 · 버티기 둘(플랭크 + 사이드 플랭크)은 넣지 않고, 코어는 두 종목까지.
+     */
+    for (const { id, upperOnly } of FLOOR_FILLERS) {
+      if (picked.length >= wanted) break;
+      const filler = pool.find((exercise) => exercise.id === id);
+      if (!filler || usedToday.has(filler.id)) continue;
+      if (upperOnly && dayHasLower) continue;
+      if (picked.some((item) => sameMovement(item.exercise, filler))) continue;
+      if (HOLDS.has(filler.id) && picked.some((item) => HOLDS.has(item.exercise.id))) continue;
+      // 버드독은 당기는 날(미는 · 하체 자리 없음)에는 등 뒤쪽 운동으로 친다 — 매트뿐인 풀 날은 그것 말고 등을 쓸 게 슈퍼맨뿐이다
+      const backWork = filler.id === 'bird-dog' && !dayHasPush;
+      if (filler.pattern === 'core' && !backWork &&
+        picked.filter((item) => item.exercise.pattern === 'core').length >= MAX_CORE_FILLED) continue;
+      const muscle = mainMuscle(filler);
+      if (!muscle) continue;
+      usedToday.add(filler.id);
+      usedThisWeek.add(filler.id);
+      weekBodyweight += 1;
+      addJointLoad(sessionLoad, filler);
+      picked.push({ slot: { muscle, role: 'isolation' }, exercise: filler, sets: 0 });
+    }
     previousLowerFillers = lowerFillersToday;
     /*
      * 복근 · 코어(데드버그 · 크런치 · 플랭크)는 그날 마지막에 — 몸통을 받쳐 줄 힘을 프레스 · 스쿼트 전에 쓰지 않는다.
@@ -1627,6 +1674,8 @@ function repRangeFor(
   heavySlot = true,
   style: RepStyle = 'auto',
 ): { min: number; max: number } {
+  // 버티는 종목(플랭크)은 초 — 초보 20~30초에서 시작해 위 끝을 채우면 5초씩 늘린다(hold.ts)
+  if (isTimed(exercise)) return holdRange(level);
   return BODYWEIGHT_REPS[exercise.id] ?? heavyPullRange(exercise, styledRange(exercise, role, goals, level, heavySlot, style));
 }
 
@@ -1647,6 +1696,10 @@ const BODYWEIGHT_REPS: Readonly<Record<string, { min: number; max: number }>> = 
   'bodyweight-squat': { min: 12, max: 20 },
   'single-leg-calf-raise': { min: 10, max: 20 },
   'crunch': { min: 12, max: 20 },
+  // 매트 초보 종목 — 무릎 푸시업은 인클라인 푸시업과 같은 칸, 버드독은 좌우 번갈아 센 수
+  'knee-push-up': { min: 8, max: 15 },
+  'bird-dog': { min: 10, max: 16 },
+  'superman': { min: 10, max: 15 },
   // 밴드도 무게 숫자가 없다 — 횟수로 올리고, 위 끝에 닿으면 센 밴드로 바꾼다
   'band-row': { min: 12, max: 20 },
   'band-lateral-raise': { min: 12, max: 20 },

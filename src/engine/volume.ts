@@ -1,4 +1,5 @@
 import { MUSCLE_GROUPS, ZONE_LABELS_KO, zoneOf } from './muscles.ts';
+import { isTimed } from './exercises.ts';
 import type {
   Exercise,
   LandmarksByMuscle,
@@ -61,6 +62,8 @@ export function setEffectiveness(set: SetLog, options: VolumeOptions = {}): numb
   else if (rir <= 4) weight = 0.7;
   else weight = 0.3;
 
+  // 버티는 종목(플랭크)의 reps는 초다 — 반복 범위로 깎지 않는다
+  if (isTimed(set.exerciseId)) return weight;
   // 반복 범위 가중 — 저반복은 근력, 초고반복은 국소 지구력 쪽 자극이 커진다.
   if (set.reps < hypertrophyReps.min) weight *= 0.8;
   else if (set.reps > hypertrophyReps.max) weight *= 0.6;

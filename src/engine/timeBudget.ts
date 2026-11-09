@@ -1,4 +1,4 @@
-import { HEAVY_PULLS } from './exercises.ts';
+import { HEAVY_PULLS, isTimed } from './exercises.ts';
 import { withParticle } from './korean.ts';
 import { restFor } from './rest.ts';
 import type { RestBand } from './rest.ts';
@@ -131,7 +131,9 @@ export function estimateSessionTime(
 
     // 한쪽씩 하는 종목(불가리안 · 원암 로우 · 런지 · 컨센트레이션 컬)은 양쪽을 다 한다
     const sides = item.exercise.unilateral ? 2 : 1;
-    const work = sets * (reps * config.secondsPerRep * sides + config.setupSeconds);
+    // 버티는 종목(플랭크)은 처방이 곧 초다 — 30초 버티기를 "30회 × 한 회 시간"으로 세면 몇 배가 된다
+    const perSet = isTimed(item.exercise) ? reps : reps * config.secondsPerRep;
+    const work = sets * (perSet * sides + config.setupSeconds);
     // 마지막 세트 뒤에는 종목 간 전환 시간이 대신 들어간다.
     const restSeconds = Math.max(0, sets - 1) * rest;
 

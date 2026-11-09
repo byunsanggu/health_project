@@ -1,3 +1,4 @@
+import { isTimed } from './exercises.ts';
 import { MUSCLE_LABELS_KO } from './muscles.ts';
 import { withParticle } from './korean.ts';
 import { volumeReport } from './volume.ts';
@@ -193,7 +194,8 @@ function findGains(input: WeeklyReportInput): ReportGain[] {
        */
       gains.push({
         name: exercise.name,
-        detail: `같은 무게 ${now.reps - then.reps}회 더`,
+        // 버티는 종목(플랭크)의 reps는 초 — "같은 무게 10회 더"가 아니라 "10초 더 버팀"
+        detail: isTimed(exercise) ? `${now.reps - then.reps}초 더 버팀` : `같은 무게 ${now.reps - then.reps}회 더`,
         up: true,
       });
     }

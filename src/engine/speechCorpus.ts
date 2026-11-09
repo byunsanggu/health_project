@@ -24,6 +24,8 @@ import {
 import { setupFor } from './setupGuide.ts';
 import { numberInventory, sentences, speechNames, speechPieces } from './speech.ts';
 import { buildCues, koreanCount } from './tempo.ts';
+import { buildHoldCues, holdCountdownWord, holdFeedbackLine } from './hold.ts';
+import { isTimed } from './exercises.ts';
 import { forSpeech } from './coach.ts';
 
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
@@ -126,6 +128,27 @@ export function coachTexts(style: CoachStyle): string[] {
     }
   }
   for (let n = 1; n <= 30; n += 1) say(resumeFromLine(style, koreanCount(n)));
+
+  // 버티기(플랭크) — 세트 앞 · 세는 말(시작 · 절반 · 5초 전 · 넷 셋 둘 하나 · 끝) · 쉬는 동안 한마디
+  for (const exercise of EXERCISES.filter((item) => isTimed(item))) {
+    for (const setIndex of range(4)) {
+      for (const restrained of [false, true]) {
+        for (const liftIndex of range(6)) {
+          say(beforeSetLines({
+            style, exerciseName: exercise.name, setIndex, totalSets: 4, weightKg: 0, repsMin: 20, repsMax: 30, targetRir: 2,
+            restrained, liftIndex, totalLifts: 6, cues: demoFor(exercise).cues, seconds: true,
+            last: setIndex === 0 && liftIndex % 2 ? { date: '2026-10-01', daysAgo: 7, weightKg: 0, reps: 30, rir: 2, sets: 3 } : null,
+          }));
+        }
+      }
+    }
+  }
+  for (const seconds of [10, 15, 20, 30, 45, 60, 90]) say(buildHoldCues({ seconds, style }).map((cue) => cue.say));
+  for (const seconds of [10, 25, 30, 35]) say(holdFeedbackLine(style, { seconds, min: 20, max: 30 }));
+  for (const left of [1, 2, 3, 4]) say(holdCountdownWord(left));
+  for (const at of range(4)) {
+    for (const lastOfLift of [false, true]) say(afterSetLines({ style, feel: 'right', lastOfLift, at, setsDone: 2, seconds: true }));
+  }
 
   // 세트 후
   for (const at of range(8)) {

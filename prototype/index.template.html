@@ -2844,6 +2844,28 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-fix-row { display: flex; align-items: center; gap: 6px; }
 .focus-fix-row .nudge { min-width: 44px; min-height: 44px; }
 .focus-fix-reps { min-width: 48px; text-align: center; font-family: var(--mono); font-size: 18px; }
+/* PT 세트 고치기 — 세트 번호(✓ 끝낸 세트) · 고른 세트의 무게 / 개수 · − 세트 + 세트 확인 */
+.focus-edits { display: flex; justify-content: center; gap: 8px; flex: none; }
+.focus-edits .focus-fix { min-height: 36px; }
+.focus-middle.with-sets { justify-content: flex-start; overflow-y: auto; }
+.pt-sets { display: grid; gap: 6px; width: 100%; flex: none; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 12px; background: var(--surface-2); }
+.pt-sets-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pt-sets-label { margin-right: auto; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pt-set-chip { min-width: 40px; min-height: 36px; padding: 0 8px; border: 1px dashed var(--line); border-radius: 999px; background: var(--surface); font-size: 14px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pt-set-chip.done { border-style: solid; border-color: var(--accent); color: var(--accent); }
+.pt-set-chip.picked { border-style: solid; border-color: var(--accent); background: var(--accent); color: var(--surface); }
+.pt-sets-edit { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; }
+.pt-fix-weight { display: flex; align-items: center; gap: 4px; }
+.pt-fix-step { min-width: 40px; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 18px; font-weight: 700; color: var(--ink); }
+.pt-fix-kg { min-width: 56px; text-align: center; font-size: 15px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.pt-sets .focus-fix-row { gap: 4px; }
+.pt-sets .focus-fix-row .nudge { min-width: 40px; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 18px; font-weight: 700; color: var(--ink); }
+.pt-sets .focus-fix-reps { min-width: 52px; font-size: 15px; }
+.pt-sets-foot { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
+.pt-sets-btn { min-height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 14px; font-weight: 700; color: var(--ink); }
+.pt-sets-btn:disabled { opacity: .45; }
+.focus-warm-next { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px; }
+.pt-warm-kg { min-width: 52px; text-align: center; color: var(--accent); font-variant-numeric: tabular-nums; }
 /* 쉬는 화면 아래 — 일시정지 · 아픈 데 있어요 */
 .focus-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .focus-btn.small { min-height: 44px; padding: 0 16px; font-size: 14px; }
@@ -2879,6 +2901,8 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
   .rest-guide-lines b { font-size: 12px; }
   .focus-middle.with-motion .focus-motion { max-height: 26dvh; width: min(100%, 26dvh, 320px); }
   .focus-warm-list { display: none; }
+  /* 준비 중 · 워밍업에 "세트 고치기" 줄이 붙으면 동작 그림을 조금 줄인다 */
+  .focus-middle.with-motion:has(.focus-edits) .focus-motion { max-height: 20dvh; width: min(100%, 20dvh, 320px); }
   .focus-title b { font-size: 18px; }
   .focus { gap: 8px; padding-top: 10px; }
 }

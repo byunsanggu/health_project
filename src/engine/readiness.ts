@@ -1,3 +1,4 @@
+import { isTimed } from './exercises.ts';
 import { estimate1RM } from './load.ts';
 import { aggregateVolume, addDays, sessionsInWeek, weekStart } from './volume.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO } from './muscles.ts';
@@ -195,7 +196,8 @@ export function bestE1rmByExercise(sessions: readonly SessionLog[]): Map<string,
   const best = new Map<string, number>();
   for (const session of sessions) {
     for (const set of session.sets) {
-      if (set.warmup || set.reps <= 0) continue;
+      // 버티는 종목(플랭크)의 reps는 초라 1회 최대로 바꿀 수 없다
+      if (set.warmup || set.reps <= 0 || isTimed(set.exerciseId)) continue;
       const value = estimate1RM(set);
       const previous = best.get(set.exerciseId);
       if (previous === undefined || value > previous) best.set(set.exerciseId, value);
@@ -208,7 +210,7 @@ function averageRir(sessions: readonly SessionLog[]): number | null {
   const values: number[] = [];
   for (const session of sessions) {
     for (const set of session.sets) {
-      if (!set.warmup && set.reps > 0) values.push(set.rir);
+      if (!set.warmup && set.reps > 0 && !isTimed(set.exerciseId)) values.push(set.rir);
     }
   }
   return mean(values);

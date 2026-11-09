@@ -28,6 +28,7 @@ export * from './progress.ts';
 export * from './summary.ts';
 export * from './storage.ts';
 export * from './load.ts';
+export * from './hold.ts';
 export * from './repmax.ts';
 export * from './readiness.ts';
 export * from './mesocycle.ts';
