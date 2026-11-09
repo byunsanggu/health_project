@@ -398,7 +398,7 @@ function bentRow(id: string, kind: 'barbell' | 'pendlay' | 'dbBent', fault?: str
   const pendlay = kind === 'pendlay';
   const db = kind === 'dbBent';
   const legs = { legL: plant(0.15, 0, 10), legR: plant(-0.15, 0, 10) };
-  const grip = db ? 0.17 : 0.27;
+  const grip = db ? 0.26 : 0.27; // 덤벨은 넓적다리 바깥으로 늘어뜨린다 (0.17이면 원판이 넓적다리에 묻혔다)
   const knee = pendlay ? 34 : 24;
   const back = pendlay ? -0.3 : -0.25;
   const base: Pose3 = { pelvis: pelvisFromLegs(legs.legL, knee, back), pitch: pendlay ? 84 : 58, spine: 2, neck: pendlay ? -36 : -28, ...legs };
@@ -892,7 +892,8 @@ export function curl(id: string, kind: CurlKind, fault?: string): Clip {
     }
     case 'incline':
       body = seated(0.45, 0.18, 36, { neck: 10 }, 0.5);
-      arm = (elbow: number, elev = -36): ArmSpec => ({ fk: [-24, elev, 10, elbow], turn });
+      // 팔은 조금 바깥으로(면 −14), 아래팔은 바깥으로 돌려(30) — 덤벨이 골반 옆 · 넓적다리 위를 지나지 않게
+      arm = (elbow: number, elev = -36): ArmSpec => ({ fk: [-14, elev, 30, elbow], turn });
       lowElev = -36;
       highElev = -28;
       scene = seatBench(0.18, 54, { seat: 0.45, backLen: 0.95 });
@@ -1016,7 +1017,8 @@ export function triceps(id: string, kind: TricepsKind, fault?: string): Clip {
       // 왼손은 왼 무릎 위에
       const knee = solvePose(body).bones.thighL.b;
       const left: ArmSpec = { ik: [knee[0], knee[1] + 0.07, knee[2] - 0.02], pole: [1, 0.3, -0.4], point: [0, -0.2, 1] };
-      const arm = (elbow: number, elev = -10): ArmSpec => ({ fk: [0, elev, 0, elbow], turn: 90 });
+      // 아래팔을 조금 바깥으로 돌려(20) — 굽힌 곳에서 덤벨이 오른 넓적다리 옆으로 비켜 있게
+      const arm = (elbow: number, elev = -10): ArmSpec => ({ fk: [0, elev, 20, elbow], turn: 90 });
       const pose = (elbow: number, elev = -10): Pose3 => ({ ...body, armL: left, armR: arm(elbow, elev) });
       const list = liftKeys(pose(96), pose(6), ['뒤로 펴기', '끝까지 펴기', '천천히 굽히기']);
       if (fault === 'elbow-move') swap(list, [0, 3], '팔꿈치가 앞뒤로', pose(100, 30));

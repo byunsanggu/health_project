@@ -385,8 +385,9 @@ function splitSquat(id: string, fault?: string): Clip {
   // 뒷발 — 발등을 벤치에 얹는다. 발끝이 뒤를, 발등이 아래를 본다
   // 발등이 벤치 패드 위에 얹힌다 (전엔 발목이 6cm 위라 신발이 패드에 묻혔다)
   const backFoot: LegSpec = { ankle: [-0.12, benchTop + 0.015, -0.58], fwd: normalize([0, -0.1, -1]), up: normalize([0, -1, 0.1]), pole: [0, -0.4, 1] };
+  // 팔은 살짝 벌린다 — 그대로 늘어뜨리면 최저점에서 덤벨 원판이 뒷다리 넓적다리에 묻힌다
   const body = (y: number, extra: Partial<Pose3> = {}): Pose3 => ({
-    pelvis: [0, y, -0.06], pitch: 9, spine: 0, legL: front, legR: backFoot, ...hangingArms(90), ...extra,
+    pelvis: [0, y, -0.06], pitch: 9, spine: 0, legL: front, legR: backFoot, ...hangingArms(90, 8, 6, 75), ...extra,
   });
   const top = body(0.82);
   const low = body(0.5);

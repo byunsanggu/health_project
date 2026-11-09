@@ -76,7 +76,9 @@
     { group: 'hamstrings', bone: 'thigh', u: 0.58, side: 0, front: -0.044, r: [0.044, 0.16, 0.034], pair: true },
     // 엉덩이 — 반바지 위라 평소엔 바지 색(빛날 때만 색이 든다)
     // 반바지 밖으로 2~3cm 넘게 솟으면 풍선 두 개처럼 보인다 — 빛날 때만 살짝 보일 만큼
-    { group: 'glutes', bone: 'pelvis', u: 0.45, side: 0.066, front: -0.08, r: [0.064, 0.074, 0.046], pair: true, cloth: true },
+    // 크게(위아래 7.4cm) 두면 엉덩이를 편 자세(힙 쓰러스트)를 낮게 옆에서 볼 때 반바지 밑으로 렌즈처럼 나온다.
+    // 더 줄이거나 안으로 넣으면 스쿼트 뒤에서 빛나는 엉덩이가 아예 안 보인다
+    { group: 'glutes', bone: 'pelvis', u: 0.5, side: 0.066, front: -0.076, r: [0.064, 0.06, 0.046], pair: true, cloth: true },
     { group: 'calves', bone: 'shin', u: 0.28, side: 0, front: -0.036, r: [0.046, 0.1, 0.036], pair: true },
     // 세부 근육 — 엔진 근육 비율에는 없고, 동작(Clip.highlight)이 켤 때만 나타난다(detail).
     // 평소에도 보이면 몸 윤곽이 바뀐다 (허리띠 위 혹 등)
@@ -426,6 +428,10 @@
       case 'post': {
         var f = mesh(group, kit.box1, kit.dark);
         place(f, prim.p, x, y, s[0], s[1], s[2]);
+        // 넓고 얇은 벽 — 카메라가 벽 너머로 돌아가면 벽만 보이니 그때는 숨긴다 (hideWalls)
+        if (prim.kind === 'post' && !prim.x && Math.max(s[0], s[2]) >= 0.6 && Math.min(s[0], s[2]) <= 0.15) {
+          f.userData.wall = { p: prim.p, n: s[0] < s[2] ? [1, 0, 0] : [0, 0, 1] };
+        }
         return;
       }
       case 'roller':
@@ -863,6 +869,18 @@
       camera.lookAt(center[0], center[1], center[2]);
     }
 
+    /** 몸과 카메라 사이를 막는 벽은 숨긴다 (벽 짚고 종아리 늘이기를 정면에서 볼 때 등) */
+    function hideWalls() {
+      var cam = [camera.position.x, camera.position.y, camera.position.z];
+      sceneGroup.children.forEach(function (m) {
+        var wall = m.userData && m.userData.wall;
+        if (!wall) return;
+        var sideOfCamera = dot3(sub3(cam, wall.p), wall.n);
+        var sideOfBody = dot3(sub3(state.target, wall.p), wall.n);
+        m.visible = sideOfCamera * sideOfBody >= 0;
+      });
+    }
+
     function resize() {
       var rect = canvas.getBoundingClientRect();
       var width = Math.max(1, rect.width);
@@ -880,6 +898,7 @@
       if (state.clip.walk) grid.position.z = -((state.t * state.clip.walk) % 0.5);
       else grid.position.z = 0;
       placeCamera();
+      hideWalls();
       renderer.render(scene, camera);
       return frame;
     }

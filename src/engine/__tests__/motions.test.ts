@@ -5,6 +5,7 @@ import { EXERCISES, exerciseById } from '../exercises.ts';
 import { mistakesFor } from '../mistakes.ts';
 import { clipBounds, clipFrame, clipPose, effortAt, type Clip } from '../motionKit.ts';
 import { faultsFor, motionFor, motionIds } from '../motions.ts';
+import { stretchMotionFor } from '../motionsStretch.ts';
 import { blend, solvePose, twoBone, type ArmSpec, type LegSpec, type Pose3, type Vec3 } from '../rig.ts';
 import type { Exercise } from '../types.ts';
 
@@ -472,6 +473,104 @@ describe('3D 시연 검토 반영 — 몸 · 기구가 서로 뚫지 않는다',
         });
         const spread = Math.max(...knees) - Math.min(...knees);
         assert.ok(spread < 6, `${fault ?? '바른 동작'} ${side}: 무릎 각이 ${spread.toFixed(1)}° 바뀐다`);
+      }
+    }
+  });
+});
+
+describe('3D 검증에서 남은 것 — 기구가 몸을 뚫지 않는다', () => {
+  const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const lerp = (a: Vec3, b: Vec3, u: number): Vec3 => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
+  const segDist = (p: Vec3, a: Vec3, b: Vec3) => {
+    const ab = sub(b, a);
+    const u = Math.max(0, Math.min(1, dot(sub(p, a), ab) / dot(ab, ab)));
+    return len(sub(p, lerp(a, b, u)));
+  };
+  /** 두 선분 사이 가장 가까운 거리 (한쪽을 촘촘히 짚어서) */
+  const segSegDist = (a: Vec3, b: Vec3, c: Vec3, d: Vec3) => {
+    let best = Infinity;
+    for (let k = 0; k <= 40; k += 1) best = Math.min(best, segDist(lerp(a, b, k / 40), c, d));
+    return best;
+  };
+  /** 덤벨 원판 두 개의 가운데 — 손잡이 가운데에서 축을 따라 10.5cm */
+  const dumbbellHeads = (item: { p: Vec3; x: Vec3 }): Vec3[] => [1, -1].map((s) => [item.p[0] + item.x[0] * 0.105 * s, item.p[1] + item.x[1] * 0.105 * s, item.p[2] + item.x[2] * 0.105 * s] as Vec3);
+  const dense = (clip: Clip) => Array.from({ length: 97 }, (_, i) => ({ t: i / 96, frame: clipFrame(clip, i / 96) }));
+
+  it('밴드 풀 어파트 — 다 벌린 곳에서도 밴드가 가슴 앞을 지난다 (가슴 축에서 15cm 이상)', () => {
+    for (const clip of [clipOf('band-pull-apart'), stretchMotionFor('band-pull-apart')!]) {
+      for (const { t, frame } of dense(clip)) {
+        const b = frame.solved.bones;
+        const gap = segSegDist(frame.solved.hands.L.grip, frame.solved.hands.R.grip, b.chest.a, b.chest.b);
+        assert.ok(gap >= 0.15, `t=${t.toFixed(2)}: 밴드가 가슴 축에서 ${gap.toFixed(3)}m`);
+      }
+    }
+  });
+
+  it('덤벨 오버헤드 익스텐션 — 오가는 내내 덤벨 아래 원판이 머리 밖 (머리 가운데에서 16cm 이상, 실수 동작 포함)', () => {
+    for (const fault of [undefined, ...faultsFor(ex('dumbbell-overhead-extension'))]) {
+      for (const { t, frame } of dense(clipOf('dumbbell-overhead-extension', fault))) {
+        const head = frame.solved.bones.head;
+        const center = lerp(head.a, head.b, 0.088 / len(sub(head.b, head.a)));
+        const db = frame.moving.find((item) => item.kind === 'dumbbell')!;
+        const gap = Math.min(...dumbbellHeads(db).map((p) => len(sub(p, center))));
+        assert.ok(gap >= 0.16, `${fault ?? '바른 동작'} t=${t.toFixed(2)}: 원판이 머리 가운데에서 ${gap.toFixed(3)}m`);
+      }
+    }
+  });
+
+  it('덤벨 플라이 — 벌린 곳에서 손잡이는 머리-발 방향으로 눕고, 원판은 벤치보다 높다', () => {
+    const open = clipFrame(clipOf('dumbbell-fly'), 0.45);
+    for (const db of open.moving.filter((item) => item.kind === 'dumbbell')) {
+      assert.ok(Math.abs(db.x[1]) < 0.3, `손잡이가 세로로 섰다 (axis.y ${db.x[1].toFixed(2)})`);
+    }
+    for (const { t, frame } of dense(clipOf('dumbbell-fly'))) {
+      for (const db of frame.moving.filter((item) => item.kind === 'dumbbell')) {
+        for (const p of dumbbellHeads(db)) assert.ok(p[1] > 0.5, `t=${t.toFixed(2)}: 원판이 ${p[1].toFixed(3)}m — 벤치 밑으로`);
+      }
+    }
+    // 너무 깊이 내리는 실수는 눈에 띄게 더 아래로
+    const deep = clipFrame(clipOf('dumbbell-fly', 'too-deep'), 0.45);
+    assert.ok(deep.solved.hands.L.grip[1] < open.solved.hands.L.grip[1] - 0.15, '너무 깊이 내림이 바른 동작과 구별되지 않는다');
+  });
+
+  it('머신 크런치 — 회전 팔이 달린 쪽의 반대편에서 본다 (팔이 얼굴 앞을 가로지르지 않게)', () => {
+    const clip = clipOf('machine-crunch');
+    const pivotX = clip.links!.find((link) => link.pivot)!.pivot![0];
+    // view 수평 각 +는 왼쪽(+x)에서 보는 것
+    assert.ok(Math.sign(clip.view[0]) !== Math.sign(pivotX), `회전 팔(x=${pivotX})과 같은 쪽(${clip.view[0]}°)에서 본다`);
+  });
+
+  it('덤벨이 넓적다리에 묻히지 않는다 (원판 가운데가 넓적다리 축에서 12.5cm 이상, 실수 동작 포함)', () => {
+    for (const id of ['incline-dumbbell-curl', 'triceps-kickback', 'dumbbell-bent-over-row', 'bulgarian-split-squat']) {
+      for (const fault of [undefined, ...faultsFor(ex(id))]) {
+        for (const { t, frame } of dense(clipOf(id, fault))) {
+          const b = frame.solved.bones;
+          for (const db of frame.moving.filter((item) => item.kind === 'dumbbell')) {
+            for (const p of dumbbellHeads(db)) {
+              for (const side of ['L', 'R'] as const) {
+                const gap = segDist(p, b[`thigh${side}`].a, b[`thigh${side}`].b);
+                assert.ok(gap >= 0.125, `${id} ${fault ?? '바른 동작'} t=${t.toFixed(2)}: 원판이 넓적다리(${side}) 축에서 ${gap.toFixed(3)}m`);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('밴드 레터럴 레이즈 — 발밑에서 손까지 가는 밴드가 정강이를 지나지 않는다', () => {
+    for (const fault of [undefined, ...faultsFor(ex('band-lateral-raise'))]) {
+      for (const { t, frame } of dense(clipOf('band-lateral-raise', fault))) {
+        const b = frame.solved.bones;
+        for (const band of frame.moving.filter((item) => item.kind === 'cableLine')) {
+          const half = band.size[1]! / 2;
+          const a: Vec3 = [band.p[0] - band.x[0] * half, band.p[1] - band.x[1] * half, band.p[2] - band.x[2] * half];
+          const z: Vec3 = [band.p[0] + band.x[0] * half, band.p[1] + band.x[1] * half, band.p[2] + band.x[2] * half];
+          for (const side of ['L', 'R'] as const) {
+            const gap = segSegDist(a, z, b[`shin${side}`].a, b[`shin${side}`].b);
+            assert.ok(gap >= 0.048, `${fault ?? '바른 동작'} t=${t.toFixed(2)}: 밴드가 정강이(${side}) 축에서 ${gap.toFixed(3)}m`);
+          }
+        }
       }
     }
   });

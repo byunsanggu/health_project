@@ -156,7 +156,8 @@ function bandPullApart(id: string): Clip {
 
 function bandLateralRaise(id: string, fault?: string): Clip {
   const clip = U.raise(id, 'lateral', fault);
-  return { ...clip, hold: undefined, cables: [{ from: [-0.1, 0.02, 0.03], to: 'R' }, { from: [0.1, 0.02, 0.03], to: 'L' }] };
+  // 밴드는 발 바깥쪽 앞에서 — 발 안쪽(0.1)에 걸면 늘어뜨린 손까지 가는 줄이 정강이를 지난다
+  return { ...clip, hold: undefined, cables: [{ from: [-0.13, 0.02, 0.08], to: 'R' }, { from: [0.13, 0.02, 0.08], to: 'L' }] };
 }
 
 /* ── 덤벨 힙 쓰러스트 ────────────────────────────── */
