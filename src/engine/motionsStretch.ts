@@ -84,11 +84,15 @@ function kneelLegs(kneeZ = 0, width = 0.11): { legL: LegSpec; legR: LegSpec } {
 }
 
 /** 세운 벽 — 앞(+z)에 z면, 또는 옆(+x)에 x면 */
-function wallAt(face: number, axis: 'z' | 'x', center = 0, width = 1.6): Prim {
-  return axis === 'z'
+function wallAt(face: number, axis: 'z' | 'x', center = 0, width = 1.6, hideBehind = false): Prim {
+  const wall: Prim = axis === 'z'
     ? { kind: 'post', p: [center, 1.1, face + 0.05], size: [width, 2.2, 0.1] }
     : { kind: 'post', p: [face + 0.05, 1.1, center], size: [0.1, 2.2, width] };
+  return hideBehind ? { ...wall, hideBehind } : wall;
 }
+
+/** 몸이 마주 보는 벽 — 앞에서 보면 벽이 몸을 다 가리니, 카메라가 벽 너머로 가면 숨긴다 */
+const facingWall = (face: number): Prim => wallAt(face, 'z', 0, 1.6, true);
 
 /** 세운 기둥 하나 */
 const post = (x: number, z: number, h = 2.2): Prim => ({ kind: 'post', p: [x, h / 2, z], size: [0.08, h, 0.08] });
@@ -671,7 +675,7 @@ function wallPushup(id: string): Clip {
   const top = { ...lean(solveFor(dist, 5, 45, FLOOR_REACH * 0.985)), ...hands };
   const low = { ...lean(solveFor(dist, 5, 45, 0.33)), ...hands };
   const list: KeyList = [[0, '가슴을 벽 쪽으로', top], [0.45, '닿을 듯 말 듯', low], [0.55, '밀기', low], [1, undefined, top]];
-  return { id, cycle: 2.8, view: [80, 8], keys: keys(...list), scene: [wallAt(wall, 'z')], work: [0.55, 1] };
+  return { id, cycle: 2.8, view: [80, 8], keys: keys(...list), scene: [facingWall(wall)], work: [0.55, 1] };
 }
 
 /** 손목 · 팔꿈치 돌리기 — 주먹 쥐고 손목을 돌리고, 팔꿈치를 굽혔다 편다 */
@@ -755,7 +759,7 @@ function ankleRock(id: string): Clip {
   const out = { ...torso(0.85, 0, 8), ...hands };
   const inn = { ...torso(0.8, 0.1, 12), ...hands };
   const list: KeyList = [[0, '무릎을 벽 쪽으로', out], [0.45, '뒤꿈치는 바닥에', inn], [0.55, '천천히 빼기', inn], [1, undefined, out]];
-  return { id, cycle: 2.4, view: [76, 10], keys: keys(...list), scene: [wallAt(wall, 'z')], side: 'L', work: [0, 0.45] };
+  return { id, cycle: 2.4, view: [76, 10], keys: keys(...list), scene: [facingWall(wall)], side: 'L', work: [0, 0.45] };
 }
 
 /** 서서 무릎 · 팔꿈치 닿기 — 무릎을 들어 반대 팔꿈치에, 번갈아 */
@@ -938,7 +942,7 @@ function calfWall(id: string): Clip {
   const wall = s[2] + 0.42;
   const grip = (side: 1 | -1): Vec3 => [side * 0.23, s[1] - 0.02, wall - 0.02];
   const hands = { armL: wallHand(grip(1), [0.7, -0.6, -0.4]), armR: wallHand(grip(-1), [-0.7, -0.6, -0.4]) };
-  return holdClip(id, { ...base, ...hands }, { ...lean(31), ...hands }, '뒤꿈치를 붙인 채 앞으로', [84, 8], [wallAt(wall, 'z')]);
+  return holdClip(id, { ...base, ...hands }, { ...lean(31), ...hands }, '뒤꿈치를 붙인 채 앞으로', [84, 8], [facingWall(wall)]);
 }
 
 /** 복부 — 엎드려 팔로 상체를 밀어 올린다. 골반은 바닥에 */

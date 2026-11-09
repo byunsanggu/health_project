@@ -104,6 +104,14 @@
     });
   }
 
+  function glassMaterial(hex) {
+    var m = material(hex, { roughness: 0.55, metalness: 0.35 });
+    m.transparent = true;
+    m.opacity = 0.3;
+    m.depthWrite = false;
+    return m;
+  }
+
   /** 길이 1짜리 회전체 — 프로필대로 굵기가 변한다. 위아래는 둥글게 닫는다. */
   function latheUnit(profile) {
     var points = [];
@@ -370,6 +378,8 @@
     return {
       steel: material(colors.steel, { roughness: 0.35, metalness: 0.75 }),
       dark: material(colors.dark, { roughness: 0.55, metalness: 0.35 }),
+      // 몸을 가리는 옆 벽 — 비쳐 보이는 같은 색
+      glass: glassMaterial(colors.dark),
       pad: material(colors.pad, { roughness: 0.75 }),
       plate: material(colors.plate, { roughness: 0.6 }),
       rim: material(colors.plateRim, { roughness: 0.5 }),
@@ -428,9 +438,10 @@
       case 'post': {
         var f = mesh(group, kit.box1, kit.dark);
         place(f, prim.p, x, y, s[0], s[1], s[2]);
-        // 넓고 얇은 벽 — 카메라가 벽 너머로 돌아가면 벽만 보이니 그때는 숨긴다 (hideWalls)
+        // 넓고 얇은 벽 — 카메라가 벽 너머로 돌아가면 벽만 보인다 (hideWalls).
+        // 몸이 마주 보는 벽(hideBehind)은 그때 숨기고, 벽 옆에 선 동작(벽 짚고 이두 늘이기)은 비쳐 보이게만 한다 — 숨기면 손이 허공을 민다
         if (prim.kind === 'post' && !prim.x && Math.max(s[0], s[2]) >= 0.6 && Math.min(s[0], s[2]) <= 0.15) {
-          f.userData.wall = { p: prim.p, n: s[0] < s[2] ? [1, 0, 0] : [0, 0, 1] };
+          f.userData.wall = { p: prim.p, n: s[0] < s[2] ? [1, 0, 0] : [0, 0, 1], hide: Boolean(prim.hideBehind), solid: kit.dark, glass: kit.glass };
         }
         return;
       }
@@ -869,7 +880,7 @@
       camera.lookAt(center[0], center[1], center[2]);
     }
 
-    /** 몸과 카메라 사이를 막는 벽은 숨긴다 (벽 짚고 종아리 늘이기를 정면에서 볼 때 등) */
+    /** 몸과 카메라 사이를 막는 벽 — 마주 보는 벽은 숨기고(벽 짚고 종아리 늘이기를 정면에서 볼 때 등), 옆 벽은 비쳐 보이게 */
     function hideWalls() {
       var cam = [camera.position.x, camera.position.y, camera.position.z];
       sceneGroup.children.forEach(function (m) {
@@ -877,7 +888,9 @@
         if (!wall) return;
         var sideOfCamera = dot3(sub3(cam, wall.p), wall.n);
         var sideOfBody = dot3(sub3(state.target, wall.p), wall.n);
-        m.visible = sideOfCamera * sideOfBody >= 0;
+        var blocked = sideOfCamera * sideOfBody < 0;
+        if (wall.hide) m.visible = !blocked;
+        else m.material = blocked ? wall.glass : wall.solid;
       });
     }
 

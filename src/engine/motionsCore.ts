@@ -294,8 +294,10 @@ export function farmersWalk(id: string, fault?: string): Clip {
   // 바닥이 뒤로 흐르는 위에서 제자리 걷기 — 디딘 발은 바닥과 같이 뒤로 간다
   const stance = (x: number, z: number, heel = 0): LegSpec => ballAt(x, z + 0.135, 8, heel);
   const swing = (x: number, z: number, lift: number): LegSpec => ({ ankle: [x, BODY.ankle + lift, z], fwd: [0, -0.15, 0.99], up: [0, 0.99, 0.15], pole: [0, 0.2, 1] });
-  const arms = hangingArms(90, 6, 4, 80);
   const lean = fault === 'lean' ? 14 : 0;
+  // 몸이 왼쪽으로 기울면 오른팔이 몸통과 같이 안으로 쏠려 덤벨이 오른 넓적다리로 파고든다 — 덤벨은 중력대로 늘어지니 오른팔을 그만큼 벌린다
+  const base = hangingArms(90, 6, 4, 80);
+  const arms = { ...base, armR: { ...base.armR, fk: [80, 6 + lean * 0.7, 0, 4] } };
   const pose = (legL: LegSpec, legR: LegSpec, y: number, bend = 0): Pose3 => ({
     pelvis: [0, y, -0.03], pitch: 3, spine: 0, bend, neck: 0, legL, legR, ...arms,
   });

@@ -459,6 +459,8 @@ const BEGINNER_EASIER: Readonly<Record<string, string>> = { 'push-up': 'incline-
 const SAME_MOVEMENT: readonly (readonly string[])[] = [
   ['bodyweight-reverse-lunge', 'dumbbell-reverse-lunge', 'walking-lunge'],
   ['push-up', 'incline-push-up'],
+  // 힙 쓰러스트 세 판(바벨 · 덤벨 · 머신) — 둔근 자리가 둘인 날 메인 덤벨 힙 쓰러스트 뒤에 바벨 · 머신 힙 쓰러스트가 또 들어갔다
+  ['hip-thrust', 'dumbbell-hip-thrust', 'machine-hip-thrust'],
 ];
 /**
  * 기구가 거의 없어 자리가 비는 날을 채우는 쉬운 맨몸 종목 — 누구나 첫날부터 할 수 있는 것.
@@ -468,6 +470,8 @@ const SAME_MOVEMENT: readonly (readonly string[])[] = [
 const EASY_FILLERS: readonly string[] = [
   'glute-bridge', 'dead-bug', 'reverse-crunch', 'bodyweight-squat', 'single-leg-calf-raise', 'incline-push-up',
 ];
+/** EASY_FILLERS로도 모자란 미는 날(매트 · 케틀벨뿐) — 푸시업 뒤 인클라인 푸시업(가벼운 마무리), 파이크 푸시업 */
+const SPARSE_PUSH_FILLERS: readonly string[] = ['incline-push-up', 'pike-push-up'];
 /** 하루에 이만큼은 있어야 운동한 날 같다 — 모자라면 EASY_FILLERS로 채운다 */
 const MIN_DAY_EXERCISES = 4;
 /** 하체 부위 — 하체 채우기 종목은 이 부위 자리가 있는 날에만 */
@@ -494,6 +498,10 @@ interface PickContext {
   loadablePull: boolean;
   /** 근력이 목표다(근비대 없이) — 바벨 주 종목을 주 2회, 맨몸 보조는 뒤로 */
   strengthOnly?: boolean;
+  /** 밀려난 가벼운 판을 바꿔 넣는 중 — 오늘 어떤 종목과도 같은 동작이 아닌 것만 */
+  noSwap?: boolean;
+  /** 이 헬스장에 무게를 싣는 판이 있는 하체 동작(스쿼트 · 런지) */
+  loadedPatterns?: ReadonlySet<MovementPattern>;
 }
 
 function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext): number {
@@ -551,6 +559,11 @@ function scoreExercise(exercise: Exercise, slot: SlotSpec, context: PickContext)
   if (level !== 'beginner' && LIGHT_BODYWEIGHT.has(exercise.id)) score -= 3;
   // 메인 자리는 더 — 케틀벨 하나뿐인 중급도 맨몸 스쿼트보다 고블릿 스쿼트가 메인이다(매트뿐이면 그래도 맨몸 스쿼트)
   if (level !== 'beginner' && LIGHT_BODYWEIGHT.has(exercise.id) && slot.role === 'primary') score -= 4;
+  /*
+   * 같은 동작의 무게 싣는 판(고블릿 · 덤벨 스모 스쿼트, 덤벨 런지)이 이 헬스장에 있으면 중급 이상에게 맨몸판은 더 뒤로 —
+   * 덤벨만 있는 집의 전신 B 다리 자리가 기구 골고루 점수에 밀려 덤벨 스모 스쿼트 대신 맨몸 스쿼트가 됐다.
+   */
+  if (level !== 'beginner' && LIGHT_BODYWEIGHT.has(exercise.id) && context.loadedPatterns?.has(exercise.pattern)) score -= 3;
 
   // 초보자에게는 같은 값이면 관절 부담이 적은 쪽을 고른다.
   // 기본 동작을 밀어낼 만큼 크게 주지는 않는다 — 초보일수록 기본을 배워야 한다.
@@ -659,14 +672,25 @@ function sessionSetCap(days: number, level: TrainingLevel): number {
 }
 
 /**
- * 같은 갈래(스쿼트 · 런지)에서 가벼운 맨몸판과 무게를 실은 판이 하루에 같이 들어가는지. 양쪽 어느 순서로 와도 막는다.
+ * 하루에 같이 두면 같은 동작을 두 번 하는 셈인 두 종목 — SAME_MOVEMENT 묶음(맨몸 · 덤벨 런지, 푸시업 · 인클라인 푸시업),
+ * 그리고 같은 갈래(스쿼트 · 런지)의 가벼운 맨몸판과 무게를 실은 판(고블릿 스쿼트 + 맨몸 스쿼트).
  */
-function clashesWithLightLower(exercise: Exercise, today: readonly Exercise[]): boolean {
-  if (exercise.pattern !== 'squat' && exercise.pattern !== 'lunge') return false;
-  const lightLower = (item: Exercise) => LIGHT_BODYWEIGHT.has(item.id);
-  const loaded = (item: Exercise) => !isUnloaded(item);
-  return today.some((item) => item.id !== exercise.id && item.pattern === exercise.pattern &&
-    ((lightLower(exercise) && loaded(item)) || (loaded(exercise) && lightLower(item))));
+function sameMovement(a: Exercise, b: Exercise): boolean {
+  if (a.id === b.id) return false;
+  if (SAME_MOVEMENT.some((group) => group.includes(a.id) && group.includes(b.id))) return true;
+  if (a.pattern !== b.pattern || (a.pattern !== 'squat' && a.pattern !== 'lunge')) return false;
+  const light = (item: Exercise) => LIGHT_BODYWEIGHT.has(item.id);
+  return (light(a) && !isUnloaded(b)) || (light(b) && !isUnloaded(a));
+}
+
+/**
+ * 같은 동작 두 판이 부딪치면 남길 쪽 — 무게를 싣는 판(2) > 맨몸(1) > 가벼운 맨몸(0). 먼저 고른 쪽을 남기면
+ * 둔근 자리에 먼저 들어간 맨몸 스쿼트 때문에 뒤 자리의 고블릿 스쿼트가 빠져, 덤벨 · 케틀벨이 있는데 하체 날에
+ * 무게 실은 다리 운동이 하나도 없었다. 같은 단계끼리는 먼저 고른 쪽을 남긴다(워킹 런지 + 덤벨 리버스 런지).
+ */
+function hardness(exercise: Exercise): number {
+  if (!isUnloaded(exercise)) return 2;
+  return LIGHT_BODYWEIGHT.has(exercise.id) ? 0 : 1;
 }
 
 function pickExercise(
@@ -695,13 +719,13 @@ function pickExercise(
     })
     .filter((exercise) => slot.role !== 'primary' || (exercise.pattern !== 'isolation' && exercise.pattern !== 'core'))
     .filter((exercise) => !hingedToday || !heavyHinge(exercise))
-    .filter((exercise) => !SAME_MOVEMENT.some((group) => group.includes(exercise.id) &&
-      context.today.some((item) => item.id !== exercise.id && group.includes(item.id))))
     /*
-     * 무게를 실은 스쿼트 · 런지와 가벼운 맨몸판(맨몸 스쿼트 · 맨몸 런지)은 하루에 하나만 — 고블릿 스쿼트 뒤의 맨몸 스쿼트는
-     * 같은 동작을 가볍게 한 번 더 하는 셈이다. 거꾸로 맨몸 스쿼트를 이미 한 날에 고블릿 · 덤벨 스모 스쿼트를 더 넣지도 않는다.
+     * 같은 동작은 하루에 한 판만 — 고블릿 스쿼트 뒤의 맨몸 스쿼트는 같은 동작을 가볍게 한 번 더 하는 셈이다. 오늘 이미 있는
+     * 판보다 가볍거나 같은 판은 넣지 않는다. 더 무거운 판은 들어오고, 먼저 있던 가벼운 판을 buildProgram이 다른 종목으로
+     * 바꾼다(swapOut). 바꿔 넣는 자리는 noSwap이라 어떤 판과도 부딪치지 않는 종목만 받는다.
      */
-    .filter((exercise) => !clashesWithLightLower(exercise, context.today))
+    .filter((exercise) => !context.today.some((item) => sameMovement(exercise, item) &&
+      (context.noSwap || hardness(exercise) <= hardness(item))))
     .filter((exercise) => (exercise.contribution[slot.muscle] ?? 0) >= minContribution);
   /*
    * 고립 자리에는 고립 종목이 먼저다. 레그컬 기계가 없는 곳에서 "뒤허벅지 고립" 자리에
@@ -716,9 +740,9 @@ function pickExercise(
 }
 
 /** 고른 종목의 관절 부하를 세션 누계에 더한다. */
-function addJointLoad(load: Map<Joint, number>, exercise: Exercise): void {
+function addJointLoad(load: Map<Joint, number>, exercise: Exercise, sign = 1): void {
   for (const [joint, stress] of Object.entries(exercise.jointStress) as [Joint, number][]) {
-    load.set(joint, (load.get(joint) ?? 0) + stress);
+    load.set(joint, (load.get(joint) ?? 0) + sign * stress);
   }
 }
 
@@ -940,8 +964,47 @@ export function buildProgram(
       today: [],
       weekBodyweight: 0,
       loadablePull: pool.some((exercise) => LOADABLE_PULLS.has(exercise.id)),
+      loadedPatterns: new Set(pool
+        .filter((exercise) => (exercise.pattern === 'squat' || exercise.pattern === 'lunge') && !isUnloaded(exercise))
+        .map((exercise) => exercise.pattern)),
       beforeHeavyHinge: Boolean(next?.slots.some((slot) => slot.role === 'primary' && slot.patterns?.[0] === 'hinge')),
       strengthOnly,
+    };
+
+    const usedBeforeToday = new Set(usedThisWeek);
+    // 주 안에서 종목이 겹치지 않게 하되, 후보가 마르면 재사용을 허용한다.
+    // 보조 · 고립 자리는 지난 블록 종목을 먼저 피한다.
+    const chooseFor = (slot: SlotSpec, repeatable: readonly string[], also: readonly string[] = []): Exercise | undefined => {
+      const today = new Set([...usedToday, ...also]);
+      const base = new Set([...today, ...repeatable, ...reserved]);
+      const fresh = slot.role === 'primary' ? base : new Set([...base, ...rotateOut]);
+      return pickExercise(slot, pool, fresh, context) ??
+        pickExercise(slot, pool, base, context) ??
+        pickExercise(slot, pool, today, context);
+    };
+    const take = (exercise: Exercise) => {
+      usedToday.add(exercise.id);
+      usedThisWeek.add(exercise.id);
+      if (exercise.equipment === 'bodyweight') weekBodyweight += 1;
+      addJointLoad(sessionLoad, exercise);
+    };
+    const swapOut = (loser: Picked, winner: Exercise) => {
+      usedToday.delete(loser.exercise.id);
+      if (!usedBeforeToday.has(loser.exercise.id)) usedThisWeek.delete(loser.exercise.id);
+      if (loser.exercise.equipment === 'bodyweight') weekBodyweight -= 1;
+      addJointLoad(sessionLoad, loser.exercise, -1);
+      const at = picked.indexOf(loser);
+      context.today = [...picked.filter((item) => item !== loser).map((item) => item.exercise), winner];
+      context.weekBodyweight = weekBodyweight;
+      context.noSwap = true;
+      const instead = chooseFor(loser.slot, [...usedThisWeek], [loser.exercise.id, winner.id]);
+      context.noSwap = false;
+      if (instead) {
+        take(instead);
+        picked[at] = { slot: loser.slot, exercise: instead, sets: 0 };
+      } else {
+        picked.splice(at, 1);
+      }
     };
 
     day.slots.forEach((slot, slotIndex) => {
@@ -951,20 +1014,13 @@ export function buildProgram(
       if (mine && !usedToday.has(mine.id)) {
         exercise = mine;
       } else {
-        // 주 안에서 종목이 겹치지 않게 하되, 후보가 마르면 재사용을 허용한다.
-        // 보조 · 고립 자리는 지난 블록 종목을 먼저 피한다.
         // 근력 목표는 바벨 주 종목을 주 2회 — 메인 자리는 이번 주에 이미 한 종목도 다시 고를 수 있다
         const repeatable = strengthOnly && slot.role === 'primary'
           ? [...usedThisWeek].filter((id) => { const item = exerciseById(id); return !item || !isStrengthLift(item); })
           : [...usedThisWeek];
-        const base = new Set([...usedToday, ...repeatable, ...reserved]);
-        const fresh = slot.role === 'primary' ? base : new Set([...base, ...rotateOut]);
         context.today = picked.map((item) => item.exercise);
         context.weekBodyweight = weekBodyweight;
-        exercise =
-          pickExercise(slot, pool, fresh, context) ??
-          pickExercise(slot, pool, base, context) ??
-          pickExercise(slot, pool, usedToday, context);
+        exercise = chooseFor(slot, repeatable);
         /*
          * 메인 하체 자리에 맨몸 스쿼트 · 런지가 왔으면, 이번 주에 이미 쓴 무게 싣는 종목이라도 그쪽을 다시 쓴다 —
          * 메인 종목은 주 2회 겹쳐도 된다. 케틀벨 하나뿐인 집의 레그 날이 맨몸 스쿼트 + 고블릿 스쿼트가 되던 것.
@@ -982,10 +1038,16 @@ export function buildProgram(
       }
       if (!exercise) return;
 
-      usedToday.add(exercise.id);
-      usedThisWeek.add(exercise.id);
-      if (exercise.equipment === 'bodyweight') weekBodyweight += 1;
-      addJointLoad(sessionLoad, exercise);
+      /*
+       * 더 무거운 판이 들어오면 먼저 있던 가벼운 판(같은 동작)을 그 자리에서 다른 종목으로 바꾼다 — 바꿀 게 없으면 뺀다.
+       * 둔근 자리의 맨몸 스쿼트 → 고블릿 스쿼트가 들어오면 둔근 자리는 브릿지 · 스윙 같은 다른 종목으로.
+       */
+      const chosen = exercise;
+      for (const loser of picked.filter((item) => sameMovement(item.exercise, chosen) && hardness(item.exercise) < hardness(chosen))) {
+        swapOut(loser, chosen);
+      }
+
+      take(exercise);
       picked.push({ slot, exercise, sets: 0 });
     });
 
@@ -1010,6 +1072,7 @@ export function buildProgram(
       if (!filler || usedToday.has(filler.id)) continue;
       const muscle = mainMuscle(filler);
       if (!muscle || picked.some((item) => mainMuscle(item.exercise) === muscle || item.slot.muscle === muscle)) continue;
+      if (picked.some((item) => sameMovement(item.exercise, filler))) continue;
       if (LOWER_BODY.has(muscle) && (!dayHasLower || previousLowerFillers.has(filler.id))) continue;
       if (PUSH_MUSCLES.has(muscle) && !dayHasPush) continue;
       if (LOWER_BODY.has(muscle)) lowerFillersToday.add(filler.id);
@@ -1018,6 +1081,33 @@ export function buildProgram(
       weekBodyweight += 1;
       addJointLoad(sessionLoad, filler);
       picked.push({ slot: { muscle, role: 'isolation' }, exercise: filler, sets: 0 });
+    }
+    /*
+     * 매트(+케틀벨)뿐인 집의 상체 · 푸시 날은 위 채우기를 해도 두세 종목에서 끝났다 — 미는 운동이 푸시업 · 파이크 푸시업뿐이다.
+     * 무게를 싣는 가슴 운동이 없는 곳에서 그래도 모자라면:
+     *  · 푸시업 바로 뒤에 인클라인 푸시업을 가볍게 한 번 더(같은 동작의 쉬운 판으로 마무리 — 고를 게 이것뿐일 때만)
+     *  · 초보가 아니면 파이크 푸시업(어깨 앞 · 삼두)
+     */
+    const loadedPress = pool.some((exercise) => exercise.pattern === 'horizontalPush' && !isUnloaded(exercise));
+    if (dayHasPush && !loadedPress) {
+      for (const id of SPARSE_PUSH_FILLERS) {
+        if (picked.length >= wanted) break;
+        const filler = pool.find((exercise) => exercise.id === id);
+        if (!filler || usedToday.has(filler.id)) continue;
+        if (level === 'beginner' && BEGINNER_EXCLUDED.has(filler.id)) continue;
+        const backOff = filler.id === 'incline-push-up' && picked.some((item) => item.exercise.id === 'push-up');
+        if (picked.some((item) => sameMovement(item.exercise, filler) && !(backOff && item.exercise.id === 'push-up'))) continue;
+        const muscle = mainMuscle(filler);
+        if (!muscle) continue;
+        if (!backOff && picked.some((item) => mainMuscle(item.exercise) === muscle || item.slot.muscle === muscle)) continue;
+        usedToday.add(filler.id);
+        usedThisWeek.add(filler.id);
+        weekBodyweight += 1;
+        addJointLoad(sessionLoad, filler);
+        const entry: Picked = { slot: { muscle, role: 'isolation' }, exercise: filler, sets: 0 };
+        const after = backOff ? picked.findIndex((item) => item.exercise.id === 'push-up') + 1 : picked.length;
+        picked.splice(after, 0, entry);
+      }
     }
     previousLowerFillers = lowerFillersToday;
     return picked;

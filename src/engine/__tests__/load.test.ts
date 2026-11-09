@@ -286,6 +286,29 @@ describe('가벼운 덤벨 — 2kg 다음이 4kg(두 배)이 되지 않게', () 
     assert.match(told.reason, /다음 세트 2kg 낮춥니다/);
   });
 
+  it('올리라고 했는데 기구 칸에 맞추니 같은 무게면 이유를 남기고 횟수로 올린다고 말한다', () => {
+    const raw = adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 8, reps: 15, rir: 4 }, raiseRule);
+    assert.equal(raw.deltaKg, 1);
+    const told = restateAdjustment(raw, 8, 8);
+    assert.equal(told.deltaKg, 0);
+    assert.equal(told.weightKg, 8);
+    assert.notEqual(told.reason, '무게를 유지합니다.');
+    assert.match(told.reason, /^여유 .+넉넉합니다\. 다음 세트 그대로 — 무게 간격 때문에 한 칸 올리기엔 커서 횟수로 올립니다\.$/);
+    assert.ok(!/kg 올립니다/.test(told.reason), told.reason);
+    // 가장 무거운 덤벨이면 간격이 아니라 더 무거운 게 없는 것이다
+    const top = restateAdjustment(
+      adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 12, reps: 15, rir: 4 }, raiseRule), 12, 12, twoKg);
+    assert.match(top.reason, /다음 세트 그대로 — 더 무거운 무게가 없어 횟수로 올립니다\.$/);
+  });
+
+  it('낮추라고 했는데 더 가벼운 칸이 없으면 이유를 남기고 그대로 간다고 말한다', () => {
+    const raw = adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 2, reps: 5, rir: 0 }, raiseRule);
+    assert.ok(raw.deltaKg < 0, raw.reason);
+    const told = restateAdjustment(raw, 2, 2, twoKg);
+    assert.equal(told.deltaKg, 0);
+    assert.match(told.reason, /목표 반복을 못 채웠습니다\. 다음 세트 그대로 — 더 가벼운 무게가 없어 되는 만큼만 합니다\.$/);
+  });
+
   it('폭이 같거나 유지면 문장을 그대로 둔다', () => {
     const raw = adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 8, reps: 15, rir: 5 }, raiseRule);
     assert.deepEqual(restateAdjustment(raw, 8, 8 + raw.deltaKg), raw);

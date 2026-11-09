@@ -1,5 +1,6 @@
 import { isUnloaded } from './exercises.ts';
 import type { Exercise, SetLog } from './types.ts';
+import { loadableWeights, type LoadingSpec } from './gym.ts';
 
 export interface RepRange {
   min: number;
@@ -399,11 +400,31 @@ export function restateAdjustment(
   adjustment: WithinSessionAdjustment,
   fromKg: number,
   toKg: number,
+  /** 그 기구에서 만들 수 있는 무게 — 주면 "한 칸이 너무 크다"와 "더 무거운(가벼운) 무게가 없다"를 가려 말한다 */
+  spec?: LoadingSpec,
 ): WithinSessionAdjustment {
   const actual = Math.round((toKg - fromKg) * 100) / 100;
   // 유지라고 했으면 그대로 둔다 — 기구 칸에 맞추느라 생긴 차이는 보정이 아니다
   if (adjustment.deltaKg === 0 || actual === adjustment.deltaKg) return { ...adjustment, weightKg: toKg };
-  if (actual === 0) return { weightKg: toKg, deltaKg: 0, reason: '무게를 유지합니다.' };
+  /*
+   * 올리라(내리라)고 했는데 기구 칸에 맞추니 같은 무게 — "무게를 유지합니다."만 남기면 왜 그대로인지가 사라진다.
+   * 코치가 본 이유(여유가 넉넉했다 · 목표 횟수를 못 채웠다)는 두고, 무게 대신 횟수로 맞춘다고 말한다.
+   */
+  if (actual === 0) {
+    const why = adjustment.reason.replace(/\s*다음 세트 [\d.]+kg (올립|낮춥)니다\.?\s*$/, '').trim();
+    const weights = spec ? loadableWeights(spec) : [];
+    const edge = adjustment.deltaKg > 0
+      ? weights.length > 0 && toKg >= weights[weights.length - 1]! - 1e-9
+      : weights.length > 0 && toKg <= weights[0]! + 1e-9;
+    const how = adjustment.deltaKg > 0
+      ? edge
+        ? '다음 세트 그대로 — 더 무거운 무게가 없어 횟수로 올립니다.'
+        : '다음 세트 그대로 — 무게 간격 때문에 한 칸 올리기엔 커서 횟수로 올립니다.'
+      : edge
+        ? '다음 세트 그대로 — 더 가벼운 무게가 없어 되는 만큼만 합니다.'
+        : '다음 세트 그대로 — 무게 간격 때문에 한 칸 내리기엔 커서 횟수를 줄여 되는 만큼만 합니다.';
+    return { weightKg: toKg, deltaKg: 0, reason: why ? `${why} ${how}` : how };
+  }
   const note = ' — 이 기구로 들 수 있는 가장 가까운 무게입니다.';
   let reason = adjustment.reason;
   if (actual > 0 && /[\d.]+kg 올립니다\.?$/.test(reason)) {

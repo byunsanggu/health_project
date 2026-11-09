@@ -173,6 +173,25 @@ describe('stretchMotionFor — 몸 풀기 · 마무리 스트레칭 동작마다
     }
   });
 
+  it('카메라가 벽 너머로 가면 숨기는 벽은 몸이 마주 보는 벽뿐이다 (옆 벽을 숨기면 손이 허공을 민다)', () => {
+    let facing = 0;
+    for (const { name, clip } of allClips()) {
+      for (const wall of walls(clip)) {
+        // 벽의 넓은 면이 바라보는 방향 — 몸이 그 방향을 보고 서 있으면(정면 z) 마주 보는 벽
+        const facesBody = wall.size[0]! > wall.size[2]!;
+        assert.equal(Boolean(wall.hideBehind), facesBody, `${name}: 벽 숨기기(${Boolean(wall.hideBehind)})가 벽 방향과 맞지 않는다`);
+        if (facesBody) facing += 1;
+      }
+    }
+    assert.ok(facing >= 3, '몸이 마주 보는 벽이 있는 동작이 없다');
+    for (const side of ['L', 'R'] as const) {
+      const wall = walls(clipOf('biceps-wall', side));
+      assert.equal(wall.length, 1);
+      assert.ok(!wall[0]!.hideBehind, `biceps-wall/${side}: 옆 벽이 숨겨진다`);
+      assert.ok(walls(clipOf('calf-wall', side))[0]!.hideBehind, `calf-wall/${side}: 앞 벽이 몸을 가린다`);
+    }
+  });
+
   it('벽을 짚은 손은 벽면에 닿고, 몸은 벽을 뚫지 않는다', () => {
     for (const { name, clip } of allClips()) {
       for (const wall of walls(clip)) {

@@ -188,9 +188,10 @@ function dumbbellSumoSquat(id: string, fault?: string): Clip {
   const stance = 0.3;
   const toe = 30;
   const caved = fault === 'knee-cave';
+  // 무릎이 안으로 — 발 안쪽으로 13cm쯤 들어온다. 더 모으면 무릎이 다리 사이 덤벨에 부딪힌다
   const legs = (cave = false): { legL: LegSpec; legR: LegSpec } => ({
-    legL: plant(stance, 0, toe, cave ? { pole: [-0.5, 0.1, 0.8] } : {}),
-    legR: plant(-stance, 0, toe, cave ? { pole: [0.5, 0.1, 0.8] } : {}),
+    legL: plant(stance, 0, toe, cave ? { pole: [-0.05, 0.1, 0.8] } : {}),
+    legR: plant(-stance, 0, toe, cave ? { pole: [0.05, 0.1, 0.8] } : {}),
   });
   // 덤벨 하나를 세로로, 두 손으로 위 원판 밑을 쥐고 다리 사이로 늘어뜨린다
   const hang = (pose: Pose3, extra: Partial<Pose3> = {}): Pose3 => {

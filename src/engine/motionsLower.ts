@@ -332,7 +332,8 @@ export function lunge(id: string, kind: LungeKind, fault?: string): Clip {
   if (kind === 'split') return splitSquat(id, fault);
   if (kind === 'stepUp') return stepUp(id, fault);
   const reverse = kind === 'reverse';
-  const arms = reverse ? handsOnHips() : hangingArms(90);
+  // 덤벨 든 팔은 옆으로 살짝 벌린다 — 그대로 늘어뜨리면 딛고 서는 동안 원판이 넓적다리에 묻힌다
+  const arms = reverse ? handsOnHips() : hangingArms(90, 8, 6, 75);
   const hold: Clip['hold'] = reverse ? undefined : { L: 'dumbbell', R: 'dumbbell' };
   const together: Pose3 = { ...standing({}, 0.1, 6), ...arms };
   // 앞발 · 뒷발 자리 — 뒤로 딛든 앞으로 딛든 바닥에서의 간격은 같다
@@ -413,7 +414,8 @@ function stepUp(id: string, fault?: string): Clip {
   const caved = fault === 'knee-cave';
   const onBox = plant(0.11, 0.36, 6, { y: box, pole: caved ? [-0.8, 0.2, 0.6] : undefined });
   const floor = plant(-0.11, -0.16, 6);
-  const arms = hangingArms(90);
+  // 덤벨 든 팔은 옆으로 살짝 벌린다 — 앞다리를 들어 올릴 때 원판이 넓적다리에 묻히지 않게
+  const arms = hangingArms(90, 8, 6, 75);
   const start: Pose3 = { pelvis: [0.01, 0.8, 0.02], pitch: 14, spine: 0, neck: -6, legL: onBox, legR: floor, ...arms };
   const topPose: Pose3 = { pelvis: [0.01, box + STAND_HEIGHT - 0.005, 0.33], pitch: 2, legL: onBox, legR: plant(-0.11, 0.36, 6, { y: box }), ...arms };
   const passing: Pose3 = { ...topPose, pelvis: [0.01, box + 0.86, 0.3], legR: { ankle: [-0.12, box + 0.12, 0.22], fwd: [0, -0.3, 0.95], up: [0, 0.95, 0.3], pole: [0, 0, 1] } };
@@ -543,7 +545,8 @@ export function hinge(id: string, kind: HingeKind, fault?: string): Clip {
   if (fault === 'round-back') {
     relabel('등이 말림', hipHinge({ ...base, neck: -8 }, { knee: b.knee, back: b.back, barY: b.barY, grip, ahead: b.ahead, spine: 40 }));
   } else if (fault === 'squatting') {
-    relabel('스쿼트처럼 앉음', hipHinge({ ...base, neck: -12 }, { knee: 72, back: -0.2, barY: b.barY, grip, ahead: b.ahead }));
+    // 덤벨은 무릎 앞 · 정강이 높이로 — 무릎 높이에 두면 앞으로 나온 무릎에 원판이 묻힌다
+    relabel('스쿼트처럼 앉음', hipHinge({ ...base, neck: -12 }, { knee: 72, back: -0.2, barY: db ? 0.36 : b.barY, grip, ahead: db ? -0.02 : b.ahead }));
   } else if (fault === 'too-deep') {
     relabel('너무 깊이', hipHinge({ ...base, neck: -8 }, { knee: b.knee, back: b.back - 0.02, barY: 0.16, grip, ahead: b.ahead, spine: 30 }));
   } else if (fault === 'bar-away') {

@@ -541,7 +541,14 @@ describe('3D 검증에서 남은 것 — 기구가 몸을 뚫지 않는다', () 
   });
 
   it('덤벨이 넓적다리에 묻히지 않는다 (원판 가운데가 넓적다리 축에서 12.5cm 이상, 실수 동작 포함)', () => {
-    for (const id of ['incline-dumbbell-curl', 'triceps-kickback', 'dumbbell-bent-over-row', 'bulgarian-split-squat']) {
+    // 덤벨을 드는 모든 종목. 힙 스러스트만 뺀다 — 덤벨을 골반 위에 얹는 게 바른 자세다
+    const holdsDumbbell = (id: string) => [0, 0.25, 0.5].some((t) => clipFrame(clipOf(id), t).moving.some((item) => item.kind === 'dumbbell'));
+    const ids = EXERCISES.map((item) => item.id).filter((id) => id !== 'dumbbell-hip-thrust' && holdsDumbbell(id));
+    // 다시 묻힌 적이 있는 것들은 꼭 들어 있어야 한다
+    for (const id of ['incline-dumbbell-curl', 'triceps-kickback', 'dumbbell-bent-over-row', 'bulgarian-split-squat', 'hammer-curl', 'step-up', 'walking-lunge', 'farmers-walk', 'dumbbell-romanian-deadlift', 'dumbbell-sumo-squat', 'front-raise']) {
+      assert.ok(ids.includes(id), `${id}가 덤벨 종목 목록에 없다`);
+    }
+    for (const id of ids) {
       for (const fault of [undefined, ...faultsFor(ex(id))]) {
         for (const { t, frame } of dense(clipOf(id, fault))) {
           const b = frame.solved.bones;

@@ -813,7 +813,8 @@ export function raise(id: string, kind: RaiseKind, fault?: string): Clip {
   const pose = (elev: number, extra: Partial<Pose3> = {}, p = plane): Pose3 => uni
     ? { ...body, armL: { ik: [0.47, 1.1, 0.12], pole: [1, -0.4, -0.6], hand: [0, 1, 0] }, armR: arm(elev, p), ...extra }
     : { ...body, armL: arm(elev, p), armR: arm(elev, p), ...extra };
-  const low = uni ? pose(18, {}, -26) : pose(12);
+  // 앞으로 올리기는 덤벨이 넓적다리 앞에서 출발한다 — 조금 띄워(14°) 원판이 넓적다리에 묻히지 않게
+  const low = uni ? pose(18, {}, -26) : pose(front ? 14 : 12);
   const high = pose(front ? 90 : 86);
   const list = liftKeys(low, high, [front ? '앞으로 올리기' : '옆으로 올리기', '어깨 높이', '천천히 내리기']);
   if (fault === 'shrug') swap(list, [1, 2], '어깨가 으쓱', pose(86, { scap: [1, 0], neck: 4 }));
@@ -947,6 +948,12 @@ export function curl(id: string, kind: CurlKind, fault?: string): Clip {
       scene = flatBench(-0.85, 0.08, 0.45);
       break;
     }
+    case 'hammer':
+      body = standing();
+      // 덤벨이 앞뒤로 눕는다 — 늘어뜨린 팔은 옆으로 조금 벌려(면 50°, 9°) 뒤쪽 원판이 넓적다리 옆을 스치지 않게
+      arm = (elbow: number, elev = 6): ArmSpec => ({ fk: [elbow < 60 ? 50 : 4, elev, 0, elbow], turn });
+      lowElev = 9;
+      break;
     default:
       body = standing();
   }

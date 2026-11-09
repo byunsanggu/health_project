@@ -263,6 +263,25 @@ describe('와드 한 판', () => {
       '켜면 바벨 한 자리는 확보된다');
   });
 
+  it('바벨을 끄면 랜드마인 프레스 · 힙 쓰러스트처럼 바를 쓰는 동작도 안 들어간다', () => {
+    for (const preset of ['franchise', 'crossfit', 'neighborhood', 'unknown']) {
+      for (const level of ['beginner', 'intermediate', 'advanced'] as const) {
+        for (const allowBarbell of [false, true]) {
+          if (allowBarbell && level !== 'beginner') continue;
+          for (const format of ['amrap', 'forTime', 'emom'] as ConditioningFormat[]) {
+            for (let seed = 0; seed < 40; seed += 1) {
+              const workout = buildConditioning({
+                format, minutes: 20, level, equipmentIds: presetEquipment(preset), allowBarbell, seed,
+              });
+              const bars = workout.movements.filter((m) => exerciseById(m.exerciseId)?.equipment === 'barbell');
+              assert.equal(bars.length, 0, `${preset} ${level} ${format} seed ${seed}: ${bars.map((m) => m.exerciseId).join(', ')}`);
+            }
+          }
+        }
+      }
+    }
+  });
+
   it('초보에게는 켜도 안 열린다', () => {
     // 자세가 무너지는 걸 스스로 못 알아차리는 단계에서 시간에 쫓기게 하면 안 된다.
     const beginner = buildConditioning({ format: 'forTime', minutes: 12, level: 'beginner', equipmentIds: gym, allowBarbell: true });

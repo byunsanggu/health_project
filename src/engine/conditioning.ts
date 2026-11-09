@@ -156,6 +156,11 @@ export function buildConditioning(input: ConditioningInput): ConditioningWorkout
 
   const safe = available
     .filter((exercise) => barbellOn || !UNSAFE_FOR_TIME.has(exercise.id))
+    /*
+     * 바벨을 끄면 바벨을 쓰는 동작은 다 뺀다 — 랜드마인 프레스 · 힙 쓰러스트도 바 하나를 쓴다. 와드 바벨 목록(데드 · 스쿼트 ·
+     * 오버헤드)만 막았더니 "바벨 끔"인데 랜드마인 · 힙 쓰러스트가 계속 나왔다.
+     */
+    .filter((exercise) => barbellOn || exercise.equipment !== 'barbell')
     .filter((exercise) => screenExercise(exercise, pain).action === 'allow')
     .filter((exercise) => {
       // 초보에게는 기술 요구가 높은 동작을 빼고 관절 부하도 낮게 잡는다.
