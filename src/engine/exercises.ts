@@ -360,7 +360,7 @@ export const EXERCISES: readonly Exercise[] = [
   {
     id: 'plank',
     name: '플랭크', nameEn: 'Plank',
-    equipment: 'bodyweight', pattern: 'core', increment: 0,
+    equipment: 'bodyweight', pattern: 'core', increment: 0, measure: 'seconds',
     contribution: { abs: 0.8, glutes: 0.25 },
     jointStress: { shoulder: 0.2, lowBack: 0.15 },
   },
@@ -610,7 +610,7 @@ export const EXERCISES: readonly Exercise[] = [
   },
   {
     id: 'side-plank', name: '사이드 플랭크', nameEn: 'Side Plank',
-    equipment: 'bodyweight', pattern: 'core', increment: 0,
+    equipment: 'bodyweight', pattern: 'core', increment: 0, measure: 'seconds',
     contribution: { abs: 0.9, glutes: 0.3 },
     jointStress: { shoulder: 0.3, lowBack: 0.15 },
   },
@@ -927,6 +927,29 @@ export const EXERCISES: readonly Exercise[] = [
     contribution: { abs: 0.9 },
     jointStress: { lowBack: 0.15, neck: 0.25 },
   },
+  /*
+   * 매트 하나뿐인 초보의 바닥 종목 — 이것들이 없어서 상체 날이 인클라인 푸시업 · 데드버그 두 종목으로 끝났다.
+   * 무릎 푸시업은 바닥 푸시업 전 단계(무릎을 대서 드는 체중이 줄어든다), 버드독은 몸통을 흔들리지 않게 잡는
+   * 힘과 허리 뒤쪽, 슈퍼맨은 엎드려 등 위아래를 같이 쓴다.
+   */
+  {
+    id: 'knee-push-up', name: '무릎 푸시업', nameEn: 'Knee Push-Up',
+    equipment: 'bodyweight', pattern: 'horizontalPush', increment: 0,
+    contribution: { chest: 0.75, triceps: 0.45, frontDelt: 0.35, abs: 0.1 },
+    jointStress: { shoulder: 0.3, wrist: 0.5, elbow: 0.25, knee: 0.1 },
+  },
+  {
+    id: 'bird-dog', name: '버드독', nameEn: 'Bird Dog',
+    equipment: 'bodyweight', pattern: 'core', increment: 0, unilateral: true,
+    contribution: { abs: 0.6, glutes: 0.4, back: 0.25 },
+    jointStress: { lowBack: 0.1, wrist: 0.2, knee: 0.1 },
+  },
+  {
+    id: 'superman', name: '슈퍼맨', nameEn: 'Superman',
+    equipment: 'bodyweight', pattern: 'isolation', increment: 0,
+    contribution: { back: 0.5, glutes: 0.4, rearDelt: 0.3, hamstrings: 0.25 },
+    jointStress: { lowBack: 0.25, neck: 0.1 },
+  },
 ]
 
 /**
@@ -991,6 +1014,34 @@ export function isUnloaded(exercise: Pick<Exercise, 'equipment'>): boolean {
   return exercise.equipment === 'bodyweight' || exercise.equipment === 'band';
 }
 
+/**
+ * 반복이 아니라 버틴 시간(초)으로 세는 종목인가 — 플랭크 · 사이드 플랭크. 세트 기록의 reps가 초다.
+ * 종목 대신 id를 줘도 된다(기록만 있을 때). 모르는 id면 반복 종목으로 본다.
+ */
+export function isTimed(exercise: Pick<Exercise, 'measure'> | string | null | undefined): boolean {
+  const item = typeof exercise === 'string' ? BY_ID.get(exercise) : exercise;
+  return Boolean(item && item.measure === 'seconds');
+}
+
+/** 세는 단위 — 버티는 종목은 '초', 나머지는 '회'. */
+export function countUnit(exercise: Pick<Exercise, 'measure'> | string | null | undefined): '초' | '회' {
+  return isTimed(exercise) ? '초' : '회';
+}
+
+/** "30초" · "10회" — 세트 기록 한 칸. */
+export function countLabel(exercise: Pick<Exercise, 'measure'> | string | null | undefined, count: number): string {
+  return `${Math.max(0, Math.round(count || 0))}${countUnit(exercise)}`;
+}
+
+/** "20~30초" · "8~12회" — 처방 범위. */
+export function countRangeLabel(
+  exercise: Pick<Exercise, 'measure'> | string | null | undefined,
+  range: { min: number; max: number },
+): string {
+  const unit = countUnit(exercise);
+  return range.min === range.max ? `${range.max}${unit}` : `${range.min}~${range.max}${unit}`;
+}
+
 /* ── 다르게 부르는 이름 ──────────────────────────────── */
 
 /**
@@ -1027,6 +1078,10 @@ export const EXERCISE_AKA: Record<string, readonly string[]> = {
   'smith-incline-press': ['스미스 인클라인', '스미스 인클라인 벤치프레스'],
   'smith-shoulder-press': ['스미스 오버헤드 프레스', '스미스 밀리터리 프레스'],
   'crunch': ['복근 크런치', '윗몸 말기'],
+  'knee-push-up': ['니 푸시업', '무릎 대고 푸시업', '무릎 꿇고 푸시업'],
+  'bird-dog': ['버드 독', '네발 팔다리 뻗기'],
+  'superman': ['슈퍼맨 자세', '엎드려 팔다리 들기', '프론 백 익스텐션'],
+  'plank': ['엘보 플랭크', '팔꿈치 플랭크'],
 };
 
 /** 띄어쓰기 · 가운뎃점 · 괄호 · 줄표를 지우고 소문자로 — '덤벨 컬'과 '덤벨컬'이 같은 말이다. */

@@ -78,11 +78,17 @@ export interface Exercise {
   increment: number;
   /** 한쪽씩 하는 종목이면 true (좌우 합산 세트 계산에 쓴다). */
   unilateral?: boolean;
+  /**
+   * 무엇으로 세는가. 없으면 반복 횟수('reps'). 플랭크처럼 버티는 종목은 'seconds' — 처방 범위
+   * (repRange)와 세트 기록(SetLog.reps)이 둘 다 초다. 무게 × 횟수 · 1회 최대 추정에는 넣지 않는다.
+   */
+  measure?: 'reps' | 'seconds';
 }
 
 export interface SetLog {
   exerciseId: string;
   weightKg: number;
+  /** 반복 수. 버티는 종목(Exercise.measure === 'seconds')은 버틴 초 — isTimed()로 가려 읽는다. */
   reps: number;
   /**
    * RIR(Reps In Reserve) = 그 세트에서 더 할 수 있었던 반복 수.

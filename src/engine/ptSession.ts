@@ -304,6 +304,47 @@ export function weightChangedLine(style: CoachStyle, weightKg: number, pounds?: 
   return lines[style];
 }
 
+/**
+ * PT 화면에서 세트 수를 바꿨을 때 — 한 세트 더 · 한 세트 덜 · 이 종목은 여기까지.
+ * totalSets는 바꾼 뒤 이 종목의 세트 수(한 세트 포함).
+ */
+export function setsChangedLine(style: CoachStyle, change: 'more' | 'less' | 'end', totalSets: number): string {
+  const n = Math.max(1, Math.round(totalSets));
+  const lines: Record<'more' | 'less' | 'end', ByStyle<string>> = {
+    more: {
+      tough: `한 세트 더 간다. 모두 ${n}세트.`,
+      energetic: `한 세트 더 가요! 모두 ${n}세트!`,
+      gentle: `세트 하나 더 하겠습니다. 모두 ${n}세트입니다.`,
+      fun: `한 세트 추가요! 모두 ${n}세트.`,
+    },
+    less: {
+      tough: `한 세트 뺀다. 모두 ${n}세트.`,
+      energetic: `한 세트 줄여요! 모두 ${n}세트!`,
+      gentle: `한 세트 줄이겠습니다. 모두 ${n}세트입니다.`,
+      fun: `한 세트 덜어 드려요. 모두 ${n}세트.`,
+    },
+    end: {
+      tough: '이 종목은 여기까지.',
+      energetic: '이번 종목은 여기까지예요!',
+      gentle: '이번 종목은 여기까지 하겠습니다.',
+      fun: '이번 종목은 여기서 마감!',
+    },
+  };
+  return lines[change][style];
+}
+
+/** PT 화면에서 다음 세트 목표 개수를 바꿨을 때. */
+export function repsChangedLine(style: CoachStyle, reps: number): string {
+  const n = Math.max(1, Math.round(reps));
+  const lines: ByStyle<string> = {
+    tough: `목표 ${n}개로 간다.`,
+    energetic: `목표 ${n}개로 바꿨어요!`,
+    gentle: `목표를 ${n}개로 바꾸겠습니다.`,
+    fun: `목표 ${n}개로 변경!`,
+  };
+  return lines[style];
+}
+
 /* ── 종목 이동 ─────────────────────────────────── */
 
 /** 다음 기구로 걸어가서 자리 잡는 데 주는 최소 시간. */

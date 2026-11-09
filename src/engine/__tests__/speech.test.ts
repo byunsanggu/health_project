@@ -10,7 +10,7 @@ import { demoFor } from '../demos.ts';
 import { EXERCISES } from '../exercises.ts';
 import { mistakesFor } from '../mistakes.ts';
 import {
-  COOLDOWN_STEPS, MOBILITY_STEPS, cooldownLine, mobilityLine, restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, weightChangedLine, restSpoken, timeCheck, transitionLines,
+  COOLDOWN_STEPS, MOBILITY_STEPS, cooldownLine, mobilityLine, restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, weightChangedLine, setsChangedLine, repsChangedLine, restSpoken, timeCheck, transitionLines,
   trimLine, warmupRestLine, warmupSetLine,
 } from '../ptSession.ts';
 import { setupFor } from '../setupGuide.ts';
@@ -168,6 +168,8 @@ describe('코치 목소리 조각 목록', () => {
         check(restCheerLine(style, pick(['lastSet', 'half', 'general'] as const), Math.floor(rand() * 9)));
         check(restBreathLine(style, Math.floor(rand() * 9)));
         check(weightChangedLine(style, weight(), pounds));
+        check(setsChangedLine(style, pick(['more', 'less', 'end'] as const), 1 + Math.floor(rand() * 10)));
+        check(repsChangedLine(style, repsMax));
         check(restSpoken(Math.floor(rand() * 400)));
         check(koreanCount(1 + Math.floor(rand() * 40)));
       }

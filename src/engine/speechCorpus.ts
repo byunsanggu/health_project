@@ -19,7 +19,7 @@ import { EXERCISES } from './exercises.ts';
 import { mistakesFor, type MistakeMoment } from './mistakes.ts';
 import {
   COOLDOWN_STEPS, MOBILITY_STEPS, cooldownDoneLine, cooldownLine, cooldownSwitchLine, mobilityDoneLine, mobilityLine,
-  restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, stopHintLine, weightChangedLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
+  restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, stopHintLine, weightChangedLine, setsChangedLine, repsChangedLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from './ptSession.ts';
 import { setupFor } from './setupGuide.ts';
 import { numberInventory, sentences, speechNames, speechPieces } from './speech.ts';
@@ -109,6 +109,9 @@ export function coachTexts(style: CoachStyle): string[] {
     say(restBreathLine(style, at));
   }
   for (const weightKg of [0, 42.5, 60]) say(weightChangedLine(style, weightKg));
+  // PT 화면에서 세트 수 · 목표 개수를 바꿨을 때
+  for (const change of ['more', 'less', 'end'] as const) say(setsChangedLine(style, change, 4));
+  say(repsChangedLine(style, 8));
   for (const pattern of ['squat', 'lunge', 'hinge', 'horizontalPush', 'verticalPush', 'verticalPull', 'horizontalPull', 'isolation', 'core'] as const) {
     for (const at of range(4)) say(formCueLine(style, pattern, at));
   }

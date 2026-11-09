@@ -144,6 +144,12 @@ const APART_BEND = m('elbow-bend', '팔꿈치를 굽혀서 당겨요', '팔꿈�
 const APART_SHRUG = m('shrug', '벌릴 때 어깨가 귀 쪽으로 올라가요', '어깨를 내린 채 가슴을 펴고 벌리세요', '어깨는 내리고', '뒤쪽 어깨 대신 목 옆 근육이 일합니다');
 const KICK_SWING = m('swing', '반동으로 다리를 휘둘러요', '끝에서 1초 멈췄다 천천히 돌아오세요', '천천히', '엉덩이 대신 반동이 다리를 올립니다');
 const FLY_DEEP = m('too-deep', '팔이 몸통보다 한참 아래로 내려가요', '팔이 몸통 높이에 오면 멈추세요', '몸통 높이까지', '어깨 앞쪽이 과하게 늘어나 다칩니다', true);
+// 매트 초보 종목
+const KNEE_PU_HIPS = m('hips-back', '엉덩이가 뒤로 빠져요', '머리부터 무릎까지 일자로 내려가세요', '몸은 일자로', '가슴 대신 어깨만 일합니다');
+const BIRD_ARCH = m('back-arch', '다리를 들 때 허리가 꺾여요', '다리는 엉덩이 높이까지만 뻗으세요', '엉덩이 높이까지', '허리 뒤쪽이 눌립니다');
+const BIRD_TILT = m('hip-tilt', '골반이 한쪽으로 기울어요', '골반을 바닥과 나란히 두고 천천히 뻗으세요', '골반은 수평으로', '몸통을 잡는 힘이 빠집니다');
+const SUPER_NECK = m('neck', '고개를 들어 앞을 봐요', '시선은 바닥에 두고 목을 길게 두세요', '시선은 바닥', '목 뒤가 꺾여 아픕니다');
+const SUPER_HIGH = m('too-high', '팔다리를 너무 높이 차올려요', '바닥에서 살짝만 들고 1초 멈추세요', '살짝만', '허리가 과하게 꺾입니다');
 const CRUNCH_SITUP = m('sit-up', '허리까지 들어 윗몸일으키기가 돼요', '어깨만 띄우고 허리는 바닥에 붙이세요', '어깨만', '배 대신 고관절 앞 근육이 당깁니다');
 
 /**
@@ -291,6 +297,9 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'smith-incline-press': [PRESS_SHRUG, ELBOW_FLARE, BENCH_BUTT],
   'smith-shoulder-press': [SEATED_ARCH, PRESS_HALF],
   'crunch': [NECK_PULL, CRUNCH_SITUP],
+  'knee-push-up': [KNEE_PU_HIPS, ELBOW_FLARE],
+  'bird-dog': [BIRD_ARCH, BIRD_TILT],
+  'superman': [SUPER_NECK, SUPER_HIGH],
 };
 
 /** 종목별 목록이 없을 때 동작 패턴의 기본. */

@@ -341,6 +341,10 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'smith-incline-press': ['smith-machine', 'bench-incline'],
   'smith-shoulder-press': ['smith-machine', 'bench-incline'],
   'crunch': ['floor'],
+  // 매트 하나로 하는 초보 종목
+  'knee-push-up': ['floor'],
+  'bird-dog': ['floor'],
+  'superman': ['floor'],
 };
 
 /**
