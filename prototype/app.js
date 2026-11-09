@@ -163,6 +163,15 @@
   }
 
   /*
+   * 휴식 끝 소리(<audio>)는 화면이 꺼져 있을 때만 튼다 — 화면이 켜진 채 틀면 폰이 이 앱을 음악 앱으로 보고
+   * 듣던 음악(스포티파이 · 유튜브 뮤직)을 멈췄다("1세트 끝나면 노래가 끊겨"). 화면이 꺼지는 순간 틀고
+   * (visibilitychange), 돌아오면 끈다. 화면이 켜진 채 끝나면 Web Audio로 띵(RestSound.chime).
+   */
+  function pageHidden() {
+    return document.visibilityState === 'hidden';
+  }
+
+  /*
    * 첫 터치 때 재생기를 깨운다. 브라우저는 손으로 누른 순간에만 소리를 틀게
    * 하는데, PT의 휴식은 세기가 끝나면 저절로 시작된다 — 그때도 울리게.
    */
@@ -292,6 +301,7 @@
         voiceRate: state.voiceRate,
         ptRateByExercise: state.ptRateByExercise,
         restGuide: state.restGuide,
+        restTalk: state.restTalk,
         setMotion: state.setMotion,
         reportSeenWeek: state.reportSeenWeek,
         lastSyncedAt: state.lastSyncedAt,
@@ -397,6 +407,7 @@
       state.voiceRate = nearestRate(settings.voiceRate || 1);
       state.ptRateByExercise = settings.ptRateByExercise || {};
       state.restGuide = settings.restGuide !== false;
+      state.restTalk = settings.restTalk === 'more' || settings.restTalk === 'less' ? settings.restTalk : 'normal';
       state.setMotion = settings.setMotion !== false;
       state.reportSeenWeek = settings.reportSeenWeek || null;
       state.lastSyncedAt = settings.lastSyncedAt || null;
@@ -811,6 +822,7 @@
     ptRateByExercise: {},
     /* PT — 쉬는 동안 다음 운동 하는 법을 보여 주고 말해 준다 */
     restGuide: true,
+    restTalk: 'normal',
     /* PT — 세트 · 워밍업 하는 동안 그 운동 동작을 화면에 */
     setMotion: true,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
@@ -2251,7 +2263,7 @@
     // 화면은 켜두고, 알림은 워커에 맡긴다 — 주머니에 넣어도 손목까지 간다.
     acquireWakeLock();
     // 폰을 잠가도 휴식 끝에 울린다 — 무음 + 알림음을 틀어 둔다
-    if (restSoundOn()) RestSound.start(seconds, '다음 · ' + nextText);
+    if (restSoundOn() && pageHidden()) RestSound.start(seconds, '다음 · ' + nextText);
     if (state.restAlerts !== false) notifyWorker({
       type: 'rest:start',
       endsAt: state.rest.endsAt,
@@ -2279,7 +2291,7 @@
     state.rest.endsAt += seconds * 1000;
     // 진행 막대가 100%를 넘지 않게 총량도 같이 줄인다.
     state.rest.total = Math.max(restRemaining(), state.rest.total + seconds);
-    if (restSoundOn()) RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
+    if (restSoundOn() && pageHidden()) RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
     // 알림을 끈 사람에게는 늘린 휴식 알림도 보내지 않는다
     if (state.restAlerts !== false) notifyWorker({
       type: 'rest:start',
@@ -2371,7 +2383,8 @@
       pushLog('휴식 완료', '<b>' + state.rest.exerciseName + '</b> ' + state.rest.setNumber +
         '세트 후 휴식이 끝났습니다. 다음 세트를 시작하세요.');
       buzz([220, 120, 220]);
-      // 알림음이 지금 울리는 중이다 — 끊지 않는다
+      // 화면이 켜진 채 끝났으면 Web Audio로 띵(음악을 멈추지 않는다). 꺼져 있었으면 알림음이 지금 울리는 중이다 — 끊지 않는다
+      if (!pageHidden() && restSoundOn() && RestSound.chime) RestSound.chime();
       stopRest(true);
       renderLog();
     }
@@ -2419,8 +2432,14 @@
         }
         render();
       }
+      // 코치 소리 파일을 틀지 않았으면, 쉬는 중일 때 휴식 끝 소리를 지금 튼다(화면이 꺼진 동안만)
+      if (state.rest && restSoundOn() && restRemaining() > 0 && !(state.ptRun && state.ptRun.lock)) {
+        RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
+      }
       return;
     }
+    // 화면이 켜졌다 — 휴식 끝 소리는 끈다. 코치 소리 파일을 틀던 중이면 catchUpLock이 자리를 읽고 끈다
+    if (typeof RestSound !== 'undefined' && !(ptOn() && state.started && state.ptRun && state.ptRun.lock)) RestSound.stop();
     if (ptOn() && state.started && state.ptRun && state.ptRun.lock) {
       catchUpLock();
       acquireWakeLock();
@@ -7473,7 +7492,7 @@
       if (next >= 0) state.liftCursor = next;
       if (state.rest && state.rest.exerciseId === lift.exercise.id) {
         state.rest.next = next >= 0 ? state.lifts[next].exercise.name : '마무리';
-        if (typeof RestSound !== 'undefined' && restSoundOn()) RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
+        if (restSoundOn() && pageHidden()) RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
       }
     }
     persist();
@@ -7675,10 +7694,8 @@
         return;
       }
     }
-    if (!rest.guide && !rest.tipSaid && quiet && rest.total >= E.TIP_MIN_REST_SECONDS && remaining <= rest.total / 2) {
-      rest.tipSaid = true;
-      coachSay([E.restTipLine(state.coach.style, rest.setNumber + state.liftCursor * 2)]);
-    }
+    // 같은 종목 세트 사이 — 방금 세트 이야기 · 다음 세트 포인트 · 격려 · 숨 고르기(내 정보 "쉬는 동안 코치 말")
+    if (!rest.guide && !rest.tipSaid && Date.now() >= (rest.talkEnds || 0) + 1500 && restTalkStep(rest, remaining)) return;
     if (!rest.preSaid && remaining > 0) {
       var plan = preSetSpeech(rest);
       if (!plan) rest.preSaid = true;
@@ -7697,6 +7714,90 @@
       rest.readySaid = true;
       coachSay([E.readySoonLine(state.coach.style, rest.setNumber + state.liftCursor)]);
     }
+  }
+
+  /**
+   * 쉬는 동안 코치 말 하나 — 때가 된 것 중 첫 번째를, 다음 세트 전 말(끝)과 겹치지 않을 때만.
+   * 말했으면 true. 종목이 바뀌는 휴식(다음 종목 안내 · 하는 법이 있다)에서는 방금 세트 이야기 · 다음 세트
+   * 포인트를 하지 않는다 — "다음 세트는 자세만"이 그 종목을 마친 뒤에 나오면 안 된다.
+   */
+  function restTalkStep(rest, remaining) {
+    if (!rest.talk) {
+      rest.talk = E.restTalkPlan(state.restTalk || 'normal', rest.total).map(function (item) {
+        return { kind: item.kind, at: item.at, done: false };
+      });
+    }
+    var next = focusSetRef();
+    var switching = !next || next.lift.exercise.id !== rest.exerciseId;
+    var gone = rest.total - remaining;
+    for (var i = 0; i < rest.talk.length; i += 1) {
+      var item = rest.talk[i];
+      if (item.done) continue;
+      if (gone < item.at * rest.total) return false;
+      item.done = true;
+      if (switching && item.kind !== 'cheer' && item.kind !== 'breath') continue;
+      var line = restTalkLine(item.kind, rest, next);
+      if (!line) continue;
+      var plan = preSetSpeech(rest);
+      // 끝에 할 다음 세트 전 말(없으면 "10초 남았습니다")과 4초는 띄운다 — 모자라면 이 말은 건너뛴다
+      if (remaining - spokenSeconds(line) < (plan ? plan.seconds : 12) + 4) continue;
+      var said = coachSay([line]);
+      rest.talkEnds = Date.now() + spokenSeconds(said) * 1000;
+      return true;
+    }
+    return false;
+  }
+
+  /** 쉬는 동안 코치 말의 글 — 종류마다. 할 말이 없으면 ''. */
+  function restTalkLine(kind, rest, next) {
+    var style = state.coach.style;
+    var liftIndex = state.lifts.findIndex(function (item) { return item.exercise.id === rest.exerciseId; });
+    var lift = state.lifts[liftIndex];
+    var at = Math.max(0, liftIndex) + rest.setNumber;
+    if (kind === 'tip') return E.restTipLine(style, rest.setNumber + state.liftCursor * 2);
+    if (kind === 'breath') return E.restBreathLine(style, at);
+    if (kind === 'feedback') {
+      var set = lift && lift.sets[rest.setNumber - 1];
+      if (!set || !set.done) return '';
+      // 지난번보다 더 들었다는 말은 종목마다 한 번
+      var last = null;
+      if (!state.coachSaid[liftIndex + ':heavier'] && !inPounds(lift.exercise.id) && set.weightKg > 0) {
+        var then = E.lastTimeFor(state.history, lift.exercise, state.todayDate, coachScope(lift));
+        if (then && set.weightKg > then.weightKg) { last = then.weightKg; state.coachSaid[liftIndex + ':heavier'] = true; }
+      }
+      return E.restFeedbackLine(style, { reps: set.reps, repsMin: set.targetReps.min, repsMax: set.targetReps.max, weightKg: set.weightKg, lastWeightKg: last, at: at });
+    }
+    if (kind === 'cue' && next) {
+      // 오늘 이 종목에서 아직 안 한 고치는 말 하나 — 없으면 동작 설명(빡센 코치는 짧은 말만), 그것도 없으면 격려
+      var fresh = E.mistakesFor(next.lift.exercise).filter(function (item) { return saidMistakes(next.liftIndex).indexOf(item.id) < 0; })[0];
+      if (fresh) {
+        state.coachSaid[next.liftIndex + ':m:' + fresh.id] = true;
+        return E.restCueLine(style, style === 'tough' ? fresh.short : fresh.cue, at);
+      }
+      var cues = style === 'tough' ? [] : (E.demoFor(next.lift.exercise).cues || []);
+      for (var k = 0; k < cues.length; k += 1) {
+        if (state.coachSaid[next.liftIndex + ':c:' + k]) continue;
+        state.coachSaid[next.liftIndex + ':c:' + k] = true;
+        return E.restCueLine(style, cues[k], at);
+      }
+      kind = 'cheer';
+    }
+    if (kind === 'cheer') {
+      var pt = ensurePtRun();
+      if (next && next.lift.exercise.id === rest.exerciseId && next.setIndex === next.lift.sets.length - 1 && next.lift.sets.length > 1) {
+        return E.restCheerLine(style, 'lastSet', at);
+      }
+      var total = 0;
+      var done = 0;
+      state.lifts.forEach(function (item) { item.sets.forEach(function (one) { total += 1; if (one.done) done += 1; }); });
+      // "절반"은 시간 점검(timeCheck)과 같은 열쇠 — 한 번만 듣는다
+      if (total > 3 && done * 2 >= total && pt.said.indexOf('half') < 0) {
+        pt.said = pt.said.concat(['half']);
+        return E.restCheerLine(style, 'half', at);
+      }
+      return E.restCheerLine(style, 'general', at);
+    }
+    return '';
   }
 
   /**
@@ -7841,6 +7942,16 @@
       { label: '켜기', active: state.restGuide !== false, onSelect: function () { state.restGuide = true; persist(); onChange(); } },
       { label: '끄기', active: state.restGuide === false, onSelect: function () { state.restGuide = false; persist(); onChange(); } },
     ]));
+    // 쉬는 동안 코치가 얼마나 말할지 — 방금 세트 이야기 · 다음 세트 포인트 · 격려 · 숨 고르기
+    box.appendChild(el('div', { class: 'list-label setting-name', text: '쉬는 동안 코치 말' }));
+    box.appendChild(el('p', { class: 'hint-line', text: '많이: 방금 세트 이야기, 다음 세트 포인트, 격려, 긴 휴식엔 숨 고르기까지. 보통: 방금 세트 이야기와 포인트 하나. 적게: 중간에 한마디만.' }));
+    box.appendChild(segmented([['more', '많이'], ['normal', '보통'], ['less', '적게']].map(function (option) {
+      return {
+        label: option[1],
+        active: (state.restTalk || 'normal') === option[0],
+        onSelect: function () { state.restTalk = option[0]; persist(); onChange(); },
+      };
+    })));
     box.appendChild(el('div', { class: 'list-label setting-name', text: '세트 중 동작 그림' }));
     box.appendChild(el('p', { class: 'hint-line', text: '세트 · 워밍업 하는 동안 그 운동 동작을 개수 위에 보여 줍니다. 끄면 개수만 크게 보입니다.' }));
     box.appendChild(segmented([
@@ -7910,7 +8021,7 @@
     }, [
       el('span', {}, [
         el('b', { text: '화면 꺼도 휴식 끝 소리' }),
-        el('span', { class: 'hint-line', text: '폰을 잠가도 휴식이 끝나면 띵 하고 울립니다. 듣던 음악이 잠깐 멈추거나 작아질 수 있어요' }),
+        el('span', { class: 'hint-line', text: '화면을 끄거나 잠갔을 때만 틉니다 — 쉬는 동안 화면이 꺼져 있으면 휴식이 끝날 때 띵 하고 울립니다. 그때는 듣던 음악이 멈출 수 있습니다. 화면이 켜져 있는 동안에는 음악을 멈추지 않습니다.' }),
       ]),
       el('span', { class: 'count-tempo', text: soundOn ? '켜짐' : '꺼짐' }),
     ]));
@@ -9844,8 +9955,8 @@
     // 세트를 적으며 다시 켠 휴식 소리는 끈다 — 이미 지난 휴식이면 다음 종목 중간에 울린다
     if (state.rest && restRemaining() <= 0) { RestSound.stop(); stopRest(true); }
     else if (state.rest) {
-      if (restSoundOn()) RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
-      else RestSound.stop();
+      // 화면이 다시 켜졌다 — 휴식 끝 소리는 끈다(음악을 멈추지 않게). 화면이 또 꺼지면 그때 다시 튼다
+      RestSound.stop();
       // 알림도 실제로 끝나는 시각으로
       if (state.restAlerts !== false) notifyWorker({ type: 'rest:start', endsAt: state.rest.endsAt, body: '휴식이 끝났습니다.' });
     }
@@ -10156,15 +10267,18 @@
         leadNum(state.counting.leadLeft),
         el('span', { class: 'focus-of', text: '목표 ' + repsText(ref.set.targetReps) }),
       ]));
+      // 무게 — 준비 중에는 − / + 로 바꾸고, 세기 시작하면 보기만
       middle.appendChild(el('div', { class: 'focus-what' }, [
         el('b', { text: (ref.setIndex + 1) + '세트' }),
-        el('span', { text: ' / ' + ref.lift.sets.length + ' · ' + loadText(ref.lift, ref.set.weightKg) + ' × ' + repsText(ref.set.targetReps) }),
+        el('span', { text: ' / ' + ref.lift.sets.length + ' · ' }),
+        ptWeightRow(ref.liftIndex, ref.setIndex, rep === 0),
       ]));
       // PT로 처음 세는 세트 — 다 못 하면 "여기까지"를 누르라는 말을 화면에도
       if (state.ptStopHint === ref.liftIndex + ':' + ref.setIndex) {
         middle.appendChild(el('div', { class: 'focus-hint', text: '다 못 하면 "여기까지"를 누르세요 — 누른 개수까지 적습니다.' }));
       }
-      middle.appendChild(el('div', { class: 'focus-next', text: nextUpLine(ref.liftIndex, ref.setIndex) }));
+      // 준비 중에는 무게 칸이 한 줄을 더 쓴다 — "다음 · …"은 세기 시작하면 보인다
+      if (rep > 0) middle.appendChild(el('div', { class: 'focus-next', text: nextUpLine(ref.liftIndex, ref.setIndex) }));
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn pt-pause', text: 'Ⅱ 일시정지',
         onclick: function () { pausePt(null); render(); } }));
       if (rep > 0) {
@@ -10207,9 +10321,9 @@
       var soon = el('div', { class: 'focus-soon', text: restSoon() ? '곧 시작합니다 · 더 쉬려면 +30초' : '' });
       var what = el('div', { class: 'focus-what' }, [
         el('b', { text: '쉬고 → ' + (state.rest.next || '다음') }),
-        nextSet ? el('span', { text: ' · ' + (switching
-          ? nextLift.sets.filter(function (one) { return !one.done; }).length + '세트 · '
-          : '') + loadText(nextLift, nextSet.weightKg) + ' × ' + repsText(nextSet.targetReps) }) : null,
+        nextSet && switching ? el('span', { text: ' · ' + nextLift.sets.filter(function (one) { return !one.done; }).length + '세트' }) : null,
+        // 다음 세트 무게 — 쉬는 동안 여기서 바로 바꾼다
+        nextSet ? ptWeightRow(ref.liftIndex, ref.setIndex, true) : null,
       ]);
       if (guideBox) {
         middle.classList.add('with-guide');
@@ -10373,6 +10487,81 @@
       num.textContent = '시작';
       num.classList.add('wide');
     }
+  }
+
+  /**
+   * PT 화면의 다음 세트 무게 — 쉬는 동안 · 준비 중에는 − / + 로 한 칸씩(그 기구에서 만들 수 있는 무게로),
+   * 숫자를 누르면 직접 친다. 바꾸면 이 세트와 아래 안 한 세트가 같이 바뀌고(carryForward), 코치가 말하는
+   * 무게도 바뀐다. 세는 중에는 보기만 — 고치려면 다음 휴식에서.
+   */
+  function ptWeightRow(liftIndex, setIndex, editable) {
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set) return null;
+    var label = loadText(lift, set.weightKg);
+    var tail = ' × ' + repsText(set.targetReps);
+    var unloaded = !(set.weightKg > 0) && E.isUnloaded(lift.exercise);
+    if (!editable || unloaded || set.done) return el('span', { class: 'pt-weight-text', text: label + tail });
+    var key = liftIndex + ':' + setIndex;
+    var pounds = inPounds(lift.exercise.id);
+    var now = state.ptWeightEdit === key
+      ? el('input', {
+        type: 'number', class: 'pt-weight-input', inputmode: 'decimal', step: 'any', min: '0',
+        value: String(pounds ? Math.round(E.kgToLb(set.weightKg)) : set.weightKg),
+        'aria-label': '이 세트 무게(' + (pounds ? 'lb' : 'kg') + ')',
+        onchange: function (event) {
+          state.ptWeightEdit = null;
+          var before = set.weightKg;
+          editSetInline(liftIndex, setIndex, 'weight', event.target.value);
+          if (set.weightKg !== before) ptWeightChanged(liftIndex, setIndex);
+        },
+        onblur: function () { if (state.ptWeightEdit === key) { state.ptWeightEdit = null; renderFocus(); } },
+      })
+      : el('button', { type: 'button', class: 'pt-weight-now', text: label,
+        'aria-label': label + ' — 눌러서 무게를 직접 칩니다',
+        onclick: function () {
+          state.ptWeightEdit = key;
+          renderFocus();
+          var input = focusHost.querySelector('.pt-weight-input');
+          if (input) { input.focus(); input.select(); }
+        } });
+    var step = function (dir) {
+      return function () {
+        var kg = lift.loading ? E.neighborLoad(set.weightKg, lift.loading, dir)
+          : Math.max(0, Math.round((set.weightKg + dir * (lift.exercise.increment > 0 ? lift.exercise.increment : 2.5)) * 100) / 100);
+        if (Math.abs(kg - set.weightKg) < 0.001) return;
+        setWeight(liftIndex, setIndex, kg);
+        rememberEdit(lift, setIndex, 'weightKg', set.weightKg);
+        persist();
+        ptWeightChanged(liftIndex, setIndex);
+      };
+    };
+    return el('div', { class: 'pt-weight' }, [
+      el('button', { type: 'button', class: 'pt-weight-step', text: '−', 'aria-label': '무게 한 칸 내리기', onclick: step(-1) }),
+      now,
+      el('button', { type: 'button', class: 'pt-weight-step', text: '+', 'aria-label': '무게 한 칸 올리기', onclick: step(1) }),
+      el('span', { class: 'pt-weight-reps', text: tail }),
+    ]);
+  }
+
+  /**
+   * 무게를 바꾼 뒤 — 세트 전 말을 이미 했으면(쉬는 동안 미리 · 준비 중) 바뀐 무게를 짧게 다시 말한다.
+   * 여러 번 누르는 동안은 기다렸다가 마지막 무게로 한 번. 아직 안 했으면 세트 전 말이 새 무게로 나온다.
+   */
+  function ptWeightChanged(liftIndex, setIndex) {
+    state.lockTrack = null;
+    if (state.rest) state.rest.pre = null;
+    var counting = state.counting && state.counting.liftIndex === liftIndex && state.counting.setIndex === setIndex;
+    if (!ptOn() || !(counting || state.coachSaid[liftIndex + ':' + setIndex + ':before'])) return;
+    if (state.ptWeightTimer) clearTimeout(state.ptWeightTimer);
+    state.ptWeightTimer = setTimeout(function () {
+      state.ptWeightTimer = null;
+      var lift = state.lifts[liftIndex];
+      var set = lift && lift.sets[setIndex];
+      if (!set || set.done || !ptOn()) return;
+      var said = coachSay([E.weightChangedLine(state.coach.style, set.weightKg, inPounds(lift.exercise.id))]);
+      if (state.rest) state.rest.talkEnds = Date.now() + spokenSeconds(said) * 1000;
+    }, 1200);
   }
 
   /** 쉬는 동안 — 방금 적은 세트 한 줄. "고치기"를 누르면 그 자리에서 개수만 고친다. */

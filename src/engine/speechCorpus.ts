@@ -19,7 +19,7 @@ import { EXERCISES } from './exercises.ts';
 import { mistakesFor, type MistakeMoment } from './mistakes.ts';
 import {
   COOLDOWN_STEPS, MOBILITY_STEPS, cooldownDoneLine, cooldownLine, cooldownSwitchLine, mobilityDoneLine, mobilityLine,
-  restAnnounceLine, stopHintLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
+  restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, stopHintLine, weightChangedLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from './ptSession.ts';
 import { setupFor } from './setupGuide.ts';
 import { numberInventory, sentences, speechNames, speechPieces } from './speech.ts';
@@ -91,7 +91,24 @@ export function coachTexts(style: CoachStyle): string[] {
     // PT 첫 워밍업 앞 — 이름 · 세팅 순서
     say(liftNameLine(style, exercise.name));
     say(setupLines(style, setupFor(exercise)));
+    // 쉬는 동안 다음 세트 포인트 — 빡센 코치는 짧은 말, 나머지는 고치는 말 · 동작 설명
+    for (const at of range(2)) {
+      if (style === 'tough') for (const mistake of mistakes) say(restCueLine(style, mistake.short, at));
+      else {
+        for (const mistake of mistakes) say(restCueLine(style, mistake.cue, at));
+        for (const cue of cues) say(restCueLine(style, cue, at));
+      }
+    }
   }
+  // 쉬는 동안 — 방금 세트 이야기 · 격려 · 숨 고르기
+  for (const at of range(3)) {
+    for (const reps of [3, 8, 10, 12]) {
+      for (const lastWeightKg of [null, 57.5, 55]) say(restFeedbackLine(style, { reps, repsMin: 8, repsMax: 10, weightKg: 60, lastWeightKg, at }));
+    }
+    for (const kind of ['lastSet', 'half', 'general'] as const) say(restCheerLine(style, kind, at));
+    say(restBreathLine(style, at));
+  }
+  for (const weightKg of [0, 42.5, 60]) say(weightChangedLine(style, weightKg));
   for (const pattern of ['squat', 'lunge', 'hinge', 'horizontalPush', 'verticalPush', 'verticalPull', 'horizontalPull', 'isolation', 'core'] as const) {
     for (const at of range(4)) say(formCueLine(style, pattern, at));
   }

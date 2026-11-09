@@ -52,6 +52,11 @@ export default async function ({ page, url, shot }) {
   await page.locator('#focus .focus-fix', { hasText: '확인' }).click();
   await shot('1-rest-logged');
 
+  // 쉬는 동안 코치가 방금 세트 이야기를 한다(보통) — 세트 뒤 말이 끝난 다음에
+  await page.clock.runFor(20000);
+  const restTalk = await page.evaluate(() => window.__said.join(' '));
+  check(/목표 \d+개 중|다 채우셨습니다|목표 안에|마지막 두 개/.test(restTalk), '쉬는 동안 방금 세트 이야기를 안 했습니다: ' + restTalk.slice(-200));
+
   // 쉬는 중에도 일시정지 — 멈춰 두면 휴식이 끝나도 다음 세트를 세지 않는다
   await page.locator('#focus .focus-btn', { hasText: '일시정지' }).click();
   check(await focusPhase(page) === 'paused', '쉬는 중에 멈추지 않았습니다');

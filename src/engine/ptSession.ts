@@ -144,6 +144,166 @@ export function restAnnounceLine(
   return `${lines[style]} ${more[style]}`;
 }
 
+/* ── 쉬는 동안 코치 말 ───────────────────────────── */
+
+/*
+ * 쉬는 동안 트레이너는 가만히 있지 않는다 — 방금 세트가 어땠는지, 다음 세트에 하나만 생각할 것,
+ * 힘내라는 말, 숨 고르는 법. 다만 한 번에 몰아 말하지 않고 휴식 사이사이에 하나씩(앱이 시간을 나눈다).
+ * 같은 자리에서 같은 말이 연달아 나오지 않게 순번(at)으로 돌려 쓴다.
+ */
+
+function pickAt<T>(lines: readonly T[], at: number): T {
+  return lines[Math.abs(Math.round(at)) % lines.length] as T;
+}
+
+/** 0.5kg 단위로 — 1.25kg 같은 작은 원판 차이는 말로 하면 알아듣기 어렵고, 소리 조각도 없다. */
+function kgWords(value: number): string {
+  return `${Math.round(value * 2) / 2}kg`;
+}
+
+export interface RestFeedbackInput {
+  /** 방금 한 개수 */
+  reps: number;
+  repsMin: number;
+  repsMax: number;
+  /** 이번 무게와 지난번 같은 종목 최고 무게 — 더 들었으면 그걸 말한다(종목마다 한 번, 앱이 정한다) */
+  weightKg?: number;
+  lastWeightKg?: number | null;
+  at?: number;
+}
+
+const FEEDBACK_TOP: ByStyle<readonly ((reps: number, max: number) => string)[]> = {
+  tough: [(r, m) => `목표 ${m}개 중 ${r}개. 깔끔했어.`, (r) => `${r}개, 다 채웠다. 좋아.`],
+  energetic: [(r, m) => `목표 ${m}개 중 ${r}개! 완전 깔끔했어요!`, (r) => `${r}개 다 채웠어요! 좋아요!`],
+  gentle: [(r, m) => `목표 ${m}개 중 ${r}개, 깔끔했습니다.`, (r) => `${r}개 다 채우셨습니다. 아주 좋았습니다.`],
+  fun: [(r, m) => `목표 ${m}개 중 ${r}개! 만점이에요.`, (r) => `${r}개 다 채웠어요. 오늘 근육이 일 잘하네요.`],
+};
+const FEEDBACK_IN: ByStyle<readonly ((reps: number) => string)[]> = {
+  tough: [(r) => `${r}개. 마지막 두 개 힘들었는데 잘 버텼어.`, (r) => `${r}개, 목표 안이다. 잘했어.`],
+  energetic: [(r) => `${r}개! 마지막 두 개 힘들었는데 잘 버텼어요!`, (r) => `${r}개, 목표 안에 들어왔어요!`],
+  gentle: [(r) => `${r}개. 마지막 두 개 힘들어 보였는데 잘 버티셨습니다.`, (r) => `${r}개, 목표 안에 잘 들어왔습니다.`],
+  fun: [(r) => `${r}개. 마지막 두 개, 표정은 힘들었는데 몸은 버텼어요.`, (r) => `${r}개, 목표 안이에요. 합격!`],
+};
+const FEEDBACK_SHORT: ByStyle<readonly ((reps: number) => string)[]> = {
+  tough: [(r) => `${r}개. 오늘 무게가 셌다. 다음은 자세만 지켜.`],
+  energetic: [(r) => `${r}개! 오늘 무게가 셌어요. 다음 세트는 자세만 지켜요!`],
+  gentle: [(r) => `${r}개. 오늘 무게가 조금 무거웠습니다. 다음 세트는 자세만 지키시면 됩니다.`],
+  fun: [(r) => `${r}개. 오늘은 무게가 좀 셌어요. 다음 세트는 자세만 챙겨요.`],
+};
+const HEAVIER: ByStyle<(kg: string) => string> = {
+  tough: (kg) => `지난번보다 ${kg} 더 들었다.`,
+  energetic: (kg) => `지난번보다 ${kg} 더 들었어요!`,
+  gentle: (kg) => `지난번보다 ${kg} 더 드셨습니다.`,
+  fun: (kg) => `지난번보다 ${kg} 더 들었어요. 몰래 강해지는 중!`,
+};
+
+/**
+ * 방금 세트에 대한 한마디 — 목표 대비 개수, 지난번보다 더 들었으면 그것.
+ * "마지막 두 개 힘들어 보였는데"는 목표 위쪽을 못 채웠을 때만. 목표 아래면 "깔끔"이라고 하지 않는다.
+ */
+export function restFeedbackLine(style: CoachStyle, input: RestFeedbackInput): string {
+  const at = input.at ?? 0;
+  const lines: string[] = [];
+  if (input.reps >= input.repsMax) lines.push(pickAt(FEEDBACK_TOP[style], at)(input.reps, input.repsMax));
+  else if (input.reps >= input.repsMin) lines.push(pickAt(FEEDBACK_IN[style], at)(input.reps));
+  else lines.push(pickAt(FEEDBACK_SHORT[style], at)(input.reps));
+  const diff = input.lastWeightKg && input.weightKg ? input.weightKg - input.lastWeightKg : 0;
+  if (Math.round(diff * 2) / 2 > 0) lines.push(HEAVIER[style](kgWords(diff)));
+  return lines.join(' ');
+}
+
+const CUE_HEAD: ByStyle<readonly string[]> = {
+  tough: ['다음 세트, 이것만 생각해.', '다음 세트 포인트.'],
+  energetic: ['다음 세트 포인트 하나!', '다음 세트는 이것만 기억해요!'],
+  gentle: ['다음 세트에서는 이것 하나만 생각하세요.', '다음 세트 포인트 하나만 말씀드리겠습니다.'],
+  fun: ['다음 세트 필기 하나만 해요.', '다음 세트 비밀 하나 알려 드릴게요.'],
+};
+
+/**
+ * 다음 세트에 생각할 것 하나. cue는 그 종목의 고치는 말(존댓말 문장) — 빡센 코치는 반말이라
+ * 짧은 말(short, "어깨는 내리고")을 준다. 앱이 오늘 아직 안 한 것을 고른다.
+ */
+export function restCueLine(style: CoachStyle, cue: string, at = 0): string {
+  const text = cue.trim().replace(/[.!?]+$/, '');
+  return `${pickAt(CUE_HEAD[style], at)} ${text}${style === 'gentle' ? '.' : '!'}`;
+}
+
+export type RestCheer = 'lastSet' | 'half' | 'general';
+
+const CHEER: ByStyle<Record<RestCheer, readonly string[]>> = {
+  tough: {
+    lastSet: ['다음이 이 종목 마지막이다. 하나만 더 쏟아.'],
+    half: ['벌써 반 왔다. 여기서부터 차이가 난다.'],
+    general: ['좋아. 이 페이스 그대로 간다.', '잘 버티고 있어. 계속 가.', '오늘 몸 잘 쓰고 있다.'],
+  },
+  energetic: {
+    lastSet: ['다음이 이 종목 마지막 세트예요! 한 세트만 더 힘내요!'],
+    half: ['벌써 반 왔어요! 너무 잘하고 있어요!'],
+    general: ['지금 페이스 최고예요!', '진짜 잘하고 있어요! 그대로 가요!', '자세 점점 좋아지고 있어요!'],
+  },
+  gentle: {
+    lastSet: ['다음이 이 종목 마지막 세트입니다. 한 세트만 더 힘내시죠.'],
+    half: ['벌써 오늘 운동 반 오셨습니다.'],
+    general: ['지금 페이스 아주 좋습니다.', '꾸준히 잘하고 계십니다. 그대로만 가시죠.', '자세가 점점 안정되고 있습니다.'],
+  },
+  fun: {
+    lastSet: ['다음이 이 종목 마지막 세트예요. 끝이 보여요!'],
+    half: ['벌써 반 왔어요. 이제 내리막이에요.'],
+    general: ['지금 페이스면 헬스장 에이스예요.', '잘하고 있어요. 거울이 감탄 중이에요.', '근육이 지금 출석 체크 완료했어요.'],
+  },
+};
+
+/** 힘내라는 말 — 이 종목 마지막 세트 앞, 오늘 절반, 그 밖에는 돌려 쓰는 격려. */
+export function restCheerLine(style: CoachStyle, kind: RestCheer, at = 0): string {
+  return pickAt(CHEER[style][kind], at);
+}
+
+const BREATHE: ByStyle<readonly string[]> = {
+  tough: ['코로 4초 마시고, 입으로 6초 내쉬어.', '어깨 힘 빼고 숨 길게.', '물 한 모금. 심박 내리고 간다.'],
+  energetic: ['코로 4초 들이쉬고, 입으로 6초 내쉬어요!', '어깨 힘 빼고 숨 길게 쉬어요!', '물 한 모금 마시고 심박 내려요!'],
+  gentle: ['코로 4초 들이마시고, 입으로 6초 길게 내쉬어 보세요.', '어깨 힘 빼고, 숨을 천천히 길게 쉬세요.', '물 한 모금 드시고, 심박을 천천히 내려 보세요.'],
+  fun: ['코로 4초 들이쉬고, 입으로 6초 내쉬어요. 명상 타임이에요.', '어깨 힘 빼요. 지금은 쉬는 게 일이에요.', '물 한 모금! 심박한테도 쉬는 시간 줘요.'],
+};
+
+/** 긴 휴식의 숨 · 회복 한마디. */
+export function restBreathLine(style: CoachStyle, at = 0): string {
+  return pickAt(BREATHE[style], at);
+}
+
+/** 쉬는 동안 코치 말의 양 — 내 정보에서 고른다. 적게는 예전처럼 중간에 한마디만. */
+export type RestTalk = 'more' | 'normal' | 'less';
+
+export type RestTalkKind = 'feedback' | 'cue' | 'cheer' | 'breath' | 'tip';
+
+/**
+ * 쉬는 동안 무엇을 어느 순서로 말할지 — 휴식 길이와 말의 양으로.
+ *   · 45초 밑: 한마디만(보통 · 많이는 방금 세트 이야기, 적게는 없음).
+ *   · 적게: 중간에 한마디(조언 · 격려).
+ *   · 보통: 세트 직후 방금 세트 이야기 → 중간에 자세 하나(없으면 격려).
+ *   · 많이: 방금 세트 → 자세 하나 → 격려 → (90초 넘으면) 숨 고르기.
+ * at은 휴식의 몇 % 지점에서 하는지(0이면 세트 뒤 말이 끝나자마자). 끝에는 다음 세트 전 말이 따로 있다.
+ */
+export function restTalkPlan(level: RestTalk, restSeconds: number): { kind: RestTalkKind; at: number }[] {
+  if (restSeconds < 45) return level === 'less' ? [] : [{ kind: 'feedback', at: 0 }];
+  if (level === 'less') return restSeconds >= 60 ? [{ kind: 'tip', at: 0.5 }] : [];
+  if (level === 'normal') return [{ kind: 'feedback', at: 0 }, { kind: 'cue', at: 0.45 }];
+  const plan: { kind: RestTalkKind; at: number }[] = [{ kind: 'feedback', at: 0 }, { kind: 'cue', at: 0.3 }, { kind: 'cheer', at: 0.5 }];
+  if (restSeconds >= 90) plan.push({ kind: 'breath', at: 0.65 });
+  return plan;
+}
+
+/** PT 화면에서 무게를 바꿨을 때 — 세트 전 말을 이미 했으면 바뀐 무게를 짧게 다시 말한다. */
+export function weightChangedLine(style: CoachStyle, weightKg: number, pounds?: boolean): string {
+  const w = load(weightKg, pounds);
+  const lines: ByStyle<string> = {
+    tough: `무게 바꾼다. ${w}.`,
+    energetic: `무게 바꿨어요! ${w}!`,
+    gentle: `무게를 바꾸겠습니다. ${w}.`,
+    fun: `무게 변경! ${w}.`,
+  };
+  return lines[style];
+}
+
 /* ── 종목 이동 ─────────────────────────────────── */
 
 /** 다음 기구로 걸어가서 자리 잡는 데 주는 최소 시간. */

@@ -10,7 +10,7 @@ import { demoFor } from '../demos.ts';
 import { EXERCISES } from '../exercises.ts';
 import { mistakesFor } from '../mistakes.ts';
 import {
-  COOLDOWN_STEPS, MOBILITY_STEPS, cooldownLine, mobilityLine, restAnnounceLine, restSpoken, timeCheck, transitionLines,
+  COOLDOWN_STEPS, MOBILITY_STEPS, cooldownLine, mobilityLine, restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, weightChangedLine, restSpoken, timeCheck, transitionLines,
   trimLine, warmupRestLine, warmupSetLine,
 } from '../ptSession.ts';
 import { setupFor } from '../setupGuide.ts';
@@ -160,6 +160,14 @@ describe('코치 목소리 조각 목록', () => {
         check(mobilityLine(style, pick(MOBILITY_STEPS), Math.floor(rand() * 2), 6, 1 + Math.floor(rand() * 6)));
         check(cooldownLine(style, pick(COOLDOWN_STEPS), Math.floor(rand() * 2), 6));
         check(exerciseGuideLines(style, exercise));
+        check(restFeedbackLine(style, { reps: 1 + Math.floor(rand() * 25), repsMin, repsMax, weightKg: weight(), lastWeightKg: rand() < 0.5 ? weight() : null, at: Math.floor(rand() * 9) }));
+        if (mistakesFor(exercise).length) {
+          const mistake = pick(mistakesFor(exercise));
+          check(restCueLine(style, style === 'tough' ? mistake.short : mistake.cue, Math.floor(rand() * 5)));
+        }
+        check(restCheerLine(style, pick(['lastSet', 'half', 'general'] as const), Math.floor(rand() * 9)));
+        check(restBreathLine(style, Math.floor(rand() * 9)));
+        check(weightChangedLine(style, weight(), pounds));
         check(restSpoken(Math.floor(rand() * 400)));
         check(koreanCount(1 + Math.floor(rand() * 40)));
       }

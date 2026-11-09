@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   COOLDOWN_SECONDS, MOBILITY_SECONDS, PACE_TOLERANCE_SECONDS, mobilityDoneLine, mobilityFor, mobilityLine, mobilityMinutes, cooldownDoneLine, cooldownFor, cooldownLine,
-  paceCheck, restAnnounceLine, restSpoken, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
+  paceCheck, restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, restTalkPlan, restSpoken, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from '../ptSession.ts';
 import { forSpeech, speechSeconds } from '../coach.ts';
 
@@ -238,5 +238,46 @@ describe('PT 첫 워밍업 · 끝인사', () => {
 
   it('스트레칭 끝 말에는 인사가 없다 — 인사는 뒤에 붙는 오늘 정리 끝에 한 번만', () => {
     for (const style of STYLES) assert.doesNotMatch(cooldownDoneLine(style), /수고|고생|최고/, style);
+  });
+});
+
+describe('쉬는 동안 코치 말', () => {
+  it('방금 세트 이야기 — 목표를 다 채웠을 때만 깔끔, 위쪽을 못 채웠을 때만 "마지막 두 개"', () => {
+    for (const style of STYLES) {
+      for (let at = 0; at < 4; at += 1) {
+        const top = restFeedbackLine(style, { reps: 10, repsMin: 6, repsMax: 10, at });
+        const mid = restFeedbackLine(style, { reps: 7, repsMin: 6, repsMax: 10, at });
+        const short = restFeedbackLine(style, { reps: 4, repsMin: 6, repsMax: 10, at });
+        assert.doesNotMatch(mid + short, /깔끔|만점|다 채/, style);
+        assert.doesNotMatch(top + short, /마지막 두 개/, style);
+        assert.match(top + mid + short, /10개/, style);
+      }
+    }
+  });
+
+  it('지난번보다 더 들었으면 그 무게 차이를 말한다', () => {
+    assert.match(restFeedbackLine('gentle', { reps: 8, repsMin: 6, repsMax: 10, weightKg: 62.5, lastWeightKg: 60 }), /지난번보다 2\.5kg 더 드셨습니다/);
+    assert.doesNotMatch(restFeedbackLine('gentle', { reps: 8, repsMin: 6, repsMax: 10, weightKg: 60, lastWeightKg: 60 }), /지난번/);
+  });
+
+  it('빡센 코치만 반말 — 나머지 셋은 존댓말', () => {
+    for (let at = 0; at < 3; at += 1) {
+      const tough = [restFeedbackLine('tough', { reps: 10, repsMin: 6, repsMax: 10, at }), restCueLine('tough', '어깨는 내리고', at),
+        restCheerLine('tough', 'general', at), restBreathLine('tough', at)].join(' ');
+      assert.doesNotMatch(tough, POLITE_END, tough);
+      for (const style of ['energetic', 'gentle', 'fun'] as const) {
+        const said = [restFeedbackLine(style, { reps: 7, repsMin: 6, repsMax: 10, at }), restCheerLine(style, 'half', at), restBreathLine(style, at)].join(' ');
+        assert.doesNotMatch(said, BANMAL, `${style}: ${said}`);
+      }
+    }
+  });
+
+  it('짧은 휴식은 한마디만, 적게는 중간 한마디, 많이는 숨 고르기까지', () => {
+    assert.equal(restTalkPlan('normal', 40).length, 1);
+    assert.equal(restTalkPlan('more', 40).length, 1);
+    assert.equal(restTalkPlan('less', 40).length, 0);
+    assert.deepEqual(restTalkPlan('less', 120).map((item) => item.kind), ['tip']);
+    assert.deepEqual(restTalkPlan('normal', 120).map((item) => item.kind), ['feedback', 'cue']);
+    assert.deepEqual(restTalkPlan('more', 150).map((item) => item.kind), ['feedback', 'cue', 'cheer', 'breath']);
   });
 });
