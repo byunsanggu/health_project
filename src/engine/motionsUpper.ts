@@ -892,7 +892,7 @@ export function curl(id: string, kind: CurlKind, fault?: string): Clip {
     }
     case 'incline':
       body = seated(0.45, 0.18, 36, { neck: 10 }, 0.5);
-      arm = (elbow: number, elev = -36): ArmSpec => ({ fk: [30, elev, 0, elbow], turn });
+      arm = (elbow: number, elev = -36): ArmSpec => ({ fk: [-24, elev, 10, elbow], turn });
       lowElev = -36;
       highElev = -28;
       scene = seatBench(0.18, 54, { seat: 0.45, backLen: 0.95 });
