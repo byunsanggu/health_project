@@ -84,7 +84,8 @@ function machineCrunch(id: string, fault?: string): Clip {
   if (fault === 'neck') swap(list, [1, 2], '목을 당김', body(0, 22, 42));
   else if (fault === 'hips') swap(list, [1, 2], '엉덩이로 당김', body(30, 10, 6, { pelvis: [0, base.pelvis[1] + 0.06, base.pelvis[2] + 0.06] }));
   return {
-    id, cycle: 2.6, view: [72, 10], keys: keys(...list),
+    // 회전 팔은 왼쪽(+x)에 달렸다 — 왼쪽에서 보면 팔이 얼굴 앞을 가로지르니 오른쪽에서 본다
+    id, cycle: 2.6, view: [-72, 10], keys: keys(...list),
     scene: [...seatBench(0, 84, { seat: 0.48 }), ...machineFrame(-0.42, 1.7, 0.9)],
     links: [{ kind: 'pad', bone: 'chest', u: 0.8, off: [0, 0, 0.17], size: [0.36, 0.08, 0.08], pivot: [0.42, 1.55, -0.3], leverAt: 0.3 }],
     work: [0, 0.42], fault,

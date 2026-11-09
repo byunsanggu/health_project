@@ -2872,6 +2872,9 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
   .focus { gap: 8px; padding-top: 10px; }
 }
 @media (max-height: 700px) {
+  .pt-weight-step, .pt-weight-now, .pt-weight-input { min-height: 36px; }
+  .pt-weight-step { min-width: 36px; }
+  .focus-rest-side .pt-weight { margin-top: 0; }
   /* 자막은 한 줄 — 누르면 다 보인다 */
   .focus-say { -webkit-line-clamp: 1; }
   .focus-logged { padding: 2px 2px 2px 12px; }

@@ -214,6 +214,8 @@ export function buildConditioning(input: ConditioningInput): ConditioningWorkout
     if (picked.length >= wanted) break;
     const primary = primaryOf(entry.exercise);
     if (primary && usedMuscles.has(primary)) continue;
+    // 바벨은 한 와드에 하나 — 바벨 하나를 두 동작이 번갈아 쓰면 무게를 갈아 끼우느라 라운드가 끊긴다.
+    if (isWodBarbell(entry.exercise) && picked.some(isWodBarbell)) continue;
 
     const region = regionOf(entry.exercise);
     if ((usedRegions.get(region) ?? 0) >= Math.ceil(wanted / 2)) continue;
@@ -241,6 +243,11 @@ export function buildConditioning(input: ConditioningInput): ConditioningWorkout
     fatigueLoad: Math.round(input.minutes * 0.4 * 10) / 10,
     notes: buildNotes(input, movements),
   };
+}
+
+/** 바벨 하나를 쓰는 동작 — 와드 바벨 목록 말고도 랜드마인 프레스 · 힙 쓰러스트처럼 바벨을 쓰는 것까지 */
+function isWodBarbell(exercise: Exercise): boolean {
+  return WOD_BARBELL.indexOf(exercise.id) >= 0 || exercise.equipment === 'barbell';
 }
 
 /**

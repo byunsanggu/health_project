@@ -389,6 +389,31 @@ export function adjustWithinSession(
   };
 }
 
+/**
+ * 세트 사이 보정을 기구 칸에 맞춘 실제 무게로 다시 말한다.
+ *
+ * 엔진은 "1kg 올립니다"라고 했는데 덤벨이 2kg 단위면 화면의 다음 세트는 8 → 10kg이다. 말과 숫자가 어긋나지
+ * 않게, 맞춘 무게와 앞 무게의 차이로 폭과 문장을 고친다(session.ts가 다음 날 처방에서 하는 것과 같은 방식).
+ */
+export function restateAdjustment(
+  adjustment: WithinSessionAdjustment,
+  fromKg: number,
+  toKg: number,
+): WithinSessionAdjustment {
+  const actual = Math.round((toKg - fromKg) * 100) / 100;
+  // 유지라고 했으면 그대로 둔다 — 기구 칸에 맞추느라 생긴 차이는 보정이 아니다
+  if (adjustment.deltaKg === 0 || actual === adjustment.deltaKg) return { ...adjustment, weightKg: toKg };
+  if (actual === 0) return { weightKg: toKg, deltaKg: 0, reason: '무게를 유지합니다.' };
+  const note = ' — 이 기구로 들 수 있는 가장 가까운 무게입니다.';
+  let reason = adjustment.reason;
+  if (actual > 0 && /[\d.]+kg 올립니다\.?$/.test(reason)) {
+    reason = reason.replace(/[\d.]+kg 올립니다\.?$/, `${actual}kg 올립니다${note}`);
+  } else if (actual < 0 && /[\d.]+kg 낮춥니다\.?$/.test(reason)) {
+    reason = reason.replace(/[\d.]+kg 낮춥니다\.?$/, `${-actual}kg 낮춥니다${note}`);
+  }
+  return { weightKg: toKg, deltaKg: actual, reason };
+}
+
 function correctRir(reported: number, offset = 0): number {
   return Math.min(5, Math.max(0, reported + offset));
 }

@@ -5,6 +5,7 @@ import { assignRepRanges, buildProgram, runOnboarding, type OnboardingAnswers } 
 import { buildSession } from '../session.ts';
 import { HEAVY_PULLS } from '../exercises.ts';
 import { COMMON_EQUIPMENT_IDS, EQUIPMENT_CATALOG } from '../equipment.ts';
+import { presetEquipment } from '../gymPresets.ts';
 
 const EQUIPMENT_IDS = new Set(EQUIPMENT_CATALOG.map((item) => item.id));
 import { EXERCISES } from '../exercises.ts';
@@ -822,6 +823,61 @@ describe('새 종목으로 짜는 집 · 초보 프로그램', () => {
           }
         }
       }
+    }
+  });
+
+  /*
+   * 둔근을 고르면 자리가 하나 더 생겨 맨몸 스쿼트가 먼저 들어간 날에 고블릿 · 덤벨 스모 스쿼트가 뒤따라왔다.
+   * 같은 동작의 두 판(워킹 런지 + 덤벨 리버스 런지, 푸시업 + 인클라인 푸시업)도 하루에 둘 다 들어갔다.
+   */
+  it('하루에 같은 동작을 두 번 넣지 않는다 — 맨몸판 · 무게판 어느 쪽이 먼저 와도', () => {
+    const presets = {
+      home: presetEquipment('home'), floor: ['floor'], matBand: ['floor', 'resistance-bands'],
+      residence: presetEquipment('residence'), franchise: presetEquipment('franchise'),
+    };
+    const sameMovement = [
+      ['bodyweight-reverse-lunge', 'dumbbell-reverse-lunge', 'walking-lunge'],
+      ['push-up', 'incline-push-up'],
+    ];
+    for (const [name, ids] of Object.entries(presets)) {
+      for (const days of [2, 3, 4, 5]) {
+        for (const level of ['beginner', 'intermediate'] as const) {
+          for (const priorities of [undefined, ['glutes']] as OnboardingAnswers['priorities'][]) {
+            for (const template of woman(ids, days, level, priorities).templates) {
+              const tag = `${name} 주 ${days}회 ${level} ${priorities?.join() ?? ''} ${template.name}`;
+              const day = template.slots.map((slot) => exerciseById(slot.exerciseId)!);
+              const dayIds = day.map((exercise) => exercise.id);
+              assert.equal(new Set(dayIds).size, dayIds.length, `${tag}: ${dayIds.join(', ')}`);
+              for (const group of sameMovement) {
+                assert.ok(dayIds.filter((id) => group.includes(id)).length <= 1, `${tag}: ${dayIds.join(', ')}`);
+              }
+              for (const light of day.filter((exercise) => ['bodyweight-squat', 'bodyweight-reverse-lunge'].includes(exercise.id))) {
+                assert.ok(!day.some((other) => other.pattern === light.pattern && other.equipment !== 'bodyweight' && other.equipment !== 'band'),
+                  `${tag}: ${dayIds.join(', ')}`);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('덤벨이 있는 집의 중급에게 인클라인 푸시업을 가슴 메인으로 주지 않는다 — 덤벨 플로어 프레스', () => {
+    for (const days of [3, 4, 5]) {
+      for (const priorities of [undefined, ['glutes']] as OnboardingAnswers['priorities'][]) {
+        for (const template of woman(presetEquipment('home'), days, 'intermediate', priorities).templates) {
+          const main = template.slots.filter((slot) => slot.role === 'primary').map((slot) => slot.exerciseId);
+          assert.ok(!main.includes('incline-push-up'), `주 ${days}회 ${template.name}: ${main.join(', ')}`);
+        }
+      }
+    }
+    const upperB = woman(presetEquipment('home'), 4, 'intermediate').templates.find((template) => template.name === '상체 B')!;
+    assert.ok(upperB.slots.some((slot) => slot.role === 'primary' && slot.exerciseId === 'dumbbell-floor-press'),
+      upperB.slots.map((slot) => slot.exerciseId).join(', '));
+    // 매트뿐인 집의 중급은 바닥 푸시업이 메인이다 — 둘째 상체 날에도 인클라인으로 내려가지 않는다
+    for (const template of woman(['floor'], 4, 'intermediate').templates) {
+      const main = template.slots.filter((slot) => slot.role === 'primary').map((slot) => slot.exerciseId);
+      assert.ok(!main.includes('incline-push-up'), `${template.name}: ${main.join(', ')}`);
     }
   });
 

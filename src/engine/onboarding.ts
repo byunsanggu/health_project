@@ -453,10 +453,12 @@ const BEGINNER_EXCLUDED: ReadonlySet<string> = new Set(['pike-push-up']);
  */
 const BEGINNER_EASIER: Readonly<Record<string, string>> = { 'push-up': 'incline-push-up' };
 /**
- * 같은 동작의 맨몸 · 덤벨 판. 하루에 둘 다 넣으면 같은 런지를 두 번 하는 셈이다(덤벨 리버스 런지 뒤 맨몸 리버스 런지).
+ * 같은 동작의 맨몸 · 덤벨 판. 하루에 둘 다 넣으면 같은 런지를 두 번 하는 셈이다(덤벨 리버스 런지 뒤 맨몸 리버스 런지,
+ * 워킹 런지 뒤 덤벨 리버스 런지). 푸시업 뒤의 인클라인 푸시업도 같은 동작을 쉽게 한 번 더 하는 것이다.
  */
 const SAME_MOVEMENT: readonly (readonly string[])[] = [
-  ['bodyweight-reverse-lunge', 'dumbbell-reverse-lunge'],
+  ['bodyweight-reverse-lunge', 'dumbbell-reverse-lunge', 'walking-lunge'],
+  ['push-up', 'incline-push-up'],
 ];
 /**
  * 기구가 거의 없어 자리가 비는 날을 채우는 쉬운 맨몸 종목 — 누구나 첫날부터 할 수 있는 것.
@@ -472,7 +474,11 @@ const MIN_DAY_EXERCISES = 4;
 const LOWER_BODY: ReadonlySet<MuscleGroup> = new Set<MuscleGroup>(['quads', 'hamstrings', 'glutes', 'calves']);
 /** 미는 부위 — 상체 채우기 종목(인클라인 푸시업)은 이 부위 자리가 있는 날에만. 당기는 날에 푸시업을 끼우지 않는다 */
 const PUSH_MUSCLES: ReadonlySet<MuscleGroup> = new Set<MuscleGroup>(['chest', 'triceps', 'frontDelt']);
-const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge', 'bodyweight-squat']);
+/**
+ * 초보가 아니면 자극이 모자란 가벼운 맨몸 종목 — 중급 이상에게는 뒤로 밀고, 메인 자리에는 무게를 실을 수 있는 쪽을 준다.
+ * 인클라인 푸시업도 여기 — 덤벨이 있는 집의 중급 가슴 메인이 덤벨 플로어 프레스 대신 인클라인 푸시업이 됐다.
+ */
+const LIGHT_BODYWEIGHT: ReadonlySet<string> = new Set(['bodyweight-reverse-lunge', 'glute-bridge', 'bodyweight-squat', 'incline-push-up']);
 
 interface PickContext {
   level: TrainingLevel;
@@ -652,6 +658,17 @@ function sessionSetCap(days: number, level: TrainingLevel): number {
   return level === 'advanced' || level === 'expert' ? 20 : 18;
 }
 
+/**
+ * 같은 갈래(스쿼트 · 런지)에서 가벼운 맨몸판과 무게를 실은 판이 하루에 같이 들어가는지. 양쪽 어느 순서로 와도 막는다.
+ */
+function clashesWithLightLower(exercise: Exercise, today: readonly Exercise[]): boolean {
+  if (exercise.pattern !== 'squat' && exercise.pattern !== 'lunge') return false;
+  const lightLower = (item: Exercise) => LIGHT_BODYWEIGHT.has(item.id);
+  const loaded = (item: Exercise) => !isUnloaded(item);
+  return today.some((item) => item.id !== exercise.id && item.pattern === exercise.pattern &&
+    ((lightLower(exercise) && loaded(item)) || (loaded(exercise) && lightLower(item))));
+}
+
 function pickExercise(
   slot: SlotSpec,
   pool: readonly Exercise[],
@@ -681,11 +698,10 @@ function pickExercise(
     .filter((exercise) => !SAME_MOVEMENT.some((group) => group.includes(exercise.id) &&
       context.today.some((item) => item.id !== exercise.id && group.includes(item.id))))
     /*
-     * 무게를 실은 스쿼트 · 런지를 이미 한 날에는 가벼운 맨몸판(맨몸 스쿼트 · 맨몸 런지)을 또 넣지 않는다 —
-     * 고블릿 스쿼트 뒤의 맨몸 스쿼트는 같은 동작을 가볍게 한 번 더 하는 셈이다. 레그프레스 · 런지 쪽으로 간다.
+     * 무게를 실은 스쿼트 · 런지와 가벼운 맨몸판(맨몸 스쿼트 · 맨몸 런지)은 하루에 하나만 — 고블릿 스쿼트 뒤의 맨몸 스쿼트는
+     * 같은 동작을 가볍게 한 번 더 하는 셈이다. 거꾸로 맨몸 스쿼트를 이미 한 날에 고블릿 · 덤벨 스모 스쿼트를 더 넣지도 않는다.
      */
-    .filter((exercise) => !(LIGHT_BODYWEIGHT.has(exercise.id) && (exercise.pattern === 'squat' || exercise.pattern === 'lunge') &&
-      context.today.some((item) => item.pattern === exercise.pattern && !isUnloaded(item))))
+    .filter((exercise) => !clashesWithLightLower(exercise, context.today))
     .filter((exercise) => (exercise.contribution[slot.muscle] ?? 0) >= minContribution);
   /*
    * 고립 자리에는 고립 종목이 먼저다. 레그컬 기계가 없는 곳에서 "뒤허벅지 고립" 자리에
@@ -954,7 +970,13 @@ export function buildProgram(
          * 메인 종목은 주 2회 겹쳐도 된다. 케틀벨 하나뿐인 집의 레그 날이 맨몸 스쿼트 + 고블릿 스쿼트가 되던 것.
          */
         if (exercise && slot.role === 'primary' && LIGHT_BODYWEIGHT.has(exercise.id)) {
-          const loaded = pickExercise(slot, pool.filter((item) => !isUnloaded(item)), new Set([...usedToday, ...reserved]), context);
+          const again = new Set([...usedToday, ...reserved]);
+          /*
+           * 무게 싣는 종목이 없으면(매트뿐인 집) 초보가 아닌 사람에게는 이번 주에 쓴 맨몸 종목이라도 가벼운 쪽이 아닌 걸
+           * 다시 준다 — 중급의 둘째 상체 날 메인이 푸시업 대신 인클라인 푸시업이 되지 않게.
+           */
+          const loaded = pickExercise(slot, pool.filter((item) => !isUnloaded(item)), again, context) ??
+            (level === 'beginner' ? undefined : pickExercise(slot, pool.filter((item) => !LIGHT_BODYWEIGHT.has(item.id)), again, context));
           if (loaded) exercise = loaded;
         }
       }

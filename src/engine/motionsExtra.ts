@@ -239,15 +239,17 @@ function cableGluteKickback(id: string, fault?: string): Clip {
 
 function dumbbellFly(id: string, fault?: string): Clip {
   const body = lying();
-  const arm = (plane: number, elev: number, elbow: number): ArmSpec => ({ fk: [plane, elev, 0, elbow], turn: 90 });
-  const pose = (plane: number, elev: number, elbow = 20): Pose3 => ({ ...body, armL: arm(plane, elev, elbow), armR: arm(plane, elev, elbow) });
-  const top = pose(4, 76, 16);
-  // 면 90은 옆으로 수평 — 그 너머(100)로 가야 덤벨이 바닥 쪽, 몸통 높이까지 내려간다
-  const open = pose(102, 86, 24);
+  // 손잡이는 내내 머리-발 방향 — 위에서는 손바닥이 마주 보고(90), 벌리면 천장을 본다(0).
+  // 벌린 곳에서 90 그대로 두면 팔이 돌아 덤벨이 세로로 서고 아래 원판이 벤치 밑으로 내려간다
+  const arm = (plane: number, elev: number, elbow: number, turn: number): ArmSpec => ({ fk: [plane, elev, 0, elbow], turn });
+  const pose = (plane: number, elev: number, elbow = 20, turn = 0): Pose3 => ({ ...body, armL: arm(plane, elev, elbow, turn), armR: arm(plane, elev, elbow, turn) });
+  const top = pose(4, 76, 16, 90);
+  // 면 90은 옆으로 수평 — 조금 너머(98)로 가야 덤벨이 어깨 높이, 팔꿈치는 어깨보다 조금 아래까지 내려간다
+  const open = pose(98, 84, 24);
   const list: KeyList = [[0, '양옆으로 벌리기', top], [0.45, '가슴이 늘어나는 데까지', open], [0.53, '크게 안듯 모으기', open], [1, undefined, top]];
   if (fault === 'arm-angle') {
-    list[1] = [0.45, '팔꿈치를 굽혔다 폄', pose(96, 80, 100)];
-    list[2] = [0.53, undefined, pose(96, 80, 100)];
+    list[1] = [0.45, '팔꿈치를 굽혔다 폄', pose(96, 80, 100, 90)];
+    list[2] = [0.53, undefined, pose(96, 80, 100, 90)];
   } else if (fault === 'too-deep') {
     list[1] = [0.45, '너무 깊이 내림', pose(122, 86, 24)];
     list[2] = [0.53, undefined, pose(122, 86, 24)];

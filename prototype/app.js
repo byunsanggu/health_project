@@ -2018,10 +2018,13 @@
        * 다음 세트 무게를 미리 고쳐 뒀으면 그 값을 지킨다. 코치가 올리거나 내릴 때만 그 폭을
        * 고친 무게에 얹는다 — 전에는 세트를 끝내면 고친 값이 말없이 방금 무게로 돌아갔다.
        */
+      var fromKg = next.edited ? next.weightKg : logged.weightKg;
       var aim = next.edited ? next.weightKg + adjustment.deltaKg : adjustment.weightKg;
       next.weightKg = lift.loading
         ? E.nearestLoadable(aim, lift.loading, adjustment.deltaKg > 0 ? 'up' : adjustment.deltaKg < 0 ? 'down' : 'nearest')
         : Math.max(0, Math.round(aim * 100) / 100);
+      // 기구 칸에 맞추느라 폭이 달라졌으면 실제 폭으로 말한다("1kg 올립니다"인데 8 → 10kg)
+      adjustment = E.restateAdjustment(adjustment, fromKg, next.weightKg);
       /*
        * 이건 코치가 다시 내린 처방이므로 계획도 같이 움직인다. 사용자가
        * 직접 친 무게만 계획과 갈라진다 — 그래야 "계획 105"가 뜻을 갖는다.
@@ -3287,18 +3290,16 @@
 
     /*
      * 첫 운동 뒤 근육통 — 처음 하는 사람은 이틀 뒤 뻐근한 것을 다친 줄 알고 그만둔다.
-     * 지난 기록(어제까지)에 세트가 하나도 없고 오늘 세트를 했으면 첫 운동이다. 빡센 코치는 자기 말투로.
+     * 지난 기록(어제까지)에 세트가 하나도 없고 오늘 세트를 했으면 첫 운동이다. 화면 글은 코치와 상관없이
+     * 합니다체 하나 — 반말은 빡센 코치의 말소리에만 쓴다.
      */
     var firstEver = summary.setsCompleted > 0 && !state.history.some(function (session) {
       return (session.sets || []).some(function (set) { return !set.warmup && set.reps > 0; });
     });
     if (firstEver) {
-      var toughCoach = ptOn() && state.coach.style === 'tough';
       body.push(el('div', { class: 'notice first-soreness' }, [
-        el('div', { class: 'label', text: toughCoach ? '코치 한마디' : '처음 운동한 다음 날' }),
-        el('div', { text: toughCoach
-          ? '내일 뻐근할 거다. 정상이다. 관절이 찌르듯 아프면 그건 말해.'
-          : '내일·모레 운동한 부위가 뻐근할 수 있습니다. 처음 2~3주는 정상이고 움직이면 풀립니다. ' +
+        el('div', { class: 'label', text: '처음 운동한 다음 날' }),
+        el('div', { text: '내일·모레 운동한 부위가 뻐근할 수 있습니다. 처음 2~3주는 정상이고 움직이면 풀립니다. ' +
             '관절이 찌르듯 아프거나 한쪽만 붓는다면 통증으로 적어 주세요.' }),
       ]));
     }

@@ -5,11 +5,13 @@ import {
   adjustWithinSession,
   estimate1RM,
   prescribeLoad,
+  restateAdjustment,
   roundToIncrement,
   topWorkingSet,
   type LoadRule,
 } from '../load.ts';
 import { exerciseById } from '../exercises.ts';
+import { nearestLoadable, type LoadingSpec } from '../gym.ts';
 import type { Exercise, SetLog } from '../types.ts';
 
 const bench = exerciseById('barbell-bench-press') as Exercise;
@@ -255,6 +257,40 @@ describe('가벼운 덤벨 — 2kg 다음이 4kg(두 배)이 되지 않게', () 
     const result = adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 3, reps: 15, rir: 5 }, raiseRule);
     assert.ok(result.deltaKg > 0 && result.deltaKg <= 2, String(result.deltaKg));
     assert.ok(result.weightKg <= 5);
+  });
+
+  /*
+   * 가벼운 덤벨을 2kg 단위로 둔 집 — 엔진은 "1kg 올립니다"라고 하는데 화면의 다음 세트는 8 → 10kg이었다.
+   * 화면(app.js)은 기구 칸에 맞춘 무게로 restateAdjustment를 불러 폭과 문장을 실제 차이로 고친다.
+   */
+  const twoKg: LoadingSpec = { kind: 'dumbbell', availableKg: [2, 4, 6, 8, 10, 12] };
+
+  it('세트 사이 보정 문장은 기구 칸에 맞춘 실제 폭을 말한다 — 올릴 때', () => {
+    const raw = adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 8, reps: 15, rir: 4 }, raiseRule);
+    assert.equal(raw.deltaKg, 1);
+    const shown = nearestLoadable(raw.weightKg, twoKg, 'up');
+    assert.equal(shown, 10);
+    const told = restateAdjustment(raw, 8, shown);
+    assert.equal(told.deltaKg, 2);
+    assert.equal(told.weightKg, 10);
+    assert.match(told.reason, /다음 세트 2kg 올립니다/);
+    assert.ok(!/1kg 올립니다/.test(told.reason), told.reason);
+  });
+
+  it('세트 사이 보정 문장은 기구 칸에 맞춘 실제 폭을 말한다 — 낮출 때', () => {
+    const raw = adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 8, reps: 5, rir: 0 }, raiseRule);
+    assert.equal(raw.deltaKg, -1);
+    const shown = nearestLoadable(raw.weightKg, twoKg, 'down');
+    const told = restateAdjustment(raw, 8, shown);
+    assert.equal(told.deltaKg, -2);
+    assert.match(told.reason, /다음 세트 2kg 낮춥니다/);
+  });
+
+  it('폭이 같거나 유지면 문장을 그대로 둔다', () => {
+    const raw = adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 8, reps: 15, rir: 5 }, raiseRule);
+    assert.deepEqual(restateAdjustment(raw, 8, 8 + raw.deltaKg), raw);
+    const hold = adjustWithinSession(lateral, { exerciseId: lateral.id, weightKg: 8, reps: 15, rir: 2 }, raiseRule);
+    assert.deepEqual(restateAdjustment(hold, 8, 8), hold);
   });
 });
 

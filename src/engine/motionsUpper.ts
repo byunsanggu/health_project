@@ -10,7 +10,7 @@ import {
   seatBench, seated, setKey, shoulderMid, solvePose, solveFor, standing, stool,
   type Clip, type Link, type Prim,
 } from './motionKit.ts';
-import { BODY, add, madd, normalize, scale, sub, type ArmSpec, type LegSpec, type Pose3, type Vec3 } from './rig.ts';
+import { BODY, add, blend, madd, normalize, scale, sub, type ArmSpec, type LegSpec, type Pose3, type Vec3 } from './rig.ts';
 
 type KeyList = [number, string | undefined, Pose3][];
 
@@ -892,7 +892,7 @@ export function curl(id: string, kind: CurlKind, fault?: string): Clip {
     }
     case 'incline':
       body = seated(0.45, 0.18, 36, { neck: 10 }, 0.5);
-      arm = (elbow: number, elev = -36): ArmSpec => ({ fk: [6, elev, 0, elbow], turn });
+      arm = (elbow: number, elev = -36): ArmSpec => ({ fk: [30, elev, 0, elbow], turn });
       lowElev = -36;
       highElev = -28;
       scene = seatBench(0.18, 54, { seat: 0.45, backLen: 0.95 });
@@ -1033,10 +1033,18 @@ export function triceps(id: string, kind: TricepsKind, fault?: string): Clip {
       });
       // 덤벨은 머리 뒤 아래로 — 팔뚝이 머리를 뚫지 않고 위팔은 거의 수직(16°쯤)
       const low = hands([0, 0.40, -0.20], [0.2, 1, 0.4]);
-      const high = hands([0, 0.74, 0.02]);
+      const high = hands([0, 0.76, 0.04]);
       const list = liftKeys(low, high, ['머리 위로 펴기', '끝까지 펴기', '천천히 내리기']);
-      if (fault === 'elbow-flare') swap(list, [0, 3], '팔꿈치가 옆으로', hands([0, 0.46, -0.1], [1, 0.4, 0.3]));
-      else if (fault === 'arch') swap(list, [1, 2], '허리를 젖혀서 밂', { ...hands([0, 0.72, 0.1]), spine: -20, pitch: -10 });
+      if (fault === 'elbow-flare') swap(list, [0, 3], '팔꿈치가 옆으로', hands([0, 0.42, -0.17], [1, 0.4, 0.3]));
+      else if (fault === 'arch') swap(list, [1, 2], '허리를 젖혀서 밂', { ...hands([0, 0.76, 0.04]), spine: -20, pitch: -10 });
+      // 아래 ↔ 위를 곧게 이으면 덤벨 아래 원판이 뒤통수를 지난다 — 오갈 때는 머리 뒤로 한 번 돌아서
+      const around = (from: Pose3, to: Pose3): Pose3 => {
+        const half = blend(from, to, 0.5);
+        const at = hands([0, 0.74, -0.18], half.armL?.pole ?? [0.2, 0.7, 0.7]);
+        return { ...half, armL: at.armL, armR: at.armR, bar: at.bar };
+      };
+      list.splice(1, 0, [0.18, undefined, around(list[0]![2], list[1]![2])]);
+      list.splice(4, 0, [0.72, undefined, around(list[4]![2], list[3]![2])]);
       return { id, cycle: 2.8, view: [70, 8], keys: keys(...list), scene: flatBench(-0.4, 0.3, 0.45), bar: { kind: 'dumbbell' }, work: [0, 0.42], fault };
     }
     default: {

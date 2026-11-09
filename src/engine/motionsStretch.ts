@@ -540,7 +540,8 @@ function bandPullApart(id: string): Clip {
   const arm = (plane: number): ArmSpec => ({ fk: [plane, 88, 0, 4], turn: 180 });
   const at = (plane: number, scap: number): Pose3 => standing({ armL: arm(plane), armR: arm(plane), scap: [0, scap] }, 0.15);
   const front = at(0, 0.2);
-  const apart = at(80, -1);
+  // 끝에서도 손은 어깨보다 조금 앞(면 70) — 옆으로 다 벌리면(80) 두 손 사이 밴드가 가슴 속을 지난다
+  const apart = at(70, -1);
   const list: KeyList = [[0, '양옆으로 벌리기', front], [0.42, '날개뼈 모으기', apart], [0.55, '천천히 모으기', apart], [1, undefined, front]];
   return { id, cycle: 2.6, view: [18, 22], keys: keys(...list), scene: [], cables: [{ from: 'L', to: 'R' }], work: [0, 0.55] };
 }

@@ -42,7 +42,7 @@ export default async function ({ page, url, shot }) {
   await page.waitForFunction((n) => window.__said.length > n, heard);
   await page.waitForTimeout(500);
   check(await page.locator('#screen .voice-controls button[aria-pressed="true"]', { hasText: '1.5배' }).count() === 1, '1.5배가 안 골라집니다');
-  await page.locator('#screen .voice-controls .segmented button', { hasText: '보통' }).click();
+  await page.locator('#screen .voice-controls .list-label:has-text("PT 빠르기") ~ .segmented').first().locator('button', { hasText: '보통' }).click();
 
   // 활기찬 코치 — 여자 목소리를 고르면 그 폴더 조각을 받는다
   await page.locator('#screen .coach-settings .coach-style', { hasText: '활기차게' }).click();

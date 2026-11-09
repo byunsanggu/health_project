@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { buildConditioning, buildWodSession, checkInterference, type ConditioningFormat } from '../conditioning.ts';
 import { COMMON_EQUIPMENT_IDS } from '../equipment.ts';
+import { exerciseById } from '../exercises.ts';
 import { presetEquipment } from '../gymPresets.ts';
 import { buildSchedule } from '../schedule.ts';
 import { buildProgram, type OnboardingAnswers } from '../onboarding.ts';
@@ -273,6 +274,24 @@ describe('와드 한 판', () => {
     const barbells = on.movements.filter((m) => ['conventional-deadlift', 'sumo-deadlift',
       'front-squat', 'barbell-overhead-press'].includes(m.exerciseId));
     assert.ok(barbells.length <= 1, `바벨 ${barbells.length}개`);
+  });
+
+  it('seed가 바뀌어도 바벨 동작은 한 와드에 하나뿐이다(랜드마인 · 힙 쓰러스트 포함)', () => {
+    for (const preset of ['franchise', 'crossfit']) {
+      for (const minutes of [12, 20]) {
+        for (const format of ['amrap', 'forTime', 'emom'] as ConditioningFormat[]) {
+          for (let seed = 0; seed < 60; seed += 1) {
+            const workout = buildConditioning({
+              format, minutes, level: 'intermediate', equipmentIds: presetEquipment(preset), allowBarbell: true, seed,
+            });
+            const barbells = workout.movements.filter((m) => exerciseById(m.exerciseId)?.equipment === 'barbell');
+            assert.ok(barbells.length <= 1,
+              `${preset} ${minutes}분 ${format} seed ${seed}: ${barbells.map((m) => m.exerciseId).join(', ')}`);
+            assert.equal(barbells.length, 1, `${preset} ${minutes}분 ${format} seed ${seed}: 켜면 한 자리는 있다`);
+          }
+        }
+      }
+    }
   });
 
   it('위험한 동작이 들어가면 무게 상한을 말한다', () => {
