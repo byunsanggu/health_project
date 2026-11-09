@@ -34,6 +34,11 @@ export default async function ({ page, url, shot }) {
   check((await view(page)).said === first.said, '목록에 나왔는데 코치가 계속 말합니다');
   check(page.url() === home, '앱을 나갔습니다');
   await shot('1-cancelled');
+  // 취소한 것이 저장됐다 — 다시 켜도 "시작하기", 몸 풀기는 "시작 전"
+  await page.reload();
+  await page.waitForSelector('.start-cta');
+  check((await page.locator('.start-cta').textContent()) === '시작하기', '취소하고 다시 켰더니 버튼이: ' + await page.locator('.start-cta').textContent());
+  check((await page.locator('.warm-sheet .warm-status').textContent()).startsWith('시작 전'), '취소하고 다시 켰더니 몸 풀기 줄이: ' + await page.locator('.warm-sheet .warm-status').textContent());
 
   // 2) 몸 풀기를 한참 하다가 뒤로가기 → 멈춤: 목록 맨 위, "이어서 하기", 다시 누르면 그 자리에서
   await begin(page);

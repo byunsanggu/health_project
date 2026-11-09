@@ -32,9 +32,12 @@ export function holdRange(level: TrainingLevel = 'intermediate'): RepRange {
   return { ...(HOLD_RANGES[level] ?? HOLD_RANGES.intermediate) };
 }
 
-/** 반복 범위로 적힌 자리를 버티는 범위로 — 대체 · 내 루틴에서 "10~15회"가 플랭크로 오면 */
+/**
+ * 반복 범위로 적힌 자리를 버티는 범위로 — 대체 · 내 루틴 · 오늘만 끼운 종목에서 "10~15회"가 플랭크로 오면.
+ * 버티는 범위는 아래 끝이 20초 아래로 내려가지 않으니(HOLD_RANGES), 그보다 낮으면 반복 범위로 본다.
+ */
 export function holdRangeFrom(range: RepRange | undefined, level?: TrainingLevel): RepRange {
-  if (range && range.min >= 10 && range.max >= 15 && range.max <= HOLD_CAP_SECONDS) return range;
+  if (range && range.min >= HOLD_RANGES.beginner.min && range.max <= HOLD_CAP_SECONDS && range.min <= range.max) return range;
   return holdRange(level);
 }
 

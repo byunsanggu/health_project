@@ -82,4 +82,15 @@ export default async function ({ page, url, shot }) {
   const time = await page.locator('#focus-rest-time').boundingBox();
   check(time && time.y + time.height <= 844, '쉬는 시간이 화면 밖에 있습니다');
   await shot('2-stopped');
+
+  // 다시 켜도 뺀 세트는 돌아오지 않는다 — 오늘 것에 적혀 있고, PT는 다음 종목부터
+  const settings = () => page.evaluate(() => JSON.parse(localStorage.getItem('volume-coach.proto.state') || '{}').settings || {});
+  const id = (await settings()).todaySets[0].exerciseId;
+  check(((await settings()).todayExtras.sets || {})[id] < 0, '멈춘 세트가 오늘 것에 안 적혔습니다: ' + JSON.stringify((await settings()).todayExtras));
+  await page.reload();
+  await page.waitForTimeout(1000);
+  await page.clock.runFor(500);
+  if (await focusPhase(page) === null && await page.locator('.start-cta').count()) await begin(page);
+  await runUntil(page, ['warm', 'count', 'rest'], { maxMs: 20000 });
+  check((await page.locator('#focus .focus-pos').textContent()).includes('2 /'), '다시 켰더니 멈춘 종목으로 돌아갔습니다: ' + await page.locator('#focus .focus-title').textContent());
 }

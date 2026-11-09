@@ -7618,6 +7618,11 @@
     var open = function (one) { return !one.done; };
     var cut = lift.sets.filter(open).length;
     lift.sets = lift.sets.filter(function (one) { return one.done; });
+    // 오늘 것에도 적는다(− 세트와 같이) — 안 적으면 다시 켰을 때 뺀 세트가 돌아온다
+    var extras = todayExtras();
+    var id = lift.exercise.id;
+    extras.sets[id] = (extras.sets[id] || 0) - cut;
+    extras.edits = extras.edits.filter(function (edit) { return !(edit.id === id && edit.order >= lift.sets.length); });
     pushLog('세트 조정', '<b>' + lift.exercise.name + '</b> — 남은 ' + cut + '세트를 뺐습니다. ' + reason);
     if (state.liftCursor === liftIndex) {
       var next = state.lifts.findIndex(function (item, at) { return at > liftIndex && item.sets.some(open); });
@@ -9178,7 +9183,8 @@
      * 본세트 전에는 워밍업 줄이 위에 — 몇 kg으로 몇 번, 한 것은 ✓(PT는 저절로, 혼자면 눌러서).
      */
     var rows = [];
-    if (doneCount === 0 && lift.warmup) {
+    // 버티기(플랭크)에는 워밍업 세트가 없다 — "+ 워밍업"을 띄우지 않는다
+    if (doneCount === 0 && lift.warmup && !isHold(lift.exercise)) {
       var checked = warmupChecked(lift);
       var warmNow = ptOn() && state.ptRun && state.ptRun.warm && state.ptRun.warm.liftIndex === liftIndex
         ? state.ptRun.warm.index : -1;
@@ -10572,7 +10578,9 @@
       else if (rep === 0) middle.appendChild(el('div', { class: 'focus-edits' }, [ptSetsToggle(ref.liftIndex, ref.setIndex)]));
       // PT로 처음 세는 세트 — 다 못 하면 "여기까지"를 누르라는 말을 화면에도
       if (!leadEditing && state.ptStopHint === ref.liftIndex + ':' + ref.setIndex) {
-        middle.appendChild(el('div', { class: 'focus-hint', text: '다 못 하면 "여기까지"를 누르세요 — 누른 개수까지 적습니다.' }));
+        middle.appendChild(el('div', { class: 'focus-hint', text: isHold(ref.lift.exercise)
+          ? '자세가 무너지면 "여기까지"를 누르세요 — 버틴 초까지 적습니다.'
+          : '다 못 하면 "여기까지"를 누르세요 — 누른 개수까지 적습니다.' }));
       }
       // 준비 중에는 무게 칸이 한 줄을 더 쓴다 — "다음 · …"은 세기 시작하면 보인다
       if (rep > 0) middle.appendChild(el('div', { class: 'focus-next', text: nextUpLine(ref.liftIndex, ref.setIndex) }));
@@ -11508,13 +11516,16 @@
 
     /*
      * 혼자 하는 버티기(플랭크) — 세트 줄 아래 시작 버튼. 누르면 3초 준비 뒤 목표 초부터 화면에서 줄여 가고,
-     * 멈춘 자리(끝까지 가면 목표 초)가 칸에 들어간다. 숫자는 손으로 고쳐도 된다. 쉬는 중에는 숨긴다.
+     * 멈춘 자리(끝까지 가면 목표 초)가 칸에 들어간다. 숫자는 손으로 고쳐도 된다. 쉬는 중에 누르면 휴식을 끝내고 시작한다.
      */
-    if (!ptOn() && isHold(lift.exercise) && !set.done && !state.rest) {
+    if (!ptOn() && isHold(lift.exercise) && !set.done) {
       body.push(el('button', {
         type: 'button', class: 'finish quiet hold-start',
         'aria-label': (setIndex + 1) + '세트 버티기 시작 — ' + set.targetReps.max + '초를 셉니다',
-        onclick: function () { startHold(liftIndex, setIndex, 3); },
+        onclick: function () {
+          if (state.rest) stopRest();
+          startHold(liftIndex, setIndex, 3);
+        },
       }, [el('span', { text: '▶ 버티기 시작 · ' + set.targetReps.max + '초' })]));
     }
 
