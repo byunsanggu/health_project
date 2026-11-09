@@ -832,13 +832,19 @@ describe('새 종목으로 짜는 집 · 초보 프로그램', () => {
    */
   it('하루에 같은 동작을 두 번 넣지 않는다 — 맨몸판 · 무게판 어느 쪽이 먼저 와도', () => {
     const presets = {
-      home: presetEquipment('home'), floor: ['floor'], matBand: ['floor', 'resistance-bands'],
+      home: presetEquipment('home'), floor: ['floor'], matBand: ['floor', 'resistance-bands'], kb: ['floor', 'kettlebells'],
       residence: presetEquipment('residence'), franchise: presetEquipment('franchise'),
+      unknown: presetEquipment('unknown'), crossfit: presetEquipment('crossfit'),
     };
     const sameMovement = [
       ['bodyweight-reverse-lunge', 'dumbbell-reverse-lunge', 'walking-lunge'],
       ['push-up', 'incline-push-up'],
+      ['hip-thrust', 'dumbbell-hip-thrust', 'machine-hip-thrust'],
     ];
+    // 무게 싣는 가슴 운동이 없는 곳(매트 · 케틀벨뿐)에서만 푸시업 바로 뒤 인클라인 푸시업(가벼운 마무리)을 허용한다
+    const backOff = (ids: readonly string[], dayIds: readonly string[]) =>
+      !ids.includes('dumbbells') && !ids.includes('barbell-set') &&
+      dayIds.indexOf('incline-push-up') === dayIds.indexOf('push-up') + 1 && dayIds.indexOf('push-up') >= 0;
     for (const [name, ids] of Object.entries(presets)) {
       for (const days of [2, 3, 4, 5]) {
         for (const level of ['beginner', 'intermediate'] as const) {
@@ -849,6 +855,7 @@ describe('새 종목으로 짜는 집 · 초보 프로그램', () => {
               const dayIds = day.map((exercise) => exercise.id);
               assert.equal(new Set(dayIds).size, dayIds.length, `${tag}: ${dayIds.join(', ')}`);
               for (const group of sameMovement) {
+                if (group.includes('push-up') && backOff(ids, dayIds)) continue;
                 assert.ok(dayIds.filter((id) => group.includes(id)).length <= 1, `${tag}: ${dayIds.join(', ')}`);
               }
               for (const light of day.filter((exercise) => ['bodyweight-squat', 'bodyweight-reverse-lunge'].includes(exercise.id))) {
@@ -859,6 +866,77 @@ describe('새 종목으로 짜는 집 · 초보 프로그램', () => {
           }
         }
       }
+    }
+  });
+
+  /*
+   * 같은 동작 두 판이 부딪치면 먼저 고른 쪽이 남아, 둔근 자리의 맨몸 스쿼트 때문에 고블릿 스쿼트 · 불가리안 스플릿 스쿼트가 빠졌다.
+   * 무게 싣는(어려운) 판을 남기고 가벼운 판을 다른 종목으로 바꾼다.
+   */
+  it('같은 동작이 부딪치면 무게 싣는 판을 남긴다 — 하체 날에 무게 실은 다리 운동이 빠지지 않는다', () => {
+    const day = (ids: readonly string[], days: number, level: 'beginner' | 'intermediate', name: string) => {
+      const template = woman(ids, days, level, ['glutes']).templates.find((item) => item.name === name)!;
+      return template.slots.map((slot) => slot.exerciseId);
+    };
+    const LIGHT = ['bodyweight-squat', 'bodyweight-reverse-lunge', 'glute-bridge', 'incline-push-up'];
+    for (const ids of [presetEquipment('home'), ['floor', 'dumbbells']]) {
+      const lowerB = day(ids, 4, 'intermediate', '하체 B');
+      assert.ok(lowerB.includes('goblet-squat'), lowerB.join(', '));
+      for (const days of [2, 3]) {
+        const fullB = day(ids, days, 'intermediate', '전신 B');
+        assert.ok(fullB.includes('dumbbell-sumo-squat'), `주 ${days}회: ${fullB.join(', ')}`);
+      }
+    }
+    const kbLowerB = day(['floor', 'kettlebells'], 4, 'intermediate', '하체 B');
+    assert.ok(kbLowerB.some((id) => ['goblet-squat', 'kettlebell-swing'].includes(id)), kbLowerB.join(', '));
+    const FULL_HOME = ['floor', 'dumbbells', 'kettlebells', 'resistance-bands', 'plyo-box', 'foam-roller', 'ab-wheel',
+      'bench-flat', 'bench-incline', 'pull-up-bar'];
+    for (const ids of [presetEquipment('unknown'), presetEquipment('crossfit'), FULL_HOME]) {
+      const lowerB = day(ids, 4, 'beginner', '하체 B');
+      assert.ok(lowerB.filter((id) => LIGHT.includes(id)).length <= 1, lowerB.join(', '));
+      assert.ok(lowerB.includes('bulgarian-split-squat'), lowerB.join(', '));
+    }
+    // 덤벨 · 케틀벨이 있으면 어느 하체 날에도 무게 실은 스쿼트 · 힌지 · 런지가 하나는 있다
+    for (const ids of [presetEquipment('home'), ['floor', 'kettlebells'], ['floor', 'dumbbells']]) {
+      for (const days of [4, 5]) {
+        for (const level of ['beginner', 'intermediate'] as const) {
+          for (const priorities of [undefined, ['glutes']] as OnboardingAnswers['priorities'][]) {
+            for (const template of woman(ids, days, level, priorities).templates) {
+              if (!/하체|레그/.test(template.name)) continue;
+              const loaded = template.slots.map((slot) => exerciseById(slot.exerciseId)!)
+                .filter((exercise) => ['squat', 'hinge', 'lunge'].includes(exercise.pattern) && exercise.equipment !== 'bodyweight');
+              assert.ok(loaded.length > 0, `${ids.join(',')} 주 ${days}회 ${level} ${template.name}: ${template.slots.map((slot) => slot.exerciseId).join(', ')}`);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('매트(+케틀벨)뿐인 집의 중급 상체 · 푸시 날도 네 종목 — 푸시업 뒤 인클라인 푸시업, 파이크 푸시업으로 채운다', () => {
+    for (const ids of [['floor'], ['floor', 'kettlebells']]) {
+      for (const days of [4, 5]) {
+        for (const priorities of [undefined, ['glutes']] as OnboardingAnswers['priorities'][]) {
+          for (const template of woman(ids, days, 'intermediate', priorities).templates) {
+            if (!/상체|푸시/.test(template.name)) continue;
+            const dayIds = template.slots.map((slot) => slot.exerciseId);
+            const tag = `${ids.join(',')} 주 ${days}회 ${template.name}: ${dayIds.join(', ')}`;
+            assert.ok(dayIds.length >= 4, tag);
+            assert.equal(new Set(dayIds).size, dayIds.length, tag);
+            // 인클라인 푸시업은 메인이 아니라 푸시업 바로 뒤의 가벼운 마무리다
+            const incline = template.slots.find((slot) => slot.exerciseId === 'incline-push-up');
+            if (incline) {
+              assert.notEqual(incline.role, 'primary', tag);
+              assert.equal(dayIds.indexOf('incline-push-up'), dayIds.indexOf('push-up') + 1, tag);
+            }
+          }
+        }
+      }
+    }
+    // 덤벨이 있으면 마무리로 인클라인 푸시업을 덧붙이지 않는다
+    for (const template of woman(presetEquipment('home'), 4, 'intermediate').templates) {
+      const dayIds = template.slots.map((slot) => slot.exerciseId);
+      assert.ok(!(dayIds.includes('push-up') && dayIds.includes('incline-push-up')), dayIds.join(', '));
     }
   });
 

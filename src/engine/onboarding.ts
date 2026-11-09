@@ -474,6 +474,8 @@ const EASY_FILLERS: readonly string[] = [
 const SPARSE_PUSH_FILLERS: readonly string[] = ['incline-push-up', 'pike-push-up'];
 /** 하루에 이만큼은 있어야 운동한 날 같다 — 모자라면 EASY_FILLERS로 채운다 */
 const MIN_DAY_EXERCISES = 4;
+/** 무게를 실을 수 있는 다리 복합 동작 */
+const LOWER_COMPOUND: readonly MovementPattern[] = ['squat', 'hinge', 'lunge'];
 /** 하체 부위 — 하체 채우기 종목은 이 부위 자리가 있는 날에만 */
 const LOWER_BODY: ReadonlySet<MuscleGroup> = new Set<MuscleGroup>(['quads', 'hamstrings', 'glutes', 'calves']);
 /** 미는 부위 — 상체 채우기 종목(인클라인 푸시업)은 이 부위 자리가 있는 날에만. 당기는 날에 푸시업을 끼우지 않는다 */
@@ -1050,6 +1052,30 @@ export function buildProgram(
       take(exercise);
       picked.push({ slot, exercise, sets: 0 });
     });
+
+    /*
+     * 덤벨 · 케틀벨이 있는데 하체 날에 무게 실은 스쿼트 · 힌지 · 런지가 하나도 없으면(케틀벨뿐인 집의 하체 B — 고블릿 스쿼트 ·
+     * 스윙을 하체 A에서 써서 맨몸 스쿼트 · 브릿지만 남았다) 하체 동작 자리 하나를 무게 싣는 종목으로 바꾼다. 이번 주에 쓴 것도 된다.
+     */
+    const loadedLower = (exercise: Exercise) => !isUnloaded(exercise) && LOWER_COMPOUND.includes(exercise.pattern);
+    if (!picked.some((item) => loadedLower(item.exercise)) && pool.some(loadedLower)) {
+      for (const item of picked) {
+        if (!isUnloaded(item.exercise) || !item.slot.patterns?.some((pattern) => LOWER_COMPOUND.includes(pattern))) continue;
+        context.today = picked.filter((other) => other !== item).map((other) => other.exercise);
+        context.weekBodyweight = weekBodyweight;
+        context.noSwap = true;
+        const instead = pickExercise(item.slot, pool.filter(loadedLower), new Set([...usedToday, ...reserved]), context);
+        context.noSwap = false;
+        if (!instead) continue;
+        usedToday.delete(item.exercise.id);
+        if (!usedBeforeToday.has(item.exercise.id)) usedThisWeek.delete(item.exercise.id);
+        if (item.exercise.equipment === 'bodyweight') weekBodyweight -= 1;
+        addJointLoad(sessionLoad, item.exercise, -1);
+        take(instead);
+        item.exercise = instead;
+        break;
+      }
+    }
 
     /*
      * 자리가 비어 하루가 너무 짧으면(기구가 거의 없는 집) 쉬운 맨몸 종목으로 채운다. 그날 아직 안 쓴
