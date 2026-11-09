@@ -680,9 +680,48 @@ function sessionSetCap(days: number, level: TrainingLevel): number {
 function sameMovement(a: Exercise, b: Exercise): boolean {
   if (a.id === b.id) return false;
   if (SAME_MOVEMENT.some((group) => group.includes(a.id) && group.includes(b.id))) return true;
-  if (a.pattern !== b.pattern || (a.pattern !== 'squat' && a.pattern !== 'lunge')) return false;
+  /*
+   * 스쿼트와 런지는 같은 무릎 위주 갈래다 — 워킹 런지 뒤의 맨몸 스쿼트도 무릎 운동을 가볍게 한 번 더 하는 셈이다.
+   * 그래서 가벼운 맨몸판과 무게 실은 판은 스쿼트 · 런지를 가리지 않고 부딪친다(덤벨 · 케틀벨 집의 하체 B).
+   */
+  const kneeFamily = (item: Exercise) => item.pattern === 'squat' || item.pattern === 'lunge';
+  if (!kneeFamily(a) || !kneeFamily(b)) return false;
   const light = (item: Exercise) => LIGHT_BODYWEIGHT.has(item.id);
   return (light(a) && !isUnloaded(b)) || (light(b) && !isUnloaded(a));
+}
+
+/**
+ * 초보에게 미루는 종목 — 처음엔 한 개도 못 하는 맨몸 종목(HARD_BODYWEIGHT)과 아직 안 배운 기술 종목(케틀벨 스윙 ·
+ * 바벨 로우 …). 근력 목표의 바벨 주 종목은 일부러 넣는 것이라 여기 들지 않는다.
+ */
+function beginnerAvoids(exercise: Exercise, context: PickContext): boolean {
+  if (context.level !== 'beginner') return false;
+  if (HARD_BODYWEIGHT.has(exercise.id)) return true;
+  if (!TECHNICAL_LIFTS.has(exercise.id) || context.introduced?.includes(exercise.id)) return false;
+  return !(context.strengthOnly && isStrengthLift(exercise));
+}
+
+/**
+ * 덤벨(케틀벨) 스쿼트 둘째 판 — 고블릿 스쿼트 뒤의 덤벨 스모 스쿼트는 들 수 있는 덤벨 하나로 같은 스쿼트를 발 너비만
+ * 바꿔 한 번 더 하는 것이다. 바벨 · 머신 스쿼트 둘(백 스쿼트 + 핵 스쿼트)은 무게가 달라 그대로 둔다.
+ */
+function twinBellSquat(exercise: Exercise, today: readonly Exercise[]): boolean {
+  const bellSquat = (item: Exercise) => item.pattern === 'squat' && item.equipment === 'dumbbell';
+  return bellSquat(exercise) && today.some((item) => item.id !== exercise.id && bellSquat(item));
+}
+
+/**
+ * 고른 종목 대신 줄 종목이 있으면 그걸로 — 초보에게 미루는 종목은 같은 동작 갈래의 다른 종목이 있을 때(철봉뿐이면
+ * 풀업, 케틀벨뿐이면 스윙은 그대로), 덤벨 스쿼트 둘째 판은 런지 · 힌지 · 스텝업 같은 다른 하체 종목이 있을 때만 뺀다.
+ * 가벼운 맨몸판(브릿지 · 맨몸 스쿼트)은 대신 줄 종목으로 치지 않는다 — 케틀벨 스윙 대신 브릿지를 주면 하체 날에 무게가 빠진다.
+ */
+function betterInstead(chosen: Exercise, other: Exercise, context: PickContext): boolean {
+  if (discouraged(other, context) || LIGHT_BODYWEIGHT.has(other.id)) return false;
+  return !beginnerAvoids(chosen, context) || other.pattern === chosen.pattern;
+}
+
+function discouraged(exercise: Exercise, context: PickContext): boolean {
+  return beginnerAvoids(exercise, context) || twinBellSquat(exercise, context.today);
 }
 
 /**
@@ -736,7 +775,13 @@ function pickExercise(
    */
   const light = (exercise: Exercise) => exercise.pattern === 'isolation' || exercise.pattern === 'core';
   const narrowed = slot.role === 'isolation' && candidates.some(light) ? candidates.filter(light) : candidates;
-  return narrowed
+  /*
+   * 점수로 뒤로 미는 것만으로는 모자랐다 — 레그컬 기계가 있는 헬스장의 초보 하체 B에 글루트 햄 레이즈가 맨몸 골고루
+   * 점수를 받아 들어갔다. 대신 줄 종목이 이 자리 후보에 있으면 아예 뺀다.
+   */
+  const kept = narrowed.filter((exercise) =>
+    !discouraged(exercise, context) || !narrowed.some((other) => betterInstead(exercise, other, context)));
+  return kept
     .map((exercise) => ({ exercise, score: scoreExercise(exercise, slot, context) }))
     .sort((a, b) => b.score - a.score)[0]?.exercise;
 }
@@ -980,9 +1025,16 @@ export function buildProgram(
       const today = new Set([...usedToday, ...also]);
       const base = new Set([...today, ...repeatable, ...reserved]);
       const fresh = slot.role === 'primary' ? base : new Set([...base, ...rotateOut]);
-      return pickExercise(slot, pool, fresh, context) ??
+      const first = pickExercise(slot, pool, fresh, context) ??
         pickExercise(slot, pool, base, context) ??
         pickExercise(slot, pool, today, context);
+      if (!first || !discouraged(first, context)) return first;
+      /*
+       * 이번 주에 아직 안 쓴 종목을 먼저 고르다 보면 초보에게 미루는 종목(케틀벨 스윙)이나 덤벨 스쿼트 둘째 판만 남는다 —
+       * 덤벨 루마니안을 하체 A에서 써서 하체 B 둔근 자리에 스윙이 들어갔다. 대신 줄 종목이 있으면 이번 주에 쓴 것이라도 그쪽.
+       */
+      const notInstead = pool.filter((item) => !betterInstead(first, item, context)).map((item) => item.id);
+      return pickExercise(slot, pool, new Set([...today, ...reserved, ...notInstead]), context) ?? first;
     };
     const take = (exercise: Exercise) => {
       usedToday.add(exercise.id);
@@ -1058,12 +1110,19 @@ export function buildProgram(
      * 스윙을 하체 A에서 써서 맨몸 스쿼트 · 브릿지만 남았다) 하체 동작 자리 하나를 무게 싣는 종목으로 바꾼다. 이번 주에 쓴 것도 된다.
      */
     const loadedLower = (exercise: Exercise) => !isUnloaded(exercise) && LOWER_COMPOUND.includes(exercise.pattern);
-    if (!picked.some((item) => loadedLower(item.exercise)) && pool.some(loadedLower)) {
+    /*
+     * 먼저 오늘 어떤 종목과도 부딪치지 않는 걸 찾고, 없으면 무게 싣는 판을 넣은 뒤 부딪치는 가벼운 맨몸판(같은 무릎 갈래의
+     * 맨몸 스쿼트 · 런지)을 다른 종목으로 바꾼다 — 맨몸 리버스 런지 + 맨몸 스쿼트뿐이던 케틀벨 집의 전신 B.
+     */
+    const lowerSlot = (item: Picked) =>
+      isUnloaded(item.exercise) && item.slot.patterns?.some((pattern) => LOWER_COMPOUND.includes(pattern));
+    for (const strict of [true, false]) {
+      if (picked.some((item) => loadedLower(item.exercise)) || !pool.some(loadedLower)) break;
       for (const item of picked) {
-        if (!isUnloaded(item.exercise) || !item.slot.patterns?.some((pattern) => LOWER_COMPOUND.includes(pattern))) continue;
+        if (!lowerSlot(item)) continue;
         context.today = picked.filter((other) => other !== item).map((other) => other.exercise);
         context.weekBodyweight = weekBodyweight;
-        context.noSwap = true;
+        context.noSwap = strict;
         const instead = pickExercise(item.slot, pool.filter(loadedLower), new Set([...usedToday, ...reserved]), context);
         context.noSwap = false;
         if (!instead) continue;
@@ -1073,6 +1132,8 @@ export function buildProgram(
         addJointLoad(sessionLoad, item.exercise, -1);
         take(instead);
         item.exercise = instead;
+        for (const loser of picked.filter((other) => other !== item && sameMovement(other.exercise, instead) &&
+          hardness(other.exercise) < hardness(instead))) swapOut(loser, instead);
         break;
       }
     }
@@ -1136,7 +1197,12 @@ export function buildProgram(
       }
     }
     previousLowerFillers = lowerFillersToday;
-    return picked;
+    /*
+     * 복근 · 코어(데드버그 · 크런치 · 플랭크)는 그날 마지막에 — 몸통을 받쳐 줄 힘을 프레스 · 스쿼트 전에 쓰지 않는다.
+     * 매트 · 케틀벨 집의 상체 B가 채우기 순서대로 푸시업 → 인클라인 푸시업 → 데드버그 → 파이크 푸시업이 됐다.
+     */
+    const isCore = (item: Picked) => item.exercise.pattern === 'core';
+    return [...picked.filter((item) => !isCore(item)), ...picked.filter(isCore)];
   });
 
   const all = week.flat();
