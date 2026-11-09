@@ -880,8 +880,10 @@ describe('새 종목으로 짜는 집 · 초보 프로그램', () => {
     };
     const LIGHT = ['bodyweight-squat', 'bodyweight-reverse-lunge', 'glute-bridge', 'incline-push-up'];
     for (const ids of [presetEquipment('home'), ['floor', 'dumbbells']]) {
+      // 무게 실은 덤벨 스쿼트가 하나 남는다(고블릿 · 스모 둘 다는 아니다 — 아래 '덤벨 스쿼트 둘째 판' 테스트)
       const lowerB = day(ids, 4, 'intermediate', '하체 B');
-      assert.ok(lowerB.includes('goblet-squat'), lowerB.join(', '));
+      assert.equal(lowerB.filter((id) => ['goblet-squat', 'dumbbell-sumo-squat'].includes(id)).length, 1, lowerB.join(', '));
+      assert.ok(!lowerB.includes('bodyweight-squat'), lowerB.join(', '));
       for (const days of [2, 3]) {
         const fullB = day(ids, days, 'intermediate', '전신 B');
         assert.ok(fullB.includes('dumbbell-sumo-squat'), `주 ${days}회: ${fullB.join(', ')}`);
@@ -894,7 +896,11 @@ describe('새 종목으로 짜는 집 · 초보 프로그램', () => {
     for (const ids of [presetEquipment('unknown'), presetEquipment('crossfit'), FULL_HOME]) {
       const lowerB = day(ids, 4, 'beginner', '하체 B');
       assert.ok(lowerB.filter((id) => LIGHT.includes(id)).length <= 1, lowerB.join(', '));
-      assert.ok(lowerB.includes('bulgarian-split-squat'), lowerB.join(', '));
+      // 무게 실은 런지(불가리안 · 덤벨 리버스 런지 …)가 들어간다 — 불가리안은 하체 A의 덤벨 스쿼트 둘째 판 자리로 가기도 한다
+      assert.ok(lowerB.some((id) => {
+        const exercise = exerciseById(id)!;
+        return exercise.pattern === 'lunge' && exercise.equipment !== 'bodyweight';
+      }), lowerB.join(', '));
     }
     // 덤벨 · 케틀벨이 있으면 어느 하체 날에도 무게 실은 스쿼트 · 힌지 · 런지가 하나는 있다
     for (const ids of [presetEquipment('home'), ['floor', 'kettlebells'], ['floor', 'dumbbells']]) {
@@ -974,5 +980,136 @@ describe('새 종목으로 짜는 집 · 초보 프로그램', () => {
     const gear = result.notes.find((note) => note.includes('기구가 없어'));
     assert.ok(gear, result.notes.join(' / '));
     assert.ok(!gear!.includes('가슴'), gear);
+  });
+});
+
+/*
+ * 세 번째 점검(7,344개 프로그램)에서 남은 것 — 초보에게 미루는 종목이 바꿔 넣기 · 다시 고르기에서 새어 들어왔고,
+ * 맨몸 스쿼트가 워킹 런지 옆에, 덤벨 스쿼트 두 판이 한 날에, 데드버그가 프레스 앞에 왔다.
+ */
+describe('buildProgram — 초보 제외 · 무릎 갈래 · 덤벨 스쿼트 둘 · 코어 순서', () => {
+  const build = (equipmentIds: readonly string[], level: 'beginner' | 'intermediate' | 'advanced', days: number,
+    priorities: OnboardingAnswers['priorities'] = [], goal: 'hypertrophy' | 'strength' | 'fatLoss' = 'hypertrophy', sex: 'female' | 'male' = 'female') =>
+    buildProgram(answers({
+      selfReportedLevel: level, monthsTraining: level === 'beginner' ? 1 : level === 'intermediate' ? 18 : 48,
+      bodyweightKg: 70, sex, daysPerWeek: days, goals: [goal], gym: { equipmentIds: [...equipmentIds] }, priorities,
+    }), level);
+  const dayOf = (program: ReturnType<typeof buildProgram>, name: string) =>
+    program.templates.find((template) => template.name === name)!.slots.map((slot) => slot.exerciseId);
+  const DB_KB = ['floor', 'dumbbells', 'kettlebells'];
+  const HOMES: Record<string, readonly string[]> = {
+    home: presetEquipment('home'), dbOnly: ['floor', 'dumbbells'], dbKb: DB_KB, kb: ['floor', 'kettlebells'],
+    homeFull: ['floor', 'dumbbells', 'kettlebells', 'resistance-bands', 'plyo-box', 'foam-roller', 'ab-wheel', 'bench-flat', 'bench-incline', 'pull-up-bar'],
+    dbBench: ['floor', 'dumbbells', 'bench-flat'], crossfit: presetEquipment('crossfit'), unknown: presetEquipment('unknown'),
+  };
+
+  it('레그컬 기계가 있는 헬스장의 초보 하체 B에 글루트 햄 레이즈를 주지 않는다 — 벨트 스쿼트가 들어간 날도', () => {
+    for (const goal of ['hypertrophy', 'fatLoss'] as const) {
+      for (const sex of ['female', 'male'] as const) {
+        const lowerB = dayOf(build(presetEquipment('franchise'), 'beginner', 4, ['quads'], goal, sex), '하체 B');
+        const tag = `${goal} ${sex}: ${lowerB.join(', ')}`;
+        assert.ok(!lowerB.includes('glute-ham-raise'), tag);
+        assert.ok(lowerB.some((id) => id === 'seated-leg-curl' || id === 'lying-leg-curl'), tag);
+      }
+    }
+    // 어느 헬스장 · 분할 · 약점에서도 레그컬이 되는 곳이면 초보에게 글루트 햄 레이즈 · 파이크 푸시업이 없다
+    for (const preset of ['franchise', 'neighborhood', 'residence', 'unknown'] as const) {
+      for (const days of [2, 3, 4, 5, 6]) {
+        for (const priorities of [[], ['glutes'], ['quads'], ['hamstrings']] as OnboardingAnswers['priorities'][]) {
+          for (const goal of ['hypertrophy', 'strength', 'fatLoss'] as const) {
+            const ids = exercisesOf(build(presetEquipment(preset), 'beginner', days, priorities, goal)).map((exercise) => exercise.id);
+            assert.ok(!ids.includes('glute-ham-raise') && !ids.includes('pike-push-up'), `${preset} 주 ${days}회 ${priorities} ${goal}: ${ids.join(', ')}`);
+          }
+        }
+      }
+    }
+  });
+
+  it('덤벨이 있으면 초보 하체 B 힌지는 케틀벨 스윙이 아니라 덤벨 루마니안 — 케틀벨뿐이면 스윙도 된다', () => {
+    for (const goal of ['hypertrophy', 'strength', 'fatLoss'] as const) {
+      const lowerB = dayOf(build(DB_KB, 'beginner', 4, ['glutes'], goal), '하체 B');
+      const tag = `${goal}: ${lowerB.join(', ')}`;
+      assert.ok(lowerB.includes('dumbbell-romanian-deadlift'), tag);
+      assert.ok(!lowerB.includes('kettlebell-swing'), tag);
+      // 워킹 런지 옆에 맨몸 스쿼트를 두지 않는다 — 같은 무릎 갈래
+      assert.ok(!lowerB.includes('bodyweight-squat'), tag);
+    }
+    // 덤벨이 있는 곳의 초보에게는 어느 날에도 스윙이 없다
+    for (const name of ['home', 'dbOnly', 'dbKb', 'homeFull', 'crossfit']) {
+      for (const days of [2, 3, 4, 5, 6]) {
+        for (const priorities of [[], ['glutes'], ['quads']] as OnboardingAnswers['priorities'][]) {
+          const ids = exercisesOf(build(HOMES[name]!, 'beginner', days, priorities)).map((exercise) => exercise.id);
+          assert.ok(!ids.includes('kettlebell-swing'), `${name} 주 ${days}회 ${priorities}: ${ids.join(', ')}`);
+        }
+      }
+    }
+    // 케틀벨뿐인 집은 스윙 말고 무게 실은 힌지가 없다 — 초보라도 하체 날에 들어온다
+    const kb = exercisesOf(build(HOMES.kb!, 'beginner', 4)).map((exercise) => exercise.id);
+    assert.ok(kb.includes('kettlebell-swing'), kb.join(', '));
+  });
+
+  it('가벼운 맨몸 스쿼트 · 런지는 무게 실은 스쿼트 · 런지와 한 날에 두지 않는다 — 스쿼트 · 런지를 가리지 않고', () => {
+    const LIGHT_KNEE = ['bodyweight-squat', 'bodyweight-reverse-lunge'];
+    for (const [name, ids] of Object.entries({ ...HOMES, franchise: presetEquipment('franchise') })) {
+      for (const days of [2, 3, 4, 5]) {
+        for (const level of ['beginner', 'intermediate'] as const) {
+          for (const priorities of [[], ['glutes'], ['quads']] as OnboardingAnswers['priorities'][]) {
+            for (const goal of ['hypertrophy', 'strength'] as const) {
+              for (const template of build(ids, level, days, priorities, goal).templates) {
+                const day = template.slots.map((slot) => exerciseById(slot.exerciseId)!);
+                const knee = day.filter((exercise) => exercise.pattern === 'squat' || exercise.pattern === 'lunge');
+                const tag = `${name} 주 ${days}회 ${level} ${priorities} ${goal} ${template.name}: ${day.map((exercise) => exercise.id).join(', ')}`;
+                assert.ok(!(knee.some((exercise) => LIGHT_KNEE.includes(exercise.id)) &&
+                  knee.some((exercise) => exercise.equipment !== 'bodyweight' && exercise.equipment !== 'band')), tag);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('덤벨 스쿼트 둘째 판(고블릿 + 덤벨 스모)을 한 날에 넣지 않는다 — 바벨 · 머신 스쿼트 둘은 그대로', () => {
+    for (const [name, ids] of Object.entries(HOMES)) {
+      for (const days of [2, 3, 4, 5, 6]) {
+        for (const level of ['beginner', 'intermediate', 'advanced'] as const) {
+          for (const priorities of [[], ['glutes'], ['quads']] as OnboardingAnswers['priorities'][]) {
+            for (const template of build(ids, level, days, priorities).templates) {
+              const day = template.slots.map((slot) => exerciseById(slot.exerciseId)!);
+              const bell = day.filter((exercise) => exercise.pattern === 'squat' && exercise.equipment === 'dumbbell');
+              assert.ok(bell.length <= 1, `${name} 주 ${days}회 ${level} ${priorities} ${template.name}: ${day.map((exercise) => exercise.id).join(', ')}`);
+              // 둘째 판을 빼도 하루가 네 종목 아래로 줄지 않는다
+              assert.ok(day.length >= Math.min(4, template.slots.length), template.name);
+            }
+          }
+        }
+      }
+    }
+    // 집 · 덤벨 중급 하체 B는 덤벨 스쿼트 하나에 런지 · 힌지
+    for (const priorities of [['glutes'], ['quads']] as OnboardingAnswers['priorities'][]) {
+      const lowerB = dayOf(build(presetEquipment('home'), 'intermediate', 4, priorities), '하체 B');
+      assert.ok(lowerB.some((id) => exerciseById(id)!.pattern === 'lunge'), lowerB.join(', '));
+      assert.ok(lowerB.includes('dumbbell-romanian-deadlift'), lowerB.join(', '));
+    }
+    // 기구 많은 헬스장의 백 스쿼트 + 핵 스쿼트는 건드리지 않는다
+    const lowerA = dayOf(build(presetEquipment('franchise'), 'intermediate', 4, [], 'hypertrophy', 'male'), '하체 A');
+    assert.ok(lowerA.includes('back-squat') && lowerA.includes('hack-squat'), lowerA.join(', '));
+  });
+
+  it('복근 · 코어 종목은 그날 마지막 — 데드버그가 파이크 푸시업 앞에 오지 않는다', () => {
+    const upperB = dayOf(build(['floor', 'kettlebells'], 'intermediate', 4), '상체 B');
+    assert.deepEqual(upperB, ['push-up', 'incline-push-up', 'pike-push-up', 'dead-bug']);
+    for (const [name, ids] of Object.entries({ ...HOMES, mat: ['floor'], franchise: presetEquipment('franchise') })) {
+      for (const days of [1, 2, 3, 4, 5, 6]) {
+        for (const level of ['beginner', 'intermediate'] as const) {
+          for (const template of build(ids, level, days, ['glutes']).templates) {
+            const patterns = template.slots.map((slot) => exerciseById(slot.exerciseId)!.pattern);
+            const firstCore = patterns.indexOf('core');
+            assert.ok(firstCore < 0 || patterns.slice(firstCore).every((pattern) => pattern === 'core'),
+              `${name} 주 ${days}회 ${level} ${template.name}: ${template.slots.map((slot) => slot.exerciseId).join(', ')}`);
+          }
+        }
+      }
+    }
   });
 });
