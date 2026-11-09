@@ -49,7 +49,13 @@ export default async function ({ page, url, shot }) {
   await search.fill('');
   await search.click();
   await page.keyboard.type('무릎 푸시업', { delay: 30 });
-  check(await page.locator('dialog .add-lift-row').count() === 0, '"무릎 푸시업"으로 다른 종목이 뜹니다');
+  // 무릎 푸시업은 이제 있는 종목이다(매트뿐인 초보의 첫 푸시업) — 그것 하나만, 인클라인 푸시업이 섞이지 않는다
+  const kneeRows = (await page.locator('dialog .add-lift-row').allTextContents()).map((text) => text.trim());
+  check(kneeRows.length === 1 && kneeRows[0].startsWith('무릎 푸시업'), '"무릎 푸시업" 검색: ' + kneeRows.join(', '));
+  await search.fill('');
+  await search.click();
+  await page.keyboard.type('물구나무 푸시업', { delay: 30 });
+  check(await page.locator('dialog .add-lift-row').count() === 0, '"물구나무 푸시업"으로 다른 종목이 뜹니다');
   await page.locator('dialog .modal-close').click();
   await page.waitForFunction(() => !document.querySelector('dialog')?.open);
   if (await page.locator('.list-edit[aria-expanded="true"]').count()) await page.locator('.list-edit').click();
