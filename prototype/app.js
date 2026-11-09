@@ -2024,14 +2024,16 @@
         ? E.nearestLoadable(aim, lift.loading, adjustment.deltaKg > 0 ? 'up' : adjustment.deltaKg < 0 ? 'down' : 'nearest')
         : Math.max(0, Math.round(aim * 100) / 100);
       // 기구 칸에 맞추느라 폭이 달라졌으면 실제 폭으로 말한다("1kg 올립니다"인데 8 → 10kg)
-      adjustment = E.restateAdjustment(adjustment, fromKg, next.weightKg);
+      var wanted = adjustment.deltaKg;
+      adjustment = E.restateAdjustment(adjustment, fromKg, next.weightKg, lift.loading || undefined);
       /*
        * 이건 코치가 다시 내린 처방이므로 계획도 같이 움직인다. 사용자가
        * 직접 친 무게만 계획과 갈라진다 — 그래야 "계획 105"가 뜻을 갖는다.
        */
       next.plannedKg = next.weightKg;
       next.estimated = false;
-      if (adjustment.deltaKg !== 0) {
+      // 올리려 했는데 기구 칸 때문에 그대로여도 이유는 보여 준다("다음 세트 그대로 — 횟수로 올립니다")
+      if (adjustment.deltaKg !== 0 || wanted !== 0) {
         next.adjustment = adjustment;
         pushLog('세트 간 보정', lift.exercise.name + ' ' + (setIndex + 2) + '세트 — ' + adjustment.reason);
       }
@@ -10929,7 +10931,8 @@
 
     if (set.adjustment) {
       body.push(el('div', { class: 'set-result' }, [
-        el('em', { text: (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg — ' + set.adjustment.reason }),
+        el('em', { text: set.adjustment.deltaKg === 0 ? set.adjustment.reason
+          : (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg — ' + set.adjustment.reason }),
       ]));
     }
 
