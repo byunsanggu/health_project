@@ -2,7 +2,7 @@
 //   처음 설정: 홈짐을 고르면 그림 칸이 바로 열리고, 집에 흔한 맨몸 · 소도구(밴드 · 케틀벨 · 스텝박스 · 폼롤러)가
 //   "더 보기" 없이 맨 위에 있다. 켜도 열리는 종목이 없는 기구는 칸에 그렇다고 적는다.
 //   오늘: 헬스장 등록 안내가 없고, ⋯ 메뉴에 "사람 있어요" · "맨 뒤로 미루기"가 없다.
-//   내 정보 › 헬스장: 빨간 "등록 안 됨"도, 찾아서 등록하기도, 바벨 · 머신이 없으니 빈 바 · 머신 한 칸 설정도 없다.
+//   내 정보 › 헬스장: 빨간 "등록 안 됨"도, 찾아서 등록하기도 없다. 바벨 · 머신이 없으니 무게 설정은 덤벨 두 줄뿐이다.
 //   내 정보 › 설정: "운동 횟수 · 목표 바꾸기"로 주 몇 번을 바로 바꾼다. 개발자 말(PWA · 서버 · Wear OS)이 없다.
 import { check, gymTab, pickMe, tab } from './lib.mjs';
 
@@ -38,11 +38,12 @@ export default async function ({ page, url, shot }) {
   for (const name of ['밴드', '케틀벨', '스텝 박스', '폼롤러']) {
     check(await tileNamed(page, name).count() >= 1, name + ' 칸이 바로 안 보입니다');
   }
-  // 밴드를 켠다 — 아직 이 기구로 하는 종목이 없다고 칸에 적혀 있다
+  // 밴드 — 켜기 전에 밴드로 하는 종목(밴드 로우 · 풀 어파트 · 레터럴 레이즈)이 열린다고 칸에 적혀 있다
   const band = tileNamed(page, '밴드').first();
+  const bandNote = await band.textContent();
+  check(/\+[3-9]종목/.test(bandNote) && !bandNote.includes('아직 이 기구로 하는 종목이 없습니다'), '밴드 칸: ' + bandNote);
   await band.click();
   check(await tileNamed(page, '밴드').first().getAttribute('aria-pressed') === 'true', '밴드가 안 켜집니다');
-  check((await tileNamed(page, '밴드').first().textContent()).includes('아직 이 기구로 하는 종목이 없습니다'), '밴드 칸: ' + await tileNamed(page, '밴드').first().textContent());
   check((await page.locator('.equip-toggle').textContent()).includes('있음'), '개수를 "켜짐"으로 셉니다');
   await shot('1-gymstep');
 
@@ -71,7 +72,12 @@ export default async function ({ page, url, shot }) {
   check(here.includes('우리 집') && here.includes('홈짐') && !here.includes('등록 안 됨'), '헬스장 칸: ' + here);
   check(await page.locator('.gym-here-where.unset').count() === 0, '집인데 빨간 주소 줄이 있습니다');
   check(await page.locator('.gym-link').count() === 0, '집인데 "찾아서 등록하기"가 있습니다');
-  check(await page.locator('.gym-weights').count() === 0, '바벨 · 머신이 없는데 빈 바 · 머신 설정이 있습니다');
+  // 덤벨만 있으면 무게 설정은 덤벨 두 줄뿐 — 빈 바 · 머신 한 칸은 묻지 않는다
+  const weights = page.locator('.gym-weights');
+  check(await weights.count() === 1, '덤벨이 있는데 덤벨 무게 설정이 없습니다');
+  const weightText = await weights.textContent();
+  check(weightText.includes('가벼운 덤벨 간격') && weightText.includes('가장 무거운 덤벨'), '덤벨 설정: ' + weightText.replace(/\s+/g, ' ').slice(0, 200));
+  check(!weightText.includes('빈 바') && !weightText.includes('머신 무게 한 칸'), '바벨 · 머신이 없는데 빈 바 · 머신 설정이 있습니다: ' + weightText.replace(/\s+/g, ' ').slice(0, 200));
   const gymText = await page.locator('#screen').textContent();
   check(!gymText.includes('스택') && !gymText.includes('백 스쿼트 제안'), '헬스장 탭에 스택 · 백 스쿼트: ' + gymText.replace(/\s+/g, ' ').slice(0, 300));
   check(await page.locator('.sheet h3', { hasText: '몸무게' }).count() === 1, '몸무게 칸 이름이 다릅니다');

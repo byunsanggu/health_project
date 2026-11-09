@@ -87,6 +87,9 @@ export default async function ({ page, url, shot }) {
   const values = await page.locator('dialog .wm-value').allTextContents();
   check(values.every((text) => /^\d+세트$|^보조로$/.test(text.trim())), '부위별 숫자가 정수 세트가 아닙니다: ' + values.join(', '));
   check(/다음 주:/.test(summary), '다음 주 한 줄이 없습니다');
+  // 첫 운동 뒤 근육통 안내 — 뻐근한 것은 정상, 관절 통증은 적어 달라고
+  const sore = await page.locator('dialog .first-soreness').textContent().catch(() => '');
+  check(sore.includes('뻐근할 수 있습니다') && sore.includes('통증으로 적어 주세요'), '첫날 요약에 근육통 안내가 없습니다: ' + sore);
   await shot('3-summary');
   await page.locator('dialog .summary-foot button', { hasText: '오늘 마치기' }).click();
 

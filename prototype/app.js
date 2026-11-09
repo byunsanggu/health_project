@@ -437,9 +437,9 @@
         state.cardioToday = [];
         state.sessionStartedAt = null;
       }
-      state.gymBook = settings.gymBook || E.createGymBook({
+      state.gymBook = migrateHomeGym(settings.gymBook || E.createGymBook({
         id: 'my-gym', name: '내 헬스장', equipmentIds: saved.answers.gym.equipmentIds.slice(),
-      });
+      }));
 
       loadScenario(state.scenario, true);
 
@@ -2861,9 +2861,36 @@
     else syncBackGuard();
   });
 
-  /** 운동 화면에서 오늘 목록으로. PT는 멈춰 두고 간다 — 돌아와 "시작하기"를 누르면 잇는다. */
+  /**
+   * 운동 화면에서 오늘 목록으로. PT는 멈춰 두고 간다 — 돌아와 "이어서 하기"를 누르면 잇는다.
+   *
+   * 막 시작하고 아무것도 안 했으면(세트 기록 없음 · 몸 풀기도 첫 동작 전) 시작을 없던 일로 한다.
+   * 전에는 시작하자마자 뒤로가기를 누르면 목록은 "시작하기"인데 시계는 계속 돌고, 다시 누르면
+   * 0:17부터 몸 풀기 중간으로 들어갔다.
+   */
   function leaveToList() {
-    if (ptOn() && state.ptRun && !state.ptRun.cooled) pausePt(null);
+    var pt = ptOn() ? state.ptRun : null;
+    var untouched = state.todaySets.length === 0 &&
+      (pt ? !pt.prepped && !pt.cooled && (!pt.prep || pt.prep.index <= 0)
+        : !(state.mobility && state.mobility.date === state.todayDate && (state.mobility.checked || []).length > 0));
+    if (untouched) {
+      if (pt) pausePt(null);
+      stopSpeech();
+      stopRest();
+      releaseWakeLock();
+      state.ptRun = null;
+      state.sessionStartedAt = null;
+      state.sessionEndedAt = null;
+      if (mobilityActive()) state.mobility = null;
+      state.focusHidden = false;
+      state.started = false;
+      render();
+      return;
+    }
+    if (pt && !pt.cooled) {
+      pausePt(null);
+      ptToast('PT를 멈췄습니다', '이어서 하기', function () { beginToday(); });
+    }
     state.focusHidden = false;
     state.started = false;
     render();
@@ -3079,6 +3106,13 @@
     var setMoved = nowKey !== null && nowKey !== lastSetKey;
     lastSetKey = nowKey;
 
+    renderRest();
+    renderFocus();
+    /*
+     * 스크롤은 PT 집중 화면을 그린 뒤에 맞춘다. 집중 화면이 떠 있는 동안 #screen은 숨겨져 있어서
+     * 그때 scrollTop을 0으로 해도 먹지 않는다 — PT에서 뒤로가기로 목록에 오면 숨기기 전 자리
+     * (운동 화면에서 "1세트 완료"까지 내려 둔 곳)가 되살아나 목록 중간이 떴다.
+     */
     if (moved) {
       screen.scrollTop = 0;
       ensureActionVisible();
@@ -3086,9 +3120,6 @@
       focusCurrentSet();
       ensureActionVisible();
     }
-
-    renderRest();
-    renderFocus();
     renderLog();
     renderScenarios();
     persist();
@@ -3234,6 +3265,24 @@
     var todayMap = todayMuscleMap(summary.byMuscle);
     if (todayMap) body.push(todayMap);
     if (summary.durationMinutes) body.push(el('p', { class: 'asset-note', text: '걸린 시간 · ' + summary.durationMinutes + '분' }));
+
+    /*
+     * 첫 운동 뒤 근육통 — 처음 하는 사람은 이틀 뒤 뻐근한 것을 다친 줄 알고 그만둔다.
+     * 지난 기록(어제까지)에 세트가 하나도 없고 오늘 세트를 했으면 첫 운동이다. 빡센 코치는 자기 말투로.
+     */
+    var firstEver = summary.setsCompleted > 0 && !state.history.some(function (session) {
+      return (session.sets || []).some(function (set) { return !set.warmup && set.reps > 0; });
+    });
+    if (firstEver) {
+      var toughCoach = ptOn() && state.coach.style === 'tough';
+      body.push(el('div', { class: 'notice first-soreness' }, [
+        el('div', { class: 'label', text: toughCoach ? '코치 한마디' : '처음 운동한 다음 날' }),
+        el('div', { text: toughCoach
+          ? '내일 뻐근할 거다. 정상이다. 관절이 찌르듯 아프면 그건 말해.'
+          : '내일·모레 운동한 부위가 뻐근할 수 있습니다. 처음 2~3주는 정상이고 움직이면 풀립니다. ' +
+            '관절이 찌르듯 아프거나 한쪽만 붓는다면 통증으로 적어 주세요.' }),
+      ]));
+    }
 
     /*
      * "오늘 최고 수행 · … → 1회 최대 약 38.1kg"은 초보가 모르는 말이었고, 추정 최대 무게 순이라
@@ -5922,7 +5971,8 @@
     var doneSets = state.todaySets.length;
     screen.appendChild(el('button', {
       type: 'button', class: 'finish start-cta',
-      text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : '시작하기',
+      // 시작해 두고 목록에 온 것(PT 멈춤 · 몸 풀기 중)도 "이어서 하기" — "시작하기"면 처음부터인 줄 안다
+      text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : state.sessionStartedAt ? '이어서 하기' : '시작하기',
       onclick: function () {
         // 처음 시작할 때만 묻는다 — 이어서 할 때는 바로
         if (doneSets === 0 && !state.sessionStartedAt && !(state.ptRun && state.ptRun.paused)) openStartSheet(false);
@@ -5967,6 +6017,9 @@
           ? '세트마다 ' + rir + '번쯤 더 할 수 있을 때 멈추고, 한 횟수로 숫자를 고친 뒤 완료를 누르세요. 쉬는 시간은 저절로 갑니다.'
           : '세트를 마치면 한 횟수로 숫자를 고친 뒤 완료를 누르세요. 쉬는 시간은 저절로 갑니다.' }),
         el('li', { text: '모르는 동작은 이름이나 그림을 누르면 동작을 보여 드립니다.' }),
+        // 첫 무게는 짐작이다 — 안 맞을 때 어떻게 하는지 말해 주지 않으면 너무 가벼운 무게로 끝까지 한다
+        el('li', { text: '첫 세트가 너무 가벼우면(목표보다 5개 넘게 더 할 수 있으면) 무게 숫자를 눌러 조금 올리고, ' +
+          '목표 횟수 전에 멈추면 조금 내리세요. 다음부터는 앱이 맞춥니다.' }),
       ]),
     ]);
   }
@@ -6060,9 +6113,14 @@
           { label: 'PT 코치', active: pt, onSelect: function () { setCoachMode('pt'); draw(); } },
         ]),
         el('p', { class: 'hint-line', text: pt
-          ? '코치가 몸 풀기부터 스트레칭까지 말로 이끕니다 — 말투는 "' + E.coachStyleInfo(state.coach.style).label + '"입니다. 내 정보에서 바꿀 수 있습니다. ' +
+          ? '코치가 몸 풀기부터 스트레칭까지 말로 이끕니다 — 말투는 "' + E.coachStyleInfo(state.coach.style).label + '"입니다. ' +
             '세트는 코치가 센 개수로 적습니다 — 다 못 하면 "여기까지"를 누르세요.'
           : '무게와 횟수를 화면에 띄우고 조용히 기록합니다.' }),
+        // 말투는 내 정보에만 있으면 운동 직전에 바꾸러 갈 수가 없다 — 여기서 바로 고르고 돌아온다
+        pt ? el('button', {
+          type: 'button', class: 'linkish coach-style-link', text: '말투 바꾸기',
+          onclick: function () { openCoachStylePicker(draw); },
+        }) : null,
         el('button', {
           type: 'button', class: 'finish start-go', text: editOnly ? '확인' : '시작',
           onclick: function () {
@@ -7668,6 +7726,20 @@
    * "바꾸기"에서 바꾼다. 매번 시작 버튼 위에서 고르게 하던 큰 칸은 없앴다 —
    * 대부분은 한 번 정하면 그대로 쓴다. 말투를 누르면 그 말투로 한마디 들려준다.
    */
+  /**
+   * 코치 말투 고르기를 창으로 — 시작 전 한 장의 "말투 바꾸기"에서 연다. 내 정보에 있는 것과 같은 고르는 칸이다.
+   * back = 다 고르고 돌아갈 곳(시작 전 한 장을 다시 그린다).
+   */
+  function openCoachStylePicker(back) {
+    var draw = function () {
+      openModal('말투 바꾸기', null, [
+        coachModeControls(draw),
+        el('button', { type: 'button', class: 'finish start-go', text: '돌아가기', onclick: back }),
+      ]);
+    };
+    draw();
+  }
+
   function coachModeControls(onChange) {
     var pt = ptOn();
     var box = el('div', { class: 'coach-controls' }, []);
@@ -10377,7 +10449,12 @@
     if (!step || !E.stretchMotionFor) return null;
     var side = step.sides && total > 0 && left <= total / 2 ? 'R' : 'L';
     var clip = E.stretchMotionFor(step.id, side);
-    var canvas = liveMotion('st:' + step.id + ':' + side, clip, { label: step.name + ' 동작' });
+    // 늘이는 부위를 칠한다 — 운동 동작처럼 어디가 당기는지 그림에서 보이게
+    var tint = {};
+    (step.muscles || []).forEach(function (muscle) { tint[muscle] = 0.7; });
+    var canvas = liveMotion('st:' + step.id + ':' + side, clip, {
+      label: step.name + ' 동작', contribution: Object.keys(tint).length ? tint : undefined,
+    });
     return canvas ? el('div', { class: 'focus-motion stretch-motion' }, [canvas]) : null;
   }
 
@@ -12007,6 +12084,8 @@
     SHARED_SETTINGS.forEach(function (key) {
       if (body[key] !== undefined) state[key] = body[key];
     });
+    // 예전 앱이 올린 헬스장 목록이면 홈짐 이름표에 집 표시를 붙인다
+    state.gymBook = migrateHomeGym(state.gymBook);
     /*
      * 내 루틴은 받은 프로그램을 따른다. 루틴을 끈 폰은 루틴 칸을 안 보낸다(빈 칸은 안
      * 싣는다) — 받은 프로그램이 루틴 것이 아니면 이 폰의 루틴도 끈다.
@@ -16784,6 +16863,8 @@
     var account = accountCard();
     if (account) screen.appendChild(account);
     screen.appendChild(programCard());
+    // 코치 · 알림은 프로그램 바로 아래 — 맨 아래에 있으면 PT 말투를 바꾸러 와서 못 찾는다
+    screen.appendChild(coachSettingsCard());
     if (!state.customRoutine) blockStyleCard();
     // 반복 · 강도는 프로그램 칸 안에 묻어 두지 않고 따로 — 제목만 보고 찾게
     if (!state.customRoutine) {
@@ -16795,7 +16876,6 @@
         el('div', { class: 'sheet-body' }, repSettingsBody(render, true)),
       ]));
     }
-    screen.appendChild(coachSettingsCard());
     screen.appendChild(restSettingsCard());
     renderAppStatus();
     renderPrivacy();
@@ -17178,11 +17258,11 @@
       state.program = backup.program || rebuilt.program;
       state.lifter = backup.lifter || rebuilt.lifter;
       state.gym = E.gymFromCatalog(backup.answers.gym);
-      state.gymBook = backup.gymBook || E.createGymBook({
+      state.gymBook = migrateHomeGym(backup.gymBook || E.createGymBook({
         id: 'my-gym', name: '내 헬스장',
         equipmentIds: backup.answers.gym.equipmentIds.slice(),
         measurements: backup.answers.gym.measurements,
-      });
+      }));
       state.customRoutine = null;
       Object.keys(settings).forEach(function (key) { state[key] = settings[key]; });
       reconcileRoutine();
@@ -17546,6 +17626,28 @@
     return onPlaceholderGym() && !isHomeGym(currentGymEntry());
   }
 
+  /**
+   * 집 표시(visibility: private)가 생기기 전에 홈짐으로 만든 이름표를 집으로 옮긴다.
+   *
+   * 예전 설문은 홈짐을 골라도 이름표에 아무 표시를 안 남겼다. 그래서 집에서 하는 사람에게
+   * 오늘 화면의 "등록하기"와 헬스장 탭의 빨간 "등록 안 됨"이 계속 떴다 — 집은 찾아 이을 곳이 아니다.
+   * 이름이 집이거나("우리 집" · "홈짐"), 기구가 전부 집에 흔한 것(홈짐 설문 그대로)이면 집으로 본다.
+   */
+  var HOME_GYM_NAME = /^집|집$|홈짐|홈트|home/i;
+  function migrateHomeGym(book) {
+    if (!book || !book.gyms) return book;
+    var changed = false;
+    var gyms = book.gyms.map(function (gym) {
+      if (!gym || gym.id !== PLACEHOLDER_GYM_ID || gym.visibility) return gym;
+      var ids = gym.equipmentIds || [];
+      var homeKit = ids.length > 0 && ids.every(function (id) { return HOME_GEAR.indexOf(id) >= 0; });
+      if (!HOME_GYM_NAME.test((gym.name || '').trim()) && !homeKit) return gym;
+      changed = true;
+      return Object.assign({}, gym, { visibility: 'private' });
+    });
+    return changed ? Object.assign({}, book, { gyms: gyms }) : book;
+  }
+
   /** 지금 등록하는 곳이 이름표 자리를 넘겨받는가. */
   function pendingLink() {
     // 집 이름표는 넘겨주지 않는다 — 검색에서 고른 헬스장은 집과 따로 하나 더 생긴다
@@ -17803,6 +17905,48 @@
       ]),
       body,
     ]);
+  }
+
+  /**
+   * 무게 설정의 덤벨 두 줄 — 가벼운 덤벨 간격(1kg · 2kg)과 가장 무거운 덤벨.
+   *
+   * 헬스장 항목의 실측값(measurements.dumbbells)에 적는다. 엔진(gymFromCatalog)이 여기서 덤벨
+   * 목록을 만든다 — 2kg씩 있는 집에 3kg을 주거나, 1kg씩 있는데 2kg에서 4kg으로 뛰지 않게.
+   */
+  function dumbbellWeightRows(entry) {
+    if (!entry) return [];
+    var item = E.equipmentItem('dumbbells');
+    var specs = item ? [item.measurement].concat(item.extraMeasurements || []) : [];
+    var saved = (entry.measurements && entry.measurements.dumbbells) || {};
+    var row = function (field, unitText, message) {
+      var spec = specs.filter(function (m) { return m && m.field === field; })[0];
+      if (!spec) return [];
+      var current = saved[field] !== undefined ? saved[field] : spec.default;
+      return [
+        el('div', { class: 'list-label', text: spec.label }),
+        segmented(spec.options.map(function (kg) {
+          return {
+            label: kg + 'kg' + unitText,
+            active: current === kg,
+            onSelect: function () {
+              var latest = currentGymEntry() || entry;
+              var measurements = Object.assign({}, latest.measurements || {});
+              measurements.dumbbells = Object.assign({}, measurements.dumbbells || {});
+              measurements.dumbbells[field] = kg;
+              state.gymBook = E.addGym(state.gymBook, Object.assign({}, latest, { measurements: measurements }));
+              state.gym = E.activeProfile(state.gymBook);
+              state.answers.gym = Object.assign({}, state.answers.gym, { measurements: measurements });
+              persist();
+              applyGymChange(message(kg));
+            },
+          };
+        })),
+        spec.hint ? el('p', { class: 'hint-line', text: spec.hint }) : null,
+      ];
+    };
+    return row('lightStepKg', '씩', function (kg) { return '가벼운 덤벨 간격을 ' + kg + 'kg으로 변경했습니다'; })
+      .concat(row('maxDumbbellKg', '', function (kg) { return '가장 무거운 덤벨을 ' + kg + 'kg으로 변경했습니다'; }))
+      .concat([el('p', { class: 'hint-line', text: '갖춘 덤벨 중 가장 무거운 것입니다. 이보다 무거운 무게는 드리지 않습니다.' })]);
   }
 
   function renderGym() {
