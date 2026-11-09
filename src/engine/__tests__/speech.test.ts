@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
-  afterSetLines, beforeSetLines, formCueLine, pushLine, restTipLine, sessionStartLines, watchLine, wrapUpLines,
+  afterSetLines, beforeSetLines, formCueLine, pushLine, readySoonLine, restTipLine, sessionStartLines, watchLine, wrapUpLines,
   type CoachStyle, type Feel,
 } from '../coach.ts';
 import { exerciseGuideLines } from '../coachGuide.ts';
@@ -174,6 +174,18 @@ describe('코치 목소리 조각 목록', () => {
         check(koreanCount(1 + Math.floor(rand() * 40)));
       }
       assert.deepEqual([...missing].slice(0, 20), [], style);
+    }
+  });
+});
+
+describe('종목 끝 · 곧 시작 말', () => {
+  it('기구 이야기를 하지 않는다 — 플랭크 · 맨몸 종목 뒤에도 나온다', () => {
+    for (const style of STYLES) {
+      for (let at = 0; at < 6; at += 1) {
+        const done = afterSetLines({ style, feel: 'right', lastOfLift: true, at, setsDone: 3 }).join(' ');
+        assert.doesNotMatch(done, /기구/, `${style}: ${done}`);
+        assert.doesNotMatch(readySoonLine(style, at), /기구/, style);
+      }
     }
   });
 });

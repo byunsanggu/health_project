@@ -7236,7 +7236,8 @@
    * 시간보다 먼저 눈에 들어오고, 작은 폰에서는 그만큼 동작과 설명이 화면 밖으로 밀렸다.
    */
   function ptRateChip(exercise) {
-    if (!exercise) return null;
+    // 버티는 종목(플랭크)은 개수를 세지 않는다 — 빠르기를 바꿔도 아무 일이 없다
+    if (!exercise || (typeof E.isTimed === 'function' && E.isTimed(exercise))) return null;
     var now = rateFor(exercise);
     return el('button', {
       type: 'button', class: 'pt-rate-chip', 'aria-expanded': String(Boolean(state.ptRateOpen)),
@@ -7247,7 +7248,7 @@
 
   /** 빠르기 단추를 열었을 때의 다섯 칸. 고르면 닫힌다. */
   function ptRateRow(exercise) {
-    if (!exercise || !state.ptRateOpen) return null;
+    if (!exercise || !state.ptRateOpen || (typeof E.isTimed === 'function' && E.isTimed(exercise))) return null;
     var now = rateFor(exercise);
     return el('div', { class: 'pt-rate' }, [
       el('span', { class: 'pt-rate-label', text: '말과 세는 박자가 같이 바뀝니다 · 이 운동에만 저장' }),
