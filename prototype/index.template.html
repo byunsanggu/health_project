@@ -2847,6 +2847,17 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 /* 쉬는 화면 아래 — 일시정지 · 아픈 데 있어요 */
 .focus-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .focus-btn.small { min-height: 44px; padding: 0 16px; font-size: 14px; }
+.focus-foot .focus-btn { min-height: 44px; padding: 0 10px; font-size: 13.5px; }
+.focus-foot .focus-hurt { white-space: nowrap; font-size: 12.5px; }
+.focus-actions.three .focus-btn { padding: 0 4px; }
+/* 주머니 모드 — 화면을 켜 둔 채 까맣게. 시계 · 상태는 흐리게, 길게 눌러야 풀린다 */
+.pocket { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; background: #000; color: #555; touch-action: none; user-select: none; -webkit-user-select: none; }
+.pocket-clock { font-family: var(--mono); font-size: 28px; font-weight: 600; color: #444; font-variant-numeric: tabular-nums; }
+.pocket-status { min-height: 24px; font-size: 18px; color: #555; }
+.pocket-note { max-width: 300px; margin: 0; text-align: center; font-size: 13px; line-height: 1.5; color: #444; }
+.pocket-unlock { position: relative; overflow: hidden; isolation: isolate; margin-top: 24px; min-width: 180px; min-height: 56px; border: 1px solid #333; border-radius: 999px; background: #0a0a0a; color: #666; font-size: 15px; }
+.pocket-unlock::before { content: ''; position: absolute; inset: 0; width: 0; background: #1d1d1d; transition: width 0s; z-index: -1; }
+.pocket-unlock.holding::before { width: 100%; transition: width 1.5s linear; }
 /* 화면 아래 잠깐 뜨는 한 줄 (PT를 껐습니다 · 되돌리기) */
 .pt-toast { position: fixed; left: 16px; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 12px; background: var(--ink); color: var(--surface); font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, .2); }
 .pt-toast .undo-btn { min-height: 40px; }

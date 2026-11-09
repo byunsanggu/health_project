@@ -2350,6 +2350,7 @@
     if (warm && warmNode && warm.endsAt) warmNode.textContent = '다음까지 ' + Math.max(0, Math.ceil((warm.endsAt - Date.now()) / 1000)) + '초';
     // 혼자 하는 몸 풀기 · 마무리 스트레칭의 남은 초
     tickStretch();
+    pocketTick();
     focusTick();
   }
 
@@ -7217,7 +7218,7 @@
    * 화면 아래에 잠깐 뜨는 한 줄 — 되돌리기 같은 버튼 하나를 붙일 수 있다. 5초 뒤 사라진다.
    * 화면 전체를 다시 그려도 지워지지 않게 body에 따로 붙인다.
    */
-  function ptToast(text, actionLabel, action) {
+  function ptToast(text, actionLabel, action, ms) {
     var old = document.getElementById('pt-toast');
     if (old) old.remove();
     var box = el('div', { class: 'pt-toast', id: 'pt-toast', role: 'status' }, [
@@ -7228,7 +7229,88 @@
       } }) : null,
     ]);
     document.body.appendChild(box);
-    setTimeout(function () { if (box.isConnected) box.remove(); }, 5000);
+    setTimeout(function () { if (box.isConnected) box.remove(); }, ms || 5000);
+  }
+
+  /* ── 주머니 모드 ────────────────────────────────
+   *
+   * 아이폰은 화면을 완전히 잠그면 웹 소리(Web Audio)가 멈춰서, 코치 소리를 내려면 음악 앱을 멈추는 길밖에
+   * 없다. 주머니 모드는 화면을 켜 둔 채(wake lock) 까만 화면만 띄운다 — 화면은 켜져 있으니 음악과 코치가
+   * 같이 나오고, 까만 화면이라 주머니 속에서 눌려도 아무 일도 없다. 1.5초 길게 눌러야 풀린다.
+   */
+  var POCKET_HOLD_MS = 1500;
+
+  function pocketOn() {
+    return Boolean(document.getElementById('pocket'));
+  }
+
+  function pocketStatus() {
+    if (state.counting) return state.counting.rep > 0 ? state.counting.rep + '개' : '준비';
+    var warm = state.ptRun && state.ptRun.warm;
+    if (warm) return '워밍업 ' + (warm.rep > 0 ? warm.rep + '개' : '');
+    if (state.rest) return '휴식 ' + E.formatDuration(restRemaining());
+    if (state.ptRun && state.ptRun.paused) return 'PT 일시정지';
+    return '';
+  }
+
+  function enterPocket() {
+    if (pocketOn()) return;
+    acquireWakeLock();
+    var timer = null;
+    var hold = el('button', { type: 'button', class: 'pocket-unlock', text: '길게 눌러 풀기',
+      'aria-label': '1.5초 동안 길게 눌러 주머니 모드를 풉니다' });
+    var release = function () { hold.classList.remove('holding'); if (timer) { clearTimeout(timer); timer = null; } };
+    hold.addEventListener('pointerdown', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      release();
+      hold.classList.add('holding');
+      timer = setTimeout(function () { timer = null; exitPocket(); }, POCKET_HOLD_MS);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (type) { hold.addEventListener(type, release); });
+    var box = el('div', { class: 'pocket', id: 'pocket', role: 'dialog', 'aria-label': '주머니 모드' }, [
+      el('div', { class: 'pocket-clock', id: 'pocket-clock', text: elapsedText() }),
+      el('div', { class: 'pocket-status', id: 'pocket-status', text: pocketStatus() }),
+      el('p', { class: 'pocket-note', text: '주머니 모드 — 화면을 켜 둔 채 까맣게 둡니다. 음악과 코치 소리가 같이 나옵니다.' }),
+      hold,
+    ]);
+    // 주머니 속 터치는 아무것도 누르지 않는다 — 풀기 단추만 길게 누르면 풀린다
+    ['click', 'pointerdown', 'touchstart'].forEach(function (type) {
+      box.addEventListener(type, function (event) { if (event.target !== hold) { event.preventDefault(); event.stopPropagation(); } }, { passive: false });
+    });
+    document.body.appendChild(box);
+  }
+
+  function exitPocket() {
+    var box = document.getElementById('pocket');
+    if (box) box.remove();
+  }
+
+  /** 1초마다 — 까만 화면의 시계 · 지금 상태 */
+  function pocketTick() {
+    if (!pocketOn()) return;
+    var clock = document.getElementById('pocket-clock');
+    if (clock) clock.textContent = elapsedText();
+    var status = document.getElementById('pocket-status');
+    if (status) status.textContent = pocketStatus();
+  }
+
+  /** PT 화면의 "주머니 모드" 단추. */
+  function pocketButton() {
+    return el('button', { type: 'button', class: 'focus-btn pocket-btn', text: '주머니 모드',
+      title: '화면을 켜 둔 채 까맣게 — 폰을 주머니에 넣어도 음악과 코치 소리가 같이 나옵니다', onclick: enterPocket });
+  }
+
+  /** 화면을 꺼도 음악과 같이 못 듣는 폰(아이폰)에서 처음 PT를 할 때 한 번 — 주머니 모드를 알려 준다. */
+  function maybeOfferPocket() {
+    if (typeof RestSound === 'undefined' || !RestSound.backgroundMixes || RestSound.backgroundMixes()) return;
+    try {
+      if (localStorage.getItem('volume-coach.pocketOffered')) return;
+      localStorage.setItem('volume-coach.pocketOffered', '1');
+    } catch (err) { return; }
+    setTimeout(function () {
+      ptToast('아이폰은 화면을 잠그면 음악이 멈출 수 있습니다. 주머니 모드를 쓰면 음악과 코치 소리가 같이 나옵니다.', '주머니 모드', enterPocket, 12000);
+    }, 800);
   }
 
   /**
@@ -7972,6 +8054,11 @@
     show(now.done, now.total);
     fetchCoachVoice(function (done, total) { if (status.isConnected) show(done, total); });
     box.appendChild(status);
+    // 음악과 같이 — 폰마다 다르다. 할 수 없는 것을 된다고 쓰지 않는다
+    box.appendChild(el('div', { class: 'list-label setting-name', text: '음악과 같이 듣기' }));
+    box.appendChild(el('p', { class: 'hint-line music-note', text: typeof RestSound !== 'undefined' && RestSound.backgroundMixes && RestSound.backgroundMixes()
+      ? '듣던 음악과 코치 목소리가 같이 나옵니다 — 화면을 꺼도 그렇습니다.'
+      : '아이폰은 PT 화면의 "주머니 모드"를 쓰면 음악과 코치 목소리가 같이 나옵니다(화면을 켜 둔 채 까맣게). 화면을 완전히 잠그면 아이폰이 음악을 멈출 수 있습니다.' }));
     return box;
   }
 
@@ -8022,7 +8109,9 @@
     }, [
       el('span', {}, [
         el('b', { text: '화면 꺼도 휴식 끝 소리' }),
-        el('span', { class: 'hint-line', text: '화면을 끄거나 잠갔을 때만 틉니다 — 쉬는 동안 화면이 꺼져 있으면 휴식이 끝날 때 띵 하고 울립니다. 그때는 듣던 음악이 멈출 수 있습니다. 화면이 켜져 있는 동안에는 음악을 멈추지 않습니다.' }),
+        el('span', { class: 'hint-line', text: typeof RestSound !== 'undefined' && RestSound.backgroundMixes && RestSound.backgroundMixes()
+          ? '화면을 꺼 두면 휴식이 끝날 때 띵 하고 울립니다. 듣던 음악은 멈추지 않고 같이 나옵니다(PT 코치 소리도).'
+          : '아이폰은 화면을 완전히 잠그면 이 소리를 내느라 음악이 멈출 수 있습니다. 음악과 같이 들으려면 PT 화면의 "주머니 모드"를 쓰세요 — 화면을 켜 둔 채 까맣게 둡니다.' }),
       ]),
       el('span', { class: 'count-tempo', text: soundOn ? '켜짐' : '꺼짐' }),
     ]));
@@ -10455,10 +10544,14 @@
       actions.appendChild(el('button', { type: 'button', class: 'focus-btn primary pt-pause', text: '▶ 계속', onclick: resumePt }));
     }
 
+    // 주머니 모드 — 쉬는 중에는 아래 줄 가운데, 세는 중 · 워밍업 · 몸 풀기는 단추 줄의 셋째 칸
+    if (foot) foot.insertBefore(pocketButton(), foot.children[1] || null);
+    else if (phase !== 'paused') { actions.classList.add('three'); actions.appendChild(pocketButton()); }
     focusHost.appendChild(middle);
     focusHost.appendChild(actions);
     if (foot) focusHost.appendChild(foot);
     settleLiveMotion();
+    maybeOfferPocket();
   }
 
   /** 자막 한 칸 — 코치가 방금 한 말. 두 줄까지 보이고, 누르면 다 펼친다. */

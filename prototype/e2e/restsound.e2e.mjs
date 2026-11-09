@@ -1,6 +1,6 @@
-// 화면 꺼도 휴식 끝 소리 — "휴식 길이만큼 무음 + 알림음" 소리 파일(<audio>)은 화면이 꺼질 때만 튼다.
-//   화면이 켜진 채 틀면 폰이 듣던 음악(스포티파이 · 유튜브 뮤직)을 멈췄다 — 그래서 쉬는 중에 화면이 꺼지면 틀고,
-//   돌아오면 끈다(잠금 화면에서도 재생은 계속되므로 끝에서 울린다). 건너뛰면 멈추고, 설정에서 끄면 틀지 않는다.
+// 화면 꺼도 휴식 끝 소리 — 화면이 켜진 동안에는 아무것도 틀지 않고, 쉬는 중에 화면이 꺼지면 Web Audio로
+//   남은 휴식 뒤 알림음을 깔아 둔다(<audio>를 틀면 폰이 듣던 음악을 멈췄다). 돌아오면 멈춘다.
+//   아이폰처럼 화면 밖에서 Web Audio가 멈추는 폰만 예전 <audio> 길. 설정에서 끄면 틀지 않는다.
 import { check, onboard, setVisible, startWorkout, tab } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
@@ -31,33 +31,41 @@ export default async function ({ page, url, shot }) {
   await page.locator('#rest-host button', { hasText: '+30초' }).click();
   check((await plays()).length === before, '+30초에 휴식 소리를 틀었습니다');
 
-  // 화면이 꺼지면 남은 휴식만큼 튼다
+  // 화면이 꺼지면 남은 휴식만큼 Web Audio로 깐다 — <audio>가 아니어서 듣던 음악이 멈추지 않는다
+  const bgState = () => page.evaluate(() => window.RestSound.backgroundState());
   await setVisible(page, false);
-  const after = await plays();
-  check(after.length === before + 1, '쉬는 중에 화면을 껐는데 소리를 안 틀었습니다');
-  // 소리 길이 = 남은 휴식 + 알림음(약 1초) — 8kHz 8비트라 1초 8000바이트
-  const size = await page.evaluate(async (src) => (await (await fetch(src)).arrayBuffer()).byteLength, after[after.length - 1]);
-  const wavSeconds = (size - 44) / 8000;
-  check(Math.abs(wavSeconds - (seconds + 30) - 1.02) < 1.5, `소리 길이 ${wavSeconds.toFixed(1)}초 · 남은 휴식 ${seconds + 30}초`);
+  const bg = await bgState();
+  check(bg && bg.mode === 'webaudio' && bg.sources > 0, '쉬는 중에 화면을 껐는데 Web Audio로 깔지 않았습니다: ' + JSON.stringify(bg));
+  check(Math.abs(bg.seconds - (seconds + 30) - 1.5) < 2, `깔아 둔 길이 ${bg.seconds}초 · 남은 휴식 ${seconds + 30}초`);
+  check((await plays()).length === before, '화면을 껐더니 <audio>를 틀었습니다 — 음악이 멈춥니다');
 
-  // 다 쉬면 — 지금 울리는 알림음을 끊지 않는다
-  const quiet = await page.evaluate(() => window.__pauses);
+  // 다 쉬어도 — 깔아 둔 알림음을 끊지 않는다(화면이 켜질 때까지)
   await page.clock.runFor((seconds + 32) * 1000);
   check(await page.locator('#rest-remaining').count() === 0, '휴식이 안 끝났습니다');
-  check(await page.evaluate(() => window.__pauses) === quiet, '휴식이 끝나는 순간 알림음을 끊었습니다');
+  check(await bgState() !== null, '휴식이 끝나는 순간 깔아 둔 소리를 끊었습니다');
 
-  // 화면을 다시 켜면 끈다
+  // 화면을 다시 켜면 멈춘다
   await setVisible(page, true);
-  check(await page.evaluate(() => window.__pauses) > quiet, '화면을 켰는데 휴식 소리를 끄지 않았습니다');
+  check(await bgState() === null, '화면을 켰는데 화면 밖 소리를 멈추지 않았습니다');
 
-  // 쉬다가 화면을 껐다 켜면 — 켤 때 끈다
+  // 아이폰처럼 화면 밖에서 Web Audio가 멈추는 폰 — 그때만 예전 <audio> 길로
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
+    Object.defineProperty(navigator, 'maxTouchPoints', { value: 5, configurable: true });
+  });
   await page.locator('.now-done').click();
   await setVisible(page, false);
-  const playing = (await plays()).length;
+  const fallback = await bgState();
+  check(fallback && fallback.mode === 'audio', '아이폰에서 <audio>로 넘어가지 않았습니다: ' + JSON.stringify(fallback));
+  check((await plays()).length === before + 1, '아이폰에서 휴식 끝 소리를 틀지 않았습니다');
   const paused = await page.evaluate(() => window.__pauses);
   await setVisible(page, true);
   check(await page.evaluate(() => window.__pauses) > paused, '돌아왔는데 휴식 소리를 끄지 않았습니다');
-  check((await plays()).length === playing, '돌아와서 소리를 다시 틀었습니다');
+  await page.evaluate(() => {
+    delete navigator.platform;
+    Object.defineProperty(navigator, 'platform', { value: 'Linux x86_64', configurable: true });
+    Object.defineProperty(navigator, 'maxTouchPoints', { value: 0, configurable: true });
+  });
   await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
 
   // 설정에서 끄면 틀지 않는다
@@ -72,5 +80,6 @@ export default async function ({ page, url, shot }) {
   await page.locator('.now-done').click();
   await setVisible(page, false);
   check((await plays()).length === count, '꺼 뒀는데 소리를 틀었습니다');
+  check(await bgState() === null, '꺼 뒀는데 화면 밖 소리를 깔았습니다');
   await setVisible(page, true);
 }

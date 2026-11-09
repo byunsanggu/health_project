@@ -393,6 +393,8 @@
     progress: progress,
     renderTrack: renderTrack,
     setRate: setRate,
+    /** 코치 목소리가 쓰는 소리 문맥 — 화면이 꺼진 동안의 소리(restSound)도 같은 문맥에 깐다 */
+    context: function () { return audio(); },
     /** 소리가 나는지 — { failed, reason: 'manifest' | 'clips' | null } */
     health: function () { return health; },
     /** 소리가 나다 안 나다 바뀌면 부른다 */
