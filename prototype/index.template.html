@@ -2851,6 +2851,11 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .pt-num-input { width: 2.9em; min-height: 42px; padding: 0; border: 0; background: none; font: inherit; font-size: 17px; font-weight: 700; color: var(--accent); text-align: right; font-variant-numeric: tabular-nums; }
 .pt-num-input:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .pt-num-unit { font-size: 13px; font-weight: 600; color: var(--muted); }
+/* 좁은 폰(360px) — 쉬는 화면 옆 칸에 − 숫자 + 가 한 줄로 들어가게 칸만 좁힌다(단추는 44px 그대로) */
+@media (max-width: 370px) {
+  .focus-rest-side .pt-num-input { width: 2.7em; font-size: 16px; }
+  .focus-rest-side .pt-num-box { padding: 0 2px; }
+}
 .pt-num-note { display: block; flex-basis: 100%; font-size: 12.5px; font-weight: 600; color: var(--accent); text-align: left; }
 /* PT를 멈춘 화면 —같은 화면에 "멈춤"과 까닭 한 줄 */
 .focus-cap.paused { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 700; }
@@ -2900,7 +2905,7 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
  */
 .rest-guide .focus-motion { width: clamp(120px, calc(100dvh - 640px), 340px); max-height: none; }
 /* 다음 종목 휴식 — 그림 밑에 "크게 보기"와 위에 세팅 한 줄이 더 있다 */
-.rest-guide:has(.focus-demo) .focus-motion { width: clamp(120px, calc(100dvh - 700px), 340px); }
+.rest-guide:has(.focus-demo) .focus-motion { width: clamp(120px, calc(100dvh - 712px), 340px); }
 @media (max-height: 800px) {
   /* 작은 폰(360×640 · 375×667 · 360×780) — 동작은 왼쪽에 작게, 세 줄은 오른쪽에 */
   .rest-guide { grid-template-columns: minmax(104px, 34%) minmax(0, 1fr); align-items: start; gap: 10px; }
@@ -2917,6 +2922,13 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 @media (max-height: 700px) {
   .focus-rest-side .pt-weight { margin-top: 0; }
+  /* 숫자 칸이 44px이 되며 한 줄이 커졌다 — 단추 크기는 두고 칸 · 세 줄을 조금 좁힌다 */
+  .focus-rest-side .pt-num-input { width: 2.7em; font-size: 16px; }
+  .focus-rest-side .pt-num-box { padding: 0 2px; }
+  .rest-guide-lines { gap: 3px; }
+  .rest-guide-lines li { font-size: 13.5px; line-height: 1.3; }
+  /* 다음 종목 휴식 — 그림 밑에 "크게 보기"가 더 있어 그림을 조금 작게 */
+  .rest-guide:has(.focus-demo) { grid-template-columns: minmax(92px, 30%) minmax(0, 1fr); }
   /* 자막은 한 줄 — 누르면 다 보인다 */
   .focus-say { -webkit-line-clamp: 1; }
   .focus-logged { padding: 2px 2px 2px 12px; }

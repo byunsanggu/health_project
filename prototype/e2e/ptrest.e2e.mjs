@@ -67,12 +67,16 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('#focus .pt-resume', { hasText: '▶ 계속' }).count() === 1, '일시정지 단추가 "▶ 계속"으로 안 바뀌었습니다');
   check(!(await page.locator('#focus').textContent()).includes('PT 일시정지'), '따로 된 일시정지 화면이 떴습니다');
   await shot('2b-rest-paused');
-  await page.clock.runFor(300000);
+  // 쉬는 시간(2분 30초)보다 길게 기다려도 멈춘 그대로
+  await page.clock.fastForward(200000);
+  await page.clock.runFor(1000);
   check(await focusPhase(page) === 'paused', '멈춰 뒀는데 ' + await focusPhase(page));
   check(await page.locator('#focus-rest-time').textContent() === frozen, '멈춰 둔 휴식 시간이 흘렀습니다: ' + frozen + ' → ' + await page.locator('#focus-rest-time').textContent());
   await page.locator('#focus .focus-btn', { hasText: '계속' }).click();
   check(await focusPhase(page) === 'rest', '계속 뒤에 쉬는 시간으로 안 돌아갔습니다: ' + await focusPhase(page));
-  await runUntil(page, 'count', { maxMs: 300000 });
+  // 남은 휴식은 그대로 이어진다 — 기다리지 않고 바로 시작
+  await page.locator('#focus .focus-btn', { hasText: '바로 시작' }).click();
+  await runUntil(page, 'count', { maxMs: 60000 });
   check((await page.locator('#focus .focus-what').textContent()).startsWith('2세트'), '계속 뒤가 2세트가 아닙니다');
 
   // 2세트 — 네 개에서 "여기까지"
