@@ -12,6 +12,26 @@ export default async function ({ page, url, shot }) {
   check(await runUntil(page, ['warm', 'count']) === 'warm', '첫 종목에 워밍업이 없습니다');
   check(await page.locator('.warmup-set.done').count() === 0, '워밍업을 하기도 전에 ✓가 있습니다');
 
+  // 워밍업 준비 중에 일시정지 — 같은 화면 그대로(종목 · 워밍업 줄 · 무게 칸), 준비 초가 멈추고 "▶ 계속"
+  await page.clock.runFor(1500);
+  await page.locator('#focus .focus-btn', { hasText: '일시정지' }).click();
+  check(await focusPhase(page) === 'paused', '워밍업 중에 멈추지 않았습니다');
+  check(/워밍업 1/.test(await page.locator('#focus .focus-what').textContent()), '멈췄더니 워밍업 줄이 사라졌습니다');
+  check(await page.locator('#focus .pt-warm-step').count() === 2, '멈췄더니 워밍업 무게 칸이 사라졌습니다');
+  check((await page.locator('#focus .focus-title-text b').textContent()).length > 0, '멈췄더니 종목 이름이 사라졌습니다');
+  check(await page.locator('#focus .pt-resume', { hasText: '▶ 계속' }).count() === 1, '"▶ 계속"이 없습니다');
+  check((await page.locator('#focus #focus-cap').textContent()) === '멈춤', '원 안에 "멈춤"이 없습니다');
+  const leadFrozen = await page.locator('#focus #focus-num').textContent();
+  // 멈춘 채로 무게를 바꿔도 다시 시작하지 않는다
+  await page.locator('#focus .pt-warm-step', { hasText: '+' }).click();
+  await page.clock.runFor(30000);
+  check(await focusPhase(page) === 'paused', '멈춘 채로 무게를 바꿨더니 다시 시작했습니다');
+  check(await page.locator('#focus #focus-num').textContent() === leadFrozen, '멈춘 준비 초가 흘렀습니다');
+  check(await page.locator('.warmup-set.done').count() === 0, '멈춰 뒀는데 워밍업을 셌습니다');
+  await shot('0-warm-paused');
+  await page.locator('#focus .pt-resume').click();
+  check(await focusPhase(page) === 'warm', '계속 뒤에 워밍업으로 안 돌아갔습니다: ' + await focusPhase(page));
+
   // 첫 워밍업을 다 세면 ✓
   for (let i = 0; i < 120 && await page.locator('.warmup-set.done').count() === 0; i += 1) await page.clock.runFor(1000);
   check(await page.locator('.warmup-set.done').count() === 1, '세어 준 워밍업에 ✓가 안 붙었습니다');

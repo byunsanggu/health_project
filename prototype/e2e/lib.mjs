@@ -184,7 +184,8 @@ export async function focusPhase(page) {
       return document.querySelector('.session-head h2')?.textContent === '마무리 스트레칭' ? 'cool' : null;
     }
     if (host.querySelector('.focus-feels')) return 'ask';
-    if (/PT 일시정지/.test(host.textContent)) return 'paused';
+    // 멈춰도 같은 화면이다 — 멈췄는지는 data-paused로 읽는다
+    if (host.dataset.paused === '1') return 'paused';
     if (host.querySelector('#focus-prep-left')) return 'prep';
     if (host.querySelector('#focus-rest-time')) return 'rest';
     if (/워밍업 \d/.test(host.querySelector('.focus-what')?.textContent || '')) return 'warm';

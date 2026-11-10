@@ -3,7 +3,7 @@
 //   · 앞에 적은 세트를 골라 무게 · 개수 고치기
 //   · 남은 세트의 목표 개수 − / +
 //   목록(혼자 화면)과 같은 함수를 쓰므로 목록에도 그대로 보이고, 다시 켜도 남는다. 작은 폰에도 들어간다.
-import { begin, check, choosePt, onboard, runUntil } from './lib.mjs';
+import { begin, check, choosePt, focusPhase, onboard, runUntil } from './lib.mjs';
 
 const reps = async (page) => {
   const text = await page.locator('#focus-num').textContent().catch(() => '');
@@ -13,6 +13,17 @@ const saved = (page) => page.evaluate(() => (JSON.parse(localStorage.getItem('vo
 const said = (page, from) => page.evaluate((n) => window.__said.slice(n).join(' '), from);
 const kg = (text) => Number(String(text).replace(/[^\d.]/g, ''));
 const chips = (page) => page.locator('#focus .pt-sets .pt-set-chip');
+
+/** 숫자 칸을 눌러 친다 — 지금 값이 골라져 있어야 하고, Enter로 넣는다. */
+async function typeInto(page, field, text) {
+  await field.click();
+  await page.clock.runFor(50);
+  const whole = await field.evaluate((node) => node.selectionStart === 0 && node.selectionEnd === node.value.length);
+  check(whole, '칸을 눌렀는데 지금 값이 골라지지 않았습니다');
+  await page.keyboard.type(text);
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(400);
+}
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -41,6 +52,21 @@ export default async function ({ page, url, shot }) {
   for (let i = 0; i < 120 && await reps(page) < 1; i += 1) await page.clock.runFor(500);
   // 세는 중에는 없다
   check(await page.locator('#focus .pt-sets-open').count() === 0, '세는 중에 "세트 고치기"가 보입니다');
+  // 세는 중에 일시정지 — 같은 화면(종목 · 몇 세트 · 무게), 센 개수에서 멈추고 "▶ 계속"
+  await page.locator('#focus .focus-btn', { hasText: '일시정지' }).click();
+  check(await focusPhase(page) === 'paused', '세는 중에 멈추지 않았습니다');
+  const counted = await page.locator('#focus #focus-num').textContent();
+  check(/^\d+$/.test(counted), '멈췄더니 센 개수가 안 보입니다: ' + counted);
+  check((await page.locator('#focus .focus-what').textContent()).startsWith('1세트'), '멈췄더니 세트 줄이 사라졌습니다');
+  check(/kg/.test(await page.locator('#focus .pt-weight-text').textContent()), '멈췄더니 무게가 사라졌습니다');
+  check(await page.locator('#focus .pt-resume', { hasText: '▶ 계속' }).count() === 1, '"▶ 계속"이 없습니다');
+  check(await page.locator('#focus .focus-cap.paused', { hasText: '멈춤' }).count() === 1, '원 안에 "멈춤"이 없습니다');
+  await page.clock.runFor(20000);
+  check(await page.locator('#focus #focus-num').textContent() === counted, '멈췄는데 개수가 올라갔습니다');
+  await shot('0-count-paused');
+  await page.locator('#focus .pt-resume').click();
+  check(await focusPhase(page) === 'count', '계속 뒤에 세기로 안 돌아갔습니다: ' + await focusPhase(page));
+  await page.clock.runFor(6000);
   await page.locator('#focus .focus-btn', { hasText: '여기까지' }).click();
   await runUntil(page, 'rest');
   await page.clock.runFor(500);
@@ -87,14 +113,35 @@ export default async function ({ page, url, shot }) {
 
   // 2세트(남은 세트)를 골라 목표 개수 + — PT가 세는 끝 숫자와 목록 칸이 같이 오른다
   await chips(page).nth(1).click();
-  const target = await page.locator('#focus .pt-sets .focus-fix-reps').textContent();
-  const top = Number(target.match(/(\d+)회/)[1]);
+  const repsField = page.locator('#focus .pt-sets input.focus-fix-reps');
+  const top = Number(await repsField.inputValue());
+  check(await repsField.getAttribute('inputmode') === 'numeric', '횟수 칸이 숫자 자판이 아닙니다');
   await page.locator('#focus .pt-sets .focus-fix-row button', { hasText: '+' }).click();
-  check((await page.locator('#focus .pt-sets .focus-fix-reps').textContent()).includes((top + 1) + '회'), '목표 개수가 안 올랐습니다');
+  check(Number(await repsField.inputValue()) === top + 1, '목표 개수가 안 올랐습니다');
   const edits = (await saved(page)).todayExtras.edits;
   check(edits.some((edit) => edit.key === 'targetReps' && edit.value.max === top + 1) && edits.some((edit) => edit.key === 'reps' && edit.value === top + 1),
     '목표 개수가 오늘 것에 안 적혔습니다: ' + JSON.stringify(edits));
-  const nextKg = kg(await page.locator('#focus .pt-sets .pt-fix-kg').textContent());
+  // 숫자로 친다 — 목표 12회, 무게 62.5kg
+  await typeInto(page, repsField, '12');
+  check(Number(await repsField.inputValue()) === 12, '친 횟수가 안 들어갔습니다: ' + await repsField.inputValue());
+  check((await saved(page)).todayExtras.edits.some((edit) => edit.key === 'targetReps' && edit.value.max === 12), '친 횟수가 오늘 것에 안 적혔습니다');
+  const kgField = page.locator('#focus .pt-sets .pt-fix-input');
+  check(await kgField.getAttribute('inputmode') === 'decimal', '무게 칸이 숫자 자판이 아닙니다');
+  await typeInto(page, kgField, '62.5');
+  const nextKg = Number(await kgField.inputValue());
+  check(nextKg === 62.5, '친 무게가 안 들어갔습니다: ' + nextKg);
+  check(/2세트/.test(await page.locator('#focus .pt-set-chip.picked').textContent()) && /62\.5kg × 12회/.test(await page.locator('#focus .pt-set-chip.picked').textContent()),
+    '고른 세트 칸에 무게 · 횟수가 안 보입니다: ' + await page.locator('#focus .pt-set-chip.picked').textContent());
+  // 숫자 칸을 누른 채(자판이 열린 채)로도 칸이 화면 안에
+  await page.setViewportSize({ width: 360, height: 640 });
+  await kgField.click();
+  await page.clock.runFor(400);
+  const fieldBox = await kgField.boundingBox();
+  check(fieldBox && fieldBox.y >= 0 && fieldBox.y + fieldBox.height <= 640, '누른 무게 칸이 화면 밖입니다');
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), '가로 스크롤이 생겼습니다');
+  await page.keyboard.press('Escape');
+  await kgField.blur();
+  await page.clock.runFor(400);
 
   // 작은 폰에서도 고치는 칸과 아래 단추가 화면 안에
   for (const [width, height] of [[360, 640], [375, 667]]) {
@@ -124,6 +171,8 @@ export default async function ({ page, url, shot }) {
   const list = async () => page.evaluate(() => [...document.querySelectorAll('#screen .set-strip .set-box')].map((box) => box.textContent));
   const rows = await list();
   check(rows.length === 2, '목록의 세트가 2개가 아닙니다: ' + JSON.stringify(rows));
+  check(await page.evaluate(() => [...document.querySelectorAll('#screen .set-strip input')].some((input) => Number(input.value) === 62.5) ||
+    document.querySelector('#screen .set-strip').textContent.includes('62.5')), '목록에 친 무게 62.5kg이 안 보입니다');
   await shot('2-list');
 
   // 다시 켜도 남는다
@@ -136,7 +185,8 @@ export default async function ({ page, url, shot }) {
   check(back.todaySets[0].weightKg === after.weightKg && back.todaySets[0].reps === after.reps, '다시 켠 뒤 1세트 기록이 달라졌습니다');
   // PT가 이어서 2세트로 — 2세트 중 2세트, 고친 목표 개수
   const what = await page.locator('#focus .focus-what').textContent();
-  check(what.startsWith('2세트 / 2') && what.includes('~' + (top + 1) + '회') && what.includes(nextKg + 'kg'), '다시 켠 뒤 2세트 계획이 달라졌습니다: ' + what);
+  check(what.startsWith('2세트 / 2') && what.includes('~12회'), '다시 켠 뒤 2세트 계획이 달라졌습니다: ' + what);
+  check(Number(await page.locator('#focus .pt-weight-input').inputValue()) === nextKg, '다시 켠 뒤 2세트 무게가 달라졌습니다');
   await page.locator('#focus .focus-more').click();
   check((await list()).length === 2, '다시 켠 뒤 목록의 세트가 2개가 아닙니다: ' + JSON.stringify(await list()));
 }

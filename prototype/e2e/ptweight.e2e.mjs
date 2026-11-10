@@ -9,6 +9,17 @@ const reps = async (page) => {
 const logged = (page) => page.evaluate(() => (JSON.parse(localStorage.getItem('volume-coach.proto.state') || '{}').settings || {}).todaySets || []);
 const kg = (text) => Number(String(text).replace(/[^\d.]/g, ''));
 
+/** 숫자 칸을 눌러 친다 — 지금 값이 골라져 있어야 하고, Enter로 넣는다. */
+async function typeInto(page, field, text) {
+  await field.click();
+  await page.clock.runFor(50);
+  const whole = await field.evaluate((node) => node.selectionStart === 0 && node.selectionEnd === node.value.length);
+  check(whole, '칸을 눌렀는데 지금 값이 골라지지 않았습니다');
+  await page.keyboard.type(text);
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(400);
+}
+
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
@@ -19,7 +30,7 @@ export default async function ({ page, url, shot }) {
   await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
   // 워밍업 무게도 PT 화면에서 — 준비 중에는 지금 워밍업, 워밍업 사이에는 다음 워밍업을 − / + 로
   check(await runUntil(page, ['warm', 'count']) === 'warm', '첫 종목에 워밍업이 없습니다');
-  const warmKg = async () => kg(await page.locator('#focus .pt-warm-kg').first().textContent());
+  const warmKg = async () => Number(await page.locator('#focus .pt-warm-input').first().inputValue());
   const warm1 = await warmKg();
   await page.locator('#focus .pt-warm-step', { hasText: '+' }).click();
   const warm1Up = await warmKg();
@@ -35,11 +46,16 @@ export default async function ({ page, url, shot }) {
   // 워밍업 사이 — 다음 워밍업 무게를 내린다
   for (let i = 0; i < 240 && !(await page.locator('#focus .focus-warm-next').count()); i += 1) await page.clock.runFor(500);
   check(await page.locator('#focus .focus-warm-next').count() === 1, '워밍업 사이에 다음 워밍업 무게 칸이 없습니다');
-  const warm2 = kg(await page.locator('#focus .focus-warm-next .pt-warm-kg').textContent());
+  const warm2 = Number(await page.locator('#focus .focus-warm-next .pt-warm-input').inputValue());
   await page.locator('#focus .focus-warm-next .pt-warm-step', { hasText: '−' }).click();
-  const warm2Down = kg(await page.locator('#focus .focus-warm-next .pt-warm-kg').textContent());
+  const warm2Down = Number(await page.locator('#focus .focus-warm-next .pt-warm-input').inputValue());
   check(warm2Down < warm2, `다음 워밍업 무게 −가 안 됩니다: ${warm2} → ${warm2Down}`);
   check((await savedWarm())[1] === warm2Down, '다음 워밍업 무게가 오늘 것에 안 적혔습니다');
+  // 워밍업 무게도 숫자로 친다
+  const warm2Typed = warm2Down + 5;
+  await typeInto(page, page.locator('#focus .focus-warm-next .pt-warm-input'), String(warm2Typed));
+  check(Number(await page.locator('#focus .focus-warm-next .pt-warm-input').inputValue()) === warm2Typed, '친 워밍업 무게가 안 들어갔습니다');
+  check((await savedWarm())[1] === warm2Typed, '친 워밍업 무게가 오늘 것에 안 적혔습니다: ' + JSON.stringify(await savedWarm()));
   await shot('0-warm-weight');
   // 워밍업 빼기 — 남은 워밍업을 빼고 바로 1세트 준비로. 한 워밍업은 남는다
   await page.locator('#focus .pt-warm-drop').click();
@@ -58,20 +74,26 @@ export default async function ({ page, url, shot }) {
   await page.clock.runFor(500);
 
   // 쉬는 동안 + 한 번 — 다음 세트 무게가 한 칸 오른다
-  const before = kg(await page.locator('#focus .pt-weight-now').textContent());
-  await page.locator('#focus .pt-weight-step', { hasText: '+' }).click();
-  const up = kg(await page.locator('#focus .pt-weight-now').textContent());
-  check(up > before, `+를 눌렀는데 무게가 그대로입니다: ${before} → ${up}`);
-  // 숫자를 누르면 직접 친다
-  await page.locator('#focus .pt-weight-now').click();
   const input = page.locator('#focus .pt-weight-input');
-  check(await input.count() === 1, '숫자를 눌렀는데 입력 칸이 안 열립니다');
+  const shownKg = async () => Number(await input.inputValue());
+  const before = await shownKg();
+  await page.locator('#focus .pt-weight-step', { hasText: '+' }).click();
+  const up = await shownKg();
+  check(up > before, `+를 눌렀는데 무게가 그대로입니다: ${before} → ${up}`);
+  // 숫자를 누르면 바로 친다 — 숫자 자판(inputmode=decimal), 지금 값이 골라져 있어 치면 바뀐다
+  check(await input.getAttribute('inputmode') === 'decimal', '무게 칸이 숫자 자판이 아닙니다');
+  // 2.5kg 단위 바벨에 41 — 만들 수 있는 무게로 맞추고 한 줄로 알려 준다
+  await typeInto(page, input, '41');
+  const snapped = await shownKg();
+  check(snapped === 40 || snapped === 42.5, '41kg을 기구 무게로 안 맞췄습니다: ' + snapped);
+  check(/41kg → .*kg로 맞췄습니다/.test(await page.locator('#focus .pt-num-note').textContent()), '맞췄다는 안내가 없습니다');
+  // 0은 받지 않는다
+  await typeInto(page, input, '0');
+  check(await shownKg() === snapped, '0kg이 들어갔습니다');
+  check(/넣을 수 없습니다/.test(await page.locator('#focus .pt-num-note').textContent()), '0kg 안내가 없습니다');
   const want = before + 5;
-  await input.fill(String(want));
-  await input.press('Enter');
-  await input.blur().catch(() => {});
-  await page.clock.runFor(300);
-  check(kg(await page.locator('#focus .pt-weight-now').textContent()) === want, '직접 친 무게가 안 들어갔습니다: ' + await page.locator('#focus .pt-weight-now').textContent());
+  await typeInto(page, input, String(want));
+  check(await shownKg() === want, '직접 친 무게가 안 들어갔습니다: ' + await shownKg());
   await page.clock.runFor(2000);
   await shot('1-rest-weight');
 

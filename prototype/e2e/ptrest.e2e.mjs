@@ -46,7 +46,7 @@ export default async function ({ page, url, shot }) {
   const before = Number((await logged.textContent()).match(/× (\d+)회/)[1]);
   await logged.locator('.focus-fix').click();
   await page.locator('#focus .focus-fix-row button', { hasText: '−' }).click();
-  check((await page.locator('#focus .focus-fix-reps').textContent()) === (before - 1) + '회', '고친 개수가 안 보입니다');
+  check((await page.locator('#focus input.focus-fix-reps').inputValue()) === String(before - 1), '고친 개수가 안 보입니다');
   const savedReps = await page.evaluate(() => (JSON.parse(localStorage.getItem('volume-coach.proto.state') || '{}').settings || {}).todaySets.map((set) => set.reps));
   check(savedReps.includes(before - 1), '고친 개수가 기록에 안 들어갔습니다: ' + JSON.stringify(savedReps));
   await page.locator('#focus .focus-fix', { hasText: '확인' }).click();
@@ -57,13 +57,22 @@ export default async function ({ page, url, shot }) {
   const restTalk = await page.evaluate(() => window.__said.join(' '));
   check(/목표 \d+개 중|다 채우셨습니다|목표 안에|마지막 두 개/.test(restTalk), '쉬는 동안 방금 세트 이야기를 안 했습니다: ' + restTalk.slice(-200));
 
-  // 쉬는 중에도 일시정지 — 멈춰 두면 휴식이 끝나도 다음 세트를 세지 않는다
+  // 쉬는 중에도 일시정지 — 다른 화면으로 가지 않고 쉬는 화면 그대로, 남은 시간이 멈춘다. 다음 세트를 세지 않는다
   await page.locator('#focus .focus-btn', { hasText: '일시정지' }).click();
   check(await focusPhase(page) === 'paused', '쉬는 중에 멈추지 않았습니다');
+  const frozen = await page.locator('#focus-rest-time').textContent();
+  check(await page.locator('#focus .pt-weight-input').count() === 1, '멈췄더니 다음 세트 무게 칸이 사라졌습니다');
+  check(await page.locator('#focus .focus-title-text b').textContent() !== '', '멈췄더니 종목 이름이 사라졌습니다');
+  check(await page.locator('#focus .focus-cap.paused', { hasText: '멈춤' }).count() === 1, '멈춘 화면에 "멈춤"이 없습니다');
+  check(await page.locator('#focus .pt-resume', { hasText: '▶ 계속' }).count() === 1, '일시정지 단추가 "▶ 계속"으로 안 바뀌었습니다');
+  check(!(await page.locator('#focus').textContent()).includes('PT 일시정지'), '따로 된 일시정지 화면이 떴습니다');
+  await shot('2b-rest-paused');
   await page.clock.runFor(300000);
   check(await focusPhase(page) === 'paused', '멈춰 뒀는데 ' + await focusPhase(page));
+  check(await page.locator('#focus-rest-time').textContent() === frozen, '멈춰 둔 휴식 시간이 흘렀습니다: ' + frozen + ' → ' + await page.locator('#focus-rest-time').textContent());
   await page.locator('#focus .focus-btn', { hasText: '계속' }).click();
-  await runUntil(page, 'count', { maxMs: 60000 });
+  check(await focusPhase(page) === 'rest', '계속 뒤에 쉬는 시간으로 안 돌아갔습니다: ' + await focusPhase(page));
+  await runUntil(page, 'count', { maxMs: 300000 });
   check((await page.locator('#focus .focus-what').textContent()).startsWith('2세트'), '계속 뒤가 2세트가 아닙니다');
 
   // 2세트 — 네 개에서 "여기까지"
