@@ -968,7 +968,7 @@ export interface WrapUpInput {
   at?: number;
   name?: string | null;
   /** 제일 앞에 고른 목표 — 오늘 한 운동이 그 목표에 무슨 뜻인지 한 줄 */
-  goal?: 'hypertrophy' | 'strength' | 'fatLoss' | 'general' | null;
+  goal?: 'hypertrophy' | 'strength' | 'fatLoss' | 'conditioning' | 'general' | null;
 }
 
 type Goal = 'hypertrophy' | 'strength' | 'fatLoss' | 'general';
@@ -1049,7 +1049,9 @@ export function wrapUpLines(input: WrapUpInput): string[] {
     }
   }
   if (week) lines.push(week);
-  if (input.goal && !input.firstEver) lines.push(GOAL_LINE[style][input.goal]);
+  // 목표 한 줄이 따로 없는 목표(체력 기르기)는 건너뛴다 — 없는 줄을 읽게 하지 않는다
+  const goalLine = input.goal && input.goal !== 'conditioning' ? GOAL_LINE[style][input.goal] : undefined;
+  if (goalLine && !input.firstEver) lines.push(goalLine);
   lines.push(call(input.name) + pick(WRAP_CLOSE[style], at));
   return lines;
 }

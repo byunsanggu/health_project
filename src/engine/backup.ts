@@ -64,7 +64,7 @@ export type BackupResult = { ok: true; backup: Backup } | { ok: false; reason: s
 type Plain = Record<string, unknown>;
 
 const LEVELS: readonly TrainingLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
-const GOALS: readonly string[] = ['hypertrophy', 'strength', 'fatLoss', 'general'];
+const GOALS: readonly string[] = ['hypertrophy', 'strength', 'fatLoss', 'conditioning', 'general'];
 const SEXES: readonly string[] = ['male', 'female', 'unspecified'];
 const JOINTS: readonly Joint[] = ['neck', 'shoulder', 'elbow', 'wrist', 'lowBack', 'hip', 'knee', 'ankle'];
 const COACH_MODES: readonly string[] = ['pt', 'solo'];

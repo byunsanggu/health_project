@@ -54,6 +54,11 @@ export interface SessionTemplate {
    * 정한 대로 한다 — 덜어내는 주에만 절반으로. 무게 · 횟수 진행은 똑같다.
    */
   fixed?: boolean;
+  /**
+   * 이 날이 과정 안에서 템플릿보다 늘 수 있는 세트 수의 상한. 없으면 planWeekSets의 보통 폭.
+   * 근력 운동 뒤에 날마다 마무리 운동이 붙는 계획(체력 기르기)은 근력 쪽을 짧게 지켜야 해서 작게 준다.
+   */
+  growthCap?: number;
 }
 
 export interface PlannedSet {

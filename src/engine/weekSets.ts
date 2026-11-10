@@ -106,7 +106,12 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
   const growth = gentle
     ? Math.min(SESSION_GROWTH_MAX_GENTLE, SESSION_GROWTH_PER_WEEK_GENTLE * (week - 1))
     : Math.min(SESSION_GROWTH_MAX, SESSION_GROWTH_PER_WEEK * (week - 1));
-  const dayCap = base.map((day) => day.reduce((sum, value) => sum + value, 0) + growth);
+  // 날마다 정해 둔 상한(growthCap)이 있으면 그보다 더 늘리지 않는다 — 마무리 운동이 붙는 날은 근력 쪽을 짧게 지킨다
+  const capOf = (d: number, amount: number): number => {
+    const own = templates[d]!.growthCap;
+    return own === undefined || !Number.isFinite(own) ? amount : Math.min(amount, Math.max(0, own));
+  };
+  const dayCap = base.map((day, d) => day.reduce((sum, value) => sum + value, 0) + capOf(d, growth));
   /*
    * 지난주에 넉넉한 날(90분)로 늘렸거나 직접 세트를 더했어도, 출발점은 그 주의 하루 상한을 넘지 않는다.
    * 그대로 두면 한 번 길게 한 날의 세트가 그다음 주 평범한 날마다 따라와 날이 계속 길어졌다.
@@ -128,7 +133,7 @@ export function planWeekSets(input: WeekSetsInput): number[][] {
    * 감량 주 3회에서 가슴이 8세트(최소 10)에 블록 내내 머물렀다 — 화면은 "주마다 채웁니다"라고 하면서.
    */
   const fillGrowth = Math.min(SESSION_GROWTH_MAX, SESSION_GROWTH_PER_WEEK * (week - 1));
-  const fillCap = base.map((day) => day.reduce((sum, value) => sum + value, 0) + Math.max(growth, fillGrowth));
+  const fillCap = base.map((day, d) => day.reduce((sum, value) => sum + value, 0) + capOf(d, Math.max(growth, fillGrowth)));
   const daySum = (d: number) => sets[d]!.reduce((sum, value) => sum + value, 0);
   const exerciseAt = (d: number, i: number) => index.get(templates[d]!.slots[i]!.exerciseId);
   const volumeOf = () => aggregateVolume(templateWeekLogs(templates, sets), index);

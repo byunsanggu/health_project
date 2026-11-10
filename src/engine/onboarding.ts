@@ -20,6 +20,7 @@ import type {
   TrainingLevel,
 } from './types.ts';
 import { planGoals, repRangeForGoals, type TrainingGoal } from './goals.ts';
+import { weeklyConditioningPlan, type WeeklyConditioningPlan } from './conditioning.ts';
 
 
 export interface OnboardingAnswers {
@@ -150,6 +151,11 @@ export interface OnboardingResult {
   program: TrainingProgram;
   /** 첫 주 처방 — 비교할 이력이 없는 주를 이걸로 채운다 */
   firstWeek: WeeklyPlan;
+  /**
+   * 첫 주의 마무리 운동 · 유산소 계획(체력 기르기 · 체지방 감량). 붙는 것이 없으면 kind가 'none'.
+   * 주차가 바뀌면 weeklyConditioningPlan을 그 주차로 다시 부른다 — 저장해 두는 값이 아니다.
+   */
+  conditioning: WeeklyConditioningPlan;
   /** 사용자에게 보여줄 안내 */
   notes: string[];
 }
@@ -1419,6 +1425,23 @@ export function buildProgram(
 
   const ranged = assignRepRanges(templates, answers.goals, level, answers.repStyle);
 
+  /*
+   * 체력 기르기(크로스핏식) — 근력 운동은 큰 운동 위주로 짧게 줄이고, 남는 시간에 마무리 운동을 붙인다.
+   * 한 시간짜리 근력 운동 뒤에 숨찬 운동 10분을 더 얹으면 둘 다 흐려진다.
+   */
+  if (goalPlan.conditioning && days > 1) {
+    return {
+      name: SPLIT_NAMES[days] ?? `주 ${days}회`,
+      daysPerWeek: days,
+      caution: goalPlan.goals.includes('hypertrophy')
+        ? '마무리 운동을 날마다 붙이느라 근력 운동을 조금 줄였습니다. 부위마다 한 주 세트는 최소 언저리에서 시작합니다.'
+        : '마무리 운동을 날마다 붙이느라 근력 운동은 큰 운동 위주로 짧게 짰습니다. ' +
+          '부위마다 한 주 세트가 근육을 키우는 최소보다 적을 수 있습니다 — 체력이 먼저인 계획이라 그렇습니다.',
+      templates: trimForConditioning(ranged, level, goalPlan.goals.includes('hypertrophy')),
+      weeklyTargets,
+    };
+  }
+
   return {
     name: SPLIT_NAMES[days] ?? `주 ${days}회`,
     daysPerWeek: days,
@@ -1426,6 +1449,56 @@ export function buildProgram(
     templates: ranged,
     weeklyTargets,
   };
+}
+
+/** 마무리 운동이 붙는 날, 근력 운동이 과정 안에서 늘 수 있는 세트 수. */
+export const CONDITIONING_GROWTH_CAP = 2;
+
+/** 마무리 운동이 붙는 날의 근력 운동 세트 상한 — 25~30분 안에 끝나는 양. */
+export function conditioningSetCap(level: TrainingLevel, withHypertrophy = false): number {
+  const base = level === 'beginner' ? 9 : level === 'intermediate' ? 11 : 12;
+  return base + (withHypertrophy ? 3 : 0);
+}
+
+/**
+ * 마무리 운동이 붙는 계획의 근력 부분.
+ *
+ * 큰 운동(메인 · 보조)을 앞에서부터 네 개까지 남기고 작은 운동은 뺀다 — 근육 키우기를 같이 골랐으면 다섯 개.
+ * 큰 운동이 셋이 안 되는 날(매트뿐인 집)은 작은 운동으로 셋까지 채운다. 종목마다 세 세트까지(데드리프트는 정한 대로),
+ * 하루 세트 상한을 넘으면 뒤 종목부터 두 세트까지 줄인다. 반복 범위와 종목 순서는 건드리지 않는다.
+ */
+export function trimForConditioning(
+  templates: readonly SessionTemplate[],
+  level: TrainingLevel,
+  withHypertrophy = false,
+): SessionTemplate[] {
+  const maxSlots = withHypertrophy ? 5 : 4;
+  const cap = conditioningSetCap(level, withHypertrophy);
+  return templates.map((template) => {
+    if (template.fixed) return template;
+    const big = template.slots.filter((slot) => slot.role !== 'isolation').slice(0, maxSlots);
+    const keep = new Set(big);
+    const wanted = withHypertrophy ? maxSlots : 3;
+    for (const slot of template.slots) {
+      if (keep.size >= wanted) break;
+      keep.add(slot);
+    }
+    const slots = template.slots.filter((slot) => keep.has(slot)).map((slot) => ({
+      ...slot,
+      sets: HEAVY_PULLS.has(slot.exerciseId) ? slot.sets : Math.min(slot.sets, 3),
+    }));
+    const total = () => slots.reduce((sum, slot) => sum + slot.sets, 0);
+    for (const roles of [['isolation', 'accessory'], ['primary']] as const) {
+      for (let guard = 0; guard < 40 && total() > cap; guard += 1) {
+        const target = [...slots].reverse()
+          .filter((slot) => (roles as readonly string[]).includes(slot.role ?? 'isolation') && slot.sets > 2)
+          .sort((a, b) => b.sets - a.sets)[0];
+        if (!target) break;
+        target.sets -= 1;
+      }
+    }
+    return { ...template, slots, setCap: Math.min(template.setCap ?? cap, cap), growthCap: CONDITIONING_GROWTH_CAP };
+  });
 }
 
 /** 모자라다고 말하지 않는 부위 — 다른 종목에서 저절로 채워지거나 따로 안 해도 되는 곳 */
@@ -1504,6 +1577,15 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
 
   if (level.adjusted) notes.push(level.note);
 
+  const goalPlan = planGoals(answers.goals);
+  const conditioning = weeklyConditioningPlan({
+    goals: answers.goals,
+    level: level.level,
+    templates: program.templates,
+    equipmentIds: answers.gym.equipmentIds,
+    weekInBlock: 1,
+  });
+
   notes.push(
     `${program.name} · ${profile.label}에 맞는 운동량으로 시작합니다. ` +
       `${profile.accumulationWeeks}주 동안 조금씩 늘리고, 그다음 한 주는 덜어냅니다.`,
@@ -1557,6 +1639,27 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
     notes.push(lines.join(' '));
   }
 
+  /*
+   * 근력이 목표인데 무겁게 들 바벨 종목이 프로그램에 없으면 그대로 말한다. 목표 안내는 "바벨 메인 동작은 4~6회"라고
+   * 하는데 덤벨 · 매트뿐인 집에서는 그런 종목이 하나도 없다 — 약속한 것과 받은 것이 달랐다.
+   */
+  if (goalPlan.goals.includes('strength')) {
+    const heavy = [...programIds].some((id) => {
+      const exercise = EXERCISE_INDEX.get(id);
+      return exercise !== undefined && isStrengthLift(exercise);
+    });
+    if (!heavy) {
+      notes.push('근력이 목표지만 이 기구에는 적은 횟수로 무겁게 들 바벨 종목이 없습니다. ' +
+        '그래서 덤벨 · 맨몸 종목을 6회 이상으로 하고, 횟수를 다 채우면 무게나 더 어려운 동작으로 올립니다. ' +
+        '바벨과 랙이 있는 곳에서 하게 되면 기구를 다시 골라 주세요.');
+    }
+  }
+
+  // 붙는 마무리 운동 · 유산소가 있으면 한 줄로 알린다
+  if (conditioning.kind !== 'none') {
+    notes.push(conditioning.summary + (conditioning.restDay ? ` ${conditioning.restDay.text}` : ''));
+  }
+
   // 실제로 뺀 것이 있을 때만, 무엇을 뺐는지 말한다
   const kept = availableExercises(answers.gym.equipmentIds, EXERCISES)
     .filter((exercise) => painKeepsOut(exercise, answers.pain ?? []));
@@ -1576,6 +1679,7 @@ export function runOnboarding(answers: OnboardingAnswers): OnboardingResult {
     gym,
     program,
     firstWeek: firstWeekPlan(program, profile.startingRir),
+    conditioning,
     notes,
   };
 }
