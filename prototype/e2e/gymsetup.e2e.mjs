@@ -99,14 +99,21 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('.register-open').count() === 0, '이름표인데 직접 등록 버튼이 같이 있습니다');
   await shot('3-gymtab');
 
-  // 연결하기 — 유형 → 층 → 등록
+  // 연결하기 — 한 장에서: 이름(넘어와 있다) · 어떤 곳 · 누가 보는지 · 동네 · 층 → 등록하고 기구 고르기
   await page.locator('.gym-link').click();
   check((await page.locator('dialog').textContent()).includes('내 헬스장 등록'), '등록 창이 아닙니다');
-  await page.locator('dialog .choice', { hasText: '동네 헬스장' }).click();
+  check(await page.locator('dialog .choice', { hasText: '동네 헬스장' }).count() === 0, '유형부터 고르게 합니다');
   check(await page.locator('dialog input[placeholder="헬스장 이름"]').inputValue() === '역삼 튼튼짐', '이름이 안 넘어왔습니다');
+  check(await page.locator('dialog .gym-kind .pick[aria-pressed="true"]').textContent() === '일반 헬스장', '일반 헬스장이 기본이 아닙니다');
+  check((await page.locator('dialog').textContent()).includes('고른 기구 ' + onCount + '개'), '설문에서 고른 기구를 가져간다는 말이 없습니다');
   await page.locator('dialog input[placeholder^="예: 역삼동"]').fill('역삼동');
   await page.locator('dialog input[placeholder^="층"]').fill('3층');
-  await page.locator('dialog .finish', { hasText: '등록하기' }).click();
+  await page.locator('dialog .finish', { hasText: '등록하고 기구 고르기' }).click();
+  // 등록하면 바로 기구 그림 칸 — 설문에서 고른 것이 그대로 켜져 있다
+  await page.locator('dialog .equip-tile').first().waitFor();
+  check((await page.locator('dialog #modal-title').textContent()) === '기구 고르기', '등록 뒤 기구 고르기로 안 갑니다');
+  check((await page.locator('dialog #equip-count').textContent()).includes('기구 ' + onCount + '개'), '기구 수가 바뀌었습니다: ' + await page.locator('dialog #equip-count').textContent());
+  await page.locator('dialog .equip-done').click();
   await page.waitForFunction(() => !document.querySelector('dialog')?.open);
 
   const linked = await page.locator('.gym-here').textContent();
