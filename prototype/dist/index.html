@@ -26569,6 +26569,10 @@ var RestSound = (function () {
   function shareableGym(entry) {
     if (!entry) return false;
     if (entry.id === PLACEHOLDER_GYM_ID) return false;
+    // 나만 보기로 등록한 곳 — 목록 항목과 등록 원본 어느 쪽에 적혀 있어도 올리지 않는다
+    if (entry.onlyMe) return false;
+    var mine = currentGymEntry();
+    if (mine && mine.id === entry.id && (mine.onlyMe || mine.visibility === 'private')) return false;
     return (entry.visibility || 'public') !== 'private';
   }
 
@@ -28193,7 +28197,17 @@ var RestSound = (function () {
 
     state.gymDraft = null;
     if (!firstHere) modal.close();
-    useGym(E.toGymEntry(result.entry), { linkFrom: draft.linkFrom });
+    var gymEntry = E.toGymEntry(result.entry);
+    /*
+     * 누가 보는지는 **헬스장 목록 항목에도** 적는다. 등록 원본(myDirectory)은 앱을
+     * 다시 켜면 없어서, 거기에만 적어 두면 다음에 켰을 때 나만 보기로 등록한 곳이
+     * 공개로 올라간다. 집은 visibility: private, 나만 보는 회사 · 아파트는 onlyMe.
+     */
+    if (draft.manual && result.outcome === 'created' && result.entry.visibility === 'private') {
+      if (draft.kind === 'home') gymEntry.visibility = 'private';
+      else gymEntry.onlyMe = true;
+    }
+    useGym(gymEntry, { linkFrom: draft.linkFrom });
 
     /*
      * 처음 등록한 사람이면 바로 기구를 체크하게 한다. 모달을 닫지 않고
