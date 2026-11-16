@@ -1009,6 +1009,24 @@ input[type="search"] {
   color: var(--muted);
 }
 .register-open:hover { border-color: var(--accent); color: var(--accent); }
+/* 검색에 없을 때는 직접 등록이 주 경로다 — 흐린 점선이 아니라 눈에 띄는 버튼으로 */
+.register-open.loud {
+  border: 1.5px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14.5px; font-weight: 700;
+  padding: 13px 10px;
+  margin-top: 8px;
+}
+.search-results .register-open { margin-top: 8px; }
+.gym-reg-input { width: 100%; box-sizing: border-box; }
+.gym-kind { margin-bottom: 4px; }
+.gym-see .choice-title::before {
+  content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 7px;
+  border: 1.5px solid var(--line); border-radius: 50%; vertical-align: -1px;
+}
+.gym-see[aria-pressed="true"] .choice-title::before { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2.5px var(--surface); }
+.gym-reg-submit { margin-top: 14px; }
 .option-row .why {
   grid-column: 1 / -1;
   font-size: 11.5px;
@@ -1136,10 +1154,49 @@ input[type="search"] {
 }
 .equip-tile:hover { border-color: var(--accent); }
 .equip-tile[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
-.equip-tile .equip-art { width: 60px; height: 40px; }
-.equip-tile .equip-art-blank { width: 60px; height: 40px; }
-.equip-tile[aria-pressed="true"] .equip-art { color: var(--accent); }
-.equip-tile .name { font-size: 13px; font-weight: 500; line-height: 1.35; word-break: keep-all; }
+/*
+ * 그림은 칸에서 제일 큰 것이다 — 이름을 모르는 사람은 그림으로 고른다.
+ * 뼈대와 패드는 글자색, 손 닿는 곳(.k · .kp)은 강조색. 고른 칸도 그림 색은
+ * 그대로 두고 테두리 · 바탕 · ✓로 표시한다 — 전부 한 색이 되면 어디가 손잡이인지 안 보인다.
+ */
+.equip-tile .equip-art { width: 104px; height: 78px; color: var(--ink); }
+.equip-tile .equip-art-blank { width: 104px; height: 78px; }
+.equip-art .k, .thumb-art .k, .thumb-equip .k { stroke: var(--accent); }
+.equip-art .kp, .thumb-art .kp, .thumb-equip .kp { fill: var(--accent); }
+.equip-row[aria-pressed="true"] .equip-art .k { stroke: currentColor; }
+.equip-cell { position: relative; display: grid; }
+.equip-cell .equip-tile { width: 100%; padding-top: 30px; }
+.equip-zoom-open {
+  position: absolute; top: 6px; right: 6px;
+  min-width: 40px; min-height: 28px; padding: 3px 8px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--muted);
+  font-size: 11.5px;
+}
+.equip-zoom-open:hover { border-color: var(--accent); color: var(--accent); }
+.equip-tile .name { font-size: 13px; font-weight: 600; line-height: 1.35; word-break: keep-all; }
+.equip-tile .aka { font-size: 11px; line-height: 1.35; color: var(--muted); word-break: keep-all; }
+/* 기구 크게 보기 — 모달 위에도 얹힌다 */
+.equip-zoom {
+  position: fixed; inset: 0; z-index: 60;
+  display: grid; place-items: center; padding: 16px;
+  background: rgba(10, 12, 18, .55);
+}
+.equip-zoom-card {
+  width: min(100%, 380px); max-height: calc(100vh - 32px); overflow: auto;
+  display: grid; gap: 8px; padding: 16px;
+  border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink);
+  text-align: left;
+}
+.equip-zoom-art { display: grid; place-items: center; padding: 10px 0 6px; border-radius: 12px; background: var(--surface-2); }
+.equip-zoom-art .equip-art { width: min(100%, 300px); height: auto; aspect-ratio: 4 / 3; color: var(--ink); }
+.equip-zoom-name { font-size: 18px; font-weight: 700; }
+.equip-zoom-aka { font-size: 12.5px; color: var(--muted); line-height: 1.5; word-break: keep-all; }
+.equip-zoom-card .list-label { margin-top: 6px; }
+.equip-zoom-text { margin: 0; font-size: 14px; line-height: 1.6; word-break: keep-all; }
+.equip-zoom-text.tell { color: var(--muted); }
+.equip-zoom-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.equip-zoom-actions .finish { flex: 1; margin: 0; }
 .equip-tile .mark {
   position: absolute; top: 7px; left: 8px;
   width: 20px; height: 20px; border-radius: 50%;

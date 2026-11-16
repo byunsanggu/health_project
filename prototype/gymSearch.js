@@ -26,6 +26,9 @@ var GymSearch = (function () {
   /** 한 번에 받을 개수. 더 받아 봐야 사람은 위에서 다섯 개만 본다. */
   var SIZE = 15;
 
+  /** 이만큼 기다려도 답이 없으면 연결이 안 되는 것으로 본다. */
+  var TIMEOUT_MS = 8000;
+
   function read() {
     try {
       var raw = localStorage.getItem(KEY);
@@ -99,11 +102,34 @@ var GymSearch = (function () {
      */
     var near = options.near;
 
-    if (serverReady()) return viaServer(parsed, near);
-    if (apiKey().length === 0) {
+    if (!serverReady() && apiKey().length === 0) {
       return Promise.resolve({ ok: false, failure: 'noKey', parsed: parsed });
     }
-    return viaDevice(parsed, near);
+    /*
+     * 인터넷이 없다고 기기가 말하면 부르지도 않는다. 그리고 답이 안 오면
+     * 기다리다 그만둔다 — 헬스장 지하에서는 요청이 실패하지도 않고 그냥
+     * 매달려 있는 일이 흔한데, 그동안 화면이 "찾는 중…"에 멈춰 있으면
+     * 직접 등록으로 넘어갈 길까지 같이 막힌다.
+     */
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return Promise.resolve({ ok: false, failure: 'network', parsed: parsed });
+    }
+    var work = serverReady() ? viaServer(parsed, near) : viaDevice(parsed, near);
+    return new Promise(function (resolve) {
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        resolve({ ok: false, failure: 'network', parsed: parsed });
+      }, options.timeoutMs || TIMEOUT_MS);
+      var finish = function (result) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(result);
+      };
+      work.then(finish, function () { finish({ ok: false, failure: 'network', parsed: parsed }); });
+    });
   }
 
   /** 서버를 지나간다 — 사용자는 열쇠를 모른다. */

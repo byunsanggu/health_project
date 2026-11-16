@@ -14,6 +14,11 @@ const source = readFileSync(new URL('../../../prototype/equipmentArt.js', import
 interface ArtModule {
   has(id: string): boolean;
   coverage(): number;
+  ids(): string[];
+  cardioIds(): string[];
+  tellIds(): string[];
+  markup(id: string): string | null;
+  tell(id: string): string | null;
 }
 
 function loadArt(): ArtModule {
@@ -48,14 +53,47 @@ describe('기구 그림', () => {
   test('모든 좌표가 64×48 안에 있다', () => {
     /*
      * viewBox를 넘으면 잘린 그림이 나간다. 눈으로 한 번 보고 넘어가면
-     * 나중에 하나 고칠 때 조용히 새 나간다.
+     * 나중에 하나 고칠 때 조용히 새 나간다. 그림은 붓 함수로 조립하므로
+     * 소스가 아니라 **조립된 결과**의 숫자를 본다.
      */
-    const numbers = source.match(/'<[^']*'/g) ?? [];
-    for (const chunk of numbers) {
-      for (const value of chunk.match(/-?\d+(\.\d+)?/g) ?? []) {
+    const art = loadArt();
+    for (const id of [...art.ids(), ...art.cardioIds()]) {
+      const markup = art.markup(id) ?? '';
+      assert.ok(markup.length > 0, `빈 그림: ${id}`);
+      // 좌표가 아닌 숫자(투명도 · 선 굵기)는 뺀다
+      const coords = markup.replace(/(opacity|stroke-width|fill-opacity)="[^"]*"/g, '');
+      for (const value of coords.match(/-?\d+(\.\d+)?/g) ?? []) {
         const n = Number(value);
-        assert.ok(n >= -60 && n <= 64, `좌표가 범위를 벗어났습니다: ${n} (${chunk.slice(0, 40)})`);
+        assert.ok(n >= -60 && n <= 64, `좌표가 범위를 벗어났습니다: ${n} (${id})`);
       }
+    }
+  });
+
+  test('그림마다 손 닿는 곳(강조)이 하나는 있다', () => {
+    /*
+     * 뼈대만 있는 그림은 다 비슷한 철골로 보인다. 손잡이 · 바 · 롤러처럼
+     * 그 기구를 알아보게 하는 부분을 강조색으로 그렸는지 본다. 벤치처럼
+     * 패드가 전부인 것은 굵은 패드가 그 역할을 한다.
+     */
+    const art = loadArt();
+    const plain = art.ids().filter((id) => {
+      const markup = art.markup(id) ?? '';
+      return !/class="k"|class="kp"/.test(markup) && !/stroke-width="(5|5\.5|6)"/.test(markup);
+    });
+    assert.equal(plain.join(', '), '', '강조한 곳이 없는 그림');
+  });
+
+  test('헷갈리는 짝을 가르는 말은 카탈로그에 있는 기구에만, 합니다체로 적는다', () => {
+    const art = loadArt();
+    const known = new Set(EQUIPMENT_CATALOG.map((item) => item.id));
+    for (const id of art.tellIds()) {
+      assert.ok(known.has(id), `카탈로그에 없는 기구: ${id}`);
+      assert.match(art.tell(id) ?? '', /(니다|세요)\.$/, `합니다체가 아닙니다: ${id}`);
+    }
+    // 처음 온 사람이 제일 자주 헷갈리는 짝은 반드시 있다
+    for (const id of ['leg-extension-machine', 'leg-curl-machine', 'power-rack', 'smith-machine',
+      'hip-abduction-machine', 'hip-adduction-machine', 'chest-press-machine', 'shoulder-press-machine']) {
+      assert.ok(art.tell(id), `가르는 말이 없습니다: ${id}`);
     }
   });
 });

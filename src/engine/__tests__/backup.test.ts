@@ -197,6 +197,11 @@ describe('백업 파일을 읽는다', () => {
     }
   });
 
+  it('체력 기르기(크로스핏식) 목표가 든 설문도 되살린다', () => {
+    const backup = read(exported({ 설문: { ...answers, goals: ['conditioning', 'fatLoss'] } }));
+    assert.deepEqual(backup.answers?.goals, ['conditioning', 'fatLoss']);
+  });
+
   it('남은 설문 답은 그대로 프로그램을 짤 수 있다 — 이상한 기구 이름이 섞여 있어도', () => {
     const backup = read(exported({ 설문: { ...answers, gym: { equipmentIds: ['barbell-set', 'unknown-gadget'] }, extra: 'x' } }));
     assert.ok(backup.answers);

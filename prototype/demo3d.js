@@ -14,13 +14,13 @@
 
   var PALETTE = {
     light: {
-      bg: 0xf1f2f6, floor: 0xe5e7ed, grid: 0xd3d7df, skin: 0xd8cbbf, muscle: 0xd0c0b2,
+      bg: 0xf1f2f6, floor: 0xe5e7ed, grid: 0xd3d7df, gridLine: 0xb4bac6, skin: 0xd8cbbf, muscle: 0xd0c0b2,
       shorts: 0x2d3240, shoe: 0x30343e, sole: 0xf3f3f3, hair: 0x3a3532,
       accent: 0x4a43d6, fault: 0xd8453a, steel: 0xb4bbc5, dark: 0x2a2e37, pad: 0x3a404d,
       plate: 0x24272e, plateRim: 0x4a43d6, box: 0xb9a184, mat: 0x4c5363, cable: 0x30333a,
     },
     dark: {
-      bg: 0x15181e, floor: 0x1d2129, grid: 0x2a303a, skin: 0xbfb1a5, muscle: 0xb6a698,
+      bg: 0x15181e, floor: 0x1d2129, grid: 0x2a303a, gridLine: 0x2d333e, skin: 0xbfb1a5, muscle: 0xb6a698,
       shorts: 0x3b4252, shoe: 0x454b58, sole: 0xd9d9d9, hair: 0x2b2725,
       accent: 0x8f89ff, fault: 0xff6a5c, steel: 0x9aa2ad, dark: 0x3a404c, pad: 0x4a5161,
       plate: 0x30343c, plateRim: 0x8f89ff, box: 0x8f7c66, mat: 0x353b47, cable: 0x8b919c,
@@ -88,6 +88,22 @@
     { group: 'gluteMed', bone: 'pelvis', u: 1.3, side: 0.135, front: -0.03, r: [0.04, 0.06, 0.055], pair: true, cloth: true, detail: true },
   ];
 
+  /* ── 화소 ────────────────────────────────────── */
+
+  /*
+   * 그림 한 칸을 몇 배 화소로 그릴지. 요즘 폰은 화면 화소가 3배라, 2배로 그려 늘리면 윤곽이 계단처럼 깨져 보인다.
+   * 작은 칸(PT 화면 200px쯤)은 3배까지 그대로, 큰 칸은 전체 화소 수를 묶어 폰이 버벅이지 않게 한다
+   * (크게 보기 324px 칸이면 2.6배쯤). 예전 기준(2배)보다 낮추지는 않는다.
+   */
+  var PIXEL_BUDGET = 720000;
+  function pixelRatioFor(width, height, dpr) {
+    var device = Math.max(1, dpr || 1);
+    var want = Math.min(3, device);
+    var area = Math.max(1, width * height);
+    var fit = Math.sqrt(PIXEL_BUDGET / area);
+    return Math.max(Math.min(2, device), Math.min(want, fit));
+  }
+
   /* ── three.js ────────────────────────────────── */
 
   function colorOf(hex) {
@@ -112,6 +128,41 @@
     return m;
   }
 
+  var FLOOR_SIZE = 14;
+  var GRID_CELL = 0.5;
+
+  function cssHex(n) { return '#' + ('000000' + n.toString(16)).slice(-6); }
+
+  /** 바닥 격자 한 칸 무늬 — 칸 가장자리에 선. 작은 그림(mipmap)과 비스듬히 볼 때 거르기(anisotropy)로 멀리서도 안 깨진다. */
+  function gridTextureFor(colors, renderer) {
+    var size = 256;
+    var tile = document.createElement('canvas');
+    tile.width = size;
+    tile.height = size;
+    var ctx = tile.getContext('2d');
+    ctx.fillStyle = cssHex(colors.floor);
+    ctx.fillRect(0, 0, size, size);
+    // 선 굵기 1.2cm — 칸 양쪽 가장자리에 반씩 걸쳐 이어 붙이면 한 줄이 된다
+    var half = Math.round(size * (0.012 / GRID_CELL) / 2);
+    // 바닥은 빛을 받아 밝아진다 — 선도 같이 밝아져 묻히지 않게 선 색(gridLine)은 바닥보다 넉넉히 어둡게(밝은 화면) · 밝게(어두운 화면)
+    ctx.fillStyle = cssHex(colors.gridLine);
+    ctx.fillRect(0, 0, size, half);
+    ctx.fillRect(0, size - half, size, half);
+    ctx.fillRect(0, half, half, size - half * 2);
+    ctx.fillRect(size - half, half, half, size - half * 2);
+    var texture = new THREE.CanvasTexture(tile);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(FLOOR_SIZE / GRID_CELL, FLOOR_SIZE / GRID_CELL);
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    if (THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
+    var max = renderer.capabilities && renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1;
+    texture.anisotropy = Math.min(8, max || 1);
+    return texture;
+  }
+
   /** 길이 1짜리 회전체 — 프로필대로 굵기가 변한다. 위아래는 둥글게 닫는다. */
   function latheUnit(profile) {
     var points = [];
@@ -127,7 +178,7 @@
       var b = (i / 4) * (Math.PI / 2);
       points.push(new THREE.Vector2(Math.sin(b) * last, 1 + Math.cos(b) * last * 0.45));
     }
-    return new THREE.LatheGeometry(points, 20);
+    return new THREE.LatheGeometry(points, 32);
   }
 
   /** 둥근 모서리 상자. */
@@ -198,7 +249,7 @@
       hair: material(colors.hair, { roughness: 0.9 }),
     };
     var unit = {
-      sphere: new THREE.SphereGeometry(1, 20, 14),
+      sphere: new THREE.SphereGeometry(1, 28, 18),
       headSphere: new THREE.SphereGeometry(1, 32, 24),
       thigh: latheUnit(PROFILE.thigh),
       shin: latheUnit(PROFILE.shin),
@@ -206,7 +257,7 @@
       forearm: latheUnit(PROFILE.forearm),
       lumbar: latheUnit(PROFILE.lumbar),
       chest: latheUnit(PROFILE.chest),
-      cylinder: new THREE.CylinderGeometry(1, 1, 1, 16),
+      cylinder: new THREE.CylinderGeometry(1, 1, 1, 24),
       hand: roundedBox(1, 1, 1, 0.3),
       shoe: roundedBox(1, 1, 1, 0.3),
     };
@@ -386,11 +437,11 @@
       box: material(colors.box, { roughness: 0.85 }),
       mat: material(colors.mat, { roughness: 0.95 }),
       cable: material(colors.cable, { roughness: 0.5 }),
-      cylinder: new THREE.CylinderGeometry(1, 1, 1, 18),
+      cylinder: new THREE.CylinderGeometry(1, 1, 1, 28),
       hex: new THREE.CylinderGeometry(1, 1, 1, 6),
       box1: new THREE.BoxGeometry(1, 1, 1),
-      sphere: new THREE.SphereGeometry(1, 16, 12),
-      torus: new THREE.TorusGeometry(1, 0.16, 8, 20),
+      sphere: new THREE.SphereGeometry(1, 24, 16),
+      torus: new THREE.TorusGeometry(1, 0.16, 12, 32),
     };
   }
 
@@ -687,7 +738,9 @@
             movers.group.add(m);
             return m;
           });
-          place(line, item.p, item.y, item.x, 0.004, item.size[1], 0.004);
+          // 줄은 8mm라 작은 칸에서는 한 화소보다 가늘어 점선처럼 끊긴다 — 화면에서 1.3화소는 되게
+          var cableR = Math.max(0.004, kit.thin || 0);
+          place(line, item.p, item.y, item.x, cableR, item.size[1], cableR);
           return;
         }
         default: {
@@ -755,7 +808,6 @@
     } catch (err) {
       return null;
     }
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     if (THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
@@ -771,35 +823,32 @@
     var key = new THREE.DirectionalLight(0xffffff, options.dark ? 0.75 : 0.85);
     key.position.set(2.2, 4.5, 3.2);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.left = -2.4;
     key.shadow.camera.right = 2.4;
     key.shadow.camera.top = 2.4;
     key.shadow.camera.bottom = -2.4;
     key.shadow.camera.near = 0.5;
     key.shadow.camera.far = 12;
-    key.shadow.bias = -0.0006;
-    key.shadow.normalBias = 0.02;
+    key.shadow.bias = -0.0004;
+    key.shadow.normalBias = 0.012;
+    key.shadow.radius = 2.5;
     scene.add(key);
     scene.add(key.target);
     var rim = new THREE.DirectionalLight(0xffffff, options.dark ? 0.35 : 0.3);
     rim.position.set(-3, 2.5, -3);
     scene.add(rim);
 
-    // 바닥 — 은은한 격자. 걷는 동작이면 격자가 뒤로 흐른다
-    var floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), material(colors.floor, { roughness: 1 }));
+    /*
+     * 바닥 — 은은한 격자. 걷는 동작이면 격자가 뒤로 흐른다.
+     * 격자를 1화소 선으로 그으면 멀리서 선이 화소보다 가늘어져 끊기고 물결 무늬(모아레)가 생긴다.
+     * 바닥 무늬(텍스처)로 그려 거리에 따라 부드럽게 흐려지게 한다 — 한 칸 0.5m.
+     */
+    var gridTexture = gridTextureFor(colors, renderer);
+    var floor = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE), new THREE.MeshStandardMaterial({ map: gridTexture, roughness: 1, metalness: 0 }));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
-    var gridGeometry = new THREE.BufferGeometry();
-    var gridPoints = [];
-    for (var g = -6; g <= 6; g += 0.5) {
-      gridPoints.push(g, 0.001, -6, g, 0.001, 6);
-      gridPoints.push(-6, 0.001, g, 6, 0.001, g);
-    }
-    gridGeometry.setAttribute('position', new THREE.Float32BufferAttribute(gridPoints, 3));
-    var grid = new THREE.LineSegments(gridGeometry, new THREE.LineBasicMaterial({ color: colorOf(colors.grid), transparent: true, opacity: 0.7 }));
-    scene.add(grid);
 
     var body = buildBody(scene, colors);
     var kit = buildKit(colors);
@@ -847,8 +896,7 @@
      * 한 주기 동안의 몸 · 기구가 화면에 꽉 차게 — 보는 방향에서 투영한 범위로 거리를 정한다.
      */
     function placeCamera() {
-      var rect = canvas.getBoundingClientRect();
-      var aspect = Math.max(0.3, rect.width / Math.max(1, rect.height));
+      var aspect = Math.max(0.3, sized.width / Math.max(1, sized.height));
       var tanH = Math.tan((camera.fov * Math.PI / 180) / 2);
       var tanW = tanH * aspect;
       var yaw = state.yaw * Math.PI / 180;
@@ -878,6 +926,8 @@
       dist = Math.max(1.2, dist * 1.08) * state.zoom;
       camera.position.set(center[0] + back[0] * dist, center[1] + back[1] * dist, center[2] + back[2] * dist);
       camera.lookAt(center[0], center[1], center[2]);
+      // 화면 1화소가 몸 있는 곳에서 몇 m인지 — 케이블처럼 가는 것은 0.65화소 반지름(1.3화소 굵기) 밑으로 안 내려가게
+      kit.thin = sized.height > 0 ? (2 * dist * tanH / sized.height) * 0.65 : 0;
     }
 
     /** 몸과 카메라 사이를 막는 벽 — 마주 보는 벽은 숨기고(벽 짚고 종아리 늘이기를 정면에서 볼 때 등), 옆 벽은 비쳐 보이게 */
@@ -894,25 +944,41 @@
       });
     }
 
+    /*
+     * 그리는 화소를 칸 크기에 맞춘다. 같은 캔버스가 다른 크기 칸으로 옮겨 붙거나(PT: 쉬는 칸 ↔ 세트 칸),
+     * 화면이 다시 짜여 칸이 커지거나 줄어도 창 크기 이벤트는 오지 않는다 — 그대로 두면 처음 크기로 그린 그림을
+     * 늘리거나 찌그러뜨려 보여 줘서 윤곽이 깨진다. 그래서 매 프레임 칸 크기를 보고 달라졌을 때만 다시 맞춘다.
+     */
+    var sized = { width: 0, height: 0, ratio: 0 };
     function resize() {
       var rect = canvas.getBoundingClientRect();
-      var width = Math.max(1, rect.width);
-      var height = Math.max(1, rect.height);
+      // 아직 화면에 안 붙었거나 접힌 칸 — 크기가 생기면 그때 맞춘다
+      if (rect.width < 2 || rect.height < 2) return false;
+      var width = rect.width;
+      var height = rect.height;
+      var ratio = pixelRatioFor(width, height, window.devicePixelRatio);
+      if (width === sized.width && height === sized.height && ratio === sized.ratio) return true;
+      sized.width = width;
+      sized.height = height;
+      sized.ratio = ratio;
+      renderer.setPixelRatio(ratio);
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      return true;
     }
 
     function draw() {
       var frame = E.clipFrame(state.clip, state.t);
+      var visible = resize();
+      // 카메라를 먼저 놓는다 — 가는 줄 굵기를 화면 화소에 맞추려면 거리를 알아야 한다
+      placeCamera();
       poseBody(body, frame.solved.bones);
       paintMuscles(body, colors, weights, frame.effort, state.fault);
       drawMoving(movers, kit, state.clip, frame);
-      if (state.clip.walk) grid.position.z = -((state.t * state.clip.walk) % 0.5);
-      else grid.position.z = 0;
-      placeCamera();
+      gridTexture.offset.y = state.clip.walk ? ((state.t * state.clip.walk) % GRID_CELL) / GRID_CELL : 0;
       hideWalls();
-      renderer.render(scene, camera);
+      if (visible) renderer.render(scene, camera);
       return frame;
     }
 
@@ -990,7 +1056,7 @@
       /** 보는 각도를 숫자로 (수평 각, 내려다보는 각) */
       setYaw: function (yaw, pitch) { state.yaw = yaw; state.pitch = pitch; },
       /** 화면 확인용 — 지금 프레임을 바로 그린다 */
-      render: function () { resize(); draw(); },
+      render: function () { draw(); },
       dispose: function () {
         state.disposed = true;
         cancelAnimationFrame(state.frame);
@@ -1002,6 +1068,7 @@
         canvas.removeEventListener('wheel', onWheel);
         // 그래픽 문맥을 브라우저에 돌려준다 — dispose만 하면 문맥이 남아, 폰에서 몇 번 열고 닫으면
         // 개수 한도에 걸려 가장 오래된 3D 그림부터 꺼진다
+        gridTexture.dispose();
         renderer.dispose();
         if (renderer.forceContextLoss) renderer.forceContextLoss();
       },
@@ -1025,10 +1092,10 @@
 
     function draw() {
       var rect = canvas.getBoundingClientRect();
-      var ratio = Math.min(2, window.devicePixelRatio || 1);
       var width = Math.max(1, rect.width);
       var height = Math.max(1, rect.height);
-      if (canvas.width !== Math.round(width * ratio)) {
+      var ratio = pixelRatioFor(width, height, window.devicePixelRatio);
+      if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
         canvas.width = Math.round(width * ratio);
         canvas.height = Math.round(height * ratio);
       }
@@ -1154,6 +1221,8 @@
       return handle || mount2d(canvas, clip, options);
     },
     available: function () { return true; },
+    /** 칸 크기와 기기 화소 배율로 정한 그리기 배율 (확인용) */
+    pixelRatioFor: pixelRatioFor,
     is3d: function () { return typeof THREE !== 'undefined'; },
   };
 })();

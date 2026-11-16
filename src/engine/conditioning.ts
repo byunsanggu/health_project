@@ -954,21 +954,28 @@ export function buildFinisher(spec: FinisherSpec, input: FinisherInput): Finishe
   const turn = Math.abs(Math.trunc(input.seed ?? 0));
   const machine = options.length > 0 ? options[turn % options.length] : undefined;
   const format = spec.format ?? 'circuit';
-  const session = buildWodSession({
+  const build = (avoidMuscles: readonly MuscleGroup[], narrow: boolean): WodSession => buildWodSession({
     format,
     minutes: spec.minutes,
     level: input.level,
     equipmentIds: input.equipmentIds,
     pain: input.pain,
     bodyweightKg: input.bodyweightKg,
-    avoidMuscles: spec.avoidMuscles,
+    avoidMuscles,
     allowBarbell: input.allowBarbell ?? false,
     seed: input.seed,
-    only: only.length === 1 ? only : undefined,
+    only: narrow && only.length === 1 ? only : undefined,
     portableOnly: true,
     cardioElement: machine
       ? { id: machine.id, name: machine.name, seconds: format === 'emom' ? 40 : 60 }
       : undefined,
   });
+  /*
+   * 피할 부위 · 갈래를 지키면 동작이 셋이 안 되는 날이 있다(덤벨뿐인 집의 하체 날 — 다리를 빼면 남는 게 둘).
+   * 두 동작으로는 한 바퀴가 안 돈다. 갈래를 먼저 풀고, 그래도 모자라면 피할 부위를 푼다.
+   */
+  let session = build(spec.avoidMuscles, true);
+  if (session.workout.movements.length < 3) session = build(spec.avoidMuscles, false);
+  if (session.workout.movements.length < 3 && spec.avoidMuscles.length > 0) session = build([], false);
   return { kind: 'wod', spec, session };
 }
