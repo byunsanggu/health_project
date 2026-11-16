@@ -2898,8 +2898,13 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-next-card.single { grid-template-columns: 1fr; }
 .rest-guide { display: grid; gap: 10px; width: 100%; }
 .focus-middle.with-guide { justify-content: flex-start; overflow-y: auto; padding-bottom: 8px; }
-.focus-middle.with-motion { gap: 6px; }
-.focus-middle.with-motion .focus-motion { max-height: 30dvh; width: min(100%, 30dvh, 320px); }
+/*
+ * 세트 · 워밍업 화면의 동작 그림 — 늘 정사각형. 높이가 남는 만큼 늘고(110~320px) 너비는 높이에서 정한다.
+ * 예전에는 세로 flex가 높이만 줄여 390×844에서도 251×79처럼 납작해졌다. 다른 줄(원 · 무게 · 세트 고치기)은 제 키대로.
+ */
+.focus-middle.with-motion { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(110px, 320px); grid-auto-rows: auto; justify-items: center; align-content: center; gap: 6px; }
+.focus-middle.with-motion > .focus-motion { position: relative; height: 100%; width: auto; min-width: 0; max-width: 100%; max-height: none; aspect-ratio: 1 / 1; }
+.focus-middle.with-motion > .focus-motion .live-motion { position: absolute; inset: 0; }
 .focus-middle.with-motion .focus-ring { width: min(44vw, 170px, 22dvh); min-width: 120px; }
 .focus-motion { width: min(100%, 340px); aspect-ratio: 1 / 1; max-height: 34dvh; margin: 0 auto; border-radius: 12px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--line-soft); }
 .live-motion { display: block; width: 100%; height: 100%; }
@@ -3007,10 +3012,7 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
   .rest-guide-motion .focus-demo { padding: 4px 8px; font-size: 12px; }
   .rest-guide-lines li { grid-template-columns: 1fr; gap: 0; font-size: 14px; line-height: 1.35; }
   .rest-guide-lines b { font-size: 12px; }
-  .focus-middle.with-motion .focus-motion { max-height: 26dvh; width: min(100%, 26dvh, 320px); }
   .focus-warm-list { display: none; }
-  /* 준비 중 · 워밍업에 "세트 고치기" 줄이 붙으면 동작 그림을 조금 줄인다 */
-  .focus-middle.with-motion:has(.focus-edits) .focus-motion { max-height: 20dvh; width: min(100%, 20dvh, 320px); }
   .focus-title b { font-size: 18px; }
   .focus { gap: 8px; padding-top: 10px; }
 }
@@ -3028,7 +3030,9 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
   .focus-logged { padding: 2px 2px 2px 12px; }
   .focus-middle.with-guide { padding-bottom: 0; }
   .focus-middle { gap: 6px; }
-  .focus-middle.with-motion .focus-ring { width: min(40vw, 150px, 21dvh); min-width: 112px; }
+  /* 동작 그림이 110px 아래로 줄지 않게 — 원과 줄 간격을 조금 줄인다 */
+  .focus-middle.with-motion { gap: 4px; }
+  .focus-middle.with-motion .focus-ring { width: min(40vw, 150px, 19dvh); min-width: 112px; }
   .focus-num { font-size: 64px; }
   .focus-btn { min-height: 48px; }
 }

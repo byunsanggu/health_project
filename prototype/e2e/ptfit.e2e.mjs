@@ -5,11 +5,12 @@ import { begin, check, choosePt, focusPhase, onboard, runUntil } from './lib.mjs
 
 const SIZES = [[360, 640], [375, 667], [390, 844]];
 
-async function fits(page, label) {
+// square: 세트 · 워밍업 화면 — 동작 그림이 납작해지지 않고 정사각형에 가깝게, 110px 이상(예전 390×844에서 251×79)
+async function fits(page, label, { square = false, shot = null } = {}) {
   for (const [width, height] of SIZES) {
     await page.setViewportSize({ width, height });
     await page.clock.runFor(100);
-    const bad = await page.evaluate(() => {
+    const bad = await page.evaluate((square) => {
       const host = document.getElementById('focus');
       const vh = window.innerHeight;
       const out = [];
@@ -38,8 +39,20 @@ async function fits(page, label) {
         const box = motion.getBoundingClientRect();
         if (box.height > 0 && box.height < 90) out.push(`동작 그림이 ${Math.round(box.height)}px`);
       }
+      if (square) {
+        const motion = host.querySelector('.focus-middle.with-motion > .focus-motion');
+        if (!motion) out.push('동작 그림이 없습니다');
+        else {
+          const box = motion.getBoundingClientRect();
+          const ratio = box.width / box.height;
+          if (!(ratio >= 0.8 && ratio <= 1.25)) out.push(`동작 그림이 ${Math.round(box.width)}×${Math.round(box.height)} (비율 ${ratio.toFixed(2)})`);
+          if (Math.min(box.width, box.height) < 110) out.push(`동작 그림이 작습니다 ${Math.round(box.width)}×${Math.round(box.height)}`);
+          if (box.bottom > vh + 1 || box.top < -1) out.push(`동작 그림이 화면 밖 ${Math.round(box.top)}~${Math.round(box.bottom)}`);
+        }
+      }
       return out;
-    });
+    }, square);
+    if (shot) await shot(`${label.replace(/\s+/g, '-')}-${width}x${height}`);
     check(bad.length === 0, `${label} ${width}×${height}: ${bad.join(' / ')}`);
   }
   await page.setViewportSize({ width: 390, height: 844 });
@@ -62,13 +75,13 @@ export default async function ({ page, url, shot }) {
   await fits(page, '몸 풀기');
   await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
   if (await runUntil(page, ['warm', 'count']) === 'warm') {
-    await fits(page, '워밍업 준비');
+    await fits(page, '워밍업 준비', { square: true, shot });
     await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
     await runUntil(page, 'count');
   }
-  await fits(page, '1세트 준비');
+  await fits(page, '1세트 준비', { square: true, shot });
   for (let i = 0; i < 120 && await reps(page) < 2; i += 1) await page.clock.runFor(500);
-  await fits(page, '1세트 세는 중');
+  await fits(page, '1세트 세는 중', { square: true, shot });
   await page.locator('#focus .focus-btn', { hasText: '여기까지' }).click();
   await runUntil(page, 'rest');
   await page.clock.runFor(500);
