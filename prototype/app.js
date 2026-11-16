@@ -22691,7 +22691,15 @@
       planned: E.templateWeekLogs(result.program.templates, undefined, result.firstWeek.targetRir), done: [],
       landmarks: E.landmarksFor(result.level.level), index: index,
     });
-    screen.appendChild(el('div', { class: 'sheet growth-card' }, [
+    /*
+     * 부위별 막대 · 요일별 종목 목록은 "자세히 보기 ›" 안에 — 다 펼쳐 두면 "이 프로그램으로 시작"까지 화면 서너 장을
+     * 내려가야 했다. 무엇을 하는지는 위 카드 한 장이 말하고, 숫자가 궁금한 사람만 연다.
+     */
+    var more = el('details', { class: 'program-more' }, [
+      el('summary', { class: 'program-more-toggle', text: '자세히 보기 ›' }),
+    ]);
+    screen.appendChild(more);
+    more.appendChild(el('div', { class: 'sheet growth-card' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '부위별로 충분한지' }),
         el('span', { class: 'meta', text: growth.enough + ' / ' + growth.total + ' 부위' }),
@@ -22709,7 +22717,7 @@
           el('span', { class: 'num flat', text: E.countRangeLabel(slot.exerciseId, slot.repRange) }),
         ]));
       });
-      screen.appendChild(el('div', { class: 'sheet' }, [
+      more.appendChild(el('div', { class: 'sheet' }, [
         el('div', { class: 'sheet-head' }, [el('h3', { text: template.name })]),
         body,
       ]));

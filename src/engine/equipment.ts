@@ -345,6 +345,12 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'knee-push-up': ['floor'],
   'bird-dog': ['floor'],
   'superman': ['floor'],
+  // 맨몸 숨찬 동작 — 마무리 운동에만
+  'mountain-climber': ['floor'],
+  'jumping-jack': ['floor'],
+  'step-back-burpee': ['floor'],
+  'squat-jump': ['floor'],
+  'bear-crawl': ['floor'],
 };
 
 /**
@@ -852,7 +858,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
   },
   'resistance-bands': {
     aka: ['밴드', '고무밴드', '루프밴드', '파워밴드', '튜빙'],
-    look: '당기면 늘어나는 고무줄입니다. 고리 모양이나 손잡이 달린 이 있습니다',
+    look: '당기면 늘어나는 고무줄입니다. 고리 모양도, 손잡이가 달린 것도 있습니다',
   },
   'medicine-ball': {
     aka: ['메디신볼', '슬램볼', '월볼'],

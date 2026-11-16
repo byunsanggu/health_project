@@ -950,7 +950,49 @@ export const EXERCISES: readonly Exercise[] = [
     contribution: { back: 0.5, glutes: 0.4, rearDelt: 0.3, hamstrings: 0.25 },
     jointStress: { lowBack: 0.25, neck: 0.1 },
   },
+  /*
+   * 맨몸 숨찬 동작 — 매트뿐인 집의 마무리 운동이 맨몸 스쿼트 · 글루트 브릿지 · 플랭크로만 돌던 것을 넓힌다.
+   * 근력 프로그램에는 넣지 않는다(CONDITIONING_ONLY) — 무게를 올릴 수 없고, 시간을 재며 할 때 쓰는 동작이다.
+   */
+  {
+    id: 'mountain-climber', name: '마운틴 클라이머', nameEn: 'Mountain Climber',
+    equipment: 'bodyweight', pattern: 'core', increment: 0,
+    contribution: { abs: 0.6, quads: 0.35, frontDelt: 0.3, chest: 0.2 },
+    jointStress: { wrist: 0.45, shoulder: 0.3, hip: 0.25, knee: 0.2 },
+  },
+  {
+    id: 'jumping-jack', name: '점핑 잭', nameEn: 'Jumping Jack',
+    equipment: 'bodyweight', pattern: 'squat', increment: 0,
+    contribution: { calves: 0.5, quads: 0.3, glutes: 0.3, sideDelt: 0.25 },
+    jointStress: { ankle: 0.45, knee: 0.4 },
+  },
+  {
+    id: 'step-back-burpee', name: '스텝백 버피', nameEn: 'Step-Back Burpee',
+    equipment: 'bodyweight', pattern: 'squat', increment: 0,
+    contribution: { quads: 0.6, glutes: 0.4, chest: 0.35, abs: 0.3, frontDelt: 0.2, triceps: 0.2 },
+    jointStress: { wrist: 0.4, knee: 0.3, shoulder: 0.3, lowBack: 0.2 },
+  },
+  {
+    id: 'squat-jump', name: '스쿼트 점프', nameEn: 'Squat Jump',
+    equipment: 'bodyweight', pattern: 'squat', increment: 0,
+    contribution: { quads: 0.8, glutes: 0.55, calves: 0.35, abs: 0.1 },
+    jointStress: { knee: 0.5, ankle: 0.45, hip: 0.25 },
+  },
+  {
+    id: 'bear-crawl', name: '베어 크롤', nameEn: 'Bear Crawl',
+    equipment: 'bodyweight', pattern: 'core', increment: 0,
+    contribution: { abs: 0.55, frontDelt: 0.4, quads: 0.35, triceps: 0.2 },
+    jointStress: { wrist: 0.45, shoulder: 0.35, knee: 0.2 },
+  },
 ]
+
+/** 시간을 재는 마무리 운동에만 쓰는 맨몸 동작 — 근력 프로그램 · 대체 종목 후보에는 넣지 않는다. */
+export const CONDITIONING_ONLY: ReadonlySet<string> = new Set([
+  'mountain-climber', 'jumping-jack', 'step-back-burpee', 'squat-jump', 'bear-crawl',
+]);
+
+/** 뛰는 동작 — 초보의 처음 두 주 · 무릎이나 발목이 아프다고 한 날에는 넣지 않는다. */
+export const JUMP_MOVES: ReadonlySet<string> = new Set(['jumping-jack', 'squat-jump']);
 
 /**
  * 바닥에서 무겁게 드는 데드리프트. 반복 상한(4~6회)과 남길 여유(2개 이상)를 따로 둔다 —
@@ -1081,6 +1123,11 @@ export const EXERCISE_AKA: Record<string, readonly string[]> = {
   'knee-push-up': ['니 푸시업', '무릎 대고 푸시업', '무릎 꿇고 푸시업'],
   'bird-dog': ['버드 독', '네발 팔다리 뻗기'],
   'superman': ['슈퍼맨 자세', '엎드려 팔다리 들기', '프론 백 익스텐션'],
+  'mountain-climber': ['마운틴클라이머', '마운틴 클라이밍', '등산가 자세'],
+  'jumping-jack': ['점핑잭', '팔벌려 뛰기', '팔 벌려 높이뛰기'],
+  'step-back-burpee': ['스텝 백 버피', '노점프 버피', '걸어서 하는 버피'],
+  'squat-jump': ['점프 스쿼트', '스쿼트점프'],
+  'bear-crawl': ['베어크롤', '곰걸음', '곰 기어가기'],
   'plank': ['엘보 플랭크', '팔꿈치 플랭크'],
 };
 

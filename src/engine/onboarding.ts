@@ -1,4 +1,7 @@
-import { EXERCISES, HEAVY_PULLS, exerciseById, isTimed, isUnloaded } from './exercises.ts';
+import { EXERCISES as ALL_EXERCISES, CONDITIONING_ONLY, HEAVY_PULLS, exerciseById, isTimed, isUnloaded } from './exercises.ts';
+
+/** 근력 프로그램에 쓰는 종목 — 마무리 운동에만 쓰는 맨몸 숨찬 동작은 뺀다. */
+const EXERCISES = ALL_EXERCISES.filter((exercise) => !CONDITIONING_ONLY.has(exercise.id));
 import { holdRange } from './hold.ts';
 import { availableExercises, coverageReport, gymFromCatalog, type GymSelection } from './equipment.ts';
 import { assessLevel, levelProfile, type LevelAssessment } from './levels.ts';

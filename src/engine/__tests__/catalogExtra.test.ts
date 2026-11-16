@@ -19,6 +19,8 @@ const NEW_IDS = [
 ] as const;
 
 /** 매트 하나뿐인 초보를 위해 더한 바닥 종목 */
+// 마무리 운동에만 쓰는 맨몸 숨찬 동작
+const CONDITIONING_IDS = ['mountain-climber', 'jumping-jack', 'step-back-burpee', 'squat-jump', 'bear-crawl'];
 const FLOOR_IDS = ['knee-push-up', 'bird-dog', 'superman'] as const;
 
 const clipOf = (id: string, fault?: string) => motionFor({ id }, fault) as Clip;
@@ -41,7 +43,7 @@ describe('새 종목 15개', () => {
   });
 
   it('새 동작 표는 있던 종목의 동작을 덮어쓰지 않는다', () => {
-    assert.deepEqual(Object.keys(EXTRA_MOTIONS).sort(), [...NEW_IDS, ...FLOOR_IDS].sort());
+    assert.deepEqual(Object.keys(EXTRA_MOTIONS).sort(), [...NEW_IDS, ...FLOOR_IDS, ...CONDITIONING_IDS].sort());
   });
 
   it('다른 이름으로 찾아진다 — 띄어쓰기를 몰라도', () => {

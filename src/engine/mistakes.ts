@@ -150,6 +150,12 @@ const BIRD_ARCH = m('back-arch', '다리를 들 때 허리가 꺾여요', '다�
 const BIRD_TILT = m('hip-tilt', '골반이 한쪽으로 기울어요', '골반을 바닥과 나란히 두고 천천히 뻗으세요', '골반은 수평으로', '몸통을 잡는 힘이 빠집니다');
 const SUPER_NECK = m('neck', '고개를 들어 앞을 봐요', '시선은 바닥에 두고 목을 길게 두세요', '시선은 바닥', '목 뒤가 꺾여 아픕니다');
 const SUPER_HIGH = m('too-high', '팔다리를 너무 높이 차올려요', '바닥에서 살짝만 들고 1초 멈추세요', '살짝만', '허리가 과하게 꺾입니다');
+const MC_HIPS_UP = m('hips-up', '엉덩이가 위로 솟아요', '엉덩이를 어깨 높이에 맞추세요', '엉덩이 낮게', '배가 일을 덜 하고 어깨만 지칩니다');
+const JJ_HEEL = m('heel-land', '뒤꿈치로 쿵 내려앉아요', '앞꿈치로 가볍게 내려앉으세요', '앞꿈치로 사뿐히', '무릎과 발목이 충격을 그대로 받습니다');
+const BURPEE_ROUND = m('round-back', '쪼그릴 때 등이 둥글게 말려요', '엉덩이를 뒤로 빼고 가슴을 펴고 앉으세요', '가슴 펴고', '허리가 말리며 부담이 갑니다');
+const SJ_STIFF = m('stiff-land', '무릎을 편 채로 쿵 내려앉아요', '무릎을 굽히며 앞꿈치부터 내려앉으세요', '무릎 굽혀 착지', '무릎과 허리가 충격을 받습니다');
+const BEAR_HIPS = m('hips-up', '엉덩이가 높이 솟아요', '등을 바닥과 나란하게 두세요', '등은 평평하게', '어깨와 배가 일을 덜 합니다');
+const BEAR_KNEES = m('knees-down', '무릎이 바닥에 닿아요', '무릎을 한 뼘 띄운 채로 움직이세요', '무릎 띄우고', '몸통을 잡는 힘이 빠집니다');
 const CRUNCH_SITUP = m('sit-up', '허리까지 들어 윗몸일으키기가 돼요', '어깨만 띄우고 허리는 바닥에 붙이세요', '어깨만', '배 대신 고관절 앞 근육이 당깁니다');
 
 /**
@@ -300,6 +306,11 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'knee-push-up': [KNEE_PU_HIPS, ELBOW_FLARE],
   'bird-dog': [BIRD_ARCH, BIRD_TILT],
   'superman': [SUPER_NECK, SUPER_HIGH],
+  'mountain-climber': [MC_HIPS_UP, HIPS_SAG],
+  'jumping-jack': [JJ_HEEL, KNEE_CAVE],
+  'step-back-burpee': [HIPS_SAG, BURPEE_ROUND],
+  'squat-jump': [SJ_STIFF, KNEE_CAVE],
+  'bear-crawl': [BEAR_HIPS, BEAR_KNEES],
 };
 
 /** 종목별 목록이 없을 때 동작 패턴의 기본. */

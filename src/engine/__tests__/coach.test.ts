@@ -579,3 +579,13 @@ describe('PT 말이 서로 어긋나지 않는다', () => {
     }
   });
 });
+
+describe('세션 시작 말 — 첫 주는 "블록" 없이', () => {
+  it('네 말투 모두 "첫 주"라고만 하고 "블록"이라는 현장 말을 쓰지 않는다', () => {
+    for (const { id: style } of COACH_STYLES) {
+      const line = sessionStartLines({ style, sessionName: '상체 A', lifts: 6, weekInBlock: 1, accumulationWeeks: 6 }).join(' ');
+      assert.match(line, /첫 주/, style);
+      assert.doesNotMatch(line, /블록/, style);
+    }
+  });
+});

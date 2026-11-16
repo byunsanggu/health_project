@@ -9,7 +9,7 @@
  * motions.ts가 EXTRA_MOTIONS를 표에 더한다.
  */
 import {
-  ARM_REACH, block, cableTower, flatBench, hangingArms, keys, lying, mat, plank, plant, seatBench, seated, shoulderMid,
+  ARM_REACH, STAND_HEIGHT, block, cableTower, flatBench, hangingArms, keys, lying, mat, plank, plant, seatBench, seated, shoulderMid,
   solveFor, solvePose, standing,
   type Clip, type Key, type Prim,
 } from './motionKit.ts';
@@ -460,6 +460,185 @@ function superman(id: string, fault?: string): Clip {
   return { id, cycle: 3.2, view: [70, 14], keys: keys(...list), scene: [mat([0, 0, 0.1], 0.75, 2.0)], work: [0, 0.6], fault };
 }
 
+/* ── 맨몸 숨찬 동작 — 마운틴 클라이머 · 점핑 잭 · 스텝백 버피 · 스쿼트 점프 · 베어 크롤 ─────────── */
+
+/** 푸시업 위 자세의 판자 — 손은 어깨 아래 바닥, 손 자리(handZ)를 주면 그 자리에 어깨가 오게 발끝을 옮긴다 */
+function handsPlank(handZ?: number): Pose3 {
+  let toeZ = -0.98;
+  const shoulderHeight = (angle: number) => shoulderMid(plank(angle, toeZ))[1];
+  const angle = solveFor(shoulderHeight, 2, 40, 0.035 + PRESS_REACH * 0.975);
+  if (handZ !== undefined) toeZ += handZ - shoulderMid(plank(angle, toeZ))[2];
+  const body = plank(angle, toeZ);
+  const s = shoulderMid(body);
+  return { ...body, armL: floorHand([0.2, 0, s[2] + 0.02], 1), armR: floorHand([-0.2, 0, s[2] + 0.02], -1) };
+}
+
+/** 판자 자세 허리 처짐 · 엉덩이 솟음 */
+const sagged = (p: Pose3): Pose3 => ({ ...p, pelvis: [p.pelvis[0], p.pelvis[1] - 0.06, p.pelvis[2] + 0.01], spine: -22, pitch: (p.pitch ?? 90) + 5 });
+const piked = (p: Pose3): Pose3 => ({ ...p, pelvis: [p.pelvis[0], p.pelvis[1] + 0.12, p.pelvis[2] + 0.02], spine: 22, pitch: (p.pitch ?? 90) - 8 });
+
+/** 마운틴 클라이머 — 판자 자세에서 무릎을 가슴 쪽으로 번갈아 당긴다 */
+function mountainClimber(id: string, fault?: string): Clip {
+  const base = handsPlank();
+  const drive = (side: 1 | -1): LegSpec => ({
+    ankle: [side * 0.1, 0.16, base.pelvis[2] + 0.04], fwd: normalize([0, -0.55, 1]), up: normalize([0, 1, 0.55]), pole: [0, 0.15, 1],
+  });
+  const change = fault === 'hips-up' ? piked : (p: Pose3) => p;
+  const right = change({ ...base, legR: drive(-1) });
+  const left = change({ ...base, legL: drive(1) });
+  const label = fault === 'hips-up' ? '엉덩이가 솟음' : undefined;
+  // 두 다리를 바꾸는 사이에 판자 자세를 한 번 지난다 — 바로 이으면 두 무릎이 같이 바닥으로 내려앉았다
+  const flat = change(base);
+  // 오가는 중의 발 — 바닥에서 띄워 옮긴다
+  const swing = (side: 1 | -1): Pose3 => {
+    const rest = (side > 0 ? base.legL : base.legR)!.ankle!;
+    const leg: LegSpec = { ankle: [side * 0.1, 0.3, (rest[2] + base.pelvis[2]) / 2], fwd: normalize([0, -0.8, 0.6]), up: normalize([0, 0.6, 0.8]), pole: [0, 0.15, 1] };
+    return change(side > 0 ? { ...base, legL: leg } : { ...base, legR: leg });
+  };
+  const list: KeyList = [
+    [0, label ?? '오른 무릎 당기기', right], [0.125, undefined, swing(-1)], [0.25, undefined, flat], [0.375, undefined, swing(1)],
+    [0.5, label ? undefined : '왼 무릎 당기기', left], [0.625, undefined, swing(1)], [0.75, undefined, flat], [0.875, undefined, swing(-1)], [1, undefined, right],
+  ];
+  return { id, cycle: 1.4, view: [70, 12], keys: keys(...list), scene: [mat([0, 0, -0.35], 0.8, 1.9)], work: [0, 1], fault };
+}
+
+/** 팔 — fk 면 90(옆), raise 0이면 늘어뜨림 · 170이면 머리 위 */
+const sideArms = (raise: number): { armL: ArmSpec; armR: ArmSpec } => ({
+  armL: { fk: [90, raise, 0, 8], turn: 90 }, armR: { fk: [90, raise, 0, 8], turn: 90 },
+});
+
+/** 점핑 잭 — 뛰면서 발을 벌리고 팔을 머리 위로, 다시 모은다 */
+function jumpingJack(id: string, fault?: string): Clip {
+  const cave = fault === 'knee-cave';
+  const legs = (stance: number, y = 0, heel = 0) => ({
+    legL: plant(stance, 0, 12, { y, heel, pole: cave && stance > 0.2 ? [-0.7, 0.1, 0.7] : undefined }),
+    legR: plant(-stance, 0, 12, { y, heel, pole: cave && stance > 0.2 ? [0.7, 0.1, 0.7] : undefined }),
+  });
+  const closed: Pose3 = { pelvis: [0, STAND_HEIGHT - 0.02, -0.02], pitch: 2, spine: 0, neck: 0, ...legs(0.1), ...sideArms(10) };
+  const air = (stance: number, raise: number): Pose3 => ({ ...closed, pelvis: [0, STAND_HEIGHT + 0.05, -0.02], ...legs(stance, 0.05, 28), ...sideArms(raise) });
+  const heelLand = fault === 'heel-land';
+  const open: Pose3 = { ...closed, pelvis: [0, STAND_HEIGHT - (heelLand ? 0.03 : 0.07), -0.02], ...legs(0.3, 0, heelLand ? 0 : 12), ...sideArms(165) };
+  const list: KeyList = [
+    [0, '뛰며 팔다리 벌리기', closed], [0.22, undefined, air(0.2, 95)],
+    [0.45, heelLand ? '뒤꿈치로 쿵' : cave ? '무릎이 모임' : '앞꿈치로 내려앉기', open],
+    [0.72, '다시 모으기', air(0.2, 95)], [1, undefined, closed],
+  ];
+  return { id, cycle: 1.4, view: [20, 8], keys: keys(...list), scene: [mat([0, 0, 0], 1.0, 1.2)], work: [0, 1], fault };
+}
+
+/** 스쿼트 점프 — 맨몸 스쿼트로 앉았다가 바닥을 밀어 뛰고, 무릎을 굽히며 내려앉는다 */
+function squatJump(id: string, fault?: string): Clip {
+  const base = L.squat(id, 'body', fault === 'knee-cave' ? 'knee-cave' : undefined);
+  const top = base.keys[0]!.pose;
+  const low = base.keys.reduce((a, b) => (b.pose.pelvis[1] < a.pose.pelvis[1] ? b : a)).pose;
+  const flight: Pose3 = {
+    ...top, pelvis: [top.pelvis[0], top.pelvis[1] + 0.14, top.pelvis[2]],
+    legL: plant(0.16, 0, 18, { y: 0.12, heel: 40 }), legR: plant(-0.16, 0, 18, { y: 0.12, heel: 40 }),
+    armL: { fk: [0, 30, 0, 12], turn: 180 }, armR: { fk: [0, 30, 0, 12], turn: 180 },
+  };
+  const stiff = fault === 'stiff-land';
+  const land: Pose3 = stiff ? { ...top } : { ...top, pelvis: [top.pelvis[0], top.pelvis[1] - 0.12, top.pelvis[2] - 0.06], pitch: 18, ...{ armL: low.armL, armR: low.armR } };
+  const list: KeyList = [
+    [0, '앉기', top], [0.32, '바닥을 밀어 뛰기', low], [0.5, undefined, flight],
+    [0.66, stiff ? '무릎을 편 채 착지' : fault === 'knee-cave' ? '무릎이 모임' : '무릎 굽혀 내려앉기', land], [1, undefined, top],
+  ];
+  return { ...base, id, cycle: 2.0, keys: keys(...list), scene: [mat([0, 0, 0], 0.8, 1.2)], work: [0.32, 0.5], fault };
+}
+
+/** 스텝백 버피 — 쪼그려 손을 짚고, 한 발씩 뒤로 빼 판자 자세, 한 발씩 당겨 와 일어선다 */
+function stepBackBurpee(id: string, fault?: string): Clip {
+  const handZ = 0.34;
+  const plankPose = handsPlank(handZ);
+  const feet = { legL: plant(0.15, 0, 14), legR: plant(-0.15, 0, 14) };
+  // 선 자세의 팔도 닿을 곳(ik)으로 — 손 짚는 자세와 푸는 방식이 같아야 이어진다
+  const hang = (side: 1 | -1): ArmSpec => ({ ik: [side * 0.24, STAND_HEIGHT - 0.08, 0.02], pole: [side * 0.3, 0, -1], hand: [0, 0, 1] });
+  const stand: Pose3 = { pelvis: [0, STAND_HEIGHT, -0.02], pitch: 2, spine: 0, neck: 0, ...feet, armL: hang(1), armR: hang(-1) };
+  const round = fault === 'round-back';
+  // 쪼그린 몸 — 손이 짚을 자리에 팔이 거의 펴져 닿도록 기울기를 맞춘다
+  const handAt = plankPose.armL!.ik!;
+  const crouchAt = (pitch: number): Pose3 => ({ pelvis: [0, 0.38, -0.1], pitch, spine: round ? 38 : 8, neck: -10, ...feet });
+  const reachTo = (pitch: number) => {
+    const sh = shoulderMid(crouchAt(pitch));
+    return Math.hypot(sh[0] - handAt[0], sh[1] - handAt[1], sh[2] - handAt[2]);
+  };
+  const crouchBody = crouchAt(solveFor(reachTo, round ? 10 : 20, 100, PRESS_REACH * 0.93));
+  const crouch: Pose3 = { ...crouchBody, armL: plankPose.armL, armR: plankPose.armR };
+  const mid = (a: Pose3, b: Pose3, side: 'L' | 'R'): Pose3 => {
+    const pose = midRaw(a, b, side);
+    // 엉덩이를 든 만큼 몸을 더 숙여 손이 짚은 자리에 닿게
+    const reach = (pitch: number) => {
+      const sh = shoulderMid({ ...pose, pitch });
+      return Math.hypot(sh[0] - handAt[0], sh[1] - handAt[1], sh[2] - handAt[2]);
+    };
+    return { ...pose, pitch: solveFor(reach, 30, 110, PRESS_REACH * 0.94) };
+  };
+  const midRaw = (a: Pose3, b: Pose3, side: 'L' | 'R'): Pose3 => ({
+    ...b,
+    // 한 발만 빼는 동안은 엉덩이를 조금 들고 있다 — 남은 다리의 무릎이 바닥에 박히지 않게
+    pelvis: [0, (a.pelvis[1] + b.pelvis[1]) / 2 + 0.07, (a.pelvis[2] + b.pelvis[2]) / 2],
+    pitch: ((a.pitch ?? 0) + (b.pitch ?? 0)) / 2,
+    spine: ((a.spine ?? 0) + (b.spine ?? 0)) / 2,
+    ...(side === 'L' ? { legL: b.legL, legR: a.legR } : { legL: a.legL, legR: b.legR }),
+  });
+  const plankShown = fault === 'hips-sag' ? sagged(plankPose) : plankPose;
+  // 서고 앉는 사이 — 손은 어깨 아래로 뻗어 내려가는 중(닿을 곳이 늘 팔 길이 안에 있게)
+  const halfBody: Pose3 = { ...stand, pelvis: [0, (stand.pelvis[1] + crouch.pelvis[1]) / 2, -0.06], pitch: ((crouch.pitch ?? 0) + 2) / 2, spine: (crouch.spine ?? 0) / 2 };
+  const hs = shoulderMid(halfBody);
+  const reachDown = (side: 1 | -1): ArmSpec => ({ ik: [side * 0.22, hs[1] - PRESS_REACH * 0.85, hs[2] + 0.18], pole: [side * 0.4, 0, -1], hand: [0, 0, 1] });
+  const between: Pose3 = { ...halfBody, armL: reachDown(1), armR: reachDown(-1) };
+  const list: KeyList = [
+    [0, '쪼그려 손 짚기', stand], [0.1, undefined, between], [0.2, round ? '등이 말림' : undefined, crouch],
+    [0.3, '한 발씩 뒤로', mid(crouch, plankPose, 'R')], [0.42, '푸시업 자세', plankPose],
+    [0.48, fault === 'hips-sag' ? '허리가 처짐' : undefined, plankShown], [0.54, undefined, plankPose], [0.64, '한 발씩 당겨 오기', mid(crouch, plankPose, 'L')],
+    [0.76, '일어서기', crouch], [0.88, undefined, between], [1, undefined, stand],
+  ];
+  return { id, cycle: 4.2, view: [75, 14], keys: keys(...list), scene: [mat([0, 0, -0.2], 0.8, 1.9)], work: [0, 1], fault };
+}
+
+/** 베어 크롤 — 네발 자세에서 무릎을 띄우고, 반대쪽 손발을 한 걸음씩 내딛었다 돌아온다(제자리) */
+function bearCrawl(id: string, fault?: string): Clip {
+  const kneesDown = fault === 'knees-down';
+  const high = fault === 'hips-up';
+  const footZ = -0.34;
+  // 발끝으로 선 발 — 발가락 끝을 바닥(toe)에 두고 발목 자리를 거꾸로 짚는다(plank와 같은 방식)
+  const fwdToe = normalize([0, -0.9, 0.4]);
+  const upToe = normalize([0, 0.4, 0.9]);
+  const toes = (x: number, dz = 0, lift = 0): LegSpec => ({
+    ankle: [
+      x + 0,
+      lift - fwdToe[1] * BODY.toe + upToe[1] * BODY.ankle,
+      footZ + dz - fwdToe[2] * BODY.toe + upToe[2] * BODY.ankle,
+    ],
+    fwd: fwdToe, up: upToe, pole: [0, -1, 0.5],
+  });
+  const legBase = kneesDown ? kneelLegs(0) : { legL: toes(0.11), legR: toes(-0.11) };
+  const body = (extra: Partial<Pose3> = {}): Pose3 => {
+    const base: Pose3 = { pelvis: [0, kneesDown ? 0.5 : high ? 0.66 : 0.56, 0], pitch: 88, spine: high ? 18 : 0, neck: -6, ...legBase };
+    const pitch = solveFor((p) => shoulderMid({ ...base, pitch: p })[1], 45, 135, SHOULDER_ON_HANDS);
+    return { ...base, pitch, ...extra };
+  };
+  const rest = body();
+  const s = shoulderMid(rest);
+  const hand = (side: 1 | -1, dz = 0, lift = 0): ArmSpec => {
+    const spec = floorHand([side * 0.2, 0, s[2] + 0.03 + dz], side);
+    return { ...spec, ik: [spec.ik![0], spec.ik![1] + lift, spec.ik![2]] };
+  };
+  const pose = (extra: Partial<Pose3>): Pose3 => ({ ...rest, armL: hand(1), armR: hand(-1), ...extra });
+  const foot = (side: 1 | -1, dz: number, lift: number): LegSpec => (kneesDown ? (side > 0 ? legBase.legL : legBase.legR) : toes(side * 0.11, dz, lift));
+  const still = pose({});
+  // 오른손 · 왼발
+  const rUp = pose({ armR: hand(-1, 0.07, 0.07), legL: foot(1, 0.07, 0.06) });
+  const rOut = pose({ armR: hand(-1, 0.13), legL: foot(1, 0.13, 0) });
+  const lUp = pose({ armL: hand(1, 0.07, 0.07), legR: foot(-1, 0.07, 0.06) });
+  const lOut = pose({ armL: hand(1, 0.13), legR: foot(-1, 0.13, 0) });
+  const tag = kneesDown ? '무릎이 바닥에 닿음' : high ? '엉덩이가 솟음' : undefined;
+  const list: KeyList = [
+    [0, tag ?? '오른손 · 왼발 앞으로', still], [0.12, undefined, rUp], [0.25, undefined, rOut], [0.38, undefined, rUp],
+    [0.5, tag ? undefined : '왼손 · 오른발 앞으로', still], [0.62, undefined, lUp], [0.75, undefined, lOut], [0.88, undefined, lUp], [1, undefined, still],
+  ];
+  return { id, cycle: 3, view: [80, 16], keys: keys(...list), scene: [mat([0, 0, 0.1], 0.8, 1.5)], work: [0, 1], fault };
+}
+
 /* ── 표 ──────────────────────────────────────────── */
 
 export const EXTRA_MOTIONS: Record<string, Entry> = {
@@ -481,4 +660,9 @@ export const EXTRA_MOTIONS: Record<string, Entry> = {
   'knee-push-up': entry((f) => kneePushUp('knee-push-up', f), ['hips-back', 'elbow-flare']),
   'bird-dog': entry((f) => birdDog('bird-dog', f), ['back-arch', 'hip-tilt']),
   'superman': entry((f) => superman('superman', f), ['neck', 'too-high']),
+  'mountain-climber': entry((f) => mountainClimber('mountain-climber', f), ['hips-up']),
+  'jumping-jack': entry((f) => jumpingJack('jumping-jack', f), ['heel-land', 'knee-cave']),
+  'step-back-burpee': entry((f) => stepBackBurpee('step-back-burpee', f), ['hips-sag', 'round-back']),
+  'squat-jump': entry((f) => squatJump('squat-jump', f), ['stiff-land', 'knee-cave']),
+  'bear-crawl': entry((f) => bearCrawl('bear-crawl', f), ['hips-up', 'knees-down']),
 };

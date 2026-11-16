@@ -34,9 +34,20 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('.equip-toggle[aria-expanded="false"]').count() === 1, '기구 목록이 펼쳐져 있습니다');
   await page.click('.wizard-nav .primary');
 
-  // 프로그램 — 근성장 체크가 같이 나온다
-  check(await page.locator('.growth-card').count() === 1, '프로그램 화면에 근성장 체크가 없습니다');
-  check(/최소 세트를 채웁니다/.test(await page.locator('.growth-card').textContent()), '근성장 체크에 결론이 없습니다');
+  // 프로그램 — 주 버튼은 아래에 붙어 넓게 56px, 스크롤 없이 보인다(360×740도)
+  for (const size of [{ width: 390, height: 844 }, { width: 360, height: 740 }]) {
+    await page.setViewportSize(size);
+    const btn = await page.locator('.wizard-nav .primary').boundingBox();
+    check((await page.locator('.wizard-nav .primary').textContent()).trim() === '이 프로그램으로 시작', '프로그램 화면 주 버튼 글자');
+    check(btn && btn.y + btn.height <= size.height + 1 && btn.y >= 0, `주 버튼이 화면 밖입니다(${size.width}): ` + JSON.stringify(btn));
+    check(btn.height >= 56 && btn.width >= size.width * 0.6, `주 버튼이 작습니다(${size.width}): ` + JSON.stringify(btn));
+  }
+  // 부위별로 충분한지 · 요일별 종목은 "자세히 보기 ›" 안에 접혀 있다
+  check(!(await page.locator('.program-more').evaluate((node) => node.open)), '자세히가 펼쳐진 채입니다');
+  check(!(await page.locator('.growth-card').isVisible()), '부위별 막대가 접혀 있지 않습니다');
+  await page.locator('.program-more > summary').click();
+  check(/최소 세트를 채웁니다/.test(await page.locator('.growth-card').textContent()), '부위별로 충분한지에 결론이 없습니다');
+  check((await page.locator('.growth-card h3').textContent()).trim() === '부위별로 충분한지', '제목: ' + await page.locator('.growth-card h3').textContent());
   await shot('2-program');
   await finishWizard(page, { level: '초보', sex: '여성' });
   // 초보 프로그램 — 바벨 데드리프트 · 백 스쿼트로 시작하지 않는다

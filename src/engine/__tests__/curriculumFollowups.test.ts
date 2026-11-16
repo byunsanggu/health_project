@@ -129,3 +129,60 @@ describe('건강 유지 — 짧은 계획', () => {
     assert.match(planGoals(['general']).notes.join(' '), /40분 안팎/);
   });
 });
+
+describe('맨몸 숨찬 동작 — 매트뿐인 곳의 마무리 운동이 덜 단조롭다', async () => {
+  const { buildConditioning, buildFinisher, weeklyConditioningPlan } = await import('../conditioning.ts');
+  const { CONDITIONING_ONLY, JUMP_MOVES } = await import('../exercises.ts');
+  const NEW = ['mountain-climber', 'jumping-jack', 'step-back-burpee', 'squat-jump', 'bear-crawl'];
+
+  it('매트뿐인 중급자의 마무리 운동에 새 동작이 날마다 돌아가며 나온다', () => {
+    const seen = new Set<string>();
+    for (let seed = 0; seed < 14; seed += 1) {
+      const workout = buildConditioning({ format: 'amrap', minutes: 12, level: 'intermediate', equipmentIds: ['floor'], seed });
+      workout.movements.forEach((movement) => seen.add(movement.exerciseId));
+    }
+    assert.ok(NEW.filter((id) => seen.has(id)).length >= 3, [...seen].join(','));
+  });
+
+  it('근력 프로그램에는 들어가지 않는다', () => {
+    for (const level of ['beginner', 'intermediate'] as const) {
+      const result = runOnboarding({
+        selfReportedLevel: level, monthsTraining: 1, bodyweightKg: 70, sex: 'female',
+        daysPerWeek: 3, goals: ['hypertrophy'], gym: { equipmentIds: ['floor'] },
+      });
+      const ids = result.program.templates.flatMap((template) => template.slots.map((slot) => slot.exerciseId));
+      assert.ok(ids.every((id) => !CONDITIONING_ONLY.has(id)), ids.join(','));
+    }
+  });
+
+  it('뛰는 동작은 초보의 처음 두 주 · 무릎이나 발목이 아픈 날에 빠진다', () => {
+    const jumpsIn = (input: Parameters<typeof buildConditioning>[0]) => {
+      for (let seed = 0; seed < 20; seed += 1) {
+        if (buildConditioning({ ...input, seed }).movements.some((movement) => JUMP_MOVES.has(movement.exerciseId))) return true;
+      }
+      return false;
+    };
+    const base = { format: 'circuit' as const, minutes: 12, equipmentIds: ['floor'] };
+    assert.equal(jumpsIn({ ...base, level: 'intermediate' }), true);
+    assert.equal(jumpsIn({ ...base, level: 'beginner' }), false, '초보 기본값은 뛰지 않는다');
+    assert.equal(jumpsIn({ ...base, level: 'intermediate', pain: [{ joint: 'knee', score: 2 }] }), false);
+    assert.equal(jumpsIn({ ...base, level: 'intermediate', pain: [{ joint: 'ankle', score: 1 }] }), false);
+
+    const templates = runOnboarding({
+      selfReportedLevel: 'beginner', monthsTraining: 1, bodyweightKg: 70, sex: 'male',
+      daysPerWeek: 3, goals: ['conditioning'], gym: { equipmentIds: ['floor'] },
+    }).program.templates;
+    for (const week of [1, 2, 3]) {
+      const plan = weeklyConditioningPlan({ goals: ['conditioning'], level: 'beginner', templates, equipmentIds: ['floor'], weekInBlock: week });
+      plan.days.filter((spec) => spec.kind === 'wod').forEach((spec) => {
+        assert.equal(spec.allowJumps, week >= 3, `${week}주차`);
+        if (week <= 2) {
+          for (let seed = 0; seed < 10; seed += 1) {
+            const built = buildFinisher(spec, { level: 'beginner', equipmentIds: ['floor'], seed });
+            if (built.kind === 'wod') assert.ok(built.session.workout.movements.every((m) => !JUMP_MOVES.has(m.exerciseId)));
+          }
+        }
+      });
+    }
+  });
+});

@@ -1,4 +1,4 @@
-import { EXERCISES, HEAVY_PULLS, exerciseById, isUnloaded } from './exercises.ts';
+import { EXERCISES, HEAVY_PULLS, JUMP_MOVES, exerciseById, isUnloaded } from './exercises.ts';
 import { withParticle } from './korean.ts';
 import { availableExercises } from './equipment.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO } from './muscles.ts';
@@ -108,6 +108,8 @@ const PREFERRED = [
   'farmers-walk', 'plank', 'side-plank', 'hanging-leg-raise', 'ab-wheel-rollout',
   'dead-bug', 'cable-crunch', 'standing-calf-raise', 'leg-press',
   'bodyweight-squat', 'glute-bridge', 'bodyweight-reverse-lunge', 'incline-push-up', 'band-row',
+  // 맨몸 숨찬 동작 — 매트뿐인 곳의 마무리 운동이 날마다 같은 셋으로 돌지 않게
+  'mountain-climber', 'step-back-burpee', 'bear-crawl', 'jumping-jack', 'squat-jump',
 ];
 
 export interface ConditioningInput {
@@ -149,6 +151,11 @@ export interface ConditioningInput {
   portableOnly?: boolean;
   /** 한 바퀴 맨 앞에 넣을 유산소 구간(로잉머신 1분). 동작 수에 들어간다 */
   cardioElement?: { id: string; name: string; seconds: number };
+  /**
+   * 뛰는 동작(점핑 잭 · 스쿼트 점프)을 넣을 것인가. 없으면 초보에게는 넣지 않는다.
+   * 켜도 무릎 · 발목이 아프다고 한 날에는 넣지 않는다.
+   */
+  allowJumps?: boolean;
 }
 
 const PORTABLE: ReadonlySet<string> = new Set(['dumbbell', 'kettlebell', 'bodyweight', 'band']);
@@ -173,6 +180,8 @@ export function buildConditioning(input: ConditioningInput): ConditioningWorkout
    * 알아차리지 못하는 단계에서 시간에 쫓기게 하면 안 된다.
    */
   const barbellOn = Boolean(input.allowBarbell) && input.level !== 'beginner';
+  const sorePain = pain.some((report) => report.score >= 1 && (report.joint === 'knee' || report.joint === 'ankle'));
+  const jumpsOn = (input.allowJumps ?? input.level !== 'beginner') && !sorePain;
 
   const safe = available
     .filter((exercise) => barbellOn || !UNSAFE_FOR_TIME.has(exercise.id))
@@ -182,6 +191,7 @@ export function buildConditioning(input: ConditioningInput): ConditioningWorkout
      */
     .filter((exercise) => barbellOn || exercise.equipment !== 'barbell')
     .filter((exercise) => screenExercise(exercise, pain).action === 'allow')
+    .filter((exercise) => jumpsOn || !JUMP_MOVES.has(exercise.id))
     // 초보가 숨찬 채로 하기엔 어려운 몸통 운동 — 허리가 꺾이거나 매달려 흔들린다
     .filter((exercise) => input.level !== 'beginner' || !HARD_FOR_BEGINNER_WOD.has(exercise.id))
     .filter((exercise) => {
@@ -636,6 +646,8 @@ export interface FinisherSpec {
   easyOnLegs: boolean;
   /** 마무리 운동에서 피할 부위 — 데드리프트를 한 날의 뒤허벅지 · 엉덩이 */
   avoidMuscles: MuscleGroup[];
+  /** 뛰는 동작을 넣어도 되는가 — 초보의 처음 두 주에는 넣지 않는다 */
+  allowJumps?: boolean;
   /** 화면에 그대로 쓸 제목과 이유 한 줄 */
   title: string;
   why: string;
@@ -822,6 +834,7 @@ export function weeklyConditioningPlan(input: WeeklyConditioningInput): WeeklyCo
         dayIndex, dayName: info.name, kind: 'wod', format, minutes, modalities,
         easyOnLegs: info.lower,
         avoidMuscles: info.avoid,
+        allowJumps: !beginner || week >= 3,
         title: `마무리 운동 · ${FORMAT_LABELS_KO[format]} ${minutes}분`,
         why: `오늘은 ${modalities.map((kind) => MODALITY_LABELS_KO[kind]).join(' + ')}${modalities.length > 1 ? '를 섞습니다' : ' 위주입니다'}. ` +
           FORMAT_DESCRIPTIONS_KO[format] + '.',
@@ -966,6 +979,7 @@ export function buildFinisher(spec: FinisherSpec, input: FinisherInput): Finishe
     seed: input.seed,
     only: narrow && only.length === 1 ? only : undefined,
     portableOnly: true,
+    allowJumps: spec.allowJumps ?? input.level !== 'beginner',
     cardioElement: machine
       ? { id: machine.id, name: machine.name, seconds: format === 'emom' ? 40 : 60 }
       : undefined,

@@ -1,4 +1,4 @@
-// PT 한 바퀴 — 몸 풀기(목록에 다녀와도 이어진다) → 세기("운동 끝내기 → 계속하기"는 바로 잇는다)
+// PT 한 바퀴 — 몸 풀기(목록에 다녀와도 이어진다) → 세기("운동 끝내기 → 계속 운동"는 바로 잇는다)
 //   → 다 세면 묻지 않고 바로 기록 → 휴식(화면을 껐다 켜면 저절로 잇는다) → 다음 세트
 import { begin, check, choosePt, focusPhase, onboard, runUntil, setVisible } from './lib.mjs';
 
@@ -33,12 +33,12 @@ export default async function ({ page, url, shot }) {
     await runUntil(page, 'count');
   }
 
-  // 세는 중에 "운동 끝내기" → "계속하기"는 그 자리에서 잇는다
+  // 세는 중에 "운동 끝내기" → "계속 운동"은 그 자리에서 잇는다
   await untilRep(page);
   await page.click('#focus .end-workout');
-  await page.locator('dialog').getByRole('button', { name: '계속하기' }).click();
+  await page.locator('dialog').getByRole('button', { name: '계속 운동' }).click();
   await page.clock.runFor(500);
-  check(await focusPhase(page) === 'count', '계속하기 뒤에 ' + await focusPhase(page));
+  check(await focusPhase(page) === 'count', '계속 운동 뒤에 ' + await focusPhase(page));
 
   // 다 세면 묻지 않고 바로 적고 쉰다
   await runUntil(page, ['ask', 'rest'], { maxMs: 180000 });

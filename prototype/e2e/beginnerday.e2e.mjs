@@ -1,7 +1,8 @@
-// 처음 온 초보의 첫날(360px 폰) — 위 상태 줄은 할 일("4개 남기고 멈춤")로 쓰고 누르면 뜻을 풀어 준다.
-//   "처음이세요?" 카드는 닫으면 다시 안 뜬다. 세트 칸은 하는 동안 "숫자를 눌러 바꿀 수 있습니다"를 말하고,
+// 처음 온 초보의 첫날(360×740 폰) — 맨 위 주차 칩 · "처음이세요?" · 헬스장 등록 안내 없이 첫 종목이 첫 화면에 보인다.
+//   시작 전 한 장은 접힌 한 줄 + 시작. 운동 화면은 지금 세트 줄이 가려지지 않고, 안내는 한 줄("6~10회 중 힘이 조금 남을 때"),
+//   숫자 칸은 48px 이상, kg/lb는 ⋯ › 단위 바꾸기(알림 + 되돌리기).
 //   기록이 없으면 횟수 칸은 범위 가운데로 채운다. 좁은 폰에서도 ✕가 "회"와 겹치지 않는다.
-//   세트가 남았는데 끝내기를 누르면 무엇이 남았는지 말하고 "계속하기"가 앞이다. 첫날 요약에는
+//   끝내기 창은 늘 왼쪽 "계속 운동" · 오른쪽 "오늘 마치기". 첫날 요약에는
 //   PR · 1회 최대 · 부족이 없다. 혼자 한 날은 마무리 스트레칭을 고를 수 있고, 그림과 초를 센다.
 //   기록 탭 첫 주는 큰 0 대신 "첫 주 진행 중", 근성장 막대는 "자세히" 안에.
 import { check, onboard, startWorkout, tab } from './lib.mjs';
@@ -12,29 +13,57 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page, { level: '초보', sex: '여성' });
 
-  // 위 상태 줄 — "여유 4개"가 아니라 하라는 말, 누르면 뜻
+  // 맨 위 상태 줄에는 주차 · 남길 개수 칩이 없다(설명은 기록 탭 · 운동 중 한 줄에서 연다)
   const status = (await page.locator('#status-meta').textContent()).trim();
-  check(/개 남기고 멈춤|끝까지 하기/.test(status) && !/여유/.test(status), '상태 줄: ' + status);
-  await page.locator('#status-meta .status-help').click();
-  check(/번쯤 더 할 수 있겠다/.test(await page.locator('dialog').textContent()), '상태 줄을 눌러도 뜻이 안 나옵니다');
-  await page.locator('dialog .modal-close').click();
+  check(!/주차|남기고 멈춤/.test(status), '맨 위에 주차 칩이 남아 있습니다: ' + status);
 
-  // 처음이세요? — 닫으면 다시 안 뜬다
-  const tips = page.locator('.first-tips');
-  check(await tips.count() === 1, '"처음이세요?" 카드가 없습니다');
-  check(/이름이나 그림을 누르면/.test(await tips.textContent()), '모르는 동작을 어디서 보는지 말하지 않습니다');
+  // 첫날 오늘 — "처음이세요?" 카드도, 헬스장 등록 안내도 위에 없고, 첫 종목이 첫 화면(360×740) 안에 보인다
+  check(await page.locator('.first-tips').count() === 0, '"처음이세요?" 카드가 남아 있습니다');
+  check(await page.locator('.gym-link-nudge').count() === 0, '첫날 오늘 화면 위에 헬스장 등록 안내가 있습니다');
+  const firstRow = await page.locator('.plan-row').first().boundingBox();
+  check(firstRow && firstRow.y + firstRow.height <= 740 - 64, '첫 종목이 첫 화면 밖에 있습니다: ' + JSON.stringify(firstRow));
+  check(/이름을 누르면 동작을/.test(await page.locator('.first-hint').textContent()), '모르는 동작을 어디서 보는지 한 줄이 없습니다');
   await shot('1-today');
-  await tips.locator('.first-tips-close').click();
-  check(await page.locator('.first-tips').count() === 0, '닫았는데 남아 있습니다');
-  await page.reload();
-  await page.waitForSelector('.tabbar [role="tab"]');
-  check(await page.locator('.first-tips').count() === 0, '다시 켜니 "처음이세요?"가 또 뜹니다');
 
-  // 운동 — 하는 동안 "숫자를 눌러", 첫 두 주 한 줄 안내, 횟수는 범위 가운데
-  await startWorkout(page);
+  // 시작 전 한 장 — 접힌 한 줄 바로 아래 "시작"
+  await page.locator('.start-cta').click();
+  const line = (await page.locator('dialog .start-summary').textContent()).trim();
+  check(/아픈 데 없음/.test(line) && /평소대로/.test(line) && /혼자/.test(line) && /바꾸기/.test(line), '접힌 한 줄: ' + line);
+  check(await page.locator('dialog .segmented').count() === 0, '시작 전 한 장이 펼쳐진 채로 열립니다');
+  const sum = await page.locator('dialog .start-summary').boundingBox();
+  const go = await page.locator('dialog .start-go').boundingBox();
+  check(go.y - (sum.y + sum.height) < 24, '시작이 한 줄 바로 아래에 없습니다');
+  await page.locator('dialog .start-summary').click();
+  check(await page.locator('dialog .segmented').count() === 4, '바꾸기를 눌러도 질문 넷이 안 펼쳐집니다');
+  await page.locator('dialog .start-go').click();
+  if (await page.locator('.mobility-skip, .warm-skip').count()) await page.locator('.mobility-skip, .warm-skip').first().click();
+
+  // 운동 — 지금 세트 줄이 머리띠 밑에 가려지지 않는다(360×740)
+  await page.locator('.set-box.now').waitFor();
+  const rowTop = (await page.locator('.set-box.now').boundingBox()).y;
+  const headBottom = await page.locator('.progress-head').evaluate((node) => node.getBoundingClientRect().bottom);
+  check(rowTop >= headBottom - 1, `지금 세트 줄이 머리띠 밑에 가려졌습니다: 줄 ${rowTop} · 머리띠 ${headBottom}`);
+  // 안내는 한 줄 — 범위와 멈출 곳, 누르면 뜻
   const head = await page.locator('.set-strip-head').first().textContent();
-  check(head.includes('숫자를 눌러'), '하는 중에 숫자를 고치라는 말이 없습니다: ' + head);
-  check(await page.locator('.effort-hint').count() === 1, '첫 주 세트 안내 한 줄이 없습니다');
+  check(/\d+~\d+회 중 힘이 조금 남을 때 멈추세요\./.test(head), '한 줄 안내: ' + head);
+  check(await page.locator('.effort-hint').count() === 1, '안내 줄이 하나가 아닙니다');
+  const screenText = await page.locator('#screen').innerText();
+  check(!/숫자를 눌러 바꿀 수 있습니다|개쯤 남기고 멈춘 뒤|맞춰 짐작한 무게/.test(screenText), '겹치는 안내 줄이 남았습니다');
+  await page.locator('.effort-hint').click();
+  check(/번쯤 더 할 수 있겠다/.test(await page.locator('dialog').textContent()), '한 줄 안내를 눌러도 뜻이 안 나옵니다');
+  await page.locator('dialog .modal-close').click();
+  // 숫자 칸은 높이 48px 이상, 무게 칸은 폭 72px 이상
+  const boxes = await page.evaluate(() => [...document.querySelectorAll('.set-box.now .set-in')].map((n) => ({ c: n.className, w: n.getBoundingClientRect().width, h: n.getBoundingClientRect().height })));
+  check(boxes.every((b) => b.h >= 48) && boxes.filter((b) => b.c.includes('weight')).every((b) => b.w >= 72), '숫자 칸이 작습니다: ' + JSON.stringify(boxes));
+  // kg / lb는 세트 줄에 없고 ⋯ 메뉴에 — 바꾸면 알리고 되돌릴 수 있다
+  check(await page.locator('.set-box .unit-pick').count() === 0, '세트 줄에 단위 버튼이 남아 있습니다');
+  await page.locator('.lift-more').click();
+  check(await page.locator('dialog .menu-row', { hasText: '동작 보기' }).count() === 0, '운동 화면 ⋯에 동작 보기가 또 있습니다');
+  await page.locator('dialog .menu-row', { hasText: '단위 바꾸기 (kg / lb)' }).click();
+  check((await page.locator('#pt-toast').textContent()).includes('lb'), '단위를 바꿔도 알리지 않습니다');
+  check((await page.locator('.set-box.now .set-unit').first().textContent()).includes('lb'), '단위가 lb로 안 바뀌었습니다');
+  await page.locator('#pt-toast .undo-btn').click();
+  check((await page.locator('.set-box.now .set-unit').first().textContent()).includes('kg'), '되돌리기 뒤에 kg이 아닙니다');
   const range = head.match(/(\d+)~(\d+)회/);
   if (range) {
     const mid = Math.round((Number(range[1]) + Number(range[2])) / 2);
@@ -63,15 +92,16 @@ export default async function ({ page, url, shot }) {
   check((await demo.boundingBox()).height >= 44, '동작 보기 칩이 작습니다');
   await shot('2-set-360');
 
-  // 한 세트 하고 끝내기 — 남은 것을 말하고 "계속하기"가 앞
+  // 한 세트 하고 끝내기 — 남은 것을 말하고, 왼쪽 "계속 운동"(권함) · 오른쪽 "오늘 마치기"
   await page.locator('.now-done').click();
   await page.locator('.end-workout').first().click();
   const left = await page.locator('dialog .summary-left').textContent();
   check(/종목\(\d+세트\) 남았습니다/.test(left), '남은 것을 말하지 않습니다: ' + left);
-  const foot = await page.locator('dialog .summary-foot button').allTextContents();
-  check(foot[0].trim() === '계속하기' && foot.includes('오늘 마치기'), '아래 버튼: ' + foot.join(', '));
-  await page.locator('dialog .summary-foot button', { hasText: '계속하기' }).click();
-  check(await page.locator('dialog[open]').count() === 0 && await page.locator('.progress-head').count() === 1, '계속하기 뒤에 운동 화면이 아닙니다');
+  const foot = (await page.locator('dialog .summary-foot button').allTextContents()).map((t) => t.trim());
+  check(foot[0] === '계속 운동' && foot[1] === '오늘 마치기', '아래 버튼: ' + foot.join(', '));
+  check(!(await page.locator('dialog .summary-foot button').first().getAttribute('class')).includes('quiet'), '남았을 때 계속 운동이 채워진 버튼이 아닙니다');
+  await page.locator('dialog .summary-foot button', { hasText: '계속 운동' }).click();
+  check(await page.locator('dialog[open]').count() === 0 && await page.locator('.progress-head').count() === 1, '계속 운동 뒤에 운동 화면이 아닙니다');
 
   // 이 종목을 마저 하고 끝낸다 — 첫날 요약에 현장 용어 · "부족"이 없다
   while (await page.locator('.now-done').count() && (await page.locator('.now-done-sub').textContent()).includes('남음')) {
@@ -91,7 +121,15 @@ export default async function ({ page, url, shot }) {
   const sore = await page.locator('dialog .first-soreness').textContent().catch(() => '');
   check(sore.includes('뻐근할 수 있습니다') && sore.includes('통증으로 적어 주세요'), '첫날 요약에 근육통 안내가 없습니다: ' + sore);
   await shot('3-summary');
+  const foot2 = (await page.locator('dialog .summary-foot button').allTextContents()).map((t) => t.trim());
+  check(foot2[0] === '계속 운동' && foot2[1] === '오늘 마치기', '다 한 날 아래 버튼 순서: ' + foot2.join(', '));
   await page.locator('dialog .summary-foot button', { hasText: '오늘 마치기' }).click();
+  // 끝난 화면 — 요약 다시 보기 · 다른 운동 더 하기는 글자 링크
+  check(await page.locator('.closed-link').count() === 2, '끝난 화면의 두 링크가 글자 링크가 아닙니다');
+  // 헬스장 주소 등록 안내는 첫 운동을 마친 뒤 여기서 한 번
+  check(await page.locator('.gym-link-nudge').count() === 1, '첫 운동을 마친 화면에 헬스장 등록 안내가 없습니다');
+  await page.locator('.gym-link-nudge .gym-link-close').click();
+  check(await page.locator('.gym-link-nudge').count() === 0, '닫았는데 등록 안내가 남았습니다');
 
   // 마무리 스트레칭(혼자) — 고르면 그림과 초, 다 세면 저절로 ✓
   await page.locator('.cool-offer').click();

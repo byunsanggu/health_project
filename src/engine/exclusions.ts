@@ -16,7 +16,9 @@
  * 나머지 셋은 앱이 이미 더 잘 처리하는 길이 있는데, "싫어요" 하나로
  * 받으면 그게 전부 묻힌다.
  */
-import { EXERCISES } from './exercises.ts';
+import { EXERCISES as ALL_EXERCISES, CONDITIONING_ONLY } from './exercises.ts';
+
+const EXERCISES = ALL_EXERCISES.filter((exercise) => !CONDITIONING_ONLY.has(exercise.id));
 import { withParticle } from './korean.ts';
 import { findSubstitutes } from './pain.ts';
 import type { Exercise, Joint } from './types.ts';
