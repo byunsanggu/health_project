@@ -3260,8 +3260,11 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .closed-link, .more-after { display: block; min-height: 44px; margin: 4px auto; padding: 10px 12px; border: 0; background: none; color: var(--accent); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .first-hint-wrap { padding-top: 0; }
 /* 누르는 자리 44px · 숫자 칸 48px */
-.set-in { height: 48px; width: 76px; }
-.set-in-reps { width: 52px; }
+.set-box, .warmup-set { grid-template-columns: 56px minmax(0, 1fr) minmax(44px, auto); gap: 6px; }
+.set-in { height: 48px; width: 72px; }
+.set-in-reps { width: 50px; }
+/* "지울까요? · 뺄까요?"는 잠깐 넓어진다 — 숫자 칸 위에 올라와 두 번째 누름이 칸으로 새지 않게 */
+.set-undo.armed, .set-remove.armed { position: relative; z-index: 2; white-space: nowrap; font-size: 12.5px; padding: 6px 8px; color: var(--zone-over); background: color-mix(in srgb, var(--zone-over) 12%, var(--surface)); }
 .progress-top .demo-open { min-height: 44px; min-width: 52px; font-size: 13px; }
 .day-switch-caret { position: relative; }
 .day-switch { min-height: 44px; }

@@ -43,16 +43,18 @@ export default async function ({ page, url, shot }) {
 
   // 바우짐 · 바우짐 여성점 — 따로 등록, 구분 표시
   await gymTab(page);
+  const register = async (name) => {
+    if (!await page.locator('dialog #gym-reg-name').count()) await page.locator('.register-open').first().click();
+    const dialog = page.locator('dialog');
+    await dialog.locator('#gym-reg-name').fill(name);
+    await dialog.locator('.gym-kind .pick', { hasText: '일반 헬스장' }).click();
+    await dialog.locator('.gym-reg-submit').click();
+    await dialog.locator('.equip-done').click();
+    await page.waitForFunction(() => !document.querySelector('dialog')?.open);
+  };
   await page.locator('.gym-link').click();
-  await page.locator('dialog .choice', { hasText: '동네 헬스장' }).click();
-  await page.locator('dialog input[placeholder="헬스장 이름"]').fill('바우짐');
-  await page.locator('dialog .finish', { hasText: '등록하기' }).click();
-  await page.waitForFunction(() => !document.querySelector('dialog')?.open);
-  await page.locator('.register-open').click();
-  await page.locator('dialog .choice', { hasText: '동네 헬스장' }).click();
-  await page.locator('dialog input[placeholder="헬스장 이름"]').fill('바우짐 여성점');
-  await page.locator('dialog .finish', { hasText: '등록하기' }).click();
-  await page.waitForFunction(() => !document.querySelector('dialog')?.open);
+  await register('바우짐');
+  await register('바우짐 여성점');
   const rows = await page.locator('.gym-row .gym-name').allTextContents();
   check(rows.length === 2, '두 곳이 따로 등록되지 않았습니다: ' + rows.join(' / '));
   check(rows.some((text) => text.includes('바우짐 여성점') && text.includes('여성 전용')), '여성점 표시가 없습니다: ' + rows.join(' / '));
