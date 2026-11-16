@@ -3892,9 +3892,10 @@
       body.push(el('div', { class: 'summary-list' }, plan.options.map(function (option) {
         return el('button', {
           type: 'button',
-          class: 'option-row',
+          class: 'option-row with-thumb',
           onclick: function () { applyOccupancy(exercise, option.exercise, 'substitute'); },
         }, [
+          liftThumb(option.exercise, true),
           el('span', { class: 'name', text: option.exercise.name }),
           el('span', { class: 'detail', text: option.note }),
         ]);
@@ -4107,10 +4108,59 @@
    * 크기의 빈 칸을 돌려준다. 그림은 장식이 아니라 "이게 그거 맞나"를
    * 확인하는 장치라서, 이름·생김새 설명과 나란히 놓는다.
    */
-  function equipArt(id, label) {
+  function equipArt(id, label, shown) {
     var art = window.FitEquipmentArt;
     var svg = art && art.has(id) ? art.render(id, label + ' 그림') : null;
-    return svg || el('span', { class: 'equip-art-blank', 'aria-hidden': 'true' });
+    var line = svg || el('span', { class: 'equip-art-blank', 'aria-hidden': 'true' });
+    if (!hasThumb('eq', id)) return line;
+    // 3D 그림이 뜨면 그걸 보여 주고, 받는 동안 · 못 받았을 때는 선 그림이 그대로 보인다
+    return thumbInto(el('span', { class: 'equip-pic' }, [line]), 'eq', id, shown || 46, label + ' 그림');
+  }
+
+  /*
+   * 3D 썸네일(thumbs/ — tools/thumbs/render.mjs가 우리 마네킹 · 기구 장면으로 구운 그림).
+   *
+   * 화면에 보일 때에야 받는다(loading=lazy). 한 번 받은 그림은 서비스 워커가 담아 둬 오프라인에서도 뜬다.
+   * 못 받으면(그림이 없는 판 · 첫 실행이 오프라인) 칸에 원래 있던 선 그림이 그대로 남는다.
+   */
+  var THUMB_IDS = null;
+  var THUMB_SEEN = {};
+  function hasThumb(kind, id) {
+    if (!THUMB_IDS) {
+      THUMB_IDS = { ex: {}, eq: {} };
+      E.EXERCISES.forEach(function (x) { THUMB_IDS.ex[x.id] = true; });
+      E.EQUIPMENT_CATALOG.forEach(function (x) { THUMB_IDS.eq[x.id] = true; });
+    }
+    return THUMB_IDS[kind][id] === true;
+  }
+  function thumbUrl(kind, id, big) { return 'thumbs/' + kind + '/' + id + (big ? '@3x' : '') + '.webp'; }
+
+  /** 칸(box) 위에 3D 그림을 얹는다. shown은 화면에 보이는 한 변(px) — 큰 칸은 큰 그림을 받는다. */
+  function thumbInto(box, kind, id, shown, alt) {
+    if (!hasThumb(kind, id)) return box;
+    var small = thumbUrl(kind, id, false);
+    var big = thumbUrl(kind, id, true);
+    var src = shown >= 200 ? big : small;
+    var img = el('img', {
+      class: 'pic-img', alt: alt || '', loading: 'lazy', decoding: 'async',
+      width: String(shown), height: String(shown),
+    });
+    if (shown > 60 && shown < 200) {
+      img.setAttribute('srcset', small + ' 160w, ' + big + ' 420w');
+      img.setAttribute('sizes', shown + 'px');
+    }
+    img.addEventListener('load', function () { THUMB_SEEN[src] = true; box.classList.add('pic-on'); });
+    img.addEventListener('error', function () {
+      delete THUMB_SEEN[src];
+      box.classList.remove('pic-on');
+      if (img.parentNode) img.parentNode.removeChild(img);
+    });
+    box.classList.add('pic');
+    // 이미 받은 그림은 다시 그릴 때 선 그림이 깜빡 비치지 않게 바로 켠다
+    if (THUMB_SEEN[src]) box.classList.add('pic-on');
+    img.setAttribute('src', src);
+    box.appendChild(img);
+    return box;
   }
 
   /* ── 이 기구 없어요 ─────────────────────────────── */
@@ -4285,9 +4335,23 @@
     var canvas = el('canvas', { class: 'demo-canvas', 'aria-label': exercise.name + ' 동작 보기' });
     var supported = Boolean(clip && window.FitDemo3D && window.FitDemo3D.available());
 
+    /*
+     * 3D가 뜨기 전에 먼저 보이는 한 장(같은 마네킹 · 같은 기구로 구워 둔 그림). 3D가 첫 장면을 그리면 걷는다.
+     * 3D를 못 띄우는 기기에서는 이 그림이 그대로 남아 자세를 보여 준다.
+     */
+    var poster = hasThumb('ex', exercise.id) ? el('img', {
+      class: 'demo-poster' + (supported ? '' : ' still'), alt: exercise.name + ' 자세 그림', decoding: 'async',
+      width: '420', height: '420', src: thumbUrl('ex', exercise.id, true),
+    }) : null;
+    var dropPoster = function () {
+      if (poster && poster.parentNode) poster.parentNode.removeChild(poster);
+      poster = null;
+    };
+    if (poster) poster.addEventListener('error', dropPoster);
+
     var stage = el('div', { class: 'demo-stage' }, supported
-      ? [canvas, banner, hint, caption]
-      : [el('div', {
+      ? [canvas, poster, banner, hint, caption]
+      : [poster, el('div', {
           class: 'demo-fallback',
           text: '이 브라우저에서는 동작 그림을 띄울 수 없습니다. 아래 자세 요령을 참고하세요.',
         })]);
@@ -4372,6 +4436,7 @@
       pattern: exercise.pattern,
       onTouch: function () { hint.classList.add('gone'); },
       onProgress: function (t, label) {
+        if (poster) dropPoster();
         fill.style.width = (t * 100).toFixed(1) + '%';
         if ((label || '') !== caption.textContent) caption.textContent = label || '';
       },
@@ -5097,11 +5162,12 @@
    * 목록을 훑을 때 알고 싶은 건 "오늘 어디 하는 날인가"다. 몸 그림은 칠할
    * 게 많은 쪽(앞/뒤) 하나만 그린다 — 46px에 둘을 넣으면 안 읽힌다.
    */
-  function liftThumb(exercise) {
+  function liftThumb(exercise, lite) {
     var box = el('span', { class: 'lift-thumb', 'aria-hidden': 'true' }, []);
-    var map = window.FitBodyMap;
+    // 긴 목록(종목 고르기)은 줄마다 근육 지도를 그리면 느리다 — 3D 그림이 있으면 기구 선 그림만 밑에 깐다
+    var map = lite && hasThumb('ex', exercise.id) ? null : window.FitBodyMap;
     // 입체 그림이 준비됐으면 그걸로 — 상반신 · 하반신 중 칠할 게 많은 쪽을 크게
-    var three = exercise.contribution && body3dReady()
+    var three = map && exercise.contribution && body3dReady()
       ? window.FitBody3D.thumb(exercise.contribution, exercise.pattern, bodyPalette()) : null;
     if (three) {
       three.setAttribute('class', 'thumb-3d');
@@ -5119,8 +5185,19 @@
       svg.setAttribute('class', exercise.contribution && (three || map) ? 'thumb-equip' : 'thumb-art');
       box.appendChild(svg);
     }
-    return box;
+    // 그 운동을 그 기구에서 하는 3D 그림 — 뜨면 위의 그림들을 덮는다(못 받으면 위 그림이 그대로 남는다)
+    return thumbInto(box, 'ex', exercise.id, 46, '');
   }
+
+  /** 유산소 종목 → 그 기구의 3D 그림. 기구 없이 하는 것(밖에서 달리기 · 줄넘기 · 수영)은 선 그림 그대로. */
+  var CARDIO_THUMB_FOR = {
+    'treadmill-walk': 'treadmill',
+    'treadmill-run': 'treadmill',
+    bike: 'stationary-bike',
+    elliptical: 'elliptical-machine',
+    row: 'rowing-machine',
+    stair: 'stair-climber',
+  };
 
   /*
    * 3D 근육 그림(bodyMap3d.js). 장을 처음 읽는 데 잠깐 걸린다 — 그동안은 평면 그림을 쓰고,
@@ -5177,6 +5254,7 @@
     var svg = art && art.hasCardio(exercise.id) ? art.renderCardio(exercise.id, '') : null;
     var box = el('span', { class: 'lift-thumb cardio-thumb' }, []);
     if (svg) { svg.setAttribute('class', 'thumb-art'); box.appendChild(svg); }
+    if (CARDIO_THUMB_FOR[exercise.id]) thumbInto(box, 'eq', CARDIO_THUMB_FOR[exercise.id], 46, '');
     if (level) box.appendChild(el('span', { class: 'cardio-mark ' + level, 'aria-hidden': 'true' }));
     return box;
   }
@@ -6684,6 +6762,7 @@
           type: 'button', class: 'add-lift-row',
           onclick: function () { opts.onPick(exercise); },
         }, [
+          liftThumb(exercise, true),
           el('span', { class: 'plan-main' }, [
             el('span', { class: 'name', text: exercise.name }),
             el('span', { class: 'plan-sets', text:
@@ -22246,7 +22325,7 @@
 
     var shade = el('div', { class: 'equip-zoom', id: 'equip-zoom' }, [
       el('div', { class: 'equip-zoom-card', role: 'group', 'aria-label': item.name + ' 크게 보기' }, [
-        el('div', { class: 'equip-zoom-art' }, [equipArt(item.id, item.name)]),
+        el('div', { class: 'equip-zoom-art' }, [equipArt(item.id, item.name, 300)]),
         el('div', { class: 'equip-zoom-name', text: item.name }),
         aka ? el('div', { class: 'equip-zoom-aka', text: '이렇게도 부릅니다 — ' + aka }) : null,
         el('div', { class: 'list-label', text: '이렇게 생겼습니다' }),
@@ -22287,7 +22366,7 @@
         onclick: function () { toggleEquipment(item.id); },
       }, [
         el('span', { class: 'mark', 'aria-hidden': 'true', text: has ? '✓' : '' }),
-        equipArt(item.id, item.name),
+        equipArt(item.id, item.name, 104),
         el('span', { class: 'name', text: item.name }),
         aka ? el('span', { class: 'aka', text: aka }) : null,
         note ? el('span', { class: 'detail' + (note.none ? ' none' : ''), text: note.text }) : null,

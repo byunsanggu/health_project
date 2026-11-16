@@ -4,3 +4,4 @@ node_modules/
 __pycache__/
 prototype/dist/voice/
 prototype/dist/vendor/
+prototype/dist/thumbs/

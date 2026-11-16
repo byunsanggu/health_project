@@ -29,6 +29,8 @@ export default async function ({ page, url, shot, out }) {
   check(await page.locator('.equip-tile').count() === total, '그림 칸이 ' + await page.locator('.equip-tile').count() + '개입니다 (카탈로그 ' + total + '개)');
   check(await page.locator('.equip-tile .equip-art-blank').count() === 0, '그림이 빈 칸이 있습니다');
   check(await page.locator('.equip-tile svg.equip-art').count() === total, '그림 없는 칸이 있습니다');
+  // 칸마다 3D 그림 자리가 있다(받는 동안 · 못 받으면 위의 선 그림이 보인다 — 실제로 뜨는지는 thumbs.e2e)
+  check(await page.locator('.equip-tile .equip-pic img.pic-img').count() === total, '3D 그림 자리가 없는 칸이 있습니다');
   // 그림에 강조색이 실제로 먹는다 (손 닿는 곳)
   const colors = await page.evaluate(() => {
     const key = document.querySelector('.equip-tile svg .k');
@@ -58,6 +60,10 @@ export default async function ({ page, url, shot, out }) {
   }
   const big = await zoom.locator('svg.equip-art').boundingBox();
   check(big.width >= 240, '크게 본 그림이 ' + big.width + 'px입니다');
+  // 크게 보기는 3D 그림(큰 것)으로 뜬다
+  await zoom.locator('.equip-pic.pic-on').waitFor();
+  const bigPic = await zoom.locator('img.pic-img').evaluate((img) => [img.naturalWidth, img.getBoundingClientRect().width]);
+  check(bigPic[0] >= 400 && bigPic[1] >= 240, '크게 본 3D 그림: ' + bigPic.join(' / '));
   await shot('zoom-light');
   // 여기서 바로 없음으로
   await zoom.locator('.finish').click();

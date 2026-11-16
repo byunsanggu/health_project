@@ -9,7 +9,13 @@
  * 넣는 게 정상이다. 화면이 꺼지면 페이지의 타이머는 throttle되거나 멈추지만,
  * 서비스 워커의 알림은 시계까지 간다.
  */
-const VERSION = 'volume-coach-v3';
+const VERSION = 'volume-coach-v4';
+/*
+ * 운동 · 기구 3D 썸네일(thumbs/, tools/thumbs가 굽는다). 설치할 때 한꺼번에 받지 않는다 —
+ * 수백 장이라 설치가 느려진다. 화면에 처음 뜰 때 받아 담아 두고, 그 뒤로는 캐시에서 준다(오프라인에서도 뜬다).
+ * 앱 화면 캐시(VERSION)와 따로 둬서 앱이 새로 올라가도 다시 받지 않는다. 그림을 다시 구우면 이 이름을 올린다.
+ */
+const THUMBS = 'exercise-thumbs-v1';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 /*
  * 입체 시연이 쓰는 three.js — 앱과 같은 주소에 둔다(예전엔 CDN). 버전이 박혀 바뀌지 않으므로
@@ -30,7 +36,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       // 코치 목소리 캐시(coach-voice-*)는 앱이 관리한다 — 워커가 바뀌어도 지우지 않는다(다시 받으려면 9MB)
-      .then((keys) => Promise.all(keys.filter((key) => key !== VERSION && !key.startsWith('coach-voice')).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key !== VERSION && key !== THUMBS && !key.startsWith('coach-voice')).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });
@@ -76,6 +82,16 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   // 코치 목소리 조각은 앱(coachVoice.js)이 직접 캐시에 담는다 — 여기서 또 담으면 두 벌이 된다
   if (url.pathname.includes('/voice/')) return;
+
+  if (url.pathname.includes('/thumbs/')) {
+    event.respondWith(
+      caches.open(THUMBS).then((cache) => cache.match(request).then((hit) => hit || fetch(request).then((response) => {
+        if (response.ok) cache.put(request, response.clone()).catch(() => {});
+        return response;
+      }))),
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(request).then((hit) => {
