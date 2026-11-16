@@ -641,7 +641,8 @@ export function hipHinge(base: Pose3, opts: { knee: number; back: number; barY: 
   const grip = opts.grip ?? 0.25;
   const ahead = opts.ahead ?? 0.04;
   const lateral = Math.abs(grip - BODY.shoulder[0]);
-  const hang = Math.sqrt(Math.max(0.04, (ARM_REACH * 0.975) ** 2 - lateral * lateral - ahead * ahead));
+  // 다 편 팔은 0.993 — 팔꿈치가 12°쯤 살짝 굽은 "부드럽게 편" 모양. 0.975면 26°라 덜 편(반복을 덜 한) 팔로 보인다
+  const hang = Math.sqrt(Math.max(0.04, (ARM_REACH * 0.993) ** 2 - lateral * lateral - ahead * ahead));
   const at = (pitch: number) => shoulderMid({ ...base, pelvis, pitch, spine: opts.spine ?? base.spine ?? 0 });
   const pitch = solveFor((p) => at(p)[1], -20, 135, opts.barY + hang);
   const s = at(pitch);

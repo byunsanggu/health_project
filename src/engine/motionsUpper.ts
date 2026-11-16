@@ -85,11 +85,15 @@ export function press(id: string, opts: PressOpts, fault?: string): Clip {
 
   const s = shoulderMid(body);
   const grip = opts.close ? 0.17 : 0.4;
-  const reachUp = Math.sqrt((ARM_REACH * 0.985) ** 2 - (grip - 0.18) ** 2);
+  // 다 편 팔은 0.993 — 팔꿈치가 12°쯤 살짝 굽은 "부드럽게 편" 모양. 0.975면 26°라 덜 편(반복을 덜 한) 팔로 보인다
+  const reachUp = Math.sqrt((ARM_REACH * 0.993) ** 2 - (grip - 0.18) ** 2);
   // 바가 닿는 곳 — 평평하면 명치 위, 인클라인은 윗가슴, 디클라인은 아랫가슴. 바닥 프레스는 팔꿈치가 바닥에 닿는 데서 멈춘다
   const touchY = incline > 0 ? 0.22 : incline < 0 ? 0.13 : 0.17;
   const touch = chestPoint(body, [0, touchY, floor ? 0.27 : 0.185]);
-  const lockout: Vec3 = [0, s[1] + reachUp, opts.implement === 'smith' ? touch[2] : s[2] + 0.02];
+  // 덤벨은 위에서 어깨 바로 위로 모인다 — 바(넓게 쥠)와 같은 높이로 두면 팔이 47°나 굽은 채 끝난다
+  const dbTopWide = 0.17;
+  const topY = dumbbellTop(s, dbTopWide, reachUp, opts.implement === 'dumbbell');
+  const lockout: Vec3 = [0, topY, opts.implement === 'smith' ? touch[2] : s[2] + 0.02];
   const bottomBar: Vec3 = opts.implement === 'smith' ? [0, touch[1], touch[2]] : touch;
   const pole = (side: 1 | -1, flare = false): Vec3 => flare ? [side, 0.1, -0.3] : opts.close ? [side * 0.25, -0.8, -1] : [side * 0.75, -0.4, -1];
 
@@ -97,7 +101,7 @@ export function press(id: string, opts: PressOpts, fault?: string): Clip {
     if (dumbbell) {
       // 덤벨은 아래에서 넓게(가슴 옆), 위에서 좁게
       const depth = Math.min(1, Math.max(0, (lockout[1] - bar[1]) / Math.max(0.05, lockout[1] - bottomBar[1])));
-      const wide = 0.16 + 0.11 * depth;
+      const wide = dbTopWide + 0.1 * depth;
       const hand = (side: 1 | -1): ArmSpec => ({ ik: [side * wide, bar[1], bar[2]], pole: pole(side, flare), in: 'world', hand: [1, 0, 0] });
       return { ...body, armL: { ...hand(1), pole: chestPole(body, pole(1, flare)) }, armR: { ...hand(-1), pole: chestPole(body, pole(-1, flare)) }, ...extra };
     }
@@ -137,6 +141,12 @@ export function press(id: string, opts: PressOpts, fault?: string): Clip {
 }
 
 /** 가슴 틀 기준 팔꿈치 방향을 세계 방향으로 (손 목표가 세계 좌표일 때) */
+/** 누워 미는 동작의 맨 위 바 · 손 높이 — 덤벨이면 손이 어깨 바로 위(wide)라 바보다 조금 더 높이 뻗는다 */
+function dumbbellTop(s: Vec3, wide: number, reachUp: number, dumbbell: boolean): number {
+  if (!dumbbell) return s[1] + reachUp;
+  return s[1] + Math.sqrt((ARM_REACH * 0.993) ** 2 - (wide - BODY.shoulder[0]) ** 2) - 0.01;
+}
+
 function chestPole(body: Pose3, local: Vec3): Vec3 {
   const chest = solvePose(body).frames.chest;
   return [
@@ -165,7 +175,8 @@ export function machinePress(id: string, upward: boolean, fault?: string): Clip 
     armR: { ik: [-0.24, high, reach], in: 'chest', pole: [-0.85, -0.7, -0.5], hand: [0, 1, 0], ...extra },
   });
   const close = { ...body, ...hands(0.2, 0.2) };
-  const far = { ...body, ...hands(upward ? 0.5 : 0.56, upward ? 0.4 : 0.2) };
+  // 끝 — 팔꿈치가 살짝 굽은 데까지 밀어 낸다 (0.5 · 0.56이면 40~57° 굽은 채 돌아온다)
+  const far = { ...body, ...hands(upward ? 0.555 : 0.59, upward ? 0.44 : 0.2) };
   const list = liftKeys(close, far, ['밀기', '끝까지', '천천히 돌아오기']);
   if (fault === 'shoulders-roll') {
     swap(list, [1, 2], '어깨가 앞으로 말림', { ...far, spine: 18, scap: [0.4, 1], ...hands(upward ? 0.5 : 0.58, upward ? 0.36 : 0.16) });
@@ -196,7 +207,9 @@ export function pushUp(id: string, fault?: string): Clip {
   const lowAngle = solveFor(shoulderHeight, -2, 30, 0.2);
   // 손 자리는 위에서 정하고 내려갈 때 그대로 둔다
   const topBody = plank(topAngle, toeZ);
-  const hands = (flare = false) => floorHands(topBody, flare);
+  // 손은 위에서 어깨보다 3cm 뒤(가슴 쪽) — 내려가면 어깨가 손보다 앞으로 가서 손목이 팔꿈치 바로 밑에 온다.
+  // 어깨 앞에 두면(7cm 앞) 바닥에서 아래팔이 40° 넘게 누워 손이 얼굴 앞으로 나간 그림이 된다
+  const hands = (flare = false) => floorHands(topBody, flare, 0.25, -0.03);
   const top = plank(topAngle, toeZ, hands());
   const low = plank(lowAngle, toeZ, hands());
   const list = pressKeys(top, low, ['내려가기', '가슴이 바닥 가까이', '밀기']);
@@ -250,7 +263,8 @@ export function dip(id: string, kind: 'chest' | 'triceps' | 'machine', fault?: s
   const hand = (side: 1 | -1): ArmSpec => ({ ik: [side * half, barY + 0.02, 0.06], pole: chest ? [side * 0.55, 0.1, -1] : [side * 0.15, 0.1, -1], hand: [0, 0, 1] });
   const at = (y: number, z: number, pitch: number, extra: Partial<Pose3> = {}): Pose3 =>
     placeShoulders({ pelvis: [0, 1.2, 0], pitch, spine: 0, neck: chest ? -10 : 0, ...legs, armL: hand(1), armR: hand(-1), ...extra }, [0, y, z]);
-  const top = at(barY + 0.57, 0.05, chest ? 10 : 3);
+  // 위 — 팔을 거의 다 편다(팔꿈치 12°쯤). 손은 어깨보다 7cm 바깥이라 그만큼 빼고 잰다
+  const top = at(barY + 0.02 + Math.sqrt((ARM_REACH * 0.99) ** 2 - (half - 0.18) ** 2) - 0.012, 0.05, chest ? 10 : 3);
   const low = chest ? at(barY + 0.26, 0.13, 32) : at(barY + 0.3, 0.03, 6);
   const list = pressKeys(top, low, ['내려가기', '어깨가 팔꿈치 높이', '밀어 올리기']);
   if (fault === 'too-deep') swap(list, [1, 2], '너무 깊이', chest ? at(barY + 0.15, 0.16, 38) : at(barY + 0.17, 0.05, 10));
@@ -303,7 +317,7 @@ export function overheadPress(id: string, kind: OverheadKind, fault?: string): C
       bar: { at: b }, ...extra,
     });
     const rackBar = chestPoint(body, [0, 0.255, 0.15]);
-    const lock: Vec3 = [0, s[1] + Math.sqrt((ARM_REACH * 0.985) ** 2 - (grip - 0.18) ** 2), s[2] - 0.01];
+    const lock: Vec3 = [0, s[1] + Math.sqrt((ARM_REACH * 0.993) ** 2 - (grip - 0.18) ** 2), s[2] - 0.01];
     const passing: Vec3 = [0, s[1] + 0.25, s[2] + 0.06];
     list = [[0, '밀어 올리기', at(rackBar, false)], [0.18, '머리를 살짝 뒤로', at(passing, false, { neck: -10 })], [0.42, '머리 위 잠그기', at(lock, true)], [0.54, '천천히 내리기', at(lock, true)], [0.8, undefined, at(passing, false, { neck: -10 })], [1, undefined, at(rackBar, false)]];
     if (fault === 'arch') {
@@ -323,7 +337,9 @@ export function overheadPress(id: string, kind: OverheadKind, fault?: string): C
     });
     // 아래 — 팔뚝이 서도록 손은 어깨 바깥, 귀 높이 (팔꿈치를 다 접지 않는다)
     const low = hands(0.42, 0.17, 0.05, [1, -0.6, -0.1]);
-    const top = hands(0.15, 0.57, 0.0, [1, -0.2, 0]);
+    // 위 — 덤벨은 어깨 바로 위에서 거의 다 편 팔로(0.57이면 팔꿈치가 44° 굽은 채 멈춘다). 두 덤벨은 서로 부딪히지 않게 띄운다
+    const topWide = 0.17;
+    const top = hands(topWide, Math.sqrt((ARM_REACH * 0.993) ** 2 - (topWide - BODY.shoulder[0]) ** 2) - 0.01, 0.0, [1, -0.2, 0]);
     if (kind === 'arnold') {
       const front = hands(0.12, 0.08, 0.18, [0.2, -1, 0.5]);
       const open = hands(0.32, 0.22, 0.08, [1, -0.6, 0.1]);
@@ -409,10 +425,12 @@ function bentRow(id: string, kind: 'barbell' | 'pendlay' | 'dbBent', fault?: str
   });
   // 아래: 팔이 곧게 늘어진 자리 (펜들레이는 바닥). 위: 바가 갈비뼈 아래에 닿는 자리
   let low: Pose3;
-  if (pendlay) low = { ...hipHinge({ ...base, ...arms() }, { knee, back, barY: 0.225, grip, ahead: -0.02 }), neck: -36 };
+  // 시선은 바닥 1~2m 앞 — 목을 더 젖히면(−36) 고개를 쳐든 그림이 된다
+  if (pendlay) low = { ...hipHinge({ ...base, ...arms() }, { knee, back, barY: 0.225, grip, ahead: -0.02 }), neck: -20 };
   else {
     const s = shoulderMid(base);
-    const hang = Math.sqrt((ARM_REACH * 0.97) ** 2 - (grip - 0.18) ** 2);
+    // 팔이 곧게 늘어진 자리 — 0.97이면 팔꿈치가 29° 굽어 이미 당기기 시작한 그림이 된다
+    const hang = Math.sqrt((ARM_REACH * 0.99) ** 2 - (grip - 0.18) ** 2);
     low = { ...base, ...arms(), bar: { at: [0, s[1] - hang, s[2] - 0.02] } };
   }
   const touch = chestPoint(low, [0, pendlay ? 0.14 : 0.06, 0.2]);
@@ -765,7 +783,7 @@ export function rearDelt(id: string, kind: 'machine' | 'cable' | 'dumbbell', fau
   }
   // 덤벨 — 엉덩이를 접어 숙인 채 옆으로
   const legs = { legL: plant(0.15, 0, 10), legR: plant(-0.15, 0, 10) };
-  const body: Pose3 = { pelvis: pelvisFromLegs(legs.legL, 22, -0.25), pitch: 68, spine: 2, neck: -30, ...legs };
+  const body: Pose3 = { pelvis: pelvisFromLegs(legs.legL, 22, -0.25), pitch: 68, spine: 2, neck: -20, ...legs };
   const down = { ...body, armL: arm(84, 10, 16, 90), armR: arm(84, 10, 16, 90) };
   const up = { ...body, armL: arm(84, 82, 20, 90), armR: arm(84, 82, 20, 90) };
   const list = liftKeys(down, up, ['옆으로 벌리기', '어깨 높이', '천천히 내리기']);
@@ -1020,7 +1038,7 @@ export function triceps(id: string, kind: TricepsKind, fault?: string): Clip {
     }
     case 'kickback': {
       const legs = { legL: plant(0.15, 0.12, 10), legR: plant(-0.15, -0.1, 10) };
-      const body: Pose3 = { pelvis: pelvisFromLegs(legs.legL, 26, -0.18), pitch: 66, spine: 2, neck: -28, ...legs };
+      const body: Pose3 = { pelvis: pelvisFromLegs(legs.legL, 26, -0.18), pitch: 66, spine: 2, neck: -20, ...legs };
       // 왼손은 왼 무릎 위에
       const knee = solvePose(body).bones.thighL.b;
       const left: ArmSpec = { ik: [knee[0], knee[1] + 0.07, knee[2] - 0.02], pole: [1, 0.3, -0.4], point: [0, -0.2, 1] };

@@ -199,7 +199,7 @@ function dumbbellSumoSquat(id: string, fault?: string): Clip {
     const s = shoulderMid(base);
     // 팔은 살짝 앞으로 — 그대로 내리면 덤벨 위 원판이 골반에 묻힌다
     const ahead = 0.15;
-    const handY = s[1] - Math.sqrt((ARM_REACH * 0.975) ** 2 - 0.135 ** 2 - ahead ** 2);
+    const handY = s[1] - Math.sqrt((ARM_REACH * 0.99) ** 2 - 0.135 ** 2 - ahead ** 2);
     const z = s[2] + ahead;
     const arm = (side: 1 | -1): ArmSpec => ({ ik: [side * 0.045, handY, z], in: 'world', pole: [side, 0, -0.4], hand: [0, 0, 1] });
     return { ...base, armL: arm(1), armR: arm(-1), bar: { at: [0, handY - 0.065, z], dir: [0, 1, 0] } };
@@ -277,7 +277,7 @@ function smithShoulderPress(id: string, fault?: string): Clip {
   const grip = 0.27;
   // 바는 레일을 따라 곧게 — 얼굴 바로 앞으로 지나 턱 높이까지
   const z = s[2] + 0.15;
-  const lockY = s[1] + Math.sqrt((ARM_REACH * 0.975) ** 2 - (grip - 0.18) ** 2 - 0.15 ** 2);
+  const lockY = s[1] + Math.sqrt((ARM_REACH * 0.993) ** 2 - (grip - 0.18) ** 2 - 0.15 ** 2);
   const at = (y: number, extra: Partial<Pose3> = {}, high = false): Pose3 => ({
     ...body,
     armL: { bar: grip, pole: high ? [1, -0.3, 0] : [0.5, -1, 0.3] },

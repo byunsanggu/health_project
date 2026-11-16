@@ -522,9 +522,10 @@ export function hinge(id: string, kind: HingeKind, fault?: string): Clip {
 
   // 아래 — RDL은 무릎 아래까지, 스티프는 더 깊게, 스모 · 트랩바는 바닥에서
   const bottom: Record<string, { knee: number; back: number; barY: number; neck: number; ahead: number }> = {
-    rdl: { knee: 22, back: -0.3, barY: 0.42, neck: -26, ahead: 0.04 },
-    dbRdl: { knee: 22, back: -0.3, barY: 0.42, neck: -26, ahead: 0.04 },
-    stiff: { knee: 8, back: -0.33, barY: 0.34, neck: -30, ahead: 0.04 },
+    // 목은 등과 한 줄에 가깝게, 시선은 바닥 앞쪽 (−26 · −30이면 고개를 쳐든 그림)
+    rdl: { knee: 22, back: -0.3, barY: 0.42, neck: -18, ahead: 0.04 },
+    dbRdl: { knee: 22, back: -0.3, barY: 0.42, neck: -18, ahead: 0.04 },
+    stiff: { knee: 8, back: -0.33, barY: 0.34, neck: -20, ahead: 0.04 },
     sumo: { knee: 96, back: -0.15, barY: 0.225, neck: -14, ahead: 0.03 },
     trap: { knee: 82, back: -0.17, barY: 0.27, neck: -16, ahead: -0.01 },
   };
