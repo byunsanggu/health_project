@@ -144,7 +144,7 @@ export function press(id: string, opts: PressOpts, fault?: string): Clip {
 /** 누워 미는 동작의 맨 위 바 · 손 높이 — 덤벨이면 손이 어깨 바로 위(wide)라 바보다 조금 더 높이 뻗는다 */
 function dumbbellTop(s: Vec3, wide: number, reachUp: number, dumbbell: boolean): number {
   if (!dumbbell) return s[1] + reachUp;
-  return s[1] + Math.sqrt((ARM_REACH * 0.993) ** 2 - (wide - BODY.shoulder[0]) ** 2) - 0.01;
+  return s[1] + Math.sqrt((ARM_REACH * 0.993) ** 2 - (wide - BODY.shoulder[0]) ** 2);
 }
 
 function chestPole(body: Pose3, local: Vec3): Vec3 {
@@ -264,7 +264,7 @@ export function dip(id: string, kind: 'chest' | 'triceps' | 'machine', fault?: s
   const at = (y: number, z: number, pitch: number, extra: Partial<Pose3> = {}): Pose3 =>
     placeShoulders({ pelvis: [0, 1.2, 0], pitch, spine: 0, neck: chest ? -10 : 0, ...legs, armL: hand(1), armR: hand(-1), ...extra }, [0, y, z]);
   // 위 — 팔을 거의 다 편다(팔꿈치 12°쯤). 손은 어깨보다 7cm 바깥이라 그만큼 빼고 잰다
-  const top = at(barY + 0.02 + Math.sqrt((ARM_REACH * 0.99) ** 2 - (half - 0.18) ** 2) - 0.012, 0.05, chest ? 10 : 3);
+  const top = at(barY + 0.02 + Math.sqrt((ARM_REACH * 0.993) ** 2 - (half - 0.18) ** 2), 0.05, chest ? 10 : 3);
   const low = chest ? at(barY + 0.26, 0.13, 32) : at(barY + 0.3, 0.03, 6);
   const list = pressKeys(top, low, ['내려가기', '어깨가 팔꿈치 높이', '밀어 올리기']);
   if (fault === 'too-deep') swap(list, [1, 2], '너무 깊이', chest ? at(barY + 0.15, 0.16, 38) : at(barY + 0.17, 0.05, 10));
@@ -339,7 +339,7 @@ export function overheadPress(id: string, kind: OverheadKind, fault?: string): C
     const low = hands(0.42, 0.17, 0.05, [1, -0.6, -0.1]);
     // 위 — 덤벨은 어깨 바로 위에서 거의 다 편 팔로(0.57이면 팔꿈치가 44° 굽은 채 멈춘다). 두 덤벨은 서로 부딪히지 않게 띄운다
     const topWide = 0.17;
-    const top = hands(topWide, Math.sqrt((ARM_REACH * 0.993) ** 2 - (topWide - BODY.shoulder[0]) ** 2) - 0.01, 0.0, [1, -0.2, 0]);
+    const top = hands(topWide, Math.sqrt((ARM_REACH * 0.993) ** 2 - (topWide - BODY.shoulder[0]) ** 2), 0.0, [1, -0.2, 0]);
     if (kind === 'arnold') {
       const front = hands(0.12, 0.08, 0.18, [0.2, -1, 0.5]);
       const open = hands(0.32, 0.22, 0.08, [1, -0.6, 0.1]);
@@ -557,7 +557,8 @@ function cableRow(id: string, fault?: string): Clip {
     armL: { ik: [0.055, up, reach], in: 'chest', pole, hand: [0, 1, 0] },
     armR: { ik: [-0.055, up, reach], in: 'chest', pole: [-pole[0], pole[1], pole[2]], hand: [0, 1, 0] },
   });
-  const out = hands(body(16), 0.56, 0.16);
+  // 시작 — 팔을 거의 다 편 채 손잡이를 앞에 (0.56이면 팔꿈치가 30° 굽어 이미 당기는 중으로 보인다)
+  const out = hands(body(16), 0.575, 0.16);
   // 끝 자세 — 손잡이는 배꼽 앞(가슴 틀에서 24cm 앞), 팔꿈치는 옆구리 뒤로. 전에는 12cm라 손이 몸통에 박혔다
   const back = hands(body(-4), 0.24, 0.04, [0.6, 0, -1]);
   const list = liftKeys(out, back, ['배꼽 쪽으로 당기기', '날개뼈 모으기', '천천히 펴기']);

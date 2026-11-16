@@ -120,7 +120,8 @@ function bandRow(id: string, fault?: string): Clip {
     armL: { ik: [0.09, up, reach], in: 'chest', pole, hand: [0, 1, 0] },
     armR: { ik: [-0.09, up, reach], in: 'chest', pole: [-pole[0], pole[1], pole[2]], hand: [0, 1, 0] },
   });
-  const out = hands(body(10), 0.56, 0.12);
+  // 시작 — 팔을 거의 다 편 채 (시티드 케이블 로우와 같은 이유로 0.575)
+  const out = hands(body(10), 0.575, 0.12);
   // 끝 자세 — 손은 배꼽 앞, 팔꿈치는 옆구리 뒤로 (시티드 케이블 로우와 같은 손 자리)
   const back = hands(body(-4), 0.24, 0.04, [0.6, 0, -1]);
   const list: KeyList = [[0, '팔꿈치를 뒤로 당기기', out], [0.42, '날개뼈 모으기', back], [0.54, '천천히 펴기', back], [1, undefined, out]];

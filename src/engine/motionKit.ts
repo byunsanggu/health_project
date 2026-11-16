@@ -575,7 +575,8 @@ export function plank(angle: number, toeZ: number, extra: Partial<Pose3> = {}, w
   const legL = foot(width);
   const legR = foot(-width);
   const pelvis: Vec3 = [0, legL.ankle![1] + Math.sin(a) * 0.846, legL.ankle![2] + Math.cos(a) * 0.846];
-  return { pelvis, pitch: 90 - angle, spine: 0, neck: -18, legL, legR, ...extra };
+  // 목은 등과 거의 한 줄, 시선은 손보다 조금 앞 바닥 (−18이면 고개를 쳐들어 앞을 보는 그림)
+  return { pelvis, pitch: 90 - angle, spine: 0, neck: -8, legL, legR, ...extra };
 }
 
 /** 바닥을 짚은 손 — 손목이 어깨 바로 밑, 손가락은 앞으로 */
@@ -641,12 +642,15 @@ export function hipHinge(base: Pose3, opts: { knee: number; back: number; barY: 
   const grip = opts.grip ?? 0.25;
   const ahead = opts.ahead ?? 0.04;
   const lateral = Math.abs(grip - BODY.shoulder[0]);
-  // 다 편 팔은 0.993 — 팔꿈치가 12°쯤 살짝 굽은 "부드럽게 편" 모양. 0.975면 26°라 덜 편(반복을 덜 한) 팔로 보인다
-  const hang = Math.sqrt(Math.max(0.04, (ARM_REACH * 0.993) ** 2 - lateral * lateral - ahead * ahead));
+  // 곧게 늘어진 팔 — 0.982면 팔꿈치가 20°쯤 살짝 풀린 모양. 0.975(26°)면 팔로 바를 당겨 든 그림이 되고,
+  // 더 펴면(0.99) 키 사이를 지나는 동안 손이 바에 못 미친다
+  const hang = Math.sqrt(Math.max(0.04, (ARM_REACH * 0.982) ** 2 - lateral * lateral - ahead * ahead));
   const at = (pitch: number) => shoulderMid({ ...base, pelvis, pitch, spine: opts.spine ?? base.spine ?? 0 });
   const pitch = solveFor((p) => at(p)[1], -20, 135, opts.barY + hang);
   const s = at(pitch);
-  return { ...base, pelvis, pitch, spine: opts.spine ?? base.spine ?? 0, bar: { at: [0, opts.barY, s[2] - ahead] } };
+  // 다 서도 어깨가 barY + hang까지 못 오르면(잠근 자세) 바를 그만큼 내린다 — 그대로 두면 팔꿈치를 굽혀 바를 들고 선 그림이 된다
+  const barY = Math.min(opts.barY, s[1] - hang);
+  return { ...base, pelvis, pitch, spine: opts.spine ?? base.spine ?? 0, bar: { at: [0, barY, s[2] - ahead] } };
 }
 
 /** 풀린 자세의 가슴 틀 안 점 → 세계 좌표 (바가 가슴에 닿는 곳 등) */

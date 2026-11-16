@@ -221,6 +221,7 @@
     mesh.matrixWorldNeedsUpdate = true;
   }
 
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
   function sub3(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
   function add3(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
   function mul3(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
@@ -355,8 +356,13 @@
       wrap(parts['forearm' + s], bones['forearm' + s], 1, 0.92, 0);
       ball(parts['shoulder' + s], bones['upperArm' + s].a, 0.052);
       ball(parts['elbow' + s], bones['forearm' + s].a, 0.037);
-      var hand = boneBasis(bones['hand' + s]);
-      place(parts['hand' + s], add3(bones['hand' + s].a, mul3(hand.y, 0.055)), hand.x, hand.y, 0.03, 0.1, 0.082);
+      // 손 — 손잡이를 쥔 주먹: 손가락 마디 폭(8cm)이 손잡이를 따라 놓이고, 손잡이는 주먹 한가운데를 지난다.
+      // 바닥을 짚은 손(손바닥이 아래, 바닥 가까이)은 납작하게 편다
+      var handBone = bones['hand' + s];
+      var hand = boneBasis(handBone);
+      var flat = clamp01((0.16 - handBone.a[1]) / 0.06) * clamp01((-hand.z[1] - 0.6) / 0.3);
+      place(parts['hand' + s], add3(handBone.a, mul3(hand.y, 0.055 - 0.004 * flat)), hand.x, hand.y,
+        0.08 + 0.006 * flat, 0.092 + 0.014 * flat, 0.05 - 0.02 * flat);
       wrap(parts['thigh' + s], bones['thigh' + s], 1, 1, 0);
       // 반바지 — 허벅지 가운데쯤까지(속옷처럼 보이지 않게). 조금 헐렁하게
       var thigh = boneBasis(bones['thigh' + s]);
