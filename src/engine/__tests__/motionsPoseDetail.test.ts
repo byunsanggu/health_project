@@ -36,7 +36,7 @@ describe('자세 디테일 — 다 편 팔', () => {
     ['barbell-overhead-press', 0.45], ['seated-dumbbell-press', 0.45], ['standing-dumbbell-press', 0.45], ['arnold-press', 0.45], ['smith-shoulder-press', 0.45],
     ['chest-dip', 0], ['triceps-dip', 0],
     ['machine-chest-press', 0.45], ['machine-incline-chest-press', 0.45],
-    ['barbell-row', 0], ['dumbbell-bent-over-row', 0], ['pendlay-row', 0], ['seated-cable-row', 0], ['band-row', 0],
+    ['barbell-row', 0], ['dumbbell-bent-over-row', 0], ['seated-cable-row', 0], ['band-row', 0],
   ];
   for (const [id, t] of locked) {
     it(`${id} t=${t}: 팔꿈치는 살짝만 굽는다 (4~18°)`, () => {
@@ -52,6 +52,10 @@ describe('자세 디테일 — 다 편 팔', () => {
       }
     });
   }
+
+  it('펜들레이 로우 — 바닥의 바를 잡은 시작 자세는 팔이 곧게 늘어진다 (24° 밑)', () => {
+    for (const bend of elbowBend('pendlay-row', 0)) assert.ok(bend <= 24, `팔꿈치 ${bend.toFixed(0)}°`);
+  });
 });
 
 describe('자세 디테일 — 푸시업 · 고개', () => {

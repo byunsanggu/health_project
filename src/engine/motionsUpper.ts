@@ -176,7 +176,7 @@ export function machinePress(id: string, upward: boolean, fault?: string): Clip 
   });
   const close = { ...body, ...hands(0.2, 0.2) };
   // 끝 — 팔꿈치가 살짝 굽은 데까지 밀어 낸다 (0.5 · 0.56이면 40~57° 굽은 채 돌아온다)
-  const far = { ...body, ...hands(upward ? 0.555 : 0.59, upward ? 0.44 : 0.2) };
+  const far = { ...body, ...hands(upward ? 0.563 : 0.59, upward ? 0.44 : 0.2) };
   const list = liftKeys(close, far, ['밀기', '끝까지', '천천히 돌아오기']);
   if (fault === 'shoulders-roll') {
     swap(list, [1, 2], '어깨가 앞으로 말림', { ...far, spine: 18, scap: [0.4, 1], ...hands(upward ? 0.5 : 0.58, upward ? 0.36 : 0.16) });

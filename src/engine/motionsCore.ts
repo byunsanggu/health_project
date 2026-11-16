@@ -178,7 +178,8 @@ function frontPlank(id: string, fault?: string): Clip {
   };
   const base = plank(angle, toeZ);
   const arms = forearms(base);
-  const hold = (extra: Partial<Pose3> = {}): Pose3 => ({ ...base, ...arms, neck: -24, ...extra });
+  // 목은 등과 한 줄 — 시선은 팔꿈치 조금 앞 바닥
+  const hold = (extra: Partial<Pose3> = {}): Pose3 => ({ ...base, ...arms, neck: -10, ...extra });
   const breathe = { pelvis: [base.pelvis[0], base.pelvis[1] + 0.006, base.pelvis[2]] as Vec3 };
   const list: KeyList = [[0, '버티기', hold()], [0.5, '숨 쉬며 버티기', hold(breathe)], [1, undefined, hold()]];
   if (fault === 'hips-sag') {

@@ -356,7 +356,7 @@ function kneePushUp(id: string, fault?: string): Clip {
     const a = (angle * Math.PI) / 180;
     return {
       pelvis: [0, KNEE_Y + Math.sin(a) * (BODY.thigh + 0.02), kneeZ + Math.cos(a) * (BODY.thigh + 0.02)],
-      pitch: 90 - angle, spine: 0, neck: -16, ...kneelLegs(kneeZ), ...extra,
+      pitch: 90 - angle, spine: 0, neck: -8, ...kneelLegs(kneeZ), ...extra,
     };
   };
   const shoulderHeight = (angle: number) => shoulderMid(body(angle))[1];
@@ -364,8 +364,9 @@ function kneePushUp(id: string, fault?: string): Clip {
   const lowAngle = solveFor(shoulderHeight, 2, 50, 0.19);
   const s = shoulderMid(body(topAngle));
   const hands = (flare = false): { armL: ArmSpec; armR: ArmSpec } => ({
-    armL: floorHand([0.25, 0, s[2] + 0.06], 1, flare ? [1, 0.25, 0] : undefined),
-    armR: floorHand([-0.25, 0, s[2] + 0.06], -1, flare ? [-1, 0.25, 0] : undefined),
+    // 손은 어깨보다 조금 뒤 — 바닥에서 손목이 팔꿈치 밑에 오게 (푸시업과 같은 이유)
+    armL: floorHand([0.25, 0, s[2] + 0.01], 1, flare ? [1, 0.25, 0] : undefined),
+    armR: floorHand([-0.25, 0, s[2] + 0.01], -1, flare ? [-1, 0.25, 0] : undefined),
   });
   const top = body(topAngle, hands());
   const low = body(lowAngle, hands());
