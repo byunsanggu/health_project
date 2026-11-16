@@ -10,6 +10,7 @@ export default async function ({ page, url, shot }) {
 
   // 오늘만 20분 — 시작 전 한 장에서 고른다. 짧은 날이 되고 목록 위에 한 줄로 남는다
   await page.locator('.start-cta').click();
+  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
   await page.locator('dialog .segmented button', { hasText: '20분' }).click();
   await page.locator('dialog .modal-close').click();
   check((await page.locator('.today-adjust').textContent()).includes('20분'), '오늘 시간이 안 보입니다');

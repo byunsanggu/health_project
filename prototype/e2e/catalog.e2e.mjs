@@ -104,6 +104,7 @@ export default async function ({ page, url, shot }) {
   // 시작 전 한 장 — PT를 고르면 "말투 바꾸기"가 있고, 거기서 고른 말투로 돌아온다
   await tab(page, '오늘');
   await page.locator('.start-cta').click();
+  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
   check(await page.locator('dialog .coach-style-link').count() === 0, '혼자인데 말투 바꾸기가 보입니다');
   await page.locator('dialog .segmented button', { hasText: 'PT 코치' }).click();
   await page.locator('dialog .coach-style-link').click();

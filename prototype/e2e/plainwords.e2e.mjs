@@ -35,6 +35,7 @@ export default async function ({ page, url, shot }) {
 
   // 짧은 날 — "원래대로"는 한 줄
   await page.locator('.start-cta').click();
+  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
   await page.locator('dialog .segmented button', { hasText: /^20분$/ }).click();
   await page.locator('dialog .modal-close').click();
   await page.waitForTimeout(200);

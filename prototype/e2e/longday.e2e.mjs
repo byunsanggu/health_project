@@ -13,6 +13,7 @@ export default async function ({ page, url, shot }) {
   // 90분 — 평소보다 넉넉하면 큰 복합 운동부터 세트를 더한다
   const before = await sets(page);
   await page.locator('.start-cta').click();
+  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
   check(await page.locator('dialog .segmented button[aria-pressed="true"]', { hasText: '좋아요' }).count() === 1, '몸 기본이 좋아요가 아닙니다');
   await page.locator('dialog .segmented button', { hasText: '90분' }).click();
   const said = await page.locator('dialog').textContent();

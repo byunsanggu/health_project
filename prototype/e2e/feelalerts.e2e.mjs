@@ -43,6 +43,7 @@ export default async function ({ page, context, url, shot }) {
   check(await page.locator('.today-adjust').count() === 0, '바꾼 게 없는데 오늘 조정 줄이 있습니다');
   const before = await totals(page);
   await page.locator('.start-cta').click();
+  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
   // 고르지 않으면 좋아요 — 계획대로
   check(await page.locator('dialog .segmented button[aria-pressed="true"]', { hasText: '좋아요' }).count() === 1, '처음부터 좋아요가 아닙니다');
   await page.locator('dialog .segmented button', { hasText: '별로예요' }).click();

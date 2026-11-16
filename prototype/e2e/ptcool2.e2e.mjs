@@ -7,6 +7,7 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
   await page.locator('.start-cta').click();
+  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
   await page.locator('dialog .segmented button', { hasText: '20분' }).click();
   await page.locator('dialog .modal-close').click();
   await choosePt(page);
