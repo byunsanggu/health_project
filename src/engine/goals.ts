@@ -32,7 +32,7 @@ export const GOAL_HINTS_KO: Record<TrainingGoal, string> = {
   strength: '드는 무게를 늘립니다',
   fatLoss: '근육은 지키면서 체지방을 줄입니다',
   conditioning: '근력 운동은 짧게 하고, 날마다 시간을 재는 숨찬 운동을 붙입니다',
-  general: '무리 없이 꾸준히 합니다',
+  general: '무리 없이 꾸준히 합니다. 하루 40분 안팎으로 짧게 짭니다',
 };
 
 export interface GoalPlan {
@@ -122,7 +122,7 @@ export function planGoals(input: readonly TrainingGoal[]): GoalPlan {
   }
 
   if (goals.length === 1 && has('general')) {
-    notes.push('무리 없는 범위에서 전신을 고르게 씁니다.');
+    notes.push('무리 없는 범위에서 전신을 고르게 씁니다. 종목과 세트를 줄여 하루 40분 안팎으로 짭니다.');
   }
 
   return {

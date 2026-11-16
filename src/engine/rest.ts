@@ -24,6 +24,11 @@ export interface RestInput {
   overrideSeconds?: number;
   /** 블록 유형의 휴식 배수(근력 ×1.5 · 고밀도 ×0.65 …). 직접 정한 값에는 안 곱한다 */
   multiplier?: number;
+  /**
+   * 목표에 근력이 있는가. 그러면 근력 과정이 아니어도(배수 없음) 무거운 바벨 큰 운동(6회 이하)은 3분을 쉰다 —
+   * 2분 30초로는 4~6회 세트의 다음 세트 횟수가 떨어진다. 다른 목표의 휴식은 그대로다.
+   */
+  strengthGoal?: boolean;
 }
 
 /**
@@ -80,6 +85,8 @@ export const REST_MAX_SECONDS = 90;
 export const HEAVY_COMPOUND_REST_SECONDS = 120;
 export const BIG_LIFT_REST_SECONDS = 150;
 export const MAX_DEFAULT_REST_SECONDS = 180;
+/** 근력 목표 — 무거운 바벨 큰 운동(6회 이하)의 휴식 */
+export const STRENGTH_HEAVY_REST_SECONDS = 180;
 /** 근력 블록 같은 늘리는 배수를 곱한 뒤의 상한 */
 export const STRENGTH_REST_CAP_SECONDS = 240;
 
@@ -285,8 +292,12 @@ export function restFor(input: RestInput): RestPrescription {
   if (notShorter && !isIsolation) {
     const light = reps > 12 || isUnloaded(exercise);
     const big = isBigLift(exercise);
-    const baseFloor = light && !big ? 90 : big ? BIG_LIFT_REST_SECONDS : HEAVY_COMPOUND_REST_SECONDS;
-    const floor = targetRir <= 1 ? baseFloor + 30 : baseFloor;
+    // 근력 목표의 무거운 바벨 세트 — 근력 과정(배수 ×1.5)은 이미 길어서 여기서 더 늘리지 않는다
+    const heavyStrength = Boolean(input.strengthGoal) && big && exercise.equipment === 'barbell' && reps <= 6 &&
+      !(input.multiplier && input.multiplier > 0 && input.multiplier !== 1);
+    const baseFloor = heavyStrength ? STRENGTH_HEAVY_REST_SECONDS
+      : light && !big ? 90 : big ? BIG_LIFT_REST_SECONDS : HEAVY_COMPOUND_REST_SECONDS;
+    const floor = targetRir <= 1 && !heavyStrength ? baseFloor + 30 : baseFloor;
     seconds = Math.min(Math.max(MAX_DEFAULT_REST_SECONDS, custom ? band.maxSeconds : 0), Math.max(seconds, floor));
     /*
      * "2분은 쉬어야"처럼 숫자를 말하는 건 그 숫자가 맞을 때만 — 줄이는 배수(고밀도)가 붙거나
@@ -299,7 +310,8 @@ export function restFor(input: RestInput): RestPrescription {
       : isUnloaded(exercise) ? '맨몸 · 밴드 운동이라 덜 지쳐서 조금 짧게 쉽니다'
       : light ? '가볍게 여러 번 하는 큰 운동이라 조금 짧게 쉽니다'
       : `여러 근육을 같이 쓰는 큰 운동이라 ${atLeast} 다음 세트도 같은 횟수가 나옵니다`;
-    if (targetRir <= 1) reason += ' · 힘을 거의 다 쓴 세트라 30초 더 쉽니다';
+    if (heavyStrength) reason = `무겁게 드는 큰 운동이라 ${atLeast} 다음 세트도 같은 횟수가 나옵니다`;
+    else if (targetRir <= 1) reason += ' · 힘을 거의 다 쓴 세트라 30초 더 쉽니다';
   }
   // 블록 유형 배수 — 근력 블록은 길게, 고밀도 블록은 짧게
   if (input.multiplier && input.multiplier > 0 && input.multiplier !== 1) {

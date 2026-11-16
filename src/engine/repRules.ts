@@ -82,10 +82,20 @@ export function applyRepRules(
        * 1~3회로 하면 무게보다 자세가 먼저 무너진다 — 보조 칸의 반복을 쓴다.
        */
       const lowRep = style === 'strength' || style === 'peak';
+      /*
+       * 근력 과정이어도 무거운 날 · 가벼운 날은 그대로 둔다. 같은 종목의 두 번째 날(6~8회)까지 3~5회로 덮으면
+       * 한 주에 같은 리프트를 두 번 최대 근처로 들게 된다 — 가벼운 날이 있어야 무거운 날이 회복된다.
+       */
+      if (style === 'strength' && role === 'primary' && isStrengthLift(exercise) && isLightDayRange(slot.repRange)) return slot;
       const pick = role === 'primary' && lowRep && !isStrengthLift(exercise) ? 'accessory' : role;
       return { ...slot, repRange: heavyPullRange(exercise, profile.repRanges[pick]) };
     }),
   };
+}
+
+/** 근력 목표 프로그램의 가벼운 날 칸(6~8회 — onboarding.ts styledRange). */
+export function isLightDayRange(range: RepRange): boolean {
+  return range.min === 6 && range.max === 8;
 }
 
 /* ── "바꿀까요?" ───────────────────────────────────── */

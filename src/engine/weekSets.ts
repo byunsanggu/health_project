@@ -3,6 +3,7 @@ import { aggregateVolume } from './volume.ts';
 import type { WeeklyPlan } from './mesocycle.ts';
 import type { SessionTemplate } from './session.ts';
 import { HEAVY_PULLS } from './exercises.ts';
+import { styleProfile, type TrainingStyle } from './styles.ts';
 import type { Exercise, LandmarksByMuscle, MuscleGroup, SessionLog, TrainingLevel } from './types.ts';
 
 /**
@@ -287,4 +288,42 @@ function better(a: readonly number[], b: readonly number[]): boolean {
     if (a[k] !== b[k]) return a[k]! > b[k]!;
   }
   return false;
+}
+
+/**
+ * 과정 방식의 세트 배수(styles.ts volumeMultiplier)를 템플릿 세트에 실제로 건다.
+ *
+ * 전에는 표에 숫자만 있고 아무도 읽지 않았다 — 근력 과정은 휴식이 1.5배로 길어지는데 세트는 그대로라
+ * 주 4회 하루가 90분을 넘겼다. 근력 과정은 "적은 세트를 무겁게, 오래 쉬며"여야 한다.
+ *
+ *   · 주 종목(primary)은 3세트 밑으로 내리지 않는다 — 무거운 세트가 과정의 뼈대다.
+ *   · 나머지는 2세트까지.
+ *   · 내 루틴(fixed)과 기본 과정(배수 1)은 그대로.
+ *
+ * 한 주를 나누는 planWeekSets에 이 결과를 넘기면 주마다 늘어나는 폭도 줄어든 세트에서 출발한다.
+ */
+export function styleSets(sets: number, style: TrainingStyle, role?: 'primary' | 'accessory' | 'isolation'): number {
+  const multiplier = styleProfile(style).volumeMultiplier;
+  if (multiplier === 1 || !Number.isFinite(sets)) return sets;
+  const floor = role === 'primary' ? 3 : 2;
+  const scaled = Math.round(sets * multiplier);
+  // 줄이는 배수는 원래보다 늘리지 않고, 늘리는 배수는 원래보다 줄이지 않는다
+  return multiplier < 1 ? Math.min(sets, Math.max(floor, scaled)) : Math.max(sets, scaled);
+}
+
+export function withStyleVolume<T extends SessionTemplate>(templates: readonly T[], style: TrainingStyle): T[] {
+  const multiplier = styleProfile(style).volumeMultiplier;
+  if (multiplier === 1) return [...templates];
+  return templates.map((template) => {
+    if (template.fixed) return template;
+    const slots = template.slots.map((slot) => ({ ...slot, sets: styleSets(slot.sets, style, slot.role) }));
+    const total = slots.reduce((sum, slot) => sum + slot.sets, 0);
+    return {
+      ...template,
+      slots,
+      setCap: template.setCap === undefined ? undefined
+        : multiplier < 1 ? Math.min(template.setCap, Math.max(total, Math.round(template.setCap * multiplier)))
+        : Math.round(template.setCap * multiplier),
+    };
+  });
 }

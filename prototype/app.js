@@ -254,6 +254,8 @@
         firstTipsHidden: state.firstTipsHidden,
         // 혼자 하는 마무리 스트레칭 — 오늘만(날짜가 붙어 있다)
         soloCool: state.soloCool,
+        // 오늘의 마무리 운동을 했는지 · 건너뛰었는지 — 오늘만(날짜가 붙어 있다)
+        finisher: state.finisher,
         mistakeFlags: state.mistakeFlags,
         askEffort: state.askEffort,
         diet: state.diet,
@@ -485,6 +487,7 @@
       state.gymLinkHidden = Boolean(settings.gymLinkHidden);
       state.firstTipsHidden = Boolean(settings.firstTipsHidden);
       state.soloCool = settings.soloCool || null;
+      state.finisher = settings.finisher || null;
       state.mistakeFlags = settings.mistakeFlags || {};
       /*
        * 예전 inputMode는 읽지 않는다. 그때는 남은 힘을 꼭 물었고(기본이 묻기),
@@ -1421,6 +1424,8 @@
       name: template.name,
       slots: template.slots.filter(function (slot) { return !excluded.has(slot.exerciseId); }),
       setCap: template.setCap,
+      // 마무리 운동이 붙는 날의 상한 — 빼면 종목 하나 뺐다고 근력 쪽이 도로 길어진다
+      growthCap: template.growthCap,
       fixed: template.fixed,
     };
   }
@@ -1592,7 +1597,8 @@
       rirCalibration: inputMode() === 'none' ? E.NO_CALIBRATION : undefined,
       lifter: state.lifter,
       // 세트 수는 한 주를 통째로 보고 나눈다 — 날마다 따로 정하면 주마다 흔들린다
-      week: { templates: state.program.templates, day: currentTemplateIndex() },
+      // 과정 방식의 세트 배수도 여기서 건다 — 근력 과정은 오래 쉬는 대신 세트가 적다
+      week: { templates: E.withStyleVolume(state.program.templates, state.style), day: currentTemplateIndex() },
       landmarks: state.landmarks,
     });
 
@@ -1651,6 +1657,7 @@
       var profile = E.styleProfile(state.style);
       var timeOptions = {
         restMultiplier: profile.restMultiplier,
+        strengthGoal: strengthGoalOn(),
         // 휴식을 2분으로 늘렸는데 "50분이면 6종목"이라고 하면 거짓말이 된다
         restBand: state.restBand || undefined,
         restOverrides: state.restOverrides,
@@ -2265,7 +2272,13 @@
       overrideSeconds: state.restOverrides[lift.exercise.id],
       // 블록 유형(근력 ×1.5 · 고밀도 ×0.65)을 실제 타이머에도 — 전에는 시간 계산에만 썼다
       multiplier: E.styleProfile(state.style).restMultiplier,
+      // 목표에 근력이 있으면 무거운 바벨 세트는 3분 — 근력 과정이 아닐 때도
+      strengthGoal: strengthGoalOn(),
     };
+  }
+
+  function strengthGoalOn() {
+    return Boolean(state.answers && (state.answers.goals || []).indexOf('strength') >= 0);
   }
 
   function startRest(lift, setIndex, override) {
@@ -4513,7 +4526,7 @@
      * 한 화면에 "1주차"가 두 번 뜬다 — 여기서는 날 이름과 오늘 분량만.
      */
     var estimate = E.estimateSessionTime(state.session, {
-      restMultiplier: E.styleProfile(state.style).restMultiplier,
+      restMultiplier: E.styleProfile(state.style).restMultiplier, strengthGoal: strengthGoalOn(),
       restBand: state.restBand || undefined,
       restOverrides: state.restOverrides,
       // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
@@ -5325,7 +5338,7 @@
         // 오늘 선 기계를 그대로 본다. 다음에도 같은 기계일 확률이 높다.
         machines: state.machinePick,
         lifter: state.lifter,
-        week: { templates: templates, day: nextIndex },
+        week: { templates: E.withStyleVolume(templates, state.style), day: nextIndex },
         landmarks: state.landmarks,
       });
     } catch (err) {
@@ -5681,7 +5694,7 @@
   /** short: 짧은 날 후보를 셀 때 — 그날은 몸 풀기가 2분이니 그 값으로 센다. */
   function shortFitOptions(short) {
     return {
-      restMultiplier: E.styleProfile(state.style).restMultiplier,
+      restMultiplier: E.styleProfile(state.style).restMultiplier, strengthGoal: strengthGoalOn(),
       restBand: state.restBand || undefined,
       restOverrides: state.restOverrides,
       // 시작 몸 풀기 — 종목 워밍업은 필요한 종목만 짧게 계산된다
@@ -6051,6 +6064,14 @@
           onclick: function () { unskipForToday(exercise.id); },
         });
       }))));
+    }
+
+    // 목표가 체력 기르기 · 체지방 감량이면 근력 운동 뒤에 붙는 것을 미리 보여 준다
+    var finisherPreview = finisherCard('preview');
+    if (finisherPreview) screen.appendChild(finisherPreview);
+    // 이번 주 운동을 다 한 날 — 쉬는 날에 할 것을 알려 준다
+    if (weekSessionsDone() >= trainingDays().length) {
+      conditioningPlanNotes(false).forEach(function (node) { screen.appendChild(node); });
     }
 
     renderMaxTest();
@@ -7746,7 +7767,7 @@
        * 다 했으면 마무리 스트레칭으로 이어 간다. 오늘 정리(몇 세트 · 수고했다는 말)는 스트레칭이
        * 끝날 때 한 번만 한다 — 스트레칭 앞에서 작별 인사를 하고 4분 뒤에 또 하면 두 번 듣는다.
        */
-      startCooldown(Math.ceil(spokenSeconds(lines.join(' '))) * 1000 + 1500);
+      afterLastLift(Math.ceil(spokenSeconds(lines.join(' '))) * 1000 + 1500);
       return;
     }
     lines = lines.concat(ptBetweenLines(liftIndex, remaining === 0));
@@ -7820,7 +7841,7 @@
     try {
       // 화면 위 "약 45분"과 같은 계산이어야 한다 — 말과 화면 숫자가 다르면 둘 다 안 믿는다.
       estimate = E.estimateSessionTime(state.session, {
-        restMultiplier: E.styleProfile(state.style).restMultiplier,
+        restMultiplier: E.styleProfile(state.style).restMultiplier, strengthGoal: strengthGoalOn(),
         restBand: state.restBand || undefined,
         restOverrides: state.restOverrides,
         // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
@@ -8743,7 +8764,7 @@
        * 종목이 조용히 사라지면 앱이 마음대로 바꾼 것처럼 보인다.
        */
       var estimate = E.estimateSessionTime(state.session, {
-        restMultiplier: E.styleProfile(state.style).restMultiplier,
+        restMultiplier: E.styleProfile(state.style).restMultiplier, strengthGoal: strengthGoalOn(),
         restBand: state.restBand || undefined,
         restOverrides: state.restOverrides,
         // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
@@ -9227,7 +9248,12 @@
      * 읽힌다. 끝났으면 이게 제일 먼저 와야 한다.
      */
     if (finished) {
-      renderFinish(false);
+      // 마무리 운동이 붙는 목표면 그게 먼저다 — 하거나 건너뛰면 완료 버튼이 맨 위로 올라온다
+      var finisherNode = finisherCard('active');
+      var finisherLeft = finisherPending();
+      if (finisherNode && finisherLeft) screen.appendChild(finisherNode);
+      renderFinish(finisherLeft);
+      if (finisherNode && !finisherLeft) screen.appendChild(finisherNode);
       // 혼자 한 날 — 마무리 스트레칭을 고를 수 있게(PT는 코치가 이끈다)
       var coolOffer = soloCoolOffer();
       if (coolOffer) screen.appendChild(coolOffer);
@@ -9668,7 +9694,7 @@
     if (!minutes) {
       try {
         var estimate = E.estimateSessionTime(state.session, {
-          restMultiplier: E.styleProfile(state.style).restMultiplier,
+          restMultiplier: E.styleProfile(state.style).restMultiplier, strengthGoal: strengthGoalOn(),
           restBand: state.restBand || undefined,
           restOverrides: state.restOverrides,
           // 시작 몸 풀기 5분 — 종목 워밍업은 필요한 종목만 짧게 계산된다
@@ -10349,7 +10375,7 @@
     if (allSetsDone()) {
       if (state.rest) { RestSound.stop(); stopRest(true); }
       // 오늘 정리는 스트레칭이 끝날 때 한다(endCooldown)
-      startCooldown(1500);
+      afterLastLift(1500);
     }
   }
 
@@ -11427,7 +11453,7 @@
     // 오늘 남은 세트가 없다 — 마무리 스트레칭으로
     if (ptOn() && allSetsDone()) {
       state.ptSets = null;
-      startCooldown(4000);
+      afterLastLift(4000);
     }
     render();
   }
@@ -12317,6 +12343,8 @@
   function renderToday() {
     // PT 마무리 스트레칭 중에는 그 화면 하나만 — 지금 할 일은 그것이다.
     if (ptOn() && state.started && state.ptRun && state.ptRun.cool) return renderCooldownScreen();
+    // PT — 마지막 종목 뒤, 스트레칭 앞의 마무리 운동
+    if (ptOn() && state.started && state.ptRun && state.ptRun.finisher && finisherPending()) return renderFinisherScreen();
     // 혼자 하는 마무리 스트레칭도 그 화면 하나만 — 하루를 닫기 전이든 뒤든
     if (!ptOn() && soloCoolActive()) return renderSoloCoolStage();
     if (state.sessionClosed) renderClosedToday();
@@ -12341,6 +12369,8 @@
      */
     var preview = previewCard();
     if (preview) screen.appendChild(preview);
+    // 다음 운동까지 쉬는 날에 할 것(걷기) — 목표가 체력 기르기 · 체지방 감량일 때
+    conditioningPlanNotes(false).forEach(function (node) { screen.appendChild(node); });
 
     // 하루를 닫은 뒤에도 마무리 스트레칭은 고를 수 있다 — 혼자 한 날, 아직 안 했으면
     var closedCool = soloCoolOffer();
@@ -12442,7 +12472,9 @@
       if (state.ptRun.cool) state.ptRun.cool.timers.forEach(function (id) { clearTimeout(id); });
       state.ptRun.warm = null;
       state.ptRun.cool = null;
+      state.ptRun.finisher = false;
     }
+    stopFinisherClock();
     /*
      * 휴식 타이머도 같이 멈춘다. "오늘 운동을 마쳤습니다" 밑에서
      * 휴식 0:44가 계속 돌면 끝난 게 아닌 것처럼 보이고, 화면을 끈 뒤에도
@@ -12631,7 +12663,9 @@
    * EMOM은 끝까지 했는가. 한 가지 칸을 모든 형식에 쓰면 기록이 못 쓰게
    * 된다.
    */
-  function openWodScore(workout) {
+  function openWodScore(workout, forFinisher) {
+    // 오늘의 마무리 운동을 기록하는 중인가 — 저장하면 마무리 운동을 한 것으로 친다
+    state.finisherScoring = Boolean(forFinisher);
     var kind = E.scoreKindOf(workout.format);
     var draft = { seconds: workout.durationMinutes * 60, rounds: 3, extraReps: 0,
       completed: true, stoppedAtMinute: Math.max(1, workout.durationMinutes - 2) };
@@ -12738,7 +12772,248 @@
       el('button', { type: 'button', class: 'finish', text: '닫기',
         onclick: function () { modal.close(); render(); } }),
     ]);
+    if (state.finisherScoring) {
+      state.finisherScoring = false;
+      setFinisher('done');
+      return;
+    }
     render();
+  }
+
+  /* ── 오늘의 마무리 운동 ─────────────────────────────
+     목표가 체력 기르기(크로스핏식)면 시간을 재는 마무리 운동을, 체지방 감량이면 숨이 덜 찬 유산소를
+     근력 운동 뒤에 붙인다. 무엇을 몇 분 하는지는 엔진이 주차 · 덜어내는 주에 맞춰 매번 다시 정한다. */
+
+  /** 이번 주의 마무리 운동 계획. 붙는 것이 없으면(목표가 다르거나 내 루틴이면) null. */
+  function weekConditioning() {
+    if (!state.program || !state.answers || !state.lifter || state.customRoutine) return null;
+    var gym = currentGymEntry();
+    var plan = E.weeklyConditioningPlan({
+      goals: state.answers.goals || [],
+      level: state.lifter.level,
+      templates: state.program.templates.map(withExclusions),
+      equipmentIds: gym ? gym.equipmentIds : undefined,
+      weekInBlock: state.plan ? state.plan.weekInBlock : 1,
+      deload: Boolean(state.plan && state.plan.phase === 'deload'),
+    });
+    return plan.kind === 'none' ? null : plan;
+  }
+
+  /** 오늘 할 마무리 운동 — 기구 · 통증 · 단계에 맞춰 실제 동작까지. 같은 날에는 같은 구성. */
+  function finisherToday() {
+    var plan = weekConditioning();
+    if (!plan) return null;
+    var spec = plan.days[currentTemplateIndex()];
+    if (!spec) return null;
+    var gym = currentGymEntry();
+    var pain = activePain();
+    var key = [state.todayDate, spec.dayIndex, spec.title, gym ? gym.id : '', pain.length, state.lifter.level].join('|');
+    if (!state.finisherBuilt || state.finisherBuilt.key !== key) {
+      state.finisherBuilt = {
+        key: key,
+        value: E.buildFinisher(spec, {
+          level: state.lifter.level,
+          equipmentIds: gym ? gym.equipmentIds : undefined,
+          home: isHomeGym(gym),
+          pain: pain,
+          bodyweightKg: state.lifter.bodyweightKg,
+          todayMuscles: todayMuscleList(),
+          seed: dateSeed(state.todayDate || todayISO()),
+          allowBarbell: false,
+        }),
+      };
+    }
+    return state.finisherBuilt.value;
+  }
+
+  /** 오늘 마무리 운동을 했는가('done') · 건너뛰었는가('skipped') · 아직인가(null). */
+  function finisherStatus() {
+    return state.finisher && state.finisher.date === state.todayDate ? state.finisher.status : null;
+  }
+
+  function finisherPending() {
+    return !finisherStatus() && Boolean(finisherToday());
+  }
+
+  function stopFinisherClock() {
+    if (state.finisherTick) clearInterval(state.finisherTick);
+    state.finisherTick = null;
+    state.finisherClock = null;
+  }
+
+  function clockDigits(seconds) {
+    var s = Math.max(0, Math.round(seconds));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  /** 시계 글자 — 빨리 끝내기는 지난 시간을, 나머지는 남은 시간을 보여 준다. */
+  function finisherClockText(finisher) {
+    var clock = state.finisherClock;
+    var minutes = finisher.spec.minutes;
+    if (!clock) return clockDigits(minutes * 60);
+    var passed = (Date.now() - clock.startedAt) / 1000;
+    if (finisher.kind === 'wod' && finisher.spec.format === 'forTime') return '지난 시간 ' + clockDigits(passed);
+    var left = minutes * 60 - passed;
+    return left > 0 ? '남은 시간 ' + clockDigits(left) : '시간이 다 됐습니다';
+  }
+
+  function startFinisherClock(finisher) {
+    stopFinisherClock();
+    state.finisherClock = { startedAt: Date.now() };
+    state.finisherTick = setInterval(function () {
+      var node = document.getElementById('finisher-clock');
+      if (node) node.textContent = finisherClockText(finisher);
+    }, 500);
+    render();
+  }
+
+  function setFinisher(status) {
+    var finisher = finisherToday();
+    stopFinisherClock();
+    state.finisher = { date: state.todayDate, status: status };
+    if (finisher) {
+      pushLog('마무리 운동', '<b>' + finisher.spec.title + '</b> — ' +
+        (status === 'done' ? '마쳤습니다.' : '오늘은 건너뛰었습니다.'));
+    }
+    persist();
+    // PT가 이끄는 날은 마무리 운동 다음이 스트레칭이다
+    if (ptOn() && state.started && state.ptRun && state.ptRun.finisher) {
+      state.ptRun.finisher = false;
+      state.ptRun.paused = false;
+      state.ptRun.pausedWhy = null;
+      startCooldown(1500);
+      return;
+    }
+    render();
+  }
+
+  /** PT — 마지막 세트가 끝났다. 마무리 운동이 남았으면 그것부터, 아니면 스트레칭으로. */
+  function afterLastLift(delayMs) {
+    if (finisherPending()) {
+      var pt = ensurePtRun();
+      if (pt.cool || pt.cooled) return;
+      clearLastRest();
+      pt.finisher = true;
+      render();
+      return;
+    }
+    startCooldown(delayMs);
+  }
+
+  /** 유산소로 하는 마무리 — 기존 유산소 기록에 그대로 남긴다. */
+  function logFinisherCardio(finisher) {
+    var cardio = finisher.cardio;
+    state.cardioToday = state.cardioToday.concat([{
+      exerciseId: cardio.exercise.id,
+      minutes: cardio.minutes,
+      zone: cardio.zone.id,
+      before: false,
+    }]);
+    pushLog('유산소', '<b>' + cardio.exercise.name + '</b> ' + cardio.minutes + '분 · ' + cardio.zone.label);
+    setFinisher('done');
+  }
+
+  /**
+   * "마무리 · …" 카드.
+   * mode 'preview' — 오늘 목록에서 무엇이 붙는지만. 'active' — 시계 · 기록 · 건너뛰기까지.
+   */
+  function finisherCard(mode) {
+    var finisher = finisherToday();
+    if (!finisher) return null;
+    var spec = finisher.spec;
+    var status = finisherStatus();
+    var body = [el('p', { class: 'hint-line finisher-why', text: spec.why })];
+
+    if (finisher.kind === 'wod') {
+      var workout = finisher.session.workout;
+      body.push(el('p', { class: 'hint-line', text: workout.description + ' · ' + workout.scoring }));
+      body.push(el('div', { class: 'delta-list finisher-moves' }, workout.movements.map(function (movement) {
+        return el('div', { class: 'delta' }, [
+          el('span', { text: movement.name }),
+          el('span', { class: 'num', text: movement.display }),
+          el('span', { class: 'num flat', text: movement.note || '' }),
+        ]);
+      })));
+      if (mode === 'active' && !status) {
+        finisher.session.cautions.forEach(function (caution) {
+          body.push(el('p', { class: 'hint-line warn', text: caution }));
+        });
+        var past = E.historyOf(state.wodResults, E.wodSignature(workout));
+        if (past.length > 0) {
+          body.push(el('p', { class: 'hint-line', text: '같은 구성 지난 기록 — ' + past.slice(0, 3).map(function (r) {
+            return dateText(r.date) + ' ' + E.describeScore(r);
+          }).join(' · ') }));
+        }
+      }
+    } else {
+      body.push(el('p', { class: 'effort-big finisher-cardio', text: finisher.cardio.text }));
+    }
+
+    if (status) {
+      body.push(el('p', { class: 'hint-line finisher-state', text: status === 'done'
+        ? '마무리 운동을 마쳤습니다.' : '오늘은 건너뛰었습니다.' }));
+      if (status === 'skipped' && mode === 'active') {
+        body.push(el('button', {
+          type: 'button', class: 'pick finisher-undo', text: '다시 하기',
+          onclick: function () { state.finisher = null; persist(); render(); },
+        }));
+      }
+    } else if (mode === 'active') {
+      body.push(el('div', { class: 'chip-row finisher-clock-row' }, [
+        el('span', { class: 'num finisher-clock', id: 'finisher-clock', 'aria-live': 'off', text: finisherClockText(finisher) }),
+        el('button', {
+          type: 'button', class: 'pick finisher-start', text: state.finisherClock ? '시계 다시 시작' : '시계 시작',
+          onclick: function () { startFinisherClock(finisher); },
+        }),
+      ]));
+      body.push(el('button', {
+        type: 'button', class: 'finish finisher-done', text: '끝냈습니다 — 기록하기',
+        onclick: function () {
+          if (finisher.kind === 'wod') openWodScore(finisher.session.workout, true);
+          else logFinisherCardio(finisher);
+        },
+      }));
+      body.push(el('button', {
+        type: 'button', class: 'link-btn finisher-skip', text: '오늘은 건너뛰기',
+        onclick: function () { setFinisher('skipped'); },
+      }));
+    }
+
+    return el('div', { class: 'sheet finisher-card' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '마무리 · ' + spec.title.replace(/^마무리 (운동|유산소) · /, '') }),
+        el('span', { class: 'meta', text: mode === 'preview' ? '근력 운동 뒤 · ' + spec.minutes + '분' : spec.minutes + '분' }),
+      ]),
+      el('div', { class: 'sheet-body' }, body),
+    ]);
+  }
+
+  /** PT가 이끄는 날의 마무리 운동 화면 — 이것 하나만 보인다. 끝내거나 건너뛰면 스트레칭으로. */
+  function renderFinisherScreen() {
+    screen.appendChild(el('div', { class: 'session-head' }, [
+      el('h2', { text: '마무리 운동' }),
+      el('p', { class: 'meta', text: '근력 운동은 다 했습니다 · 운동 ' + elapsedText() }),
+    ]));
+    var card = finisherCard('active');
+    if (card) screen.appendChild(card);
+    screen.appendChild(el('p', { class: 'coach-say', id: 'coach-say', 'aria-live': 'polite', text: state.coachLine || '' }));
+    renderFinish(true);
+  }
+
+  /** 운동 계획에 붙는 설명 — 쉬는 날 걷기와 주의할 점. full이면 한 줄 요약부터. */
+  function conditioningPlanNotes(full) {
+    var plan = weekConditioning();
+    if (!plan) return [];
+    var out = [];
+    if (full) out.push(el('div', { class: 'list-label', text: plan.kind === 'conditioning' ? '마무리 운동' : '운동 뒤 유산소' }));
+    if (full) out.push(el('p', { class: 'hint-line conditioning-summary', text: plan.summary }));
+    if (plan.restDay) out.push(el('p', { class: 'hint-line rest-day-text', text: plan.restDay.text }));
+    if (full) {
+      plan.notes.forEach(function (note) {
+        out.push(el('p', { class: 'hint-line conditioning-note', text: note }));
+      });
+    }
+    return out;
   }
 
   /** 오늘 근력 세션이 쓰는 부위. 와드는 여기를 피한다. */
@@ -17543,6 +17818,8 @@
       ]));
       body.push(el('p', { class: 'hint-line', text:
         '하던 루틴이 있으면 그대로 넣을 수 있습니다. 종목 · 세트는 정한 대로 두고 무게만 앱이 올립니다.' }));
+      // 마무리 운동 · 운동 뒤 유산소 · 쉬는 날 걷기 — 이번 주 기준
+      conditioningPlanNotes(true).forEach(function (node) { body.push(node); });
     }
 
     return el('div', { class: 'sheet' }, [
@@ -17650,6 +17927,50 @@
    * "주 3번을 2번으로", "살 빼기도 넣고 싶다"는 경력이나 헬스장과 상관이 없다. 그걸 하려고
    * 처음 설정을 통째로 다시 밟게 하지 않는다. 경력 · 기구까지 바꾸려면 맨 아래 줄로 간다.
    */
+  /** 목표로 정해지는 과정 방식 — 근력만 고른 중급 이상은 근력 과정(오래 쉬고 세트는 적게), 나머지는 기본 과정. */
+  function styleForGoals(goals) {
+    var list = goals || [];
+    var level = state.block ? state.block.level : (state.lifter ? state.lifter.level : 'beginner');
+    return list.indexOf('strength') >= 0 && list.indexOf('hypertrophy') < 0 && level !== 'beginner'
+      ? 'strength' : 'hypertrophy';
+  }
+
+  /*
+   * 자주 고르는 다섯 가지 — 한 번에 고르고, 그러면 계획이 어떤 모양이 되는지 한 줄로 보여 준다.
+   * 아래의 목표 칸은 그대로 있어서 직접 섞어 고를 수도 있다.
+   */
+  var GOAL_PERSONAS = [
+    { id: 'cut', goals: ['fatLoss'], label: '체지방 감량',
+      plan: '근력 운동은 무게를 그대로 지키고, 운동 뒤에 걷기 · 자전거를 10~20분, 쉬는 날에는 걷기를 넣습니다.' },
+    { id: 'strength', goals: ['strength'], label: '근력',
+      plan: '바벨 큰 운동을 4~6회로 무겁게 하고 3분씩 쉽니다. 종목과 세트는 적게 잡습니다.' },
+    { id: 'bulk', goals: ['hypertrophy'], label: '근육 키우기 (벌크업)',
+      plan: '부위마다 6~12회로 여러 세트를 하고, 주마다 세트를 조금씩 늘립니다.' },
+    { id: 'strength-cut', goals: ['strength', 'fatLoss'], label: '근력 + 감량',
+      plan: '무거운 운동은 그대로 지키고, 운동 뒤에 숨이 거의 안 차는 유산소만 10~15분 붙입니다.' },
+    { id: 'crossfit', goals: ['conditioning'], label: '체력 기르기 (크로스핏식)',
+      plan: '근력 운동은 큰 운동 위주로 짧게 하고, 날마다 8~15분 시간을 재는 마무리 운동을 붙입니다.' },
+  ];
+
+  function goalPersonaRows(current, onPick) {
+    var now = (current || []).slice().sort().join();
+    var rows = [el('div', { class: 'list-label', text: '자주 고르는 목표 · 하나를 누르면 바로 정해집니다' })];
+    GOAL_PERSONAS.forEach(function (persona) {
+      var on = persona.goals.slice().sort().join() === now;
+      rows.push(el('button', {
+        type: 'button', class: 'choice goal-persona', 'data-persona': persona.id, 'aria-pressed': String(on),
+        onclick: function () { onPick(persona.goals.slice()); },
+      }, [
+        el('span', { class: 'choice-title' }, [
+          document.createTextNode(persona.label + ' '),
+          on ? el('span', { class: 'tag-personal', 'aria-label': '고름', text: '✓' }) : null,
+        ]),
+        el('span', { class: 'choice-hint', text: persona.plan }),
+      ]));
+    });
+    return rows;
+  }
+
   function openPlanBasics() {
     var title = '운동 횟수 · 목표 바꾸기';
     if (state.started && !state.sessionClosed) {
@@ -17676,6 +17997,8 @@
         preview.templates.map(function (template) { return template.name; }).join(' · ') }));
       if (preview.caution) body.push(el('p', { class: 'hint-line', text: preview.caution }));
 
+      goalPersonaRows(draft.goals, function (picked) { draft.goals = picked; draw(); })
+        .forEach(function (node) { body.push(node); });
       body.push(el('div', { class: 'list-label', text: '목표 · 여러 개 고를 수 있습니다' }));
       Object.keys(E.GOAL_LABELS_KO).forEach(function (id) {
         var on = draft.goals.indexOf(id) >= 0;
@@ -17702,6 +18025,10 @@
         disabled: changed ? null : '',
         onclick: function () {
           if (!changed) return;
+          // 목표가 바뀌면 과정 방식도 처음 설정 때와 같은 기준으로 — 근력만 고른 중급 이상은 근력 과정
+          var styleBefore = styleForGoals(state.answers.goals);
+          var styleAfter = styleForGoals(draft.goals);
+          if (styleBefore !== styleAfter) state.style = styleAfter;
           state.answers.daysPerWeek = draft.daysPerWeek;
           state.answers.goals = draft.goals;
           rebuildProgramInPlace();
@@ -21234,6 +21561,9 @@
     var goalsNow = (state.answers.goals || []);
     if (goalsNow.indexOf('strength') >= 0 && goalsNow.indexOf('hypertrophy') < 0 && result.level.level !== 'beginner') {
       state.style = 'strength';
+    } else if (state.style === 'strength') {
+      // 다시 설정하면서 근력을 뺐으면 근력 과정에 남겨 두지 않는다
+      state.style = 'hypertrophy';
     }
     // 새로 짠 프로그램으로 간다 — 내 루틴은 지우지 않고 넣어 둔다
     if (state.customRoutine) state.lastRoutine = state.customRoutine;
@@ -21663,6 +21993,9 @@
      * 담지 못한다. 대신 상충되는 부분은 아래에 그대로 적는다.
      */
     var goals = el('div', { class: 'sheet-body' }, []);
+    goalPersonaRows(state.answers.goals, function (picked) { state.answers.goals = picked; render(); })
+      .forEach(function (node) { goals.appendChild(node); });
+    goals.appendChild(el('div', { class: 'list-label', text: '직접 섞어 고르기' }));
     Object.keys(E.GOAL_LABELS_KO).forEach(function (id) {
       var on = state.answers.goals.indexOf(id) >= 0;
       goals.appendChild(el('button', {

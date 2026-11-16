@@ -1442,6 +1442,20 @@ export function buildProgram(
     };
   }
 
+  /*
+   * 건강 유지만 고른 사람 — 종목과 세트를 줄여 40분 안팎으로. 세트가 근육을 키우는 최소보다 적을 수 있다는 것을
+   * 숨기지 않는다(유지에는 그 정도로 충분하다).
+   */
+  if (goalPlan.goals.length === 1 && goalPlan.primary === 'general' && days > 1) {
+    return {
+      name: SPLIT_NAMES[days] ?? `주 ${days}회`,
+      daysPerWeek: days,
+      caution: '건강 유지 계획이라 종목과 세트를 줄여 40분 안팎으로 짰습니다. 지금 몸을 지키기에는 충분하고, 근육을 더 키우려면 목표를 바꾸세요.',
+      templates: trimForMaintenance(ranged, level),
+      weeklyTargets,
+    };
+  }
+
   return {
     name: SPLIT_NAMES[days] ?? `주 ${days}회`,
     daysPerWeek: days,
@@ -1473,12 +1487,38 @@ export function trimForConditioning(
   withHypertrophy = false,
 ): SessionTemplate[] {
   const maxSlots = withHypertrophy ? 5 : 4;
-  const cap = conditioningSetCap(level, withHypertrophy);
+  return trimTemplates(templates, {
+    maxSlots, wanted: withHypertrophy ? maxSlots : 3,
+    cap: conditioningSetCap(level, withHypertrophy), growthCap: CONDITIONING_GROWTH_CAP,
+  });
+}
+
+/** 건강 유지 — 하루 세트 상한. 40분 안팎에 끝나는 양. */
+export function maintenanceSetCap(level: TrainingLevel): number {
+  return level === 'beginner' ? 11 : 12;
+}
+
+/** 건강 유지 계획이 과정 안에서 늘 수 있는 세트 수 — 길어지지 않게. */
+export const MAINTENANCE_GROWTH_CAP = 2;
+
+/**
+ * 건강 유지 계획 — 큰 운동 네 개에 작은 운동 하나까지, 종목마다 세 세트까지.
+ * "무리 없이 꾸준히"를 고른 사람에게 근육 키우기와 똑같은 한 시간짜리를 주면 고른 의미가 없다.
+ */
+export function trimForMaintenance(templates: readonly SessionTemplate[], level: TrainingLevel): SessionTemplate[] {
+  return trimTemplates(templates, {
+    maxSlots: 4, wanted: 5, cap: maintenanceSetCap(level), growthCap: MAINTENANCE_GROWTH_CAP,
+  });
+}
+
+function trimTemplates(
+  templates: readonly SessionTemplate[],
+  { maxSlots, wanted, cap, growthCap }: { maxSlots: number; wanted: number; cap: number; growthCap: number },
+): SessionTemplate[] {
   return templates.map((template) => {
     if (template.fixed) return template;
     const big = template.slots.filter((slot) => slot.role !== 'isolation').slice(0, maxSlots);
     const keep = new Set(big);
-    const wanted = withHypertrophy ? maxSlots : 3;
     for (const slot of template.slots) {
       if (keep.size >= wanted) break;
       keep.add(slot);
@@ -1497,7 +1537,7 @@ export function trimForConditioning(
         target.sets -= 1;
       }
     }
-    return { ...template, slots, setCap: Math.min(template.setCap ?? cap, cap), growthCap: CONDITIONING_GROWTH_CAP };
+    return { ...template, slots, setCap: Math.min(template.setCap ?? cap, cap), growthCap };
   });
 }
 

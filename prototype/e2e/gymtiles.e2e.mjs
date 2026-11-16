@@ -1,10 +1,11 @@
 // 기구 그림 칸 — 이름 아래 흔한 별명, "크게"를 누르면 큰 그림 · 이렇게 생겼습니다 · 이 기구로 하는 운동.
 //   카탈로그의 모든 기구가 그림과 함께 나오고(빈 칸 없음), 밝은 화면 · 어두운 화면 전체 칸을 찍어 둔다.
+import { join } from 'node:path';
 import { check, pickMe } from './lib.mjs';
 
 const cellNamed = (page, name) => page.locator('.equip-cell', { has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) });
 
-export default async function ({ page, url, shot }) {
+export default async function ({ page, url, shot, out }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await page.waitForSelector('.consent-card');
@@ -43,7 +44,7 @@ export default async function ({ page, url, shot }) {
   const lat = cellNamed(page, '랫 풀다운');
   check((await lat.locator('.aka').textContent()).includes('위에서 당기는 기계'), '랫 풀다운 별명: ' + await lat.locator('.aka').textContent());
   check((await cellNamed(page, '펙덱 \\(플라이 머신\\)').locator('.aka').textContent()).includes('나비'), '펙덱 별명이 없습니다');
-  await fullShot(page, shot, 'grid-light');
+  await fullShot(page, out, 'grid-light');
 
   // 크게 — 켜고 끄지 않고 그림만 커진다
   const before = await lat.locator('.equip-tile').getAttribute('aria-pressed');
@@ -70,15 +71,12 @@ export default async function ({ page, url, shot }) {
 
   // 어두운 화면
   await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
-  await fullShot(page, shot, 'grid-dark');
+  await fullShot(page, out, 'grid-dark');
   await cellNamed(page, '레그프레스').locator('.equip-zoom-open').click();
   await shot('zoom-dark');
 }
 
-async function fullShot(page, shot, name) {
-  // 전체 칸 — 화면을 길게 늘려 한 장으로
-  const height = await page.evaluate(() => document.documentElement.scrollHeight);
-  await page.setViewportSize({ width: 390, height: Math.min(height + 40, 9000) });
-  await shot(name);
-  await page.setViewportSize({ width: 390, height: 844 });
+async function fullShot(page, out, name) {
+  // 전체 칸을 한 장으로 — 목록이 화면보다 길어도 통째로 찍힌다
+  await page.locator('#equipment-list').screenshot({ path: join(out, 'gymtiles-' + name + '.png') });
 }

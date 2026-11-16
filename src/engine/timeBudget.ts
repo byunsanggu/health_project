@@ -28,6 +28,8 @@ export interface TimeOptions {
   transitionSeconds?: number;
   /** 블록 유형의 휴식 배율 */
   restMultiplier?: number;
+  /** 목표에 근력이 있는가 — 무거운 바벨 세트의 휴식(3분)을 타이머와 같게 센다 */
+  strengthGoal?: boolean;
   /*
    * 사용자가 정한 휴식 띠. 시간 계산에도 같이 넣어야 한다 — 휴식을 2분으로
    * 늘렸는데 "50분이면 6종목" 이라고 하면 그 계산은 거짓말이 된다.
@@ -127,6 +129,7 @@ export function estimateSessionTime(
       band: config.restBand,
       overrideSeconds: config.restOverrides?.[item.exercise.id],
       multiplier: config.restMultiplier,
+      strengthGoal: config.strengthGoal,
     }).seconds;
 
     // 한쪽씩 하는 종목(불가리안 · 원암 로우 · 런지 · 컨센트레이션 컬)은 양쪽을 다 한다
