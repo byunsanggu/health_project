@@ -169,7 +169,7 @@ export function coachTexts(style: CoachStyle): string[] {
 
   // 시작 · 끝
   for (const at of range(6)) {
-    for (const goal of ['hypertrophy', 'strength', 'fatLoss', 'general', null] as const) {
+    for (const goal of ['hypertrophy', 'strength', 'fatLoss', 'conditioning', 'general', null] as const) {
       say(wrapUpLines({ style, setsDone: 16, liftsDone: 5, grew: at % 2 ? 2 : 0, weekDone: at % 3 === 0 ? 3 : 1, weekTarget: 3, goal, at, name: at % 2 ? '민수' : null }));
     }
     say(wrapUpLines({ style, setsDone: 12, liftsDone: 4, firstEver: true, at }));

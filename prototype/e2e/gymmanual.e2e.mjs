@@ -22,9 +22,10 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
 
-  // 오늘 화면 안내 → 헬스장 탭
-  check(await page.locator('.gym-link-nudge').count() === 1, '등록 안내가 없습니다');
-  await page.locator('.gym-link-nudge .pick').click();
+  // 첫날 오늘 화면에는 등록 안내가 없다(첫 운동을 마친 뒤 한 번만) — 내 정보 › 헬스장에서 등록한다
+  check(await page.locator('.gym-link-nudge').count() === 0, '첫날 오늘 화면에 등록 안내가 떠 있습니다');
+  await gymTab(page);
+  await page.locator('.gym-link').click();
   const kit = (await page.locator('.gym-here').textContent()).match(/기구 (\d+)개/)[1];
   // 아직 아무것도 안 쳤을 때도 직접 등록으로 가는 문이 있다
   check(await page.locator('#gym-results .register-open').count() === 1, '검색 전에는 직접 등록 버튼이 없습니다');

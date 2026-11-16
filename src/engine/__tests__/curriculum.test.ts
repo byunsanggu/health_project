@@ -78,6 +78,7 @@ describe('목표 — 체력 기르기(크로스핏식)를 고를 수 있다', ()
     for (const style of ['tough', 'energetic', 'gentle', 'fun'] as const) {
       const lines = wrapUpLines({ style, setsDone: 12, liftsDone: 4, goal: 'conditioning' });
       assert.ok(lines.every((line) => typeof line === 'string' && line.length > 0), style);
+      assert.ok(lines.some((line) => /마무리 운동|숨찬/.test(line)), `${style}: 체력 기르기 한 줄이 있다`);
     }
   });
 });
@@ -402,7 +403,8 @@ describe('근력 · 근육 키우기 · 건강 유지 — 붙는 것이 없고 �
       const result = onboard(goals, 'intermediate', 4, 'franchise');
       assert.equal(result.conditioning.kind, 'none');
       assert.deepEqual(result.conditioning.days, []);
-      assert.ok(result.program.templates.every((template) => template.growthCap === undefined));
+      // 건강 유지는 일부러 짧게 짠 계획이라 늘어나는 폭에 상한이 있다
+      if (!goals.includes('general')) assert.ok(result.program.templates.every((template) => template.growthCap === undefined));
     }
   });
 

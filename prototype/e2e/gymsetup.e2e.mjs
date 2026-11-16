@@ -68,11 +68,10 @@ export default async function ({ page, url, shot }) {
   await finishWizard(page, { level: '초보' });
 
   // 오늘 — 연결 안내, 바로 순서 바꾸기
-  const nudge = await page.locator('.gym-link-nudge').textContent();
-  check(nudge.includes('역삼 튼튼짐') && nudge.includes('등록하지 않았습니다') && nudge.includes('등록하기'), '오늘 화면 안내: ' + nudge);
-  // 제목 옆 "1주차" 칩은 없다 — 맨 위 상태 줄에만 (같은 말을 한 화면에 두 번 하지 않는다)
+  check(await page.locator('.gym-link-nudge').count() === 0, '첫날 오늘 화면에 헬스장 등록 안내가 떠 있습니다');
+  // 제목 옆 "1주차" 칩은 없다
   check(!(await page.locator('.session-head').first().textContent()).includes('주차'), '오늘 머리에 주차가 또 있습니다');
-  check((await page.locator('#status-meta').textContent()).includes('1주차'), '상태 줄에 주차가 없습니다');
+  check(!(await page.locator('#status-meta').textContent()).includes('주차'), '맨 위 상태 줄에 주차 칩이 남아 있습니다');
   const names = async () => (await page.locator('.plan-row .plan-main .name > span:first-child').allTextContents());
   const first = await names();
   await page.locator('.list-order').click();

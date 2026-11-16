@@ -250,6 +250,8 @@
         coach: state.coach,
         machineSettings: state.machineSettings,
         gymLinkHidden: state.gymLinkHidden,
+        // 직접 등록한 헬스장 원본(동네 글 · 합치기 물음) — 내 헬스장 목록이지 건강 정보가 아니다. 다시 켜도 남아야 한다
+        myDirectory: state.myDirectory,
         // "처음이세요?" 카드를 닫았는가
         firstTipsHidden: state.firstTipsHidden,
         // 혼자 하는 마무리 스트레칭 — 오늘만(날짜가 붙어 있다)
@@ -485,6 +487,9 @@
         : { mode: 'solo', style: 'gentle', voice: null };
       state.machineSettings = settings.machineSettings || {};
       state.gymLinkHidden = Boolean(settings.gymLinkHidden);
+      if (Array.isArray(settings.myDirectory)) {
+        state.myDirectory = settings.myDirectory.filter(function (entry) { return entry && typeof entry.id === 'string'; });
+      }
       state.firstTipsHidden = Boolean(settings.firstTipsHidden);
       state.soloCool = settings.soloCool || null;
       state.finisher = settings.finisher || null;
@@ -3247,12 +3252,12 @@
      * "여유 4개"는 뜻을 배울 곳이 없었다 — 쉬는 시간이나 남은 세트로 읽혔다. 무엇을 하라는지로
      * 쓰고, 누르면 한 장으로 풀어 준다.
      */
+    /*
+     * 그 칩("1주차 · 4개 남기고 멈춤")은 모든 화면 맨 위에서 뺐다 — 식단 · 내 정보에서도 늘 떠 있었고,
+     * 처음 온 사람에게는 뜻 모를 숫자 둘이었다. 설명은 기록 탭 머리와 운동 화면의 한 줄 안내에서 연다.
+     */
+    void phase;
     statusMeta.textContent = '';
-    statusMeta.appendChild(el('button', {
-      type: 'button', class: 'status-help', text: phase + ' · ' + leaveText(state.plan.targetRir),
-      'aria-label': phase + ' · ' + leaveText(state.plan.targetRir) + ' — 눌러서 뜻 보기',
-      onclick: openEffortHelp,
-    }));
   }
 
   /** 목표 여유를 하라는 말로 — "4개 남기고 멈춤". 0이면 끝까지. */
@@ -3532,7 +3537,7 @@
             el('span', {
               class: 'nums',
               text: '오늘 ' + row.todaySets + '세트 · 이번 주 ' + (direct[row.muscle] || 0) + '세트 · 한 주 최소 ' +
-                row.landmark.mev + ' · 최대 ' + row.landmark.mrv + ' · 근육별 몫 ' + fmt(row.week) + '(보조로 쓴 근육은 일부만 셈)',
+                row.landmark.mev + ' · 최대 ' + row.landmark.mrv + ' · 이번 주 ' + fmt(row.week) + '세트(보조로 쓴 근육은 일부만 셈)',
             }),
             el('span', { class: 'zone ' + zoneClass(E.zoneOf(row.week, row.landmark)), text: zoneText(row.week, row.landmark) }),
           ]);
@@ -4974,7 +4979,7 @@
         el('b', { text: '주 1회 무거운 세트' }),
         el('span', { class: 'hint-line', text: beginner
           ? '자세가 잡힌 뒤(중급부터) 켤 수 있습니다. 처음에는 무겁게 몇 개보다 여러 번 반복하는 쪽이 힘도 잘 늘고 덜 다칩니다.'
-          : '바벨 메인 종목 하나를 주마다 돌아가며 1~3회로 무겁게 — 최대 도전은 아니고 두어 개 남깁니다.' +
+          : '먼저 하는 큰 바벨 운동 하나를 주마다 돌아가며 1~3회로 무겁게 — 최대 도전은 아니고 두어 개 남깁니다.' +
             (on && pickName ? ' 이번 주: ' + pickName : '') }),
       ]),
       el('span', { class: 'count-tempo', text: on ? '켜짐' : '꺼짐' }),
@@ -5919,29 +5924,7 @@
      * 전이면 한 줄로 알려 주고, 거기서 바로 간다. 닫으면 다시 안 띄운다 —
      * 헬스장 탭에는 그대로 남아 있다.
      */
-    // 집(홈짐)은 찾아 이을 헬스장이 아니다 — 안내를 띄우지 않는다
-    if (unlinkedGym() && !state.gymLinkHidden && !state.started) {
-      var here = currentGymEntry();
-      screen.appendChild(el('div', { class: 'gym-link-nudge' }, [
-        el('span', { class: 'gym-link-text' }, [
-          el('b', { text: here.name }),
-          el('span', { text: ' · 다니는 헬스장 주소를 아직 등록하지 않았습니다' }),
-        ]),
-        el('button', {
-          type: 'button', class: 'pick', text: '등록하기',
-          onclick: function () {
-            state.tab = 'me';
-            state.meSection = 'gym';
-            render();
-            startGymLink();
-          },
-        }),
-        el('button', {
-          type: 'button', class: 'gym-link-close', text: '×', 'aria-label': '이 안내 닫기',
-          onclick: function () { state.gymLinkHidden = true; persist(); render(); },
-        }),
-      ]));
-    }
+    // 헬스장 주소 등록 안내는 여기 두지 않는다 — 첫 운동을 마친 화면에서 한 번만(gymLinkNudge), 그리고 내 정보 › 헬스장에 늘 있다
 
     var rows = [];
 
@@ -6056,8 +6039,10 @@
     var review = excludeReviewCard();
     if (review) screen.appendChild(review);
 
-    var firstTime = firstTimeCard();
-    if (firstTime) screen.appendChild(firstTime);
+    // "처음이세요?" 다섯 줄 카드는 뺐다 — 첫 종목이 화면 밖으로 밀렸다. 같은 말은 쓰는 자리에 한 줄씩 있다(목록 아래 · 세트 줄 위 · 워밍업 줄)
+    var firstHint = !reordering && !state.started && !everClosedWorkout()
+      ? el('p', { class: 'hint-line first-hint', text: '위에서부터 한 종목씩 합니다. 이름을 누르면 동작을, 세트 줄을 누르면 뜻을 보여 드립니다.' })
+      : null;
 
     screen.appendChild(mobilitySheet(moves));
 
@@ -6114,6 +6099,7 @@
         ]);
       }))),
       el('div', { class: 'sheet-body tight' }, [el('div', { class: 'summary-list' }, rows)]),
+      firstHint ? el('div', { class: 'sheet-body first-hint-wrap' }, [firstHint]) : null,
       !reordering ? null : el('div', { class: 'sheet-body order-done' }, [
         state.liftOrder ? el('button', {
           type: 'button', class: 'finish quiet', text: '프로그램 순서로 되돌리기',
@@ -6196,9 +6182,40 @@
   }
 
   /**
-   * "처음이세요?" — 첫 운동을 마칠 때까지만, 닫으면 다시 안 뜬다. 세트 · 회가 무엇인지,
-   * 어떤 순서로 하는지, 모르는 동작은 어디서 보는지를 처음 온 사람은 아무도 말해 주지 않았다.
+   * 헬스장 주소 등록 안내 — 첫 운동을 마친 날의 "오늘 운동을 마쳤습니다" 화면에서 한 번만.
+   * 전에는 첫날 오늘 화면 맨 위에 떠서 첫 종목을 밀어냈다. 내 정보 › 헬스장에는 늘 있다.
    */
+  function gymLinkNudge() {
+    // 집(홈짐)은 찾아 이을 헬스장이 아니다 — unlinkedGym이 거른다
+    if (!unlinkedGym() || state.gymLinkHidden || !state.sessionClosed) return null;
+    var earlier = state.history.some(function (session) {
+      return session.date !== state.todayDate && (session.sets || []).some(function (set) { return !set.warmup && set.reps > 0; });
+    });
+    if (earlier) return null;
+    var here = currentGymEntry();
+    return el('div', { class: 'gym-link-nudge' }, [
+      el('span', { class: 'gym-link-text' }, [
+        el('b', { text: here.name }),
+        el('span', { text: ' · 다니는 헬스장 주소를 등록하면 그곳 기구에 맞춰 드립니다' }),
+      ]),
+      el('button', {
+        type: 'button', class: 'pick', text: '등록하기',
+        onclick: function () {
+          state.gymLinkHidden = true;
+          state.tab = 'me';
+          state.meSection = 'gym';
+          render();
+          startGymLink();
+        },
+      }),
+      el('button', {
+        type: 'button', class: 'gym-link-close', text: '×', 'aria-label': '이 안내 닫기',
+        onclick: function () { state.gymLinkHidden = true; persist(); render(); },
+      }),
+    ]);
+  }
+
+  /** (쓰지 않음) 예전 "처음이세요?" 카드 — 오늘 화면에서 뺐다. 같은 말은 쓰는 자리의 한 줄들이 한다. */
   function firstTimeCard() {
     if (state.firstTipsHidden || state.started || everClosedWorkout()) return null;
     var rir = state.plan.targetRir;
@@ -12461,6 +12478,8 @@
     if (closedFriends) screen.appendChild(closedFriends);
     var closedNudge = reportNudge();
     if (closedNudge) screen.appendChild(closedNudge);
+    var gymNudge = gymLinkNudge();
+    if (gymNudge) screen.appendChild(gymNudge);
 
     var minutes = state.sessionStartedAt ? Math.max(1, Math.round(elapsedSeconds() / 60)) : null;
 
@@ -15882,6 +15901,12 @@
         el('span', { class: 'badge ' + (deload ? 'deload' : 'accum'), text: deload ? '덜어내는 주' : plan.weekInBlock + '주차' }),
       ]),
       el('p', { class: 'meta', text: planLine(plan) }),
+      // 맨 위 상태 줄에 있던 "N주차 · N개 남기고 멈춤" 설명은 여기서 연다(운동 화면의 한 줄 안내도 같은 창)
+      el('button', {
+        type: 'button', class: 'status-help record-effort', text: leaveText(plan.targetRir) + ' — 뜻 보기 ›',
+        'aria-label': leaveText(plan.targetRir) + ' — 눌러서 뜻 보기',
+        onclick: openEffortHelp,
+      }),
     ]));
     /*
      * 처음 두 주의 초보에게는 부위 열한 줄 막대(근성장 체크)를 맨 위에 펴 두지 않는다 — 첫 주는
@@ -15953,7 +15978,7 @@
     });
     return el('div', { class: 'sheet growth-card' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '근성장 체크' }),
+        el('h3', { text: '부위별로 충분한지' }),
         el('span', { class: 'meta', text: check.enough + ' / ' + check.total + ' 부위' }),
       ]),
       el('div', { class: 'sheet-body' }, growthBody(check, true)),
@@ -17887,12 +17912,12 @@
         var exercise = index.get(answers.mainLifts[pattern]);
         return exercise ? exercise.name : null;
       }).filter(Boolean);
-      body.push(el('p', { class: 'hint-line', text: '약점 부위: ' + (picks.length ? picks.join(', ') : '없음') }));
-      body.push(el('p', { class: 'hint-line', text: '고른 메인 종목: ' + (mains.length ? mains.join(', ') : '자동') }));
+      body.push(el('p', { class: 'hint-line', text: '더 키우고 싶은 부위: ' + (picks.length ? picks.join(', ') : '없음') }));
+      body.push(el('p', { class: 'hint-line', text: '먼저 하는 큰 운동: ' + (mains.length ? mains.join(', ') : '자동') }));
       body.push(el('div', { class: 'chip-row' }, [
         // 주 몇 번 · 목표는 여기서 바로 — 전에는 헬스장 탭 맨 아래 "초기 설정 다시 하기"뿐이었다
         el('button', { type: 'button', class: 'pick program-basics', text: '운동 횟수 · 목표 바꾸기', onclick: openPlanBasics }),
-        el('button', { type: 'button', class: 'pick program-tune', text: '약점 · 메인 종목 고르기', onclick: openProgramTune }),
+        el('button', { type: 'button', class: 'pick program-tune', text: '더 키울 부위 · 먼저 하는 큰 운동 고르기', onclick: openProgramTune }),
         el('button', { type: 'button', class: 'pick routine-start', text: '내 루틴으로 바꾸기', onclick: openRoutineEditor }),
       ]));
       body.push(el('p', { class: 'hint-line', text:
@@ -17913,7 +17938,7 @@
    */
   function programTuneBody(draft, redraw) {
     var body = [];
-    body.push(el('div', { class: 'list-label', text: '약점 부위 (최대 ' + E.MAX_PRIORITIES + '개)' }));
+    body.push(el('div', { class: 'list-label', text: '더 키우고 싶은 부위 (최대 ' + E.MAX_PRIORITIES + '개)' }));
     body.push(el('p', { class: 'hint-line', text:
       '고른 부위는 자리를 하나 더 받고 메인 바로 뒤에 합니다. 대신 한 근육만 쓰는 덜 중요한 종목이 빠질 수 있습니다.' }));
     body.push(el('div', { class: 'chip-row tune-priorities' }, E.PRIORITY_MUSCLES.map(function (muscle) {
@@ -17929,7 +17954,7 @@
       });
     })));
 
-    body.push(el('div', { class: 'list-label', text: '메인 종목' }));
+    body.push(el('div', { class: 'list-label', text: '먼저 하는 큰 운동' }));
     body.push(el('p', { class: 'hint-line', text:
       '자주 하던 종목이 있으면 고르세요. 그 동작의 첫 메인 자리에 들어갑니다. 고르지 않으면 앱이 고릅니다.' }));
     var equipmentIds = state.answers.gym.equipmentIds;
@@ -17983,7 +18008,7 @@
           rebuildProgramInPlace();
           modal.close();
           loadScenario(state.scenario, true);
-          pushLog('프로그램', '약점 부위와 메인 종목으로 다시 짰습니다. 블록과 주차는 그대로입니다.');
+          pushLog('프로그램', '더 키우고 싶은 부위와 먼저 하는 큰 운동으로 다시 짰습니다. 지금 과정과 주차는 그대로입니다.');
           persist();
           render();
         },
@@ -22637,7 +22662,7 @@
       };
       screen.appendChild(el('details', { class: 'sheet tune-sheet' }, [
         el('summary', { class: 'sheet-head' }, [
-          el('h3', { text: '약점 · 메인 종목 (선택)' }),
+          el('h3', { text: '더 키우고 싶은 부위 · 먼저 하는 큰 운동 (선택)' }),
           el('span', { class: 'meta', text: (draft.priorities.length || Object.keys(draft.mainLifts).length) ? '고름' : '건너뛰어도 됩니다' }),
         ]),
         el('div', { class: 'sheet-body' }, programTuneBody(draft, apply)),
@@ -22668,7 +22693,7 @@
     });
     screen.appendChild(el('div', { class: 'sheet growth-card' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '근성장 체크' }),
+        el('h3', { text: '부위별로 충분한지' }),
         el('span', { class: 'meta', text: growth.enough + ' / ' + growth.total + ' 부위' }),
       ]),
       el('div', { class: 'sheet-body' }, growthBody(growth, false)),

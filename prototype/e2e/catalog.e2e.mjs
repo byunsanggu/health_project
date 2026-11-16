@@ -24,7 +24,7 @@ export default async function ({ page, url, shot }) {
   await onboard(page);
 
   // 내 헬스장은 아직 이름표 — 오늘 화면에 "등록하기"가 뜬다 (아래 홈짐 옮기기의 비교 기준)
-  check(await page.locator('.gym-link-nudge').count() === 1, '이름표 헬스장인데 등록 안내가 없습니다');
+  check(await page.locator('.gym-link-nudge').count() === 0, '첫날 오늘 화면에 등록 안내가 떠 있습니다');
 
   // 종목 추가 — 부르는 이름으로 찾는다
   await page.locator('.list-edit').click();

@@ -971,31 +971,35 @@ export interface WrapUpInput {
   goal?: 'hypertrophy' | 'strength' | 'fatLoss' | 'conditioning' | 'general' | null;
 }
 
-type Goal = 'hypertrophy' | 'strength' | 'fatLoss' | 'general';
+type Goal = 'hypertrophy' | 'strength' | 'fatLoss' | 'conditioning' | 'general';
 
 const GOAL_LINE: ByStyle<Record<Goal, string>> = {
   tough: {
     hypertrophy: '근육은 오늘 운동이 아니라 오늘 밤에 자란다. 잠 꼭 챙겨.',
     strength: '오늘 든 무게가 다음 기록의 발판이야.',
     fatLoss: '근육 지키면서 빼는 거야. 오늘 운동이 그걸 해 준다.',
+    conditioning: '숨찬 것까지 끝냈다. 체력은 이렇게 붙는 거야.',
     general: '오늘 나온 것 자체가 이긴 거야.',
   },
   energetic: {
     hypertrophy: '근육은 오늘 밤에 자라요! 꿀잠이 운동만큼 중요해요!',
     strength: '오늘 든 무게가 다음 기록의 발판이에요!',
     fatLoss: '근육 지키면서 빼는 중이에요! 오늘 운동이 그걸 해 줘요!',
+    conditioning: '마무리 운동까지 해냈어요! 숨이 덜 차는 날이 곧 와요!',
     general: '오늘 나온 것 자체가 최고예요!',
   },
   gentle: {
     hypertrophy: '근육은 쉬는 동안 자랍니다. 오늘 밤 잠이 운동만큼 중요합니다.',
     strength: '오늘 드신 무게가, 다음에 더 드실 수 있는 바탕이 됩니다.',
     fatLoss: '근력 운동이, 빠지는 동안 근육을 지켜 줍니다. 잘하셨습니다.',
+    conditioning: '마무리 운동까지 하셨습니다. 숨이 덜 차는 날이 곧 옵니다.',
     general: '꾸준히 나오시는 게 가장 중요합니다.',
   },
   fun: {
     hypertrophy: '근육은 자는 동안 자라요. 오늘 밤은 침대랑 약속 있으세요.',
     strength: '오늘 든 무게는, 다음 기록의 계단이에요. 한 칸 올라왔어요.',
     fatLoss: '근육 지키면서 빼는 중이에요. 오늘 운동이 그 경호원이에요.',
+    conditioning: '마무리 운동까지 끝! 이제 계단이 먼저 지칠 거예요.',
     general: '오늘 나온 거, 이미 이긴 거예요. 소파를 이겼어요.',
   },
 };
@@ -1049,8 +1053,7 @@ export function wrapUpLines(input: WrapUpInput): string[] {
     }
   }
   if (week) lines.push(week);
-  // 목표 한 줄이 따로 없는 목표(체력 기르기)는 건너뛴다 — 없는 줄을 읽게 하지 않는다
-  const goalLine = input.goal && input.goal !== 'conditioning' ? GOAL_LINE[style][input.goal] : undefined;
+  const goalLine = input.goal ? GOAL_LINE[style][input.goal] : undefined;
   if (goalLine && !input.firstEver) lines.push(goalLine);
   lines.push(call(input.name) + pick(WRAP_CLOSE[style], at));
   return lines;
@@ -1161,10 +1164,10 @@ export function sessionStartLines(input: SessionStartInput): string[] {
       lines.push(hard[style]);
     } else if (input.weekInBlock === 1) {
       const start: ByStyle<string> = {
-        tough: '블록 첫 주다. 기준을 제대로 세운다.',
-        energetic: '블록 첫 주예요! 여유 있게 시작해요!',
-        gentle: '블록 첫 주라, 여유 있게 가겠습니다.',
-        fun: '블록 첫 주예요. 워밍업 같은 한 주예요.',
+        tough: '첫 주다. 기준을 제대로 세운다.',
+        energetic: '첫 주예요! 여유 있게 시작해요!',
+        gentle: '첫 주라, 여유 있게 가겠습니다.',
+        fun: '첫 주예요. 워밍업 같은 한 주예요.',
       };
       lines.push(start[style]);
     }
