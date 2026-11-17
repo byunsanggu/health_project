@@ -13151,6 +13151,9 @@
       el('div', { class: 'sheet-body' }, [
         el('h2', { class: 'done-title', text: '오늘 운동을 마쳤습니다.' }),
         next ? el('p', { class: 'done-next', text: next }) : null,
+        // 한 시간 — 오늘을 닫은 시각에서 멈춘다(나중에 봐도 같은 분)
+        state.sessionStartedAt ? el('p', { class: 'hint-line done-time', text:
+          Math.max(1, Math.round(elapsedSeconds() / 60)) + '분 동안 ' + state.todaySets.length + '세트를 했습니다.' }) : null,
         // 하루를 닫은 뒤에도 마무리 스트레칭은 고를 수 있다 — 혼자 한 날, 아직 안 했으면
         coolMovesNow.length ? el('button', {
           type: 'button', class: 'finish quiet cool-offer',
