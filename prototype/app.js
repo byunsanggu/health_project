@@ -6420,6 +6420,8 @@
     var doneSets = state.todaySets.length;
     state.started = true;
     state.focusHidden = false;
+    // 한 번 시작했으면(처음 설정 끝의 "첫 운동 시작"도) 맨 처음 한 장은 본 것으로 — 다음 시작에 또 띄우지 않는다
+    state.startSheetSeen = true;
     /*
      * 혼자 모드도 몸 풀기부터 — 종목 1번이 아니라 "몸 풀기" 단계가 먼저 뜬다.
      * PT는 코치가 몸 풀기를 이끄는 단계가 따로 있다.
@@ -6452,11 +6454,12 @@
       acquireWakeLock();
       resumePt();
     }
+    persist();
     render();
   }
 
   /**
-   * 시작하기를 누르면 한 장 — 오늘 몸 · 아픈 데 · 시간 · 혼자/PT.
+   * (예전) 시작하기를 누르면 한 장 — 오늘 몸 · 아픈 데 · 시간 · 혼자/PT. 지금은 아래 openTodayAdjust.
    *
    * 다 골라진 채로 열린다. 평소 같은 날은 "시작"만 누르면 된다. 전에는 이 넷이 오늘
    * 화면 목록 위아래에 줄로 붙어 있어서, 운동하러 와서 고를 것부터 보였다.
