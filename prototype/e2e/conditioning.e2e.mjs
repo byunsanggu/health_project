@@ -50,6 +50,14 @@ export default async function ({ page, url, shot }) {
   }
   check(await page.locator('.finisher-done').count() === 1, '세트를 다 했는데 마무리 운동이 안 나옵니다');
   check(await page.locator('.finisher-skip', { hasText: '오늘은 건너뛰기' }).count() === 1, '건너뛰기가 없습니다');
+  // 목록으로 — 세트는 다 했고 마무리 운동이 남았다. 채운 버튼은 아래 고정 "이어서 하기 · 마무리 운동" 하나
+  const filled = () => page.locator('#screen .finish:not(.quiet)').count();
+  await page.goBack({ waitUntil: 'commit' }).catch(() => null);
+  await page.waitForSelector('.start-cta');
+  check((await page.locator('.start-cta').textContent()).trim() === '이어서 하기 · 마무리 운동', '마무리 운동이 남았는데 아래 버튼이: ' + await page.locator('.start-cta').textContent());
+  check(await filled() === 1, '목록에 채운 버튼이 ' + await filled() + '개입니다');
+  await page.locator('.start-cta').click();
+  await page.waitForSelector('.finisher-done');
   await page.locator('.finisher-start').click();
   check(/남은 시간|지난 시간/.test(await page.locator('#finisher-clock').textContent()), '시계가 안 돕니다');
   await shot('2-finisher');
@@ -64,6 +72,12 @@ export default async function ({ page, url, shot }) {
   check((await page.locator('.finisher-state').textContent()).includes('마쳤습니다'), '마무리 운동을 했다고 안 남습니다');
   const log = await page.evaluate(() => Object.keys(localStorage).map((key) => localStorage.getItem(key)).join('\n'));
   check(/"finisher":\{[^}]*"status":"done"/.test(log), '마무리 운동 기록이 저장되지 않았습니다');
+  // 다 했으면 목록의 아래 고정 버튼이 "오늘 운동 완료 · 요약 보기" — 같은 버튼이 위에 또 있지 않다
+  await page.goBack({ waitUntil: 'commit' }).catch(() => null);
+  await page.waitForSelector('.start-cta');
+  check((await page.locator('.start-cta').textContent()).trim() === '오늘 운동 완료 · 요약 보기', '다 했는데 아래 버튼이: ' + await page.locator('.start-cta').textContent());
+  check(await filled() === 1 && await page.locator('#screen .finish', { hasText: '오늘 운동 완료' }).count() === 1, '요약 보기 버튼이 겹칩니다');
+  check(await page.locator('.simple-row.is-next, .plan-row.is-next').count() === 0, '다 했는데 다음 운동 표시가 남아 있습니다');
 
   // 하루를 닫으면 쉬는 날 걷기 안내
   await page.locator('.finish', { hasText: '오늘 운동 완료' }).click();

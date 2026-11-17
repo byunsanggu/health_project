@@ -44,7 +44,11 @@ export default async function ({ page, url, shot }) {
   check(/^오늘은 .+입니다$/.test(title), '오늘 제목: ' + title);
   check(/^운동 \d+개 · 약 \d+분$/.test((await page.locator('.today-sub').textContent()).trim()), '한 줄: ' + await page.locator('.today-sub').textContent());
   const names = (await page.locator('.simple-row .name').allTextContents()).map((t) => t.trim());
-  check((await page.locator('.today-hero').textContent()).includes('첫 운동') && (await page.locator('.today-hero').textContent()).includes(names[0]), '첫 운동 카드가 없습니다');
+  // 첫 운동은 목록 첫 줄을 크게 — 따로 카드를 두어 이름이 두 번 나오지 않는다
+  check(await page.locator('.simple-row.is-next').count() === 1 && (await page.locator('.simple-row.is-next').textContent()).includes('첫 운동') &&
+    (await page.locator('.simple-row.is-next .name').textContent()).trim() === names[0], '첫 운동 줄 표시가 없습니다');
+  const nameCount = await page.evaluate((name) => Array.from(document.querySelectorAll('#screen *')).filter((node) => node.children.length === 0 && node.textContent.trim() === name).length, names[0]);
+  check(nameCount === 1, '첫 운동 이름이 ' + nameCount + '번 나옵니다');
   check(await page.locator('.simple-row .lift-thumb').count() === names.length, '줄마다 작은 그림이 없습니다');
   check(await page.locator('.row-menu, .plan-sets, .list-edit, .list-order').count() === 0, '간단히에 자세한 것이 섞였습니다');
   const cta = await page.locator('.start-cta').boundingBox();

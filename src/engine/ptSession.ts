@@ -2,6 +2,8 @@ import { screenOnly, type CoachStyle } from './coach.ts';
 import { weightLabelIn } from './units.ts';
 import { holdFeedbackLine } from './hold.ts';
 import type { MuscleGroup } from './types.ts';
+import type { CardioZone } from './cardio.ts';
+import type { ConditioningFormat } from './conditioning.ts';
 
 /**
  * PT 세션 — 세트가 아니라 50분을 이끈다.
@@ -736,3 +738,151 @@ export function cooldownDoneLine(style: CoachStyle): string {
   };
   return lines[style];
 }
+
+/* ── 마무리 운동(피니셔) ─────────────────────────── */
+
+/*
+ * PT가 이끄는 날, 근력 운동 뒤 마무리 운동 화면에서 코치가 하는 말 — 무엇을 몇 분 하는지 알려 주고,
+ * 시계를 누르면 시작 · 절반 · 1분 전 · 10초 전 · 끝을 짚는다. 유산소면 어느 정도 세기로 할지도 한 번.
+ */
+
+/** 와드 진행 방식을 말로 — 화면 이름(FORMAT_LABELS_KO)의 영어 줄임말과 숫자는 뺀다 */
+const FINISHER_FORMAT_SAID: Readonly<Record<ConditioningFormat, string>> = {
+  amrap: '시간 안에 최대한 많이',
+  emom: '매 분 정해진 만큼',
+  forTime: '빨리 끝내기',
+  intervals: '하고 쉬기 반복',
+  circuit: '쉬지 않고 돌기',
+};
+
+/** 유산소 세기를 말로 */
+const FINISHER_ZONE_SAID: Readonly<Record<CardioZone, string>> = {
+  easy: '아주 편하게',
+  steady: '대화되는 정도로',
+  hard: '말이 짧아지는 정도로',
+  interval: '1분 세게, 1분 천천히',
+};
+
+export interface FinisherTalk {
+  kind: 'wod' | 'cardio';
+  minutes: number;
+  /** 와드 진행 방식 */
+  format?: ConditioningFormat;
+  /** 유산소 종목 이름(cardio.ts) — 괄호 속 설명은 읽지 않는다 */
+  name?: string;
+  zone?: CardioZone;
+}
+
+/** 마무리 운동 화면이 뜰 때 — 이름(진행 방식 · 유산소 종목), 몇 분, 어떻게. 시계를 눌러 시작한다는 것까지 */
+export function finisherIntroLine(style: CoachStyle, talk: FinisherTalk): string {
+  const minutes = Math.max(1, Math.round(talk.minutes));
+  if (talk.kind === 'cardio') {
+    const name = (talk.name ?? '유산소').replace(/\s*\([^)]*\)/g, '').trim();
+    const how = FINISHER_ZONE_SAID[talk.zone ?? 'steady'];
+    const lines: ByStyle<string> = {
+      tough: `마무리 유산소다. ${name} ${minutes}분, ${how}. 준비되면 시계 눌러.`,
+      energetic: `마지막으로 유산소예요! ${name} ${minutes}분, ${how}. 준비되면 시계 시작을 눌러 주세요.`,
+      gentle: `마무리 유산소입니다. ${name} ${minutes}분, ${how}. 준비되시면 시계 시작을 눌러 주세요.`,
+      fun: `마지막 코스는 유산소예요! ${name} ${minutes}분, ${how}. 준비되면 시계 시작 눌러 주세요.`,
+    };
+    return lines[style];
+  }
+  const how = FINISHER_FORMAT_SAID[talk.format ?? 'circuit'];
+  const lines: ByStyle<string> = {
+    tough: `마무리 운동이다. ${how}, ${minutes}분. 준비되면 시계 눌러.`,
+    energetic: `마지막으로 마무리 운동이에요! ${how}, ${minutes}분 동안 해요. 준비되면 시계 시작을 눌러 주세요.`,
+    gentle: `마무리 운동입니다. ${how}, ${minutes}분 동안 하겠습니다. 준비되시면 시계 시작을 눌러 주세요.`,
+    fun: `보너스 판이 열렸어요! ${how}, ${minutes}분 동안 해요. 준비되면 시계 시작 눌러 주세요.`,
+  };
+  return lines[style];
+}
+
+export type FinisherMoment = 'start' | 'zone' | 'half' | 'oneMinute' | 'last10' | 'done';
+
+const FINISHER_CUES: Readonly<Record<Exclude<FinisherMoment, 'zone'>, ByStyle<string>>> = {
+  start: {
+    tough: '가자, 시작!',
+    energetic: '시작해요! 화이팅!',
+    gentle: '시작하겠습니다. 처음에는 편하게 들어가세요.',
+    fun: '출발! 마지막 판 즐겨 봐요.',
+  },
+  half: {
+    tough: '절반 왔다. 속도 유지해.',
+    energetic: '절반 왔어요! 이대로만 가요!',
+    gentle: '절반 지났습니다. 지금 속도 그대로 가세요.',
+    fun: '반 왔어요. 남은 반은 기분상 더 짧아요.',
+  },
+  oneMinute: {
+    tough: '1분 남았다. 다 쏟아.',
+    energetic: '1분 남았어요! 조금만 더!',
+    gentle: '1분 남았습니다. 끝까지 차분하게 가세요.',
+    fun: '1분 남았어요. 광고 한 편 길이예요.',
+  },
+  last10: {
+    tough: '10초! 끝까지!',
+    energetic: '마지막 10초! 끝까지 가요!',
+    gentle: '마지막 10초입니다.',
+    fun: '10초! 진짜 끝이 보여요.',
+  },
+  done: {
+    tough: '끝! 잘 버텼다. 숨 고르고 기록 눌러.',
+    energetic: '끝! 정말 잘했어요! 숨 고르고 기록 눌러 주세요.',
+    gentle: '끝났습니다. 숨을 고르고 기록을 남겨 주세요.',
+    fun: '끝! 살아남으셨어요. 숨 고르고 기록 눌러 주세요.',
+  },
+};
+
+/** 유산소 마무리의 세기 한마디 — 시작하고 조금 뒤에 */
+const FINISHER_ZONE_CUES: Readonly<Record<CardioZone, ByStyle<string>>> = {
+  easy: {
+    tough: '숨 안 차게, 편하게 가.',
+    energetic: '숨 안 차게 편하게요!',
+    gentle: '숨이 차지 않게 편하게 하세요.',
+    fun: '노래 한 소절 부를 수 있을 만큼 편하게요.',
+  },
+  steady: {
+    tough: '숨이 살짝 찰 정도로. 말은 할 수 있게.',
+    energetic: '숨이 살짝 찰 정도로요! 말은 할 수 있게요.',
+    gentle: '숨이 살짝 찰 정도로 하세요. 말은 할 수 있을 만큼입니다.',
+    fun: '숨이 살짝 찰 정도로요. 수다는 떨 수 있게요.',
+  },
+  hard: {
+    tough: '말이 짧아질 만큼 세게.',
+    energetic: '말이 짧아질 만큼 세게 가요!',
+    gentle: '말이 짧아질 정도로 조금 세게 하세요.',
+    fun: '말이 단어로만 나올 만큼요. 문장은 사치예요.',
+  },
+  interval: {
+    tough: '1분 세게, 1분 천천히. 번갈아 가.',
+    energetic: '1분은 세게, 1분은 천천히! 번갈아 가요!',
+    gentle: '1분은 세게, 1분은 천천히 번갈아 하세요.',
+    fun: '1분은 세게, 1분은 천천히! 롤러코스터처럼 번갈아 가요.',
+  },
+};
+
+/** 시계가 도는 동안의 한마디. zone은 유산소 세기(없으면 대화되는 정도) */
+export function finisherCueLine(style: CoachStyle, moment: FinisherMoment, zone: CardioZone = 'steady'): string {
+  if (moment === 'zone') return FINISHER_ZONE_CUES[zone][style];
+  return FINISHER_CUES[moment][style];
+}
+
+/**
+ * 언제 무엇을 말할지 — 시계를 누른 때부터 지난 초. 짧은 마무리에서는 말이 겹치지 않게 뺀다:
+ * 1분 전은 3분 넘을 때만(2분짜리면 절반과 같은 때다), 세기 한마디는 유산소이고 2분 넘을 때만(20초쯤).
+ * 빨리 끝내기(기록이 지난 시간)도 정해진 시간을 끝으로 보고 같은 때에 말한다.
+ */
+export function finisherCueTimes(minutes: number, kind: 'wod' | 'cardio'): { at: number; moment: FinisherMoment }[] {
+  const total = Math.max(1, Math.round(minutes * 60));
+  const out: { at: number; moment: FinisherMoment }[] = [{ at: 0, moment: 'start' }];
+  if (kind === 'cardio' && total >= 120) out.push({ at: 20, moment: 'zone' });
+  if (total >= 60) out.push({ at: Math.round(total / 2), moment: 'half' });
+  if (total >= 180) out.push({ at: total - 60, moment: 'oneMinute' });
+  if (total >= 30) out.push({ at: total - 10, moment: 'last10' });
+  out.push({ at: total, moment: 'done' });
+  return out;
+}
+
+/** 말에 쓰는 진행 방식 · 세기 이름 전부 — 목소리 조각 목록(speechCorpus)이 돌려 본다 */
+export const FINISHER_FORMATS = Object.keys(FINISHER_FORMAT_SAID) as ConditioningFormat[];
+export const FINISHER_ZONES = Object.keys(FINISHER_ZONE_SAID) as CardioZone[];
+

@@ -18,7 +18,7 @@ import { demoFor } from './demos.ts';
 import { EXERCISES } from './exercises.ts';
 import { mistakesFor, type MistakeMoment } from './mistakes.ts';
 import {
-  COOLDOWN_STEPS, MOBILITY_STEPS, cooldownDoneLine, cooldownLine, cooldownSwitchLine, mobilityDoneLine, mobilityLine,
+  COOLDOWN_STEPS, FINISHER_FORMATS, FINISHER_ZONES, MOBILITY_STEPS, cooldownDoneLine, finisherCueLine, finisherIntroLine, cooldownLine, cooldownSwitchLine, mobilityDoneLine, mobilityLine,
   restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, stopHintLine, weightChangedLine, setsChangedLine, repsChangedLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from './ptSession.ts';
 import { setupFor } from './setupGuide.ts';
@@ -27,6 +27,7 @@ import { buildCues, koreanCount } from './tempo.ts';
 import { buildHoldCues, holdCountdownWord, holdFeedbackLine } from './hold.ts';
 import { isTimed } from './exercises.ts';
 import { forSpeech } from './coach.ts';
+import { CARDIO } from './cardio.ts';
 
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 const MOMENTS: MistakeMoment[] = ['flagged', 'heavy', 'first', 'lastSet'];
@@ -211,6 +212,13 @@ export function coachTexts(style: CoachStyle): string[] {
   for (const step of COOLDOWN_STEPS) for (const index of [0, 1]) say(cooldownLine(style, step, index, 6));
   say(cooldownSwitchLine(style));
   say(cooldownDoneLine(style));
+  // 마무리 운동(피니셔) — 소개(진행 방식 · 유산소 종목 × 세기) · 시계 도는 동안의 한마디
+  for (const format of FINISHER_FORMATS) say(finisherIntroLine(style, { kind: 'wod', minutes: 10, format }));
+  for (const cardio of CARDIO) {
+    for (const zone of FINISHER_ZONES) say(finisherIntroLine(style, { kind: 'cardio', minutes: 12, name: cardio.name, zone }));
+  }
+  for (const moment of ['start', 'half', 'oneMinute', 'last10', 'done'] as const) say(finisherCueLine(style, moment));
+  for (const zone of FINISHER_ZONES) say(finisherCueLine(style, 'zone', zone));
 
   say(APP_SAYINGS);
   return out;

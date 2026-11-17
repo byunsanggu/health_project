@@ -9,7 +9,9 @@
  * EQ 에는 더해서
  *   ex    이 기구를 대표할 운동 id (없으면 E.exercisesUsing(id)의 첫 종목)
  *   st    스트레칭 · 몸풀기 · 유산소 동작 id (운동이 없는 기구)
- *   extra 'ball' | 'rope' — 동작에 없는 기구를 그 자리에서 만들어 얹는다(직접 만든 도형)
+ *   cardio 몸 풀기에 없는 유산소 기계 시연 id (E.cardioMotionFor — 일립티컬)
+ *   extra 'ball' | 'rope' | 'rack' | 'smith' — 동작에 없는 기구를 그 자리에서 만들어 얹는다(직접 만든 도형).
+ *         rack 은 기둥 넷 · J후크 · 안전바, smith 는 바를 꿴 레일 · 걸쇠 — 둘이 작은 그림에서 헷갈리지 않게
  */
 export const EX = {
   // 기구가 몸을 가리던 것 — 각도를 돌린다
@@ -31,12 +33,12 @@ export const EQ = {
   'barbell-set': { ex: 'conventional-deadlift' },
   'ez-bar': { ex: 'barbell-curl' },
   dumbbells: { ex: 'hammer-curl', focus: 'hands', zoom: 1.3 },
-  'power-rack': { ex: 'back-squat' },
+  'power-rack': { ex: 'back-squat', extra: 'rack', view: [36, 18], zoom: 0.78 },
   'bench-flat': { ex: 'dumbbell-bench-press' },
   'bench-incline': { ex: 'incline-dumbbell-press' },
   'pull-up-bar': { ex: 'pull-up' },
   'cable-station': { ex: 'cable-fly' },
-  'smith-machine': { ex: 'smith-squat' },
+  'smith-machine': { ex: 'smith-squat', extra: 'smith', view: [28, 10], zoom: 0.85 },
   kettlebells: { ex: 'kettlebell-swing', focus: 'hands', zoom: 1.3 },
   'resistance-bands': { ex: 'band-lateral-raise' },
   'leg-curl-machine': { ex: 'seated-leg-curl' },
@@ -45,7 +47,7 @@ export const EQ = {
   'stationary-bike': { st: 'bike-easy' },
   'rowing-machine': { st: 'row-easy', zoom: 0.8 },
   'stair-climber': { st: 'stairs-easy' },
-  'elliptical-machine': { st: 'stairs-easy', view: [110, 12] },
+  'elliptical-machine': { cardio: 'elliptical', t: 0.5, view: [42, 14] },
   'medicine-ball': { ex: 'goblet-squat', t: 0, extra: 'ball', focus: 'hands', zoom: 1.3 },
   'battle-rope': { ex: 'kettlebell-swing', extra: 'rope' },
 };

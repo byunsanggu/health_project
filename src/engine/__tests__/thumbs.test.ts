@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { EXERCISES } from '../exercises.ts';
 import { EQUIPMENT_CATALOG } from '../equipment.ts';
-import { stretchMotionIds } from '../motionsStretch.ts';
+import { cardioMotionIds, stretchMotionIds } from '../motionsStretch.ts';
 
 /*
  * 3D 썸네일(prototype/thumbs — tools/thumbs/render.mjs가 굽는다)이 카탈로그와 짝이 맞는지.
@@ -43,7 +43,7 @@ describe('3D 썸네일', () => {
 
   test('손질 표(overrides.mjs)가 있는 id만 가리킨다', async () => {
     const mod = await import(new URL('../../../tools/thumbs/overrides.mjs', import.meta.url).href) as {
-      EX: Record<string, unknown>; EQ: Record<string, { ex?: string; st?: string }>;
+      EX: Record<string, unknown>; EQ: Record<string, { ex?: string; st?: string; cardio?: string }>;
     };
     const ex = new Set(EXERCISES.map((e) => e.id));
     const eq = new Set(EQUIPMENT_CATALOG.map((i) => i.id));
@@ -53,6 +53,18 @@ describe('3D 썸네일', () => {
     for (const [id, o] of Object.entries(mod.EQ)) {
       if (o.ex) assert.ok(ex.has(o.ex), `${id}: 운동 ${o.ex}가 없습니다`);
       if (o.st) assert.ok(st.has(o.st), `${id}: 동작 ${o.st}가 없습니다`);
+      if (o.cardio) assert.ok(cardioMotionIds().includes(o.cardio), `${id}: 유산소 시연 ${o.cardio}가 없습니다`);
     }
+  });
+
+  test('일립티컬은 천국의 계단 장면을 빌려 쓰지 않는다 — 자기 시연(긴 발판 · 손잡이 · 앞 플라이휠)으로 굽는다', async () => {
+    const mod = await import(new URL('../../../tools/thumbs/overrides.mjs', import.meta.url).href) as {
+      EQ: Record<string, { st?: string; cardio?: string; extra?: string }>;
+    };
+    assert.equal(mod.EQ['elliptical-machine']?.cardio, 'elliptical');
+    assert.equal(mod.EQ['elliptical-machine']?.st, undefined);
+    // 랙과 스미스는 서로 다른 덧그림으로 갈린다 (랙: J후크 · 안전바 / 스미스: 바를 꿴 레일 · 걸쇠)
+    assert.equal(mod.EQ['power-rack']?.extra, 'rack');
+    assert.equal(mod.EQ['smith-machine']?.extra, 'smith');
   });
 });

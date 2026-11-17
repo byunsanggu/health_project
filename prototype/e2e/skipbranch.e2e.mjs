@@ -13,7 +13,7 @@ export default async function ({ page, url, shot }) {
   // 오늘만 빼기 — 두 번째 종목
   await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.plan-row .row-menu').nth(1).click();
-  await page.locator('dialog .menu-row', { hasText: '이 종목 빼기' }).click();
+  await page.locator('dialog .menu-row', { hasText: '이 운동 빼기' }).click();
   await shot('1-exclude');
   await page.locator('dialog .skip-today').click();
   const afterSkip = await names(page);
@@ -26,7 +26,7 @@ export default async function ({ page, url, shot }) {
 
   // 앞으로도 빼기(하기 싫어요) — 대신 들어오는 종목이 없다
   await page.locator('.plan-row .row-menu').nth(1).click();
-  await page.locator('dialog .menu-row', { hasText: '이 종목 빼기' }).click();
+  await page.locator('dialog .menu-row', { hasText: '이 운동 빼기' }).click();
   await page.locator('dialog .menu-row', { hasText: '그냥 하기 싫어요' }).click();
   check((await page.locator('dialog').textContent()).includes('비워 둡니다'), '빈자리를 채운다고 합니다');
   await page.locator('dialog .finish', { hasText: '당분간 빼기' }).click();

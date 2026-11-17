@@ -1,7 +1,7 @@
 // 홈짐 — 집에서 하는 사람을 "아직 연결 안 된 헬스장 회원"으로 대하지 않는다.
 //   내 정보 › 헬스장 › 기구 고치기: 홈짐을 고르면 이름표가 집이 되고, 집에 흔한 맨몸 · 소도구(밴드 · 케틀벨 · 스텝박스 · 폼롤러)가
 //   "더 보기" 없이 맨 위에 있다. 켜도 열리는 종목이 없는 기구는 칸에 그렇다고 적는다.
-//   오늘: 헬스장 등록 안내가 없고, ⋯ 메뉴에 "사람 있어요" · "맨 뒤로 미루기"가 없다.
+//   오늘: 헬스장 등록 안내가 없고, ⋯ 메뉴에 "기구에 사람이 있어요" · "맨 뒤로 미루기"가 없다.
 //   내 정보 › 헬스장: 빨간 "등록 안 됨"도, 찾아서 등록하기도 없다. 바벨 · 머신이 없으니 무게 설정은 덤벨 두 줄뿐이다.
 //   내 정보 › 설정: "운동 횟수 · 목표 바꾸기"로 주 몇 번을 바로 바꾼다. 개발자 말(PWA · 서버 · Wear OS)이 없다.
 import { agreeConsent, check, gymTab, pickMe, tab, todayDetail } from './lib.mjs';
@@ -46,12 +46,12 @@ export default async function ({ page, url, shot }) {
 
   // 오늘 — 헬스장 등록 안내가 없다
   check(await page.locator('.gym-link-nudge').count() === 0, '홈짐인데 헬스장 등록 안내가 뜹니다');
-  // ⋯ 메뉴 — 사람 있어요 · 맨 뒤로 미루기가 없다
+  // ⋯ 메뉴 — 기구에 사람이 있어요 · 맨 뒤로 미루기가 없다
   await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.plan-row .row-menu').first().click();
   const menu = await page.locator('dialog').textContent();
-  check(!menu.includes('사람 있어요') && !menu.includes('맨 뒤로 미루기'), '집인데 메뉴에: ' + menu.replace(/\s+/g, ' ').slice(0, 200));
-  check(menu.includes('이 종목 빼기'), '메뉴가 비었습니다');
+  check(!menu.includes('기구에 사람이 있어요') && !menu.includes('맨 뒤로 미루기'), '집인데 메뉴에: ' + menu.replace(/\s+/g, ' ').slice(0, 200));
+  check(menu.includes('이 운동 빼기'), '메뉴가 비었습니다');
   await page.locator('dialog .modal-close').click();
   await shot('2-today');
 

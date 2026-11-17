@@ -6,6 +6,12 @@ import {
   paceCheck, restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, restTalkPlan, restSpoken, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from '../ptSession.ts';
 import { forSpeech, speechSeconds } from '../coach.ts';
+import {
+  FINISHER_FORMATS, FINISHER_ZONES, finisherCueLine, finisherCueTimes, finisherIntroLine, type FinisherMoment,
+} from '../ptSession.ts';
+import { CARDIO } from '../cardio.ts';
+import { speechCorpus } from '../speechCorpus.ts';
+import { speechPieces } from '../speech.ts';
 
 const STYLES = ['energetic', 'gentle', 'tough', 'fun'] as const;
 /** 빡센 코치만 반말 — 나머지 셋에 반말 끝맺음이 나오면 안 된다 */
@@ -281,3 +287,65 @@ describe('쉬는 동안 코치 말', () => {
     assert.deepEqual(restTalkPlan('more', 150).map((item) => item.kind), ['feedback', 'cue', 'cheer', 'breath']);
   });
 });
+
+describe('마무리 운동(피니셔) — PT 코치의 말', () => {
+  const MOMENTS: FinisherMoment[] = ['start', 'half', 'oneMinute', 'last10', 'done'];
+  const all = (style: typeof STYLES[number]) => [
+    ...FINISHER_FORMATS.map((format) => finisherIntroLine(style, { kind: 'wod', minutes: 10, format })),
+    ...CARDIO.flatMap((cardio) => FINISHER_ZONES.map((zone) => finisherIntroLine(style, { kind: 'cardio', minutes: 12, name: cardio.name, zone }))),
+    ...MOMENTS.map((moment) => finisherCueLine(style, moment)),
+    ...FINISHER_ZONES.map((zone) => finisherCueLine(style, 'zone', zone)),
+  ];
+
+  it('소개는 무엇을 몇 분, 어떤 방식으로 하는지 말하고 시계를 누르라고 한다', () => {
+    for (const style of STYLES) {
+      const wod = finisherIntroLine(style, { kind: 'wod', minutes: 8, format: 'amrap' });
+      assert.match(wod, /마무리|보너스/, style);
+      assert.match(wod, /시간 안에 최대한 많이, 8분/, style);
+      assert.match(wod, /시계/, style);
+      assert.doesNotMatch(wod, /AMRAP|\(/, `${style}: 영어 줄임말 · 괄호는 읽지 않는다`);
+      const cardio = finisherIntroLine(style, { kind: 'cardio', minutes: 12, name: '천국의 계단 (스텝밀)', zone: 'steady' });
+      assert.match(cardio, /유산소/, style);
+      assert.match(cardio, /천국의 계단 12분, 대화되는 정도로/, style);
+      assert.doesNotMatch(cardio, /스텝밀|\(/, style);
+    }
+  });
+
+  it('유산소 세기 한마디 — 대화되는 정도면 "숨이 살짝 찰 정도로"', () => {
+    for (const style of STYLES) assert.match(finisherCueLine(style, 'zone', 'steady'), /숨이 살짝 찰 정도로/, style);
+    for (const style of STYLES) assert.match(finisherCueLine(style, 'zone', 'interval'), /1분.*세게.*1분.*천천히/, style);
+  });
+
+  it('빡센 코치만 반말, 나머지는 존댓말', () => {
+    assert.doesNotMatch(all('tough').join(' '), POLITE_END);
+    for (const style of ['energetic', 'gentle', 'fun'] as const) assert.doesNotMatch(all(style).join(' '), BANMAL, style);
+    for (const style of STYLES) assert.equal(new Set(MOMENTS.map((moment) => finisherCueLine(style, moment))).size, MOMENTS.length, style);
+  });
+
+  it('언제 말할지 — 시작 · 절반 · 1분 전(3분 넘을 때) · 10초 전 · 끝, 유산소는 20초쯤 세기', () => {
+    assert.deepEqual(finisherCueTimes(10, 'wod'), [
+      { at: 0, moment: 'start' }, { at: 300, moment: 'half' }, { at: 540, moment: 'oneMinute' }, { at: 590, moment: 'last10' }, { at: 600, moment: 'done' },
+    ]);
+    assert.deepEqual(finisherCueTimes(12, 'cardio').map((cue) => cue.moment), ['start', 'zone', 'half', 'oneMinute', 'last10', 'done']);
+    // 2분짜리 — 1분 전은 절반과 같은 때라 뺀다
+    assert.deepEqual(finisherCueTimes(2, 'cardio').map((cue) => cue.moment), ['start', 'zone', 'half', 'last10', 'done']);
+    for (const minutes of [1, 2, 5, 8, 10, 15, 20]) {
+      const times = finisherCueTimes(minutes, 'cardio').map((cue) => cue.at);
+      for (let i = 1; i < times.length; i += 1) assert.ok(times[i]! - times[i - 1]! >= 10, `${minutes}분: 말이 겹친다 ${times.join(',')}`);
+    }
+  });
+
+  it('모든 말이 목소리 조각으로 덮인다 (몇 분이든)', () => {
+    for (const style of STYLES) {
+      const corpus = new Set(speechCorpus(style));
+      const lines = [...all(style)];
+      for (const minutes of [3, 7, 15, 20, 30]) {
+        lines.push(finisherIntroLine(style, { kind: 'wod', minutes, format: 'emom' }));
+        lines.push(finisherIntroLine(style, { kind: 'cardio', minutes, name: '일립티컬', zone: 'interval' }));
+      }
+      const missing = lines.flatMap((line) => speechPieces(line, (sentence) => corpus.has(sentence)).filter((piece) => !corpus.has(piece)).map((piece) => `${piece} ← ${line}`));
+      assert.deepEqual(missing, [], style);
+    }
+  });
+});
+

@@ -27,7 +27,7 @@ export default async function ({ page, url, shot }) {
 
   // 종목마다 — 첫 종목만 6~10회로
   await page.locator('.plan-row .row-menu').first().click();
-  await page.locator('dialog .menu-row', { hasText: '이 종목 반복 수' }).click();
+  await page.locator('dialog .menu-row', { hasText: '횟수 범위 바꾸기' }).click();
   await page.locator('dialog .rep-presets .pick', { hasText: /^6~10회$/ }).click();
   await shot('2-override');
   await page.locator('dialog .rep-save').click();

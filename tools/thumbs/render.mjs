@@ -66,7 +66,7 @@ const jobs = [];
 for (const id of ids.ex) jobs.push({ key: id, dir: 'ex', id, kind: 'ex', ...(EX[id] || {}) });
 for (const item of ids.eq) {
   const o = EQ[item.id] || {};
-  const src = o.st ? { kind: 'st', id: o.st } : { kind: 'ex', id: o.ex || item.uses[0] };
+  const src = o.cardio ? { kind: 'cardio', id: o.cardio } : o.st ? { kind: 'st', id: o.st } : { kind: 'ex', id: o.ex || item.uses[0] };
   if (!src.id) throw new Error(`기구 ${item.id}: 대표 동작이 없습니다 — overrides.mjs 의 EQ 에 ex/st 를 적어 주세요`);
   // 같은 운동의 손질(각도 등)은 기구 그림에도 이어받는다. 기구 그림은 근육 색을 빼 기구가 먼저 보이게 한다
   jobs.push({ key: 'eq:' + item.id, dir: 'eq', out: item.id, plain: true, ...(src.kind === 'ex' ? EX[src.id] || {} : {}), ...o, ...src });
@@ -77,6 +77,7 @@ async function renderJob(job) {
     const E = window.FitEngine;
     let clip, opts;
     if (job.kind === 'st') { clip = E.stretchMotionFor(job.id, 'L'); opts = {}; }
+    else if (job.kind === 'cardio') { clip = E.cardioMotionFor(job.id); opts = {}; }
     else {
       const ex = E.exerciseById(job.id);
       if (!ex) return { error: 'no exercise ' + job.id };
@@ -119,6 +120,8 @@ async function renderJob(job) {
     scene.children.forEach((m) => { if (m.isMesh && /^Plane/.test(m.geometry.type)) floor = m; });
     if (floor) floor.material = new THREE.ShadowMaterial({ opacity: 0.2 });
     const moving = scene.children[scene.children.length - 1];
+    // 마네킹 조각(몸 · 근육)은 장면 바로 밑에 놓인 메시다 — 기구는 무리(group) 안에 있거나 아래에서 새로 얹는다
+    const bodyMeshes = new Set(scene.children.filter((m) => m.isMesh && m !== floor));
     // 일하는 근육 색을 작은 그림에서도 보이게 조금 더 진하게 (색은 demo3d 의 인디고 그대로)
     scene.traverse((m) => {
       const mt = m.isMesh && m.material;
@@ -150,6 +153,60 @@ async function renderJob(job) {
       });
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.3, 16), new THREE.MeshStandardMaterial({ color: 0x4c5363 }));
       post.position.set(0, 0.15, mid[2] + 2.6); post.castShadow = true; scene.add(post);
+    }
+
+    // 랙 · 스미스 — 둘 다 키 큰 쇠 틀이라 작은 그림에서 헷갈린다. 다른 곳을 직접 만든 도형으로 또렷하게
+    // demo3d 의 쇠 색과 같게 (그쪽처럼 sRGB 색을 선형으로 바꿔 넣는다)
+    const lin = (hex) => { const c = new THREE.Color(hex); return c.convertSRGBToLinear ? c.convertSRGBToLinear() : c; };
+    const darkMat = new THREE.MeshStandardMaterial({ color: lin(0x2a2e37), roughness: 0.55, metalness: 0.35 });
+    const steelMat = new THREE.MeshStandardMaterial({ color: lin(0xb4bbc5), roughness: 0.35, metalness: 0.75 });
+    const box = (size, at, mat) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), mat || darkMat);
+      m.position.set(at[0], at[1], at[2]); m.castShadow = true; scene.add(m); return m;
+    };
+    const rod = (r, a, b, mat) => {
+      const A = new THREE.Vector3(a[0], a[1], a[2]); const B = new THREE.Vector3(b[0], b[1], b[2]);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, A.distanceTo(B), 16), mat || steelMat);
+      m.position.copy(A).add(B).multiplyScalar(0.5);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+      m.castShadow = true; scene.add(m); return m;
+    };
+    const barItem = frame.moving.find((m) => m.kind === 'smith' || m.kind === 'barbell');
+    if (job.extra === 'rack' && barItem) {
+      // 열린 우리 모양 — 기둥 넷, 위 · 바닥 틀, 앞 기둥의 J후크, 양옆 안전바. 바는 레일 없이 어깨 위에 얹힌 그대로
+      const half = 0.62; const back = -0.55; const front = 0.6; const top = 2.2;
+      [half, -half].forEach((x) => {
+        box([0.07, top, 0.07], [x, top / 2, front]);
+        box([0.07, 0.07, front - back + 0.07], [x, top, (front + back) / 2]);
+        box([0.07, 0.05, front - back + 0.3], [x, 0.025, (front + back) / 2]);
+        // 안전바 — 앞뒤 기둥을 잇는 긴 쇠 팔 (무릎 높이)
+        box([0.06, 0.06, front - back + 0.18], [x * 0.94, 0.62, (front + back) / 2], steelMat);
+        // J후크 — 앞 기둥 안쪽에 붙은 받침과 위로 꺾인 끝 (어깨 높이)
+        const s = Math.sign(x);
+        box([0.06, 0.07, 0.16], [x - s * 0.02, 1.32, front - 0.11]);
+        box([0.06, 0.1, 0.03], [x - s * 0.02, 1.38, front - 0.18]);
+        // 구멍 줄 — 기둥 앞면의 높이 맞추는 구멍
+        for (let y = 0.5; y < 1.9; y += 0.12) box([0.03, 0.025, 0.01], [x, y, front - 0.04], steelMat);
+      });
+      box([half * 2 + 0.07, 0.07, 0.07], [0, top, front]);
+    }
+    if (job.extra === 'smith' && barItem) {
+      // 바가 세운 레일 두 개에 꿰여 위아래로만 다닌다 — 바 양 끝(손과 원판 사이)에 미끄럼통과 걸쇠, J컵은 없다
+      const c = barItem.p; const zr = c[2];
+      [0.6, -0.6].forEach((x) => {
+        rod(0.022, [x, 0.02, zr], [x, 2.16, zr]);
+        box([0.09, 0.03, 0.09], [x, 0.03, zr]);
+        box([0.09, 0.04, 0.09], [x, 2.16, zr]);
+        // 미끄럼통 — 바를 감싸고 레일을 탄다
+        box([0.085, 0.2, 0.085], [x, c[1], zr]);
+        // 걸쇠 — 손목을 돌려 거는 고리 (통 뒤로 비스듬히)
+        const hook = box([0.025, 0.12, 0.05], [x + Math.sign(x) * 0.0, c[1] - 0.07, zr - 0.07], steelMat);
+        hook.rotation.x = -0.6;
+        // 레일 옆 기둥에 줄지은 거는 자리
+        const px = Math.sign(x) * 0.78;
+        for (let y = 0.45; y < 1.95; y += 0.15) box([0.06, 0.025, 0.05], [px - Math.sign(x) * 0.05, y, zr - 0.02], steelMat);
+        box([Math.abs(px - x), 0.05, 0.05], [(px + x) / 2, 2.16, zr]);
+      });
     }
 
     // 꽉 차게 — 이 순간의 몸과 기구(메시 상자 모서리)를 보는 방향에서 투영해 거리를 정한다
@@ -211,6 +268,26 @@ async function renderJob(job) {
     render(scene, camera);
     const shrink = (src, size) => { const o = document.createElement('canvas'); o.width = size; o.height = size; const g = o.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(src, 0, 0, size, size); return o; };
     const large = shrink(c, LARGE);
+    // 작은 그림(오늘 목록의 46px 칸)은 따로 한 번 더 — 일하는 근육을 더 진하게, 기구는 바탕 쪽으로 한 발 물린다.
+    // 큰 그림은 위에서 이미 떴으니 그대로다. 기구 그림(plain)은 기구가 주인공이라 손대지 않는다
+    if (!job.plain) {
+      const hot = new THREE.Color(0x4436e8); if (hot.convertSRGBToLinear) hot.convertSRGBToLinear();
+      const tile = new THREE.Color(0xb3b8c6); if (tile.convertSRGBToLinear) tile.convertSRGBToLinear();
+      const seen = new Set();
+      scene.traverse((m) => {
+        const mt = m.isMesh && m !== floor && m.material;
+        if (!mt || seen.has(mt)) return;
+        seen.add(mt);
+        if (bodyMeshes.has(m)) {
+          if (mt.emissive && mt.emissive.getHex() !== 0 && mt.emissiveIntensity > 0.02) {
+            mt.color.lerp(hot, 0.85); mt.emissiveIntensity = Math.min(1, mt.emissiveIntensity * 2.6);
+            // 덩어리도 조금 키운다 — 46px에서 점이 아니라 면으로 보이게
+            m.matrix.scale(new THREE.Vector3(1.15, 1.15, 1.15)); m.matrixWorldNeedsUpdate = true;
+          }
+        } else if (mt.color) mt.color.lerp(tile, 0.28);
+      });
+      render(scene, camera);
+    }
     const small = shrink(shrink(c, SMALL * 2), SMALL);
     const res = { t, view, large: large.toDataURL('image/webp', QUALITY), small: small.toDataURL('image/webp', QUALITY), miss: frame.solved.miss || 0 };
     h.dispose(); c.remove();
@@ -230,7 +307,7 @@ if (!sheetsOnly) {
     const name = job.out || job.id;
     await writeFile(path.join(OUT, job.dir, `${name}.webp`), bytes(res.small));
     await writeFile(path.join(OUT, job.dir, `${name}@3x.webp`), bytes(res.large));
-    log.push(`${job.key} t=${res.t} view=${res.view.join(',')}${job.kind === 'st' || job.dir === 'eq' ? ' src=' + job.id : ''}`);
+    log.push(`${job.key} t=${res.t} view=${res.view.join(',')}${job.dir === 'eq' ? ' src=' + job.id : ''}`);
   }
   console.log(log.join('\n'));
   console.log('rendered', todo.length, 'errors', JSON.stringify(errors));

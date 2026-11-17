@@ -370,6 +370,70 @@ function stairsEasy(id: string): Clip {
   };
 }
 
+/**
+ * 일립티컬(크로스트레이너) — 긴 발판 두 개가 앞쪽 플라이휠에 물려 타원을 그리고, 긴 손잡이 두 개가
+ * 발과 반대로 앞뒤로 움직인다. 발은 발판에서 떨어지지 않는다. 왼발이 앞으로 갈 때 왼손은 뒤로.
+ * 천국의 계단(제자리 계단)과 달리 발이 앞뒤로 길게 미끄러진다 — 썸네일에서 둘이 구분되는 곳이다.
+ */
+function ellipticalStride(id: string): Clip {
+  const hub: Vec3 = [0, 0.4, 0.86];
+  const pivotY = 0.94;
+  const pivotZ = 0.46;
+  const reach = 0.36;
+  const LEG_REACH = 0.875;
+  const footAt = (x: number, a: number): { ball: Vec3; leg: LegSpec } => {
+    const z = -0.06 + 0.2 * Math.cos(a);
+    const y = 0.3 + 0.06 * Math.sin(a);
+    return { ball: [x, y, z], leg: ballAt(x, z, 8, 0, y, [x, 0.3, 1]) };
+  };
+  const handAt = (side: 1 | -1, a: number): ArmSpec => {
+    // 같은 쪽 발이 앞(cos a = 1)이면 손잡이는 뒤로 — 몸 쪽으로 기운다
+    const lean = (22 + 14 * Math.cos(a)) * DEG;
+    return {
+      ik: [side * 0.25, pivotY + reach * Math.cos(lean), pivotZ - reach * Math.sin(lean)],
+      pole: [side * 0.6, -1, -0.4], hand: [0, 1, 0.15],
+    };
+  };
+  const at = (s: number): Pose3 => {
+    const a = 2 * Math.PI * s;
+    const l = footAt(0.12, a);
+    const r = footAt(-0.12, a + Math.PI);
+    // 골반 — 두 발판 중 더 먼 쪽에 다리가 닿을 만큼만 높게 (무릎은 늘 살짝 굽은 채)
+    const hipZ = -0.06;
+    const height = (ball: Vec3): number => ball[1] + Math.sqrt(LEG_REACH ** 2 - (ball[2] - hipZ) ** 2);
+    return {
+      pelvis: [0, Math.min(height(l.ball), height(r.ball)), hipZ], pitch: 6, spine: 2, neck: -6,
+      legL: l.leg, legR: r.leg, armL: handAt(1, a), armR: handAt(-1, a + Math.PI),
+    };
+  };
+  // 발판 — 발 밑에 눕혀 붙고, 앞쪽 플라이휠 축에서 뻗은 긴 레일(쇠 팔) 끝에 달린다
+  const pedal = (bone: BoneName, x: number): Link => ({
+    kind: 'pad', bone, u: 0.5, fixed: { x: [1, 0, 0], y: [0, 1, 0] }, off: [0, -0.035, -0.02], size: [0.13, 0.035, 0.36], pivot: [x, hub[1], hub[2]],
+  });
+  // 손잡이 — 세운 봉을 쥐고, 기둥의 축에서 뻗은 팔이 손잡이를 앞뒤로 흔든다
+  const handle = (bone: BoneName, x: number): Link => ({
+    kind: 'bar', bone, u: 0.4, fixed: { x: [0, 1, 0], y: [0, 0, 1] }, off: [0.1, 0, 0], size: [0.018, 0.5], pivot: [x, pivotY, pivotZ], leverAt: -0.18,
+  });
+  return {
+    id, cycle: 1.4, view: [64, 12], keys: keys(...sampled(12, at, [[0, '팔과 다리를 같이 밀고 당기기']])), linear: true, work: [0, 1],
+    scene: [
+      // 바닥 틀 — 뒤에서 앞 플라이휠까지 긴 몸통, 앞뒤 받침
+      { kind: 'frame', p: [0, 0.05, 0.12], size: [0.14, 0.1, 1.7] },
+      { kind: 'frame', p: [0, 0.03, -0.7], size: [0.62, 0.06, 0.08] },
+      { kind: 'frame', p: [0, 0.03, 0.95], size: [0.62, 0.06, 0.08] },
+      // 플라이휠 덮개 — 앞쪽 둥근 통
+      { kind: 'plate', p: hub, size: [0.27, 0.24] },
+      { kind: 'pad', p: [0, 0.3, 0.86], size: [0.26, 0.3, 0.5] },
+      // 기둥 · 계기판 · 손잡이 축
+      { kind: 'frame', p: [0, 1.0, 0.72], size: [0.07, 0.86, 0.07], y: normalize([0, 1, -0.12]) },
+      { kind: 'pad', p: [0, 1.42, 0.66], size: [0.32, 0.07, 0.2], y: normalize([0, 1, 0.5]) },
+      { kind: 'bar', p: [0, pivotY, pivotZ], size: [0.022, 0.56] },
+      { kind: 'bar', p: [0, 1.3, 0.58], size: [0.016, 0.3] },
+    ],
+    links: [pedal('footL', 0.12), pedal('footR', -0.12), handle('handL', 0.25), handle('handR', -0.25)],
+  };
+}
+
 /* ── 폼롤러 ──────────────────────────────────────── */
 
 /** 등 위쪽 — 누워 롤러를 날개뼈 밑에, 엉덩이를 들고 발로 밀어 위아래로 */
@@ -1050,6 +1114,31 @@ export function stretchMotionFor(stepId: string, side: Side | 'left' | 'right' =
 /** 버티는 스트레칭('hold')인가 움직이는 동작('move')인가. 없는 동작이면 null */
 export function stretchStyle(stepId: string): StretchStyle | null {
   return STRETCHES[stepId]?.style ?? null;
+}
+
+/*
+ * 유산소 종목(cardio.ts) 중 몸 풀기에 없는 기계의 시연. 몸 풀기 동작 목록(stretchMotionIds)과는 따로 둔다 —
+ * 그 목록은 PT 세션의 동작과 하나씩 짝이 맞아야 한다.
+ */
+const CARDIO_CLIPS: Record<string, (id: string) => Clip> = {
+  elliptical: ellipticalStride,
+};
+
+/** 유산소 종목 id(cardio.ts)의 기계 시연. 따로 만든 시연이 없으면 null */
+export function cardioMotionFor(cardioId: string): Clip | null {
+  const make = CARDIO_CLIPS[cardioId];
+  if (!make) return null;
+  let clip = cache.get('cardio:' + cardioId);
+  if (!clip) {
+    clip = make(cardioId);
+    cache.set('cardio:' + cardioId, clip);
+  }
+  return clip;
+}
+
+/** 따로 만든 시연이 있는 유산소 종목 id 전부 */
+export function cardioMotionIds(): string[] {
+  return Object.keys(CARDIO_CLIPS);
 }
 
 /** 시연이 있는 몸 풀기 · 마무리 동작 id 전부 */

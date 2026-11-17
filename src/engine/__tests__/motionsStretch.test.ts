@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { clipBounds, clipFrame, effortAt, type Clip, type Prim } from '../motionKit.ts';
-import { mirrorClip, stretchMotionFor, stretchMotionIds, stretchStyle } from '../motionsStretch.ts';
+import { cardioMotionFor, cardioMotionIds, mirrorClip, stretchMotionFor, stretchMotionIds, stretchStyle } from '../motionsStretch.ts';
 import { COOLDOWN_STEPS, MOBILITY_STEPS } from '../ptSession.ts';
 import type { ArmSpec, BoneName, LegSpec, Solved, Vec3 } from '../rig.ts';
 
@@ -26,6 +26,8 @@ function allClips(): { name: string; clip: Clip }[] {
     out.push({ name: step.id, clip: clipOf(step.id) });
     if (step.sides) out.push({ name: `${step.id}/R`, clip: clipOf(step.id, 'R') });
   }
+  // 몸 풀기에 없는 유산소 기계 시연(일립티컬)도 같은 검사를 받는다
+  for (const id of cardioMotionIds()) out.push({ name: `cardio:${id}`, clip: cardioMotionFor(id)! });
   return out;
 }
 
@@ -454,5 +456,40 @@ describe('3D 시연 검토 반영 — 좌우 뒤집기', () => {
     }
     assert.ok(checked > 0, '왼 · 오른이 든 말이 있는 한쪽 동작이 하나도 없다');
     assert.equal(mirrorClip(clipOf('roll-glutes')).keys[0]!.label, '오른쪽 엉덩이로 기대 굴리기');
+  });
+});
+
+describe('유산소 기계 시연 — 일립티컬', () => {
+  const clip = cardioMotionFor('elliptical')!;
+  it('있고, 없는 종목은 null', () => {
+    assert.ok(clip);
+    assert.equal(clip.id, 'elliptical');
+    assert.equal(cardioMotionFor('no-such-cardio'), null);
+    assert.ok(cardioMotionIds().every((id) => !stretchMotionIds().includes(id)), '몸 풀기 목록과 섞이지 않는다');
+  });
+
+  it('발이 앞뒤로 길게(30cm 넘게) 타원을 그리고, 두 발은 반대로 움직인다 — 제자리 계단과 다르다', () => {
+    const ball = (f: ReturnType<typeof clipFrame>, s: 'L' | 'R') => f.solved.bones[`foot${s}`].b;
+    const zs = frames(clip).map((f) => ball(f, 'L')[2]);
+    assert.ok(Math.max(...zs) - Math.min(...zs) > 0.3, `발 앞뒤 ${(Math.max(...zs) - Math.min(...zs)).toFixed(2)}m`);
+    const f0 = clipFrame(clip, 0);
+    assert.ok((ball(f0, 'L')[2] - ball(f0, 'R')[2]) * (ball(clipFrame(clip, 0.5), 'L')[2] - ball(clipFrame(clip, 0.5), 'R')[2]) < 0, '두 발이 엇갈린다');
+  });
+
+  it('발판 둘은 앞쪽 플라이휠 축에서 뻗은 레일에, 손잡이 둘은 기둥 축에 달려 같이 움직인다', () => {
+    const links = clip.links ?? [];
+    const pedals = links.filter((l) => l.kind === 'pad' && /^foot/.test(String(l.bone)));
+    const handles = links.filter((l) => l.kind === 'bar' && /^hand/.test(String(l.bone)));
+    assert.equal(pedals.length, 2);
+    assert.equal(handles.length, 2);
+    for (const l of [...pedals, ...handles]) assert.ok(l.pivot, '쇠 팔(레일 · 손잡이 팔)이 축에 이어진다');
+    // 레일 축은 발보다 앞(+z), 몸 앞의 둥근 플라이휠 덮개 자리
+    for (const l of pedals) assert.ok(l.pivot![2] > 0.6);
+    assert.ok(clip.scene.some((p) => p.kind === 'plate' && p.p[2] > 0.6), '앞쪽 플라이휠 덮개');
+    // 같은 쪽 손과 발은 반대로 — 왼발이 앞이면 왼손은 뒤
+    const f = clipFrame(clip, 0);
+    const footFwd = f.solved.bones.footL.b[2] - f.solved.bones.footR.b[2];
+    const handFwd = f.solved.hands.L.grip[2] - f.solved.hands.R.grip[2];
+    assert.ok(footFwd * handFwd < 0, '손과 발이 엇갈려 움직인다');
   });
 });

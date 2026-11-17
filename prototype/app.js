@@ -5953,11 +5953,13 @@
     if (painAsk) screen.appendChild(painAsk);
 
     var reordering = Boolean(state.reorderMode) && state.lifts.length > 1;
-    var nextLift = state.lifts.filter(function (lift) { return lift.sets.some(function (set) { return !set.done; }); })[0];
-    if (nextLift && !reordering) screen.appendChild(todayHero(nextLift, doneSets > 0));
+    // 첫 운동(이어서 할 때는 다음 운동)은 목록 안 그 줄을 크게 — 위에 따로 카드를 두면 같은 이름이 두 번 나온다
+    var nextLift = reordering ? null : state.lifts.filter(function (lift) { return lift.sets.some(function (set) { return !set.done; }); })[0];
 
     if (!detail) {
-      screen.appendChild(el('div', { class: 'simple-list' }, state.lifts.map(simplePlanRow)));
+      screen.appendChild(el('div', { class: 'simple-list' }, state.lifts.map(function (lift) {
+        return simplePlanRow(lift, lift === nextLift ? (doneSets > 0 ? '다음 운동' : '첫 운동') : null);
+      })));
       if (!state.started && !everClosedWorkout()) {
         screen.appendChild(el('p', { class: 'hint-line first-hint', text: '위에서부터 한 운동씩 합니다. 이름을 누르면 동작을 보여 드립니다.' }));
       }
@@ -6005,7 +6007,11 @@
     if (detail) renderPlanDetail(reordering);
 
     // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다(아래에 붙은 시작 버튼 위에).
-    if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
+    // 세트를 다 했으면 채운 버튼은 아래 고정 버튼 하나("오늘 운동 완료 · 요약 보기")뿐이다.
+    // 마무리 운동이 남았으면 고정 버튼은 그쪽(이어서 하기)이고, 요약은 조용한 버튼으로.
+    var allDone = doneSets > 0 && allSetsDone();
+    var finisherLeft = allDone && finisherPending();
+    if (doneSets > 0 && (!allDone || finisherLeft)) renderFinish(true);
     // 시작은 했는데 아직 기록이 없을 때도 끝낼 길은 있어야 한다.
     else if (state.sessionStartedAt) {
       screen.appendChild(el('button', { type: 'button', class: 'finish quiet', text: '운동 끝내기', onclick: endWorkout }));
@@ -6024,8 +6030,11 @@
       el('button', {
         type: 'button', class: 'finish start-cta',
         // 시작해 두고 목록에 온 것(PT 멈춤 · 몸 풀기 중)도 "이어서 하기" — "운동 시작"이면 처음부터인 줄 안다
-        text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : state.sessionStartedAt ? '이어서 하기' : '운동 시작',
+        text: allDone && !finisherLeft ? '오늘 운동 완료 · 요약 보기'
+          : finisherLeft ? '이어서 하기 · 마무리 운동'
+            : doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : state.sessionStartedAt ? '이어서 하기' : '운동 시작',
         onclick: function () {
+          if (allDone && !finisherLeft) { openSummary(); return; }
           /*
            * 한 번에 시작한다 — 몸 상태 · 아픈 데 · 시간 · 혼자/PT는 지난번 그대로.
            * 맨 처음 한 번만 "오늘 운동 준비" 한 장을 보여 준다 — 이런 걸 바꿀 수 있다는 걸 알게.
@@ -6043,31 +6052,18 @@
     return /(운동|루틴)$/.test(base) ? base : base + ' 운동';
   }
 
-  /** 오늘 첫 운동(이어서 할 때는 다음 운동) 한 장 — 그림과 이름. 누르면 동작 보기. */
-  function todayHero(lift, resumed) {
-    return el('button', {
-      type: 'button', class: 'today-hero',
-      'aria-label': (resumed ? '다음 운동: ' : '첫 운동: ') + lift.exercise.name + ' — 눌러서 동작 보기',
-      onclick: function () { openDemo(lift.exercise); },
-    }, [
-      liftThumb(lift.exercise),
-      el('span', { class: 'today-hero-text' }, [
-        el('span', { class: 'today-hero-key', text: resumed ? '다음 운동' : '첫 운동' }),
-        el('b', { class: 'today-hero-name', text: lift.exercise.name }),
-      ]),
-    ]);
-  }
-
   /** 간단히 목록의 한 줄 — 작은 그림과 이름만. 누르면 동작 보기. 세트 · 무게 · ⋯은 자세히 안에. */
-  function simplePlanRow(lift) {
+  /** 간단히 목록 한 줄. lead('첫 운동' · '다음 운동')가 있으면 그 줄을 크게 — 그림을 키우고 이름 위에 한 줄. */
+  function simplePlanRow(lift, lead) {
     var done = lift.sets.filter(function (set) { return set.done; }).length;
+    var name = el('span', { class: 'name' }, [el('span', { text: lift.exercise.name })]);
     return el('button', {
-      type: 'button', class: 'plan-row simple-row' + (done > 0 && done === lift.sets.length ? ' is-done' : ''),
-      'aria-label': lift.exercise.name + ' 동작 보기',
+      type: 'button', class: 'plan-row simple-row' + (done > 0 && done === lift.sets.length ? ' is-done' : '') + (lead ? ' is-next' : ''),
+      'aria-label': (lead ? lead + ': ' : '') + lift.exercise.name + ' 동작 보기',
       onclick: function () { openDemo(lift.exercise); },
     }, [
-      liftThumb(lift.exercise, true),
-      el('span', { class: 'name' }, [el('span', { text: lift.exercise.name })]),
+      liftThumb(lift.exercise, !lead),
+      lead ? el('span', { class: 'simple-lead' }, [el('span', { class: 'simple-lead-key', text: lead }), name]) : name,
       done > 0 ? el('span', { class: 'plan-done', text: done + '/' + lift.sets.length }) : null,
     ]);
   }
@@ -6182,7 +6178,10 @@
        * 전에는 눌러도 아무 일이 없고, 동작은 ⋯ 안 첫 줄에 숨어 있었다.
        */
       var thumb = liftThumb(lift.exercise);
-      rows.push(el('div', { class: 'plan-row' + (reordering ? ' reordering' : '') + (flagged ? ' flagged' : '') }, [
+      // 다음에 할 운동 줄에 표시 — 간단히에서 크게 보이던 그 줄이다
+      var isNext = !reordering && lift.sets.some(function (set) { return !set.done; }) &&
+        state.lifts.slice(0, liftIndex).every(function (other) { return other.sets.every(function (set) { return set.done; }); });
+      rows.push(el('div', { class: 'plan-row' + (reordering ? ' reordering' : '') + (flagged ? ' flagged' : '') + (isNext ? ' is-next' : '') }, [
         reordering ? thumb : el('button', {
           type: 'button', class: 'plan-thumb-btn', 'aria-label': lift.exercise.name + ' 동작 보기',
           onclick: function () { openDemo(lift.exercise); },
@@ -7011,7 +7010,8 @@
     var options = [
       // 앱 어디서나 "동작 보기" 한 이름 — 목록에서 이름 · 그림을 눌러도, 운동 카드의 칩도 같은 창
       { label: '동작 보기', hint: '자세 요령 · 흔한 실수 · 쓰는 근육', run: function () { openDemo(lift.exercise); } },
-      { label: '사람 있어요', hint: '순서 변경 · 대체 · 대기 중에서 고릅니다', run: function () { openOccupancy(lift.exercise); } },
+      // 이름은 운동 화면 ⋯(openStageMenu)과 같게 — 같은 일을 두 이름으로 부르지 않는다
+      { label: '기구에 사람이 있어요', hint: '순서 바꾸기 · 다른 운동 · 기다리기 중에서 고릅니다', run: function () { openOccupancy(lift.exercise); } },
       // 세트 줄의 "+ 세트" · 판정 칸의 "한 세트 추가"와 같은 이름
       { label: '+ 세트', hint: '마지막 세트와 같은 무게 · 횟수로 — 오늘만', run: function () { addSet(lift); } },
     ];
@@ -7019,7 +7019,7 @@
     if (state.started && state.lifts[state.liftCursor] === lift) options.shift();
     // 집(홈짐)에는 기다릴 사람도, 비기를 기다릴 기구도 없다
     var atHome = isHomeGym(currentGymEntry());
-    if (atHome) options = options.filter(function (option) { return option.label !== '사람 있어요'; });
+    if (atHome) options = options.filter(function (option) { return option.label !== '기구에 사람이 있어요'; });
     if (!lift.sets.some(function (set) { return set.done; }) && !isHold(lift.exercise)) {
       options.push({ label: '+ 워밍업', hint: '첫 세트 전에 가볍게 한 번 더 — 오늘만', run: function () { addWarmup(lift); } });
     }
@@ -7040,7 +7040,7 @@
     if (at > front) {
       options.push({
         label: state.started ? '이것부터 하기' : '맨 앞으로',
-        hint: state.started ? '지금 하던 종목 앞에 끼웁니다' : '오늘 첫 종목으로 옮깁니다',
+        hint: state.started ? '지금 하던 운동 앞에 끼웁니다' : '오늘 첫 운동으로 옮깁니다',
         run: function () { modal.close(); moveLift(at, front); render(); },
       });
     }
@@ -7054,32 +7054,32 @@
     if (isExtraLift(lift.exercise.id, lift)) {
       options.push({
         label: '오늘 목록에서 빼기',
-        hint: '따로 끼워 넣은 종목입니다',
+        hint: '따로 끼워 넣은 운동입니다',
         run: function () { modal.close(); removeExtraLift(extraIdFor(lift)); },
       });
     }
     // 버티는 종목(플랭크)은 초 — 반복 수 칸을 열지 않는다
     if (!isHold(lift.exercise)) options.push({
-      label: '이 종목 반복 수',
+      label: '횟수 범위 바꾸기',
       hint: (state.repOverrides[lift.exercise.id] ? '직접 정함 · ' : '') + E.repLabel(lift.repRange) +
-        ' — 평소 하시는 횟수로 바꿉니다',
+        ' — 평소 하시는 횟수로',
       run: function () { openRepOverride(lift.exercise); },
     });
     options.push({
-      label: '이 종목 휴식 시간',
+      label: '쉬는 시간 바꾸기',
       hint: restOverrideHint(lift),
       run: function () { openRestSettings(lift.exercise.id); },
     });
     if (E.equipmentBehind(lift.exercise, entry).length > 0) {
       options.push({
-        label: '이 기구 없어요',
-        hint: '그 기구를 쓰는 종목이 한 번에 정리됩니다',
+        label: '이 기구가 없어요',
+        hint: '그 기구를 쓰는 운동이 한 번에 정리됩니다',
         run: function () { openMissingEquipment(lift.exercise); },
       });
     }
     options.push({
-      label: '이 종목 빼기',
-      hint: '왜 빼는지에 따라 하는 일이 다릅니다',
+      label: '이 운동 빼기',
+      hint: '오늘만 빼거나, 이유에 맞게 앞으로도 뺍니다',
       run: function () { openExclude(lift.exercise); },
     });
 
@@ -7147,7 +7147,7 @@
       ]);
     })));
 
-    openModal(exercise.name, '이 종목 빼기', body);
+    openModal(exercise.name, '이 운동 빼기', body);
   }
 
   /**
@@ -13046,7 +13046,7 @@
      */
     nameRow.appendChild(el('button', {
       type: 'button', class: 'demo-open lift-more', text: '⋯',
-      'aria-label': lift.exercise.name + ' — 사람 있어요 · 기구 없어요 · 휴식 · 빼기',
+      'aria-label': lift.exercise.name + ' — 기구에 사람이 있어요 · 기구가 없어요 · 쉬는 시간 · 빼기',
       onclick: function () { openLiftMenu(lift); },
     }));
 
@@ -13651,12 +13651,38 @@
 
   function startFinisherClock(finisher) {
     stopFinisherClock();
-    state.finisherClock = { startedAt: Date.now() };
+    // PT가 이끄는 마무리 운동이면 시계에 맞춰 말한다 — 시작 · (유산소 세기) · 절반 · 1분 전 · 10초 전 · 끝
+    var cues = ptOn() && state.ptRun && state.ptRun.finisher ? E.finisherCueTimes(finisher.spec.minutes, finisher.kind) : [];
+    state.finisherClock = { startedAt: Date.now(), cues: cues, next: 0 };
+    finisherSpeakDue(finisher);
     state.finisherTick = setInterval(function () {
       var node = document.getElementById('finisher-clock');
       if (node) node.textContent = finisherClockText(finisher);
+      finisherSpeakDue(finisher);
     }, 500);
     render();
+  }
+
+  /** 때가 된 한마디를 한다. 화면이 잠깐 멈췄다 돌아와 여러 개가 밀렸으면 마지막 것만 */
+  function finisherSpeakDue(finisher) {
+    var clock = state.finisherClock;
+    if (!clock || !clock.cues || clock.next >= clock.cues.length) return;
+    var passed = (Date.now() - clock.startedAt) / 1000;
+    var due = null;
+    while (clock.next < clock.cues.length && passed >= clock.cues[clock.next].at) {
+      due = clock.cues[clock.next];
+      clock.next += 1;
+    }
+    if (!due || !ptOn()) return;
+    coachSay([E.finisherCueLine(state.coach.style, due.moment, finisher.kind === 'cardio' ? finisher.cardio.zone.id : undefined)]);
+  }
+
+  /** 코치가 소개할 마무리 운동 — 와드는 진행 방식, 유산소는 종목과 세기 */
+  function finisherTalk(finisher) {
+    if (finisher.kind === 'cardio') {
+      return { kind: 'cardio', minutes: finisher.spec.minutes, name: finisher.cardio.exercise.name, zone: finisher.cardio.zone.id };
+    }
+    return { kind: 'wod', minutes: finisher.spec.minutes, format: finisher.session.workout.format };
   }
 
   function setFinisher(status) {
@@ -13686,6 +13712,15 @@
       if (pt.cool || pt.cooled) return;
       clearLastRest();
       pt.finisher = true;
+      // 마무리 운동 소개 — 방금 하던 말(마지막 세트 뒤 한마디)이 끝난 뒤에. 시계를 이미 눌렀으면 하지 않는다
+      var intro = finisherToday();
+      if (intro && !pt.finisherIntro) {
+        pt.finisherIntro = true;
+        setTimeout(function () {
+          if (state.ptRun !== pt || !pt.finisher || !ptOn() || state.finisherClock || !finisherPending()) return;
+          coachSay([E.finisherIntroLine(state.coach.style, finisherTalk(intro))]);
+        }, delayMs || 0);
+      }
       render();
       return;
     }
