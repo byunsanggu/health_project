@@ -1,6 +1,6 @@
 // 세트 줄 미리 고치기 · 워밍업 빼기 — 고친 무게는 앞 세트를 끝내도 · 다시 켜도 그대로, 0kg은 받지 않고, ✓는 두 번 눌러야 지운다.
 //   전에는 다음 세트를 40kg으로 고쳐도 앞 세트를 끝내면 말없이 45kg으로 돌아갔고, 다시 켜면 고친 값이 사라졌다.
-import { check, onboard, startWorkout } from './lib.mjs';
+import { check, onboard, startWorkout, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 const weights = (page) => page.locator('.set-strip').first().locator('.set-box .set-in-weight')
   .evaluateAll((inputs) => inputs.map((input) => input.value));
@@ -11,6 +11,7 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
   await startWorkout(page);
+  await openDetail(page);
 
   // 워밍업 빼기 — 하나씩, 또는 "워밍업 안 함"으로 모두. 다시 켜도 빠진 그대로, 더하기는 남는다
   const warmRows = () => page.locator('.set-strip').first().locator('.warmup-set').count();
@@ -46,7 +47,7 @@ export default async function ({ page, url, shot }) {
   await second.fill(String(lower));
   await second.press('Enter');
   await second.blur();
-  await page.locator('.now-done').click();
+  await doneSet(page);
   const afterDone = await weights(page);
   check(Number(afterDone[1]) === lower, '1세트를 끝내니 고친 2세트 무게가 돌아갔습니다: ' + JSON.stringify(afterDone));
   await shot('0-kept');

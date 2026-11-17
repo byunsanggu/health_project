@@ -1,11 +1,12 @@
 // 편집 › 종목 추가 — 부위별로 묶어 보여 준다(가슴은 가슴끼리, 등은 등끼리, 오늘 쓰는 부위가 앞).
 //   부위 칩으로 한 부위만 보고, 검색칸에 "레그"를 끝까지 칠 수 있다(전에는 한 글자마다 칸이 새로 생겨 "레"만 남았다)
-import { check, onboard } from './lib.mjs';
+import { check, onboard, todayDetail, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.list-edit').click();
   await page.locator('.head-actions .demo-open', { hasText: '종목 추가' }).click();
 

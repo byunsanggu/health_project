@@ -1,6 +1,6 @@
 // 종목 빼기 — "오늘만 빼기"는 이유를 안 묻고 오늘만, 되돌릴 수 있다. 빼면 그 자리에 다른 종목이 생기지 않는다.
 // 운동 중 종목 이름은 머리띠 한 곳만. 같은 브랜드의 다른 곳(바우짐 · 바우짐 여성점)은 따로 등록되고 구분 표시가 붙는다.
-import { check, gymTab, onboard, startWorkout, tab } from './lib.mjs';
+import { check, gymTab, onboard, startWorkout, tab, todayDetail } from './lib.mjs';
 
 const names = async (page) => (await page.locator('.plan-row .name > span:first-child').allTextContents()).map((t) => t.trim());
 
@@ -11,6 +11,7 @@ export default async function ({ page, url, shot }) {
   const before = await names(page);
 
   // 오늘만 빼기 — 두 번째 종목
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.plan-row .row-menu').nth(1).click();
   await page.locator('dialog .menu-row', { hasText: '이 종목 빼기' }).click();
   await shot('1-exclude');
@@ -37,9 +38,9 @@ export default async function ({ page, url, shot }) {
   await startWorkout(page);
   const visible = await page.locator('.lift-name > span:not(.sr-only)').allTextContents();
   check(!visible.some((text) => text.trim() === before[0]), '카드에도 종목 이름이 또 있습니다');
-  check((await page.locator('.progress-name > span').first().textContent()).trim() === before[0], '머리띠에 이름이 없습니다');
+  check((await page.locator('.stage-name').textContent()).trim() === before[0], '머리띠에 이름이 없습니다');
   await shot('3-one-name');
-  await page.locator('.progress-top .demo-open', { hasText: '목록' }).click();
+  await page.locator('#solo-stage .stage-back', { hasText: '목록' }).click();
 
   // 바우짐 · 바우짐 여성점 — 따로 등록, 구분 표시
   await gymTab(page);

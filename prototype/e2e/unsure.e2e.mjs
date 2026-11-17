@@ -1,6 +1,6 @@
 // 이 종목 빼기 › "동작이 자신 없어요" — 빼지 않고 시연을 띄운다. 시연 창이 비지 않고, 오류가 나지 않는다.
 //   (전에는 창을 닫자마자 시연을 열어서, 늦게 오는 닫힘 이벤트가 방금 연 시연을 지웠다)
-import { check, onboard } from './lib.mjs';
+import { check, onboard, todayDetail } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -8,6 +8,7 @@ export default async function ({ page, url, shot }) {
   await onboard(page);
 
   const name = (await page.locator('.plan-row .name').nth(0).textContent()).trim();
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.plan-row .row-menu').first().click();
   await page.locator('dialog .menu-row', { hasText: '이 종목 빼기' }).click();
   await page.locator('dialog .menu-row', { hasText: '동작이 자신 없어요' }).click();

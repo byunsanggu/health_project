@@ -2358,7 +2358,7 @@
     if (state.rest.frozenLeft != null) {
       state.rest.frozenLeft += seconds;
       state.rest.total = Math.max(state.rest.frozenLeft, state.rest.total + seconds);
-      renderRest();
+      refreshRest();
       return;
     }
 
@@ -2373,7 +2373,7 @@
       endsAt: state.rest.endsAt,
       body: seconds > 0 ? '연장한 휴식이 끝났습니다.' : '휴식이 끝났습니다.',
     });
-    renderRest();
+    refreshRest();
   }
 
   /**
@@ -2486,6 +2486,8 @@
      * 이 순간에 열리는데, 세트 화면을 안 그리면 그 순간이 영영 안 온다.
      */
     if (ptOn()) render();
+    // 혼자 운동 화면은 휴식이 그 화면의 한 상태다 — 큰 숫자 · 버튼이 세트로 돌아간다(칸에 손이 있으면 떠날 때)
+    else if (soloStageShown()) stageRender();
   }
 
   /*
@@ -2554,6 +2556,8 @@
     // 휴식이 저절로 시작 · 끝 · 연장될 때도 집중 화면이 따라간다. 집중 화면이 휴식을 크게 보여 주면 아래 막대는 숨긴다.
     if (ptOn() && state.started) renderFocus();
     if (focusOn()) host.hidden = true;
+    // 혼자 운동 화면은 휴식을 그 화면 안에서 보여 준다(renderSoloStage) — 아래 막대는 다른 화면에 갔을 때만
+    if (soloStageShown()) { host.hidden = true; return; }
     if (!state.rest) return;
 
     if (state.undo && Date.now() < state.undo.until) {
@@ -2620,9 +2624,17 @@
      * 한 번 고친 뒤에만 묻는다. 묻지도 않고 고정해 버리면, 오늘만 길게
      * 쉬려던 사람의 설정이 조용히 바뀐다.
      */
-    var fixable = state.rest.exerciseId && state.rest.adjusted;
+    var fix = restFixRow();
+    if (fix) host.appendChild(fix);
+
+    // 알림은 처음 설문(코치 · 알림)과 내 정보에서 켠다. 쉬는 중에 묻지 않는다.
+  }
+
+  /** ±30초를 누른 뒤 한 번 — "이 종목은 앞으로 2분 30초로 할까요? [고정]". 휴식 막대와 혼자 운동 화면이 같이 쓴다. */
+  function restFixRow() {
+    var fixable = state.rest && state.rest.exerciseId && state.rest.adjusted;
     if (fixable && state.restOverrides[state.rest.exerciseId] !== state.rest.total) {
-      host.appendChild(el('div', { class: 'rest-fix' }, [
+      return (el('div', { class: 'rest-fix' }, [
         el('span', { text: '이 종목은 앞으로 ' + withParticleJs(E.formatDurationKo(state.rest.total), '으로/로') + ' 할까요?' }),
         el('button', {
           type: 'button', class: 'rest-skip', text: '고정',
@@ -2638,8 +2650,7 @@
         }),
       ]));
     }
-
-    // 알림은 처음 설문(코치 · 알림)과 내 정보에서 켠다. 쉬는 중에 묻지 않는다.
+    return null;
   }
 
   /* ── 같은 헬스장, 다른 기계 ──────────────────────
@@ -3081,6 +3092,7 @@
    */
   function viewKey() {
     if (state.onboarding.active) return 'onboarding:' + state.onboarding.step;
+    if (state.onboarding.ready) return 'onboarding:ready';
     if (state.authOpen) return 'auth:' + state.authForm.mode;
     return state.tab + ':' + (state.started ? 'lift:' + state.liftCursor : 'plan');
   }
@@ -3156,7 +3168,8 @@
   function renderScreens() {
     if (wiping) return;
     if (state.ptRun) prepareLockTrack();
-    var onboarding = state.onboarding.active;
+    // 준비됐습니다 한 장도 처음 설정 화면이다(프로그램은 이미 저장됨)
+    var onboarding = state.onboarding.active || Boolean(state.onboarding.ready);
     /*
      * 로그인은 화면 하나를 통째로 쓴다. 모달 안에 넣어 봤더니 주소·열쇠·
      * 이메일·비밀번호가 한 상자에 다 들어가서, 뭘 하는 화면인지 알 수가
@@ -5914,7 +5927,7 @@
     screen.appendChild(el('div', { class: 'session-head today-head' }, [
       el('h2', { class: 'today-title', text: restDay ? '오늘은 쉬는 날입니다' : '오늘은 ' + dayTitle(state.session.name) + '입니다' }),
       el('p', { class: 'meta today-sub', text: restDay
-        ? '이번 주 ' + trainingDays().length + '번을 다 했습니다 · 더 하고 싶으시면 ' + dayTitle(state.session.name) + '을 하셔도 됩니다'
+        ? '이번 주 ' + trainingDays().length + '번을 다 했습니다. 더 하셔도 됩니다'
         : '운동 ' + state.lifts.length + '개 · 약 ' + estimate.totalMinutes + '분' }),
     ]));
     if (restDay) {
@@ -5991,6 +6004,13 @@
     ]));
     if (detail) renderPlanDetail(reordering);
 
+    // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다(아래에 붙은 시작 버튼 위에).
+    if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
+    // 시작은 했는데 아직 기록이 없을 때도 끝낼 길은 있어야 한다.
+    else if (state.sessionStartedAt) {
+      screen.appendChild(el('button', { type: 'button', class: 'finish quiet', text: '운동 끝내기', onclick: endWorkout }));
+    }
+
     var fresh = doneSets === 0 && !state.sessionStartedAt && !(state.ptRun && state.ptRun.paused);
     var adjusted = todayAdjustLine();
     screen.appendChild(el('div', { class: 'start-dock' }, [
@@ -6015,13 +6035,6 @@
         },
       }),
     ]));
-
-    // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다.
-    if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
-    // 시작은 했는데 아직 기록이 없을 때도 끝낼 길은 있어야 한다.
-    else if (state.sessionStartedAt) {
-      screen.appendChild(el('button', { type: 'button', class: 'finish quiet', text: '운동 끝내기', onclick: endWorkout }));
-    }
   }
 
   /** "상체 A" → "상체 운동" — 오늘 제목 한 줄에 쓴다. 날 이름(A · B)은 자세히 안 "다른 날 운동으로 바꾸기"에 있다. */
@@ -6105,20 +6118,6 @@
 
   /** 자세히 — 세트 · 무게 · 줄마다 ⋯ · 순서 바꾸기 · 편집, 그리고 오늘 화면의 나머지 안내들. */
   function renderPlanDetail(reordering) {
-    // 다른 날 운동으로 바꾸기 — 전에는 제목 옆 "바꾸기"였다
-    screen.appendChild(el('button', {
-      type: 'button', class: 'day-switch day-switch-row',
-      'aria-label': '다른 날 운동으로 바꾸기 — 지금은 ' + state.session.name,
-      onclick: openDayPicker,
-    }, [
-      el('span', { class: 'day-switch-text', text: '다른 날 운동으로 바꾸기' }),
-      el('span', { class: 'day-switch-caret', text: '지금 ' + state.session.name + ' ›' }),
-    ]));
-
-    // 헬스장 주소 등록 안내 — 첫 운동을 한 뒤에, 자세히 안에서만
-    var gymNudge = gymLinkNudge();
-    if (gymNudge) screen.appendChild(gymNudge);
-
     /*
      * 짧은 날 — 운동 시간을 25분 밑으로 정하면 그날만 큰 복합 운동만 남긴다.
      * 따로 "시간이 없는 날" 카드를 두지 않는다. 오늘 화면은 단순해야 한다.
@@ -6365,11 +6364,8 @@
    */
   function gymLinkNudge() {
     // 집(홈짐)은 찾아 이을 헬스장이 아니다 — unlinkedGym이 거른다
-    if (!unlinkedGym() || state.gymLinkHidden || !state.sessionClosed) return null;
-    var earlier = state.history.some(function (session) {
-      return session.date !== state.todayDate && (session.sets || []).some(function (set) { return !set.warmup && set.reps > 0; });
-    });
-    if (earlier) return null;
+    // 첫 운동을 한 뒤부터 오늘 › 자세히 안에 — 닫거나 등록하면 다시 안 띄운다
+    if (!unlinkedGym() || state.gymLinkHidden || !everClosedWorkout()) return null;
     var here = currentGymEntry();
     return el('div', { class: 'gym-link-nudge' }, [
       el('span', { class: 'gym-link-text' }, [
@@ -6466,13 +6462,16 @@
    * 화면 목록 위아래에 줄로 붙어 있어서, 운동하러 와서 고를 것부터 보였다.
    * editOnly면 시작하지 않고 고치기만 한다 (목록 위 "오늘" 줄에서 열 때).
    */
-  function openStartSheet(editOnly, opened) {
-    /*
-     * 접힌 채로 열린다 — "보통 · 아픈 데 없음 · 평소대로 · 혼자 — 바꾸기 ›" 한 줄과 바로 아래 "시작".
-     * 질문 넷이 다 펼쳐져 있으면 평소 같은 날에도 버튼 열다섯 개를 훑고 나서야 시작을 찾는다.
-     * "바꾸기"를 누르면 전처럼 넷이 펼쳐진다. 고치러 들어온 것(editOnly)은 처음부터 펼친다.
-     */
-    var expanded = Boolean(editOnly || opened);
+  /*
+   * 오늘 조정 — 몸 상태 · 아픈 데 · 시간 · 혼자/PT 네 가지.
+   * 평소 같은 날은 열지 않는다("운동 시작" 한 번으로 지난번 그대로). 여는 길은 셋:
+   * 'first' 맨 처음 운동 시작 한 번(이런 걸 바꿀 수 있다는 걸 알게) · 'start' "오늘은 평소와 다릅니다 ›"
+   * (바꾸고 바로 시작) · 'edit' 바꾼 것을 보여 주는 "오늘 …" 줄(고치기만).
+   * 고른 것은 그 자리에서 오늘 목록에 반영된다 — 창을 닫아도 그대로다.
+   */
+  function openTodayAdjust(mode) {
+    var editOnly = mode === 'edit';
+    if (mode === 'first') { state.startSheetSeen = true; persist(); }
     var draw = function () {
       var feel = todayFeel() || 'good';
       var picked = E.DAY_FEELS.filter(function (item) { return item.id === feel; })[0];
@@ -6482,29 +6481,6 @@
       if (!budget) state.usualMinutes = sessionHead().estimate.totalMinutes;
       var usual = state.usualMinutes || sessionHead().estimate.totalMinutes;
       var pt = ptOn();
-      if (!expanded) {
-        var summary = [
-          picked ? picked.label : '보통',
-          sore.length ? sore.map(function (report) { return E.JOINT_LABELS_KO[report.joint] + ' ' + report.score; }).join(' · ') : '아픈 데 없음',
-          budget ? budget + '분' : '평소대로',
-          pt ? 'PT 코치' : '혼자',
-        ].join(' · ');
-        openModal('오늘 운동 준비', null, [
-          el('button', {
-            type: 'button', class: 'start-summary', 'aria-expanded': 'false',
-            'aria-label': summary + ' — 바꾸기',
-            onclick: function () { expanded = true; draw(); },
-          }, [
-            el('span', { class: 'start-summary-text', text: summary }),
-            el('span', { class: 'start-summary-go', text: '바꾸기 ›' }),
-          ]),
-          el('button', {
-            type: 'button', class: 'finish start-go', text: '시작',
-            onclick: function () { modal.close(); beginToday(); },
-          }),
-        ]);
-        return;
-      }
       var body = [
         el('div', { class: 'list-label', text: '오늘 몸은 어때요?' }),
         segmented(E.DAY_FEELS.map(function (item) {
@@ -6546,15 +6522,18 @@
           onclick: function () { openCoachStylePicker(draw); },
         }) : null,
         el('button', {
-          type: 'button', class: 'finish start-go', text: editOnly ? '확인' : '시작',
+          type: 'button', class: 'finish start-go', text: editOnly ? '확인' : mode === 'start' ? '이대로 시작' : '시작',
           onclick: function () {
             modal.close();
             if (editOnly) render();
             else beginToday();
           },
         }),
+        // 처음 한 번만 — 다음부터는 묻지 않고 지금 고른 대로 시작한다는 것과, 바꾸는 곳
+        mode === 'first' ? el('p', { class: 'hint-line start-first-note', text:
+          '다음부터는 묻지 않고 지금 고른 대로 바로 시작합니다. 평소와 다른 날에는 운동 시작 위의 "오늘은 평소와 다릅니다"를 누르세요.' }) : null,
       ];
-      openModal(editOnly ? '오늘 조정' : '오늘 운동 준비', null, body);
+      openModal(mode === 'first' ? '오늘 운동 준비' : '오늘 조정', null, body);
     };
     draw();
   }
@@ -6579,7 +6558,7 @@
     var budget = budgetMinutes();
     if (budget) bits.push(budget + '분');
     if (bits.length === 0) return null;
-    return el('button', { type: 'button', class: 'today-adjust', onclick: function () { openStartSheet(true); } }, [
+    return el('button', { type: 'button', class: 'today-adjust', onclick: function () { openTodayAdjust('edit'); } }, [
       el('span', { class: 'coach-line-key', text: '오늘' }),
       el('b', { text: bits.join(' · ') }),
       el('span', { class: 'coach-line-go', text: '바꾸기' }),
@@ -9146,39 +9125,89 @@
    * "몸 풀기"가 뜬다 — 지금 하는 게 종목이 아니라는 걸 화면이 말한다.
    * 동작을 누르면 ✓ — 다 하면 "첫 종목으로".
    */
+  /*
+   * 카드 한 장에 동작 하나 — 이름 · 그림 · 남은 초. 초는 저절로 가고, 다 세면 다음 동작으로 넘어간다.
+   * 아래에 붙은 버튼은 "다음 동작" 하나(마지막 동작에서는 "첫 운동 시작"). 건너뛰기 · 전체 목록은 글자 링크.
+   * 전에는 지금 할 동작 칸 밑에 같은 동작 일곱 줄이 또 있고 버튼이 넷이었다.
+   */
   function renderMobilityStage() {
+    var run = state.mobility;
     var moves = todayMobility();
-    var checked = state.mobility.checked || [];
+    var checked = run.checked || [];
     var first = state.lifts.filter(function (lift) { return lift.sets.some(function (set) { return !set.done; }); })[0];
-    screen.appendChild(el('div', { class: 'progress-head' }, [
+    var move = stretchFocusMove(run, moves);
+    var at = move ? moves.indexOf(move) + 1 : moves.length;
+    // 초는 저절로 센다 — "따라 하기"를 또 누르게 하지 않는다
+    if (move && !(run.endsAt && run.focus === move.id)) {
+      run.focus = move.id;
+      run.endsAt = Date.now() + move.seconds * 1000;
+      persist();
+    }
+    var lastMove = !move || moves.filter(function (item) { return item !== move && checked.indexOf(item.id) < 0; }).length === 0;
+    screen.appendChild(el('div', { class: 'progress-head warm-head' }, [
       el('div', { class: 'progress-top' }, [
-        el('button', { type: 'button', class: 'demo-open', text: '목록', 'aria-label': '오늘 할 것 목록으로', onclick: leaveToList }),
-        el('span', { class: 'progress-count' }, [el('i', { text: '준비' })]),
-        el('span', { class: 'progress-bar' }, [el('i', { style: 'width:0%' })]),
-        el('span', { class: 'elapsed' }, [
-          el('i', { text: '운동' }),
-          el('span', { id: 'session-elapsed', text: elapsedText() }),
-        ]),
-      ]),
-      el('div', { class: 'progress-name' }, [
-        el('span', { text: '몸 풀기 ' + E.mobilityMinutes(moves) + '분' }),
-        el('button', { type: 'button', class: 'end-workout', text: '운동 끝내기', onclick: endWorkout }),
+        el('button', { type: 'button', class: 'demo-open warm-back', text: '‹ 목록', 'aria-label': '오늘 할 것 목록으로', onclick: leaveToList }),
+        el('span', { class: 'warm-count', text: '몸 풀기 ' + at + ' / ' + moves.length }),
+        el('span', { class: 'progress-bar' }, [el('i', { style: 'width:' + Math.round(checked.length / Math.max(1, moves.length) * 100) + '%' })]),
       ]),
     ]));
 
-    screen.appendChild(stretchSheet(state.mobility, moves, '종목 전에 몸부터',
-      '하나씩 따라 하세요. 땀이 살짝 나고 관절이 부드러우면 충분합니다.'));
-    void checked;
+    var left = move ? stretchLeft(run, move) : 0;
+    if (move) stretchSideDrawn = move.sides && left <= move.seconds / 2 ? 'R' : 'L';
+    screen.appendChild(el('div', { class: 'sheet warm-stage warm-card' }, [
+      el('div', { class: 'sheet-body' }, move ? [
+        el('div', { class: 'stretch-now-head' }, [
+          el('b', { class: 'warm-card-name', text: move.name }),
+          el('span', { class: 'stretch-left', id: 'stretch-left', text: left >= 60 ? moveTime(left) : left + '초' }),
+        ]),
+        stretchMotion(move, left, move.seconds),
+        el('p', { class: 'warm-card-cue', text: (move.cue || '천천히 따라 하세요') + (move.sides ? ' · 반쯤에서 반대쪽' : '') }),
+      ] : [
+        el('p', { class: 'stretch-all-done', text: '몸 풀기를 다 했습니다. 이제 첫 운동입니다.' }),
+      ]),
+    ]));
 
-    screen.appendChild(el('button', {
-      type: 'button', class: 'finish warm-done',
-      text: '몸 풀기 끝' + (first ? ' — 첫 종목: ' + first.exercise.name : ''),
-      onclick: function () { finishMobility(); },
-    }));
-    screen.appendChild(el('button', {
-      type: 'button', class: 'finish quiet warm-skip', text: '건너뛰기 (이미 풀었어요)',
-      onclick: function () { finishMobility(true); },
-    }));
+    screen.appendChild(el('div', { class: 'warm-links' }, [
+      el('button', {
+        type: 'button', class: 'link-btn warm-skip', text: '몸 풀기 건너뛰기',
+        onclick: function () { finishMobility(true); },
+      }),
+      el('button', {
+        type: 'button', class: 'link-btn warm-list-toggle', 'aria-expanded': String(Boolean(state.warmListOpen)),
+        text: state.warmListOpen ? '목록 접기' : '전체 목록 보기',
+        onclick: function () { state.warmListOpen = !state.warmListOpen; render(); },
+      }),
+    ]));
+    // 전체 목록 — 누르면 그 동작으로 건너간다
+    if (state.warmListOpen) {
+      screen.appendChild(el('ol', { class: 'warm-moves warm-list' }, moves.map(function (item) {
+        var on = checked.indexOf(item.id) >= 0;
+        return el('li', {}, [
+          el('button', {
+            type: 'button', class: 'warm-step' + (item === move ? ' shown' : ''), 'aria-pressed': String(on),
+            onclick: function () { run.focus = item.id; run.endsAt = Date.now() + item.seconds * 1000; persist(); render(); },
+          }, [
+            el('span', { class: 'mark', 'aria-hidden': 'true', text: on ? '✓' : '' }),
+            el('span', { class: 'warm-move-name', text: item.name }),
+            el('span', { class: 'warm-move-time', text: moveTime(item.seconds) }),
+          ]),
+        ]);
+      })));
+    }
+
+    screen.appendChild(el('div', { class: 'start-dock' }, [
+      lastMove ? el('button', {
+        type: 'button', class: 'finish warm-done',
+        text: first ? '첫 운동 시작: ' + first.exercise.name : '몸 풀기 끝',
+        onclick: function () {
+          if (move && checked.indexOf(move.id) < 0) run.checked = checked.concat([move.id]);
+          finishMobility();
+        },
+      }) : el('button', {
+        type: 'button', class: 'finish warm-next', text: '다음 동작',
+        onclick: function () { checkStretch(run, move.id); },
+      }),
+    ]));
   }
 
   /**
@@ -9371,12 +9400,475 @@
     render();
   }
 
+  /* ── 혼자 하는 운동 화면 — 한 종목 · 한 세트 · 버튼 하나 ─────────────
+   *
+   * 간단히(기본): 위 한 줄(‹ 목록 · 1 / 7 · ⋯) → 종목 이름과 그림(누르면 동작 보기) → 세트 점 → 큰 숫자 둘
+   * (무게 · 횟수 — 누르면 숫자 자판, 옆 − / +) → 안내 한 줄 → 아래에 붙은 채운 버튼 하나("1세트 완료").
+   * 쉬는 동안은 같은 화면이 바뀐다 — 큰 숫자 자리에 남은 시간, 버튼은 테두리만 있는 "바로 다음 세트".
+   * 세트 표 · 워밍업 · 세트 더하기 · 강도 기법은 "자세히 보기 ›" 뒤에, 나머지는 ⋯에. 고른 쪽을 기억한다.
+   */
+  var STAGE_DETAIL_KEY = 'volume-coach.detail.workout';
+
+  function stageDetailOpen() {
+    try { return localStorage.getItem(STAGE_DETAIL_KEY) === '1'; } catch (err) { return false; }
+  }
+
+  function setStageDetail(on) {
+    try {
+      if (on) localStorage.setItem(STAGE_DETAIL_KEY, '1');
+      else localStorage.removeItem(STAGE_DETAIL_KEY);
+    } catch (err) { void err; }
+    render();
+  }
+
+  /** 혼자 운동 화면이 지금 떠 있는가 — 그 화면에서는 휴식이 아래 막대가 아니라 화면 안에서 보인다. */
+  function soloStageShown() {
+    return !ptOn() && Boolean(document.getElementById('solo-stage'));
+  }
+
+  /** 운동 화면을 다시 그린다. 숫자 칸에 손이 있으면 칸을 떠날 때까지 미룬다 — 치던 숫자가 사라지지 않게. */
+  function stageRender() {
+    var active = document.activeElement;
+    if (active && active.tagName === 'INPUT' && screen.contains(active)) {
+      if (!stageRender.waiting) {
+        stageRender.waiting = true;
+        active.addEventListener('blur', function () {
+          stageRender.waiting = false;
+          setTimeout(function () { if (soloStageShown()) render(); }, 0);
+        }, { once: true });
+      }
+      return;
+    }
+    render();
+  }
+
+  /** 휴식이 바뀌었다(되돌리기 시간 · ±30초) — 운동 화면이면 그 화면을, 아니면 아래 휴식 막대를. */
+  function refreshRest() {
+    if (soloStageShown()) stageRender();
+    else renderRest();
+  }
+
+  /** 큰 숫자 아래 한 줄(맞춘 무게 · 받지 않은 값). 4초 뒤에 사라진다. */
+  function stageSay(key, text) {
+    var note = text ? { key: key, text: text } : null;
+    state.stageNote = note;
+    if (!note) return;
+    setTimeout(function () {
+      if (state.stageNote !== note) return;
+      state.stageNote = null;
+      if (soloStageShown()) stageRender();
+    }, 4000);
+  }
+
+  /** 친 무게 — PT 칸과 같이 그 기구에서 만들 수 있는 무게로 맞추고(ptReadKg) 맞췄으면 한 줄로 알린다. */
+  function stageCommitWeight(liftIndex, setIndex, raw, key) {
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set) return;
+    var read = ptReadKg(lift, raw);
+    stageSay(key, read.error || read.note);
+    if (read.error || Math.abs(read.kg - set.weightKg) < 0.001) { render(); return; }
+    setWeight(liftIndex, setIndex, read.kg);
+    rememberEdit(lift, setIndex, 'weightKg', set.weightKg);
+    persist();
+  }
+
+  function stageCommitCount(liftIndex, setIndex, raw, key) {
+    var lift = state.lifts[liftIndex];
+    if (!lift || !lift.sets[setIndex]) return;
+    var value = parseInt(String(raw == null ? '' : raw).trim(), 10);
+    if (!Number.isFinite(value) || value < 1) {
+      stageSay(key, (isHold(lift.exercise) ? '초를' : '횟수를') + ' 1 이상의 숫자로 넣어 주세요.');
+      render();
+      return;
+    }
+    stageSay(key, null);
+    editSetInline(liftIndex, setIndex, 'reps', String(value));
+  }
+
+  /** 횟수 한 칸 — 버티기(초)는 5초씩. */
+  function stageStepCount(liftIndex, setIndex, dir) {
+    var lift = state.lifts[liftIndex];
+    var set = lift && lift.sets[setIndex];
+    if (!set) return;
+    var unit = isHold(lift.exercise) ? 5 : 1;
+    var next = Math.max(unit, set.reps + dir * unit);
+    if (next !== set.reps) editSetInline(liftIndex, setIndex, 'reps', String(next));
+  }
+
+  /** 큰 숫자 칸 하나 — PT의 숫자 칸(numField)을 그대로 쓴다. 칸 폭은 숫자 길이에 맞춘다. */
+  function stageTile(o) {
+    var node = numField(o);
+    var input = node.querySelector('input');
+    if (input) {
+      input.id = o.id;
+      var fit = function () { input.style.width = (Math.max(1, String(input.value).length) + 0.3) + 'ch'; };
+      fit();
+      input.addEventListener('input', fit);
+    }
+    var tile = el('div', { class: 'stage-tile' }, [node]);
+    return tile;
+  }
+
+  /** 짝 종목(슈퍼세트) — 안내 줄에 "⇄ 레그 컬과 번갈아 합니다."로. */
+  function stagePairText(lift) {
+    var pair = E.groupOf(state.supersets, lift.exercise.id);
+    if (!pair) return '';
+    var spot = pair.indexOf(lift.exercise.id);
+    var mate = index.get(pair[(spot + 1) % pair.length]);
+    if (!mate) return '';
+    return '⇄ ' + mate.name + particleOf(mate.name, '과/와') + ' 번갈아 합니다. ';
+  }
+
+  /** 다 한 종목 다음에 갈 곳 — 바로 다음 종목, 마지막이면 남은 세트가 있는 첫 종목. */
+  function stageNextLift(liftIndex) {
+    if (liftIndex + 1 < state.lifts.length) return liftIndex + 1;
+    for (var k = 0; k < state.lifts.length; k += 1) {
+      if (state.lifts[k].sets.some(function (one) { return !one.done; })) return k;
+    }
+    return -1;
+  }
+
+  function renderSoloStage() {
+    var liftIndex = state.liftCursor;
+    var lift = state.lifts[liftIndex];
+    var sets = lift.sets;
+    var total = state.lifts.length;
+    var cursor = -1;
+    for (var i = 0; i < sets.length; i += 1) {
+      if (!sets[i].done) { cursor = i; break; }
+    }
+    var set = cursor >= 0 ? sets[cursor] : null;
+    var doneCount = sets.length - sets.filter(function (one) { return !one.done; }).length;
+    var finished = allSetsDone();
+    var last = liftIndex >= total - 1;
+    var detail = stageDetailOpen();
+    var rest = state.rest;
+    var hold = isHold(lift.exercise);
+    var live = set ? renderCounting(liftIndex, cursor) : null;
+    var nextIndex = set ? -1 : stageNextLift(liftIndex);
+    var docked = Boolean(set || rest || (!finished && nextIndex >= 0));
+
+    var stage = el('div', { class: 'solo-stage' + (docked ? ' docked' : '') + (rest ? ' resting' : ''), id: 'solo-stage' }, []);
+
+    // 1. 위 한 줄 — 목록 · 몇 번째 운동 · ⋯
+    stage.appendChild(el('div', { class: 'stage-top' }, [
+      el('button', {
+        type: 'button', class: 'demo-open stage-back', text: '‹ 목록',
+        'aria-label': '오늘 할 것 목록으로', onclick: leaveToList,
+      }),
+      el('span', { class: 'stage-progress' }, [
+        el('span', { class: 'progress-count' }, [
+          el('b', { text: String(liftIndex + 1) }),
+          el('span', { text: ' / ' + total }),
+        ]),
+        el('span', { class: 'progress-bar' }, [
+          el('i', { style: 'width:' + Math.round(((liftIndex + 1) / total) * 100) + '%' }),
+        ]),
+      ]),
+      el('button', {
+        type: 'button', class: 'demo-open lift-more stage-more', text: '⋯',
+        'aria-label': '더 보기 — 기구 · 빼기 · 쉬는 시간 · 운동 끝내기',
+        onclick: function () { openStageMenu(lift, liftIndex, cursor); },
+      }),
+    ]));
+
+    // 몸 상태 경고(멈추라는 말)는 간단히에도 — 나머지 알림은 자세히에
+    state.session.warnings.forEach(function (warning) {
+      if (!warning.medical) return;
+      stage.appendChild(el('div', { class: 'notice stop' }, [
+        el('div', { class: 'label', text: WARNING_LABELS[warning.kind] || '알림' }),
+        el('div', { text: warning.text }),
+      ]));
+    });
+
+    // 2. 이름 · 그림 — 누르면 동작 보기
+    var pic = hasThumb('ex', lift.exercise.id)
+      ? thumbInto(el('span', { class: 'lift-thumb', 'aria-hidden': 'true' }, []), 'ex', lift.exercise.id, 120, '')
+      : liftThumb(lift.exercise);
+    pic.classList.add('stage-thumb');
+    stage.appendChild(el('h2', { class: 'stage-name', text: lift.exercise.name }));
+    stage.appendChild(el('button', {
+      type: 'button', class: 'lift-demo stage-pic', 'aria-label': lift.exercise.name + ' 동작 보기',
+      onclick: function () { openDemo(lift.exercise); },
+    }, [pic, el('span', { class: 'stage-pic-label', text: '▶ 동작 보기' })]));
+
+    // 3. 세트 점 · 몇 세트째
+    var tags = [];
+    if (set && set.top) tags.push('무거운 세트 · 두어 개 남기고');
+    if (set && set.technique && E.TECHNIQUES && E.TECHNIQUES[set.technique]) {
+      tags.push('이번 세트 · ' + techPlain(E.TECHNIQUES[set.technique]).name);
+    }
+    stage.appendChild(el('div', { class: 'stage-sets' }, [
+      el('span', { class: 'stage-dots', 'aria-hidden': 'true' }, sets.map(function (one, k) {
+        return el('i', { class: one.done ? 'done' : k === cursor ? 'now' : '' });
+      })),
+      el('span', { class: 'stage-set-label', text: set ? (cursor + 1) + '세트 / ' + sets.length + '세트' : sets.length + '세트 모두 끝' }),
+    ].concat(tags.map(function (text) { return el('span', { class: 'top-tag', text: text }); }))));
+
+    // 4. 큰 숫자 — 쉬는 중이면 남은 시간, 세는 중이면 센 숫자, 아니면 무게 · 횟수
+    if (rest) {
+      var remaining = restRemaining();
+      stage.appendChild(el('div', { class: 'stage-rest' }, [
+        el('button', { type: 'button', class: 'stage-adjust', text: '−30초',
+          title: '휴식을 30초 줄입니다', onclick: function () { extendRest(-30); } }),
+        el('button', {
+          type: 'button', class: 'stage-clock', title: '휴식 길이를 바꿉니다',
+          onclick: function () { openRestSettings(state.rest && state.rest.exerciseId); },
+        }, [
+          el('span', { class: 'stage-clock-label', text: '쉬는 시간' }),
+          el('b', { id: 'rest-remaining', text: E.formatDuration(remaining) }),
+        ]),
+        el('button', { type: 'button', class: 'stage-adjust', text: '+30초',
+          title: '휴식을 30초 늘립니다', onclick: function () { extendRest(30); } }),
+      ]));
+    } else if (live) {
+      stage.appendChild(live);
+    } else if (set) {
+      var unloaded = !(set.weightKg > 0) && E.isUnloaded(lift.exercise);
+      var wKey = 'sw:' + liftIndex + ':' + cursor;
+      var cKey = 'sc:' + liftIndex + ':' + cursor;
+      stage.appendChild(el('div', { class: 'stage-hero' }, [
+        unloaded
+          ? el('div', { class: 'stage-tile still' }, [el('b', { text: unloadedWord(lift.exercise) })])
+          : stageTile({
+              id: 'stage-in-weight', key: wKey, cls: 'stage-in stage-in-weight', mode: 'decimal',
+              value: kgShown(lift, set.weightKg), unit: kgUnit(lift) + (pairOfDumbbells(lift.exercise) ? '씩' : ''),
+              label: (cursor + 1) + '세트 무게',
+              onStep: function (dir) { ptStepWeight(liftIndex, cursor, dir); },
+              onCommit: function (raw) { stageCommitWeight(liftIndex, cursor, raw, wKey); },
+            }),
+        stageTile({
+          id: 'stage-in-count', key: cKey, cls: 'stage-in stage-in-reps', mode: 'numeric',
+          value: set.reps, unit: countUnit(lift.exercise),
+          label: (cursor + 1) + (hold ? '세트 버틴 초' : '세트 횟수'),
+          onStep: function (dir) { stageStepCount(liftIndex, cursor, dir); },
+          onCommit: function (raw) { stageCommitCount(liftIndex, cursor, raw, cKey); },
+        }),
+      ]));
+      if (state.stageNote && (state.stageNote.key === wKey || state.stageNote.key === cKey)) {
+        stage.appendChild(el('p', { class: 'stage-note', role: 'status', text: state.stageNote.text }));
+      }
+      var plates = set.weightKg > 0 && lift.loading ? E.platePlan(set.weightKg, lift.loading) : null;
+      if (plates) stage.appendChild(el('p', { class: 'stage-sub plates', text: E.describePlates(plates) }));
+      if (set.adjustment) {
+        stage.appendChild(el('p', { class: 'stage-sub', text: set.adjustment.deltaKg === 0 ? set.adjustment.reason
+          : (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg — ' + set.adjustment.reason }));
+      }
+      // 혼자 하는 버티기 — 누르면 3초 준비 뒤 목표 초부터 줄여 가고, 멈춘 자리가 칸에 들어간다
+      if (hold) {
+        stage.appendChild(el('button', {
+          type: 'button', class: 'finish quiet hold-start',
+          'aria-label': (cursor + 1) + '세트 버티기 시작 — ' + set.targetReps.max + '초를 셉니다',
+          onclick: function () { startHold(liftIndex, cursor, 3); },
+        }, [el('span', { text: '▶ 버티기 시작 · ' + set.targetReps.max + '초' })]));
+      }
+    }
+
+    // 5. 안내 한 줄
+    if (rest) {
+      stage.appendChild(el('p', { class: 'stage-line', role: 'status', text: '쉬는 중입니다. 다음은 ' + rest.next + '입니다.' }));
+      if (state.undo && Date.now() < state.undo.until) {
+        stage.appendChild(el('button', {
+          type: 'button', class: 'link-btn undo-link', text: '방금 기록 되돌리기',
+          'aria-label': state.undo.label + ' 기록 되돌리기',
+          onclick: function () { if (state.undo) undoLastSet(); else render(); },
+        }));
+      }
+      var fix = restFixRow();
+      if (fix) stage.appendChild(fix);
+    } else if (set && !live) {
+      var aim = set.targetReps || lift.repRange;
+      var line = stagePairText(lift) + stopLine(lift, aim, set);
+      stage.appendChild(el('button', {
+        type: 'button', class: 'effort-hint stage-line', text: line,
+        'aria-label': line + ' — 눌러서 뜻 보기', onclick: openEffortHelp,
+      }));
+    } else if (!set) {
+      stage.appendChild(el('p', { class: 'stage-line', text: finished ? '오늘 할 세트를 모두 마쳤습니다.' : '이 운동은 끝났습니다.' }));
+      // 한 세트 더 할 수 있다는 말 · 멈추라는 말은 다 한 뒤 그 자리에서
+      var verdict = renderDecision(lift);
+      if (verdict && !detail) stage.appendChild(verdict);
+    }
+
+    // 6. 자세히 보기 ›
+    stage.appendChild(el('button', {
+      type: 'button', class: 'detail-toggle', 'aria-expanded': String(detail),
+      text: detail ? '간단히 보기 ‹' : '자세히 보기 ›',
+      onclick: function () { setStageDetail(!detail); },
+    }));
+    if (detail) stage.appendChild(stageDetail(lift, liftIndex, cursor, doneCount, last));
+
+    // 7. 아래에 붙은 버튼 하나
+    var dock = null;
+    if (rest) {
+      dock = el('button', {
+        type: 'button', class: 'stage-go rest-now', text: '바로 다음 세트',
+        title: '쉬는 시간을 끝내고 바로 다음 세트로', onclick: function () { stopRest(); },
+      });
+    } else if (set && !live) {
+      if (inputMode() === 'none') {
+        dock = el('button', {
+          type: 'button', class: 'finish now-done stage-go',
+          'aria-label': (cursor + 1) + '세트 완료 — 기록하고 ' + (cursor + 1 < sets.length ? '쉬기' : '이 운동 마치기'),
+          onclick: function () { finishSimple(liftIndex, cursor); },
+        }, [el('span', { text: (cursor + 1) + '세트 완료' })]);
+      } else {
+        dock = el('div', { class: 'stage-ask' }, effortChoices(lift, liftIndex, set, cursor));
+      }
+    } else if (!set && !finished && nextIndex >= 0) {
+      dock = el('button', {
+        type: 'button', class: 'finish now-next stage-go',
+        text: '다음 운동: ' + state.lifts[nextIndex].exercise.name,
+        onclick: function () { state.liftCursor = nextIndex; render(); screen.scrollTop = 0; },
+      });
+    }
+    if (dock) stage.appendChild(el('div', { class: 'stage-dock' }, [dock]));
+
+    screen.appendChild(stage);
+    // 다 했으면 마무리 운동 · 끝내기 · 마무리 스트레칭(끝낸 마지막 종목이면 끝낼 길도)
+    if (finished || (last && !set)) renderLiftEnd(last, finished);
+  }
+
+  /** 자세히 — 세트 표(고치기 · ✓ / ✕ 두 번 · + 세트 · − 세트 · 워밍업), 기계 · 강도 기법 · 처방 설명 · 앞뒤 운동. */
+  function stageDetail(lift, liftIndex, cursor, doneCount, last) {
+    var box = el('div', { class: 'stage-detail' }, []);
+    box.appendChild(el('p', { class: 'stage-sub stage-elapsed' }, [
+      el('span', { text: '운동한 시간 ' }),
+      el('b', { id: 'session-elapsed', text: elapsedText() }),
+    ]));
+    state.session.warnings.forEach(function (warning) {
+      if (warning.medical) return;
+      box.appendChild(el('div', { class: 'notice' }, [
+        el('div', { class: 'label', text: WARNING_LABELS[warning.kind] || '알림' }),
+        el('div', { text: warning.text }),
+      ]));
+    });
+    var tags = [];
+    if (lift.substitutedFrom) tags.push(el('span', { class: 'swap-tag', text: '← ' + lift.substitutedFrom.name }));
+    if (state.occupied[lift.exercise.id] === 'deferred') tags.push(el('span', { class: 'occupied-tag', text: '뒤로 미룸' }));
+    if (tags.length) box.appendChild(el('div', { class: 'lift-name' }, tags));
+    if (lift.gymWeightNote) {
+      box.appendChild(el('div', { class: 'machine-note' }, [
+        el('span', { class: 'label', text: '처음 쓰는 기계' }),
+        el('span', { text: lift.gymWeightNote }),
+      ]));
+    }
+    var anyDone = doneCount > 0;
+    var guessed = Boolean(lift.note && lift.note.indexOf('짐작한 무게') >= 0);
+    var warmNote = guessed && E.ESTIMATED_WEIGHT_NOTE_KO ? E.ESTIMATED_WEIGHT_NOTE_KO : (lift.warmup && lift.warmup.note) || '';
+    if (!anyDone && warmNote) box.appendChild(el('div', { class: 'warmup-note', text: warmNote }));
+
+    var set = cursor >= 0 ? lift.sets[cursor] : null;
+    box.appendChild(setStrip(lift, liftIndex, cursor, doneCount, true));
+    if (set && set.weightKg > 0 && lift.loading && !inPounds(lift.exercise.id)) {
+      var loadable = E.nearestLoadable(set.weightKg, lift.loading, 'nearest');
+      if (Math.abs(loadable - set.weightKg) > 0.01) {
+        box.appendChild(el('button', {
+          type: 'button', class: 'snap-note',
+          onclick: function () { setWeight(liftIndex, cursor, loadable); },
+        }, [
+          el('span', { text: set.weightKg + 'kg — 이 헬스장 기구로는 만들 수 없는 무게입니다.' }),
+          el('span', { class: 'snap-to', text: loadable + 'kg로 맞추기' }),
+        ]));
+      }
+    }
+    var machines = machineRow(lift, liftIndex);
+    if (machines) box.appendChild(machines);
+    if (lift.note && !anyDone && !guessed) box.appendChild(el('div', { class: 'lift-note below', text: lift.note }));
+    var flagged = E.mistakesFor(lift.exercise).filter(function (item) {
+      return (state.mistakeFlags[lift.exercise.id] || []).indexOf(item.id) >= 0;
+    });
+    if (flagged.length > 0) {
+      box.appendChild(el('div', { class: 'mistake-hint' }, flagged.map(function (item) {
+        return el('div', {}, [
+          el('span', { class: 'mistake-sign', text: item.sign }),
+          el('span', { class: 'mistake-fix', text: ' → ' + item.cue }),
+        ]);
+      })));
+    }
+    var decision = renderDecision(lift);
+    if (decision && lift.decision.verdict !== 'lastSet' &&
+        (lift.decision.verdict !== 'continue' || cursor < 0)) box.appendChild(decision);
+    var left = lift.sets.filter(function (one) { return !one.done; }).length;
+    var techniques = left === 1 ? renderTechniques(lift) : null;
+    if (techniques) box.appendChild(techniques);
+
+    // 앞뒤 운동으로 — 기구가 막혀 순서를 바꾸는 일은 헬스장에서 늘 있다
+    var nav = el('div', { class: 'step-nav' }, [
+      liftIndex > 0 ? el('button', {
+        type: 'button', class: 'ghost', text: '← 이전 운동',
+        onclick: function () { state.liftCursor -= 1; render(); },
+      }) : null,
+      !last ? el('button', {
+        type: 'button', class: 'ghost',
+        text: left === 0 ? '다음 운동' : '다음 운동 (' + left + '세트 남음)',
+        onclick: function () { state.liftCursor += 1; render(); },
+      }) : null,
+    ]);
+    if (nav.childNodes.length > 0) box.appendChild(nav);
+    return box;
+  }
+
+  /** 운동 화면의 ⋯ — 세트 하는 동안 늘 보일 필요는 없는 것 전부. 운동 끝내기 · PT 코치 켜기도 여기에. */
+  function openStageMenu(lift, liftIndex, cursor) {
+    var entry = currentGymEntry() || { equipmentIds: [] };
+    var atHome = isHomeGym(currentGymEntry());
+    var options = [];
+    var add = function (label, hint, run) { options.push({ label: label, hint: hint, run: run }); };
+    if (!atHome) add('기구에 사람이 있어요', '순서 바꾸기 · 다른 운동 · 기다리기 중에서 고릅니다', function () { openOccupancy(lift.exercise); });
+    if (E.equipmentBehind(lift.exercise, entry).length > 0) {
+      add('이 기구가 없어요', '그 기구를 쓰는 운동이 한 번에 정리됩니다', function () { openMissingEquipment(lift.exercise); });
+    }
+    add('이 운동 빼기', '오늘만 빼거나, 이유에 맞게 앞으로도 뺍니다', function () { openExclude(lift.exercise); });
+    if (isExtraLift(lift.exercise.id, lift)) {
+      add('오늘 목록에서 빼기', '따로 끼워 넣은 운동입니다', function () { modal.close(); removeExtraLift(extraIdFor(lift)); });
+    }
+    if (!atHome && liftIndex < state.lifts.length - 1) {
+      add('맨 뒤로 미루기', '기구가 비면 마지막에 합니다', function () { modal.close(); moveLift(liftIndex, state.lifts.length - 1); render(); });
+    }
+    if (!isHold(lift.exercise)) {
+      add('횟수 범위 바꾸기', (state.repOverrides[lift.exercise.id] ? '직접 정함 · ' : '') + E.repLabel(lift.repRange) + ' — 평소 하시는 횟수로',
+        function () { openRepOverride(lift.exercise); });
+    }
+    add('쉬는 시간 바꾸기', restOverrideHint(lift), function () { openRestSettings(lift.exercise.id); });
+    if (!E.isUnloaded(lift.exercise) || lift.sets.some(function (one) { return one.weightKg > 0; })) {
+      add('단위 바꾸기 (kg / lb)', inPounds(lift.exercise.id) ? '지금 lb(파운드)로 봅니다 — kg으로 바꿉니다' : '지금 kg으로 봅니다 — 파운드 표기 기계면 lb로',
+        function () { modal.close(); switchUnit(lift); });
+    }
+    if (cursor >= 0) {
+      add('아픈 데가 있어요', '이 운동 남은 세트를 빼고 어디가 아픈지 묻습니다', function () {
+        modal.close();
+        if (state.rest) hurtWhileResting(liftIndex, cursor);
+        else finishByFeel(liftIndex, cursor, 'hurt');
+      });
+    }
+    if (!(state.ptRun && state.ptRun.cooled && state.ptRun.day === state.todayDate)) {
+      add('PT 코치 켜기', '남은 운동을 코치가 세어 주고 이끕니다', function () { modal.close(); togglePtNow(); });
+    }
+    add('운동 끝내기', '바로 끝나지 않고 오늘 요약이 먼저 뜹니다', function () { modal.close(); endWorkout(); });
+
+    openModal(lift.exercise.name, '운동한 시간 ' + elapsedText(), [
+      el('div', { class: 'summary-list stage-menu' }, options.map(function (option) {
+        return el('button', { type: 'button', class: 'menu-row', onclick: option.run }, [
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: option.label }),
+            el('span', { class: 'plan-sets', text: option.hint }),
+          ]),
+          el('span', { class: 'detail', text: '›' }),
+        ]);
+      })),
+    ]);
+  }
+
   function renderActiveLift() {
     if (!ptOn() && mobilityActive()) { renderMobilityStage(); return; }
     // 시간 예산을 바꾸면 종목이 줄어든다. 커서가 밖으로 나가지 않게 잡아둔다.
     if (state.liftCursor >= state.lifts.length) state.liftCursor = Math.max(0, state.lifts.length - 1);
     var lift = state.lifts[state.liftCursor];
     if (!lift) { state.started = false; renderPlanList(); return; }
+    // 혼자 할 때는 한 종목 · 한 세트 · 버튼 하나 화면(renderSoloStage). 아래는 PT의 목록(자세히) 화면이다.
+    if (!ptOn()) { renderSoloStage(); return; }
 
     var total = state.lifts.length;
     var position = state.liftCursor + 1;
@@ -9501,7 +9993,11 @@
         : null,
     ]);
     if (nav.childNodes.length > 0) screen.appendChild(nav);
+    renderLiftEnd(last, finished);
+  }
 
+  /** 운동 화면 아래 — 끝낼 길 · 마무리 운동 · 마무리 스트레칭 · 더 하기. PT 목록 화면과 혼자 화면이 같이 쓴다. */
+  function renderLiftEnd(last, finished) {
     /*
      * 마지막 종목인데 아직 다 못 채웠을 때도 끝낼 길은 열어 둔다.
      * 시간이 없어 중간에 나가는 날이 실제로 있고, 그때 길이 없으면
@@ -9554,7 +10050,7 @@
     }
   }
 
-  function setStrip(lift, liftIndex, cursor, doneCount) {
+  function setStrip(lift, liftIndex, cursor, doneCount, bare) {
     var sets = lift.sets;
     var pounds = inPounds(lift.exercise.id);
     // 덤벨 두 개를 드는 종목은 "씩" — 2kg이 한 손에 2kg인지 둘 합쳐 2kg인지 헷갈린다
@@ -9707,6 +10203,8 @@
      * 카드 아래에 세 번 있었다. 누르면 뜻을 한 장으로 풀어 준다(위 상태 줄에 있던 설명이 여기로 왔다).
      */
     var aim = sets[cursor] && sets[cursor].targetReps ? sets[cursor].targetReps : lift.repRange;
+    // 혼자 화면의 자세히 — 안내 한 줄은 위(간단히)에 이미 있다
+    if (bare) return el('div', { class: 'set-strip-wrap' }, [el('div', { class: 'set-strip' }, rows)]);
     return el('div', { class: 'set-strip-wrap' }, [
       cursor >= 0
         ? el('div', { class: 'set-strip-head' }, [
@@ -12298,6 +12796,13 @@
       return nowCard(body);
     }
 
+    effortChoices(lift, liftIndex, set, setIndex).forEach(function (node) { body.push(node); });
+    return nowCard(body);
+  }
+
+  /** 묻기를 켠 사람의 세트 끝내기 — "무게 어땠어요?" 또는 "몇 개 더?" 버튼. 혼자 화면(간단히)도 같이 쓴다. */
+  function effortChoices(lift, liftIndex, set, setIndex) {
+    var body = [];
     /*
      * 세트를 넘기는 버튼이 따로 없다는 게 문제였다. RIR 숫자를 누르면
      * 기록되고 다음 세트로 가는데, 화면 어디에도 그 말이 없으니 "다음
@@ -12370,7 +12875,7 @@
     body.push(el('p', { class: 'hint-line', text:
       '누르면 기록되고 ' + nextLabel + '. 이 답으로 다음 세트와 다음 주 무게가 정해집니다.' }));
 
-    return nowCard(body);
+    return body;
   }
 
   /** 지금 세트 카드 — 위에 세트 줄(1 · 2 · 3세트), 아래에 지금 세트의 무게 · 횟수 칸과 완료 버튼. */
@@ -12459,9 +12964,9 @@
     state.undoTimer = setTimeout(function () {
       state.undo = null;
       state.undoTimer = null;
-      renderRest();
+      refreshRest();
     }, UNDO_MS);
-    renderRest();
+    refreshRest();
   }
 
   function undoLastSet() {
@@ -12633,57 +13138,41 @@
    * 분명히 말하고, 요약을 다시 볼 길과 되돌릴 길만 남긴다.
    */
   function renderClosedToday() {
-    var head = sessionHead();
-    screen.appendChild(head.node);
-
     /*
-     * 예고가 맨 위다. 방금 끝낸 사람이 가장 먼저 봐야 하는 것은 오늘
-     * 한 세트 수가 아니라 **다음에 언제 오는가**다. 요약은 그 아래에서
-     * 기다려도 된다 — 어차피 다시 볼 버튼이 있다.
+     * 카드 한 장 — 끝났다는 말과 다음에 언제 무엇을 하는가. 요약 · 더 하기 · 되돌리기는 글자 링크.
+     * 연속 · 친구 · 주간 카드는 기록 탭에 있다. 끝난 날에 카드가 여럿이면 할 일이 남은 것처럼 읽힌다.
      */
-    var preview = previewCard();
-    if (preview) screen.appendChild(preview);
-    // 다음 운동까지 쉬는 날에 할 것(걷기) — 목표가 체력 기르기 · 체지방 감량일 때
-    conditioningPlanNotes(false).forEach(function (node) { screen.appendChild(node); });
-
-    // 하루를 닫은 뒤에도 마무리 스트레칭은 고를 수 있다 — 혼자 한 날, 아직 안 했으면
-    var closedCool = soloCoolOffer();
-    if (closedCool) screen.appendChild(closedCool);
-
-    // 막 마친 자리가 이번 주를 돌아볼 마음이 제일 드는 자리다.
-    screen.appendChild(streakCard(currentStreak()));
-    var closedFriends = friendsCard();
-    if (closedFriends) screen.appendChild(closedFriends);
-    var closedNudge = reportNudge();
-    if (closedNudge) screen.appendChild(closedNudge);
-    var gymNudge = gymLinkNudge();
-    if (gymNudge) screen.appendChild(gymNudge);
-
-    var minutes = state.sessionStartedAt ? Math.max(1, Math.round(elapsedSeconds() / 60)) : null;
-
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '오늘 운동을 마쳤습니다' }),
-        el('span', { class: 'meta', text: state.todaySets.length + '세트' }),
-      ]),
+    var next = nextWorkoutLine();
+    var coolMovesNow = !ptOn() && state.todaySets.length > 0 && !soloCoolActive() && !soloCoolDone() ? coolMoves() : [];
+    screen.appendChild(el('div', { class: 'sheet done-card' }, [
       el('div', { class: 'sheet-body' }, [
-        el('p', { class: 'hint-line', text: minutes
-          ? minutes + '분 동안 ' + state.todaySets.length + '세트를 했습니다. 기록은 기록 탭에 반영됐습니다.'
-          : '기록은 기록 탭에 반영됐습니다.' }),
-        // 끝난 날에 채운 큰 버튼이 둘이면 할 일이 남은 것처럼 읽힌다 — 둘 다 글자 링크로
-        el('button', { type: 'button', class: 'link-btn closed-link', text: '요약 다시 보기', onclick: openSummary }),
-        /*
-         * "이어서 하기"만 있으면 오늘 계획한 것을 다 한 사람은 갈 곳이
-         * 없다. 더 하고 싶은 날이 있고, 그걸 못 하게 막으면 앱 밖에서
-         * 해서 그 세트가 어디에도 안 남는다.
-         */
-        el('button', {
-          type: 'button', class: 'link-btn closed-link', text: '다른 운동 더 하기',
-          onclick: openAddLift,
-        }),
-        el('button', {
-          type: 'button', class: 'finish quiet', text: '아직 안 끝났어요 — 이어서 하기',
+        el('h2', { class: 'done-title', text: '오늘 운동을 마쳤습니다.' }),
+        next ? el('p', { class: 'done-next', text: next }) : null,
+        // 하루를 닫은 뒤에도 마무리 스트레칭은 고를 수 있다 — 혼자 한 날, 아직 안 했으면
+        coolMovesNow.length ? el('button', {
+          type: 'button', class: 'finish quiet cool-offer',
+          text: '마무리 스트레칭 ' + E.mobilityMinutes(coolMovesNow) + '분',
           onclick: function () {
+            state.soloCool = { date: state.todayDate, active: true, done: false, checked: [], focus: null, endsAt: null };
+            persist();
+            render();
+            screen.scrollTop = 0;
+          },
+        }) : null,
+        el('div', { class: 'done-links' }, [
+          el('button', { type: 'button', class: 'link-btn closed-link', text: '요약 다시 보기', onclick: openSummary }),
+          /*
+           * "이어서 하기"만 있으면 오늘 계획한 것을 다 한 사람은 갈 곳이
+           * 없다. 더 하고 싶은 날이 있고, 그걸 못 하게 막으면 앱 밖에서
+           * 해서 그 세트가 어디에도 안 남는다.
+           */
+          el('button', {
+            type: 'button', class: 'link-btn closed-link', text: '운동 더 하기',
+            onclick: openAddLift,
+          }),
+          el('button', {
+            type: 'button', class: 'link-btn closed-link closed-resume', text: '아직 안 끝났습니다 — 이어서 하기',
+            onclick: function () {
             // 잘못 눌렀을 수 있다. 되돌아가는 길을 막지 않는다.
             state.sessionClosed = false;
             state.sessionEndedAt = null;
@@ -12692,8 +13181,29 @@
             render();
           },
         }),
+        ]),
       ]),
     ]));
+    // 다음 운동까지 쉬는 날에 할 것(걷기) — 목표가 체력 기르기 · 체지방 감량일 때. 한 줄
+    conditioningPlanNotes(false).forEach(function (node) { screen.appendChild(node); });
+    // 이번 주를 다 채운 날에만 뜨는 한 줄
+    var closedNudge = reportNudge();
+    if (closedNudge) screen.appendChild(closedNudge);
+  }
+
+  /** "다음 운동은 수요일 하체 A입니다." — 약속한 시각이 있으면 그 요일, 없으면 이번 주(또는 다음 주) 다음 계획일. */
+  function nextWorkoutLine() {
+    var preview = nextPreview();
+    if (!preview) return null;
+    var date = null;
+    var promised = promiseAfterToday();
+    if (promised) date = E.addDays(state.todayDate, promised.daysAhead);
+    if (!date) {
+      var upcoming = weekCells().filter(function (cell) { return cell.kind === 'planned' && cell.date > state.todayDate; })[0];
+      date = upcoming ? upcoming.date : E.addDays(E.addDays(state.monday, 7), trainingDays()[0] || 0);
+    }
+    var weekday = '일월화수목금토'.charAt(new Date(date + 'T12:00:00').getDay());
+    return '다음 운동은 ' + weekday + '요일 ' + preview.sessionName + '입니다.';
   }
 
   /**
@@ -18094,6 +18604,7 @@
       body.push(el('p', { class: 'hint-line', text: '먼저 하는 큰 운동: ' + (mains.length ? mains.join(', ') : '자동') }));
       body.push(el('div', { class: 'chip-row' }, [
         // 주 몇 번 · 목표는 여기서 바로 — 전에는 헬스장 탭 맨 아래 "초기 설정 다시 하기"뿐이었다
+        el('button', { type: 'button', class: 'pick program-view', text: '전체 프로그램 보기', onclick: openProgramView }),
         el('button', { type: 'button', class: 'pick program-basics', text: '운동 횟수 · 목표 바꾸기', onclick: openPlanBasics }),
         el('button', { type: 'button', class: 'pick program-tune', text: '더 키울 부위 · 먼저 하는 큰 운동 고르기', onclick: openProgramTune }),
         el('button', { type: 'button', class: 'pick routine-start', text: '내 루틴으로 바꾸기', onclick: openRoutineEditor }),
@@ -19230,11 +19741,11 @@
   function restoreDoor() {
     var pending = state.onboarding.restore;
     if (!pending) {
+      // 글자 링크 하나 — 누르면 "내 데이터 내려받기"로 받아 둔 파일을 고른다
       return el('div', { class: 'backup-door' }, [
-        el('p', { class: 'asset-note', text:
-          '쓰던 기록이 있으신가요? "내 데이터 내려받기"로 받아 둔 파일이 있으면 이어서 쓸 수 있습니다.' }),
         el('button', {
-          type: 'button', class: 'pick backup-pick', text: '백업 파일 불러오기',
+          type: 'button', class: 'linkish backup-pick', text: '쓰던 기록이 있습니다',
+          'aria-label': '쓰던 기록이 있습니다 — 백업 파일 불러오기',
           onclick: function () {
             pickBackupFile(function (text) {
               var backup = readBackupText(text);
@@ -20471,6 +20982,17 @@
    * **다니는 사람이 제일 잘 안다.** 유형으로 시작하고 여기서 맞추는 게
    * 처음부터 31개를 고르게 하는 것보다 낫다 — 그건 거기서 앱을 닫는다.
    */
+  /** 처음 설정이 만든 이름표(아직 어느 헬스장인지 모름)를 집으로 — 이름을 안 바꿨으면 "우리 집"으로 부른다. */
+  function markPlaceholderHome() {
+    var entry = currentGymEntry();
+    if (!entry || entry.id !== PLACEHOLDER_GYM_ID || isHomeGym(entry)) return;
+    var next = Object.assign({}, entry, { visibility: 'private' });
+    if (entry.name === '내 헬스장') next.name = '우리 집';
+    state.gymBook = E.addGym(state.gymBook, next);
+    state.gym = E.activeProfile(state.gymBook);
+    persist();
+  }
+
   function openGymEquipment(options) {
     options = options || {};
     var entry = currentGymEntry();
@@ -20500,6 +21022,8 @@
         type: 'button', class: 'pick', text: preset.label,
         onclick: function () {
           setEquipmentIds(E.presetEquipment(preset.id));
+          // 처음 설정이 헬스장을 묻지 않으므로, 홈짐은 여기서 고른다 — 이름표를 집으로(등록 안내 · "등록 안 됨" 없이)
+          if (preset.id === 'home') markPlaceholderHome();
           render();
           renderEquipmentList();
         },
@@ -21859,7 +22383,8 @@
      * ready: 프로그램은 이미 저장했고, "준비됐습니다" 한 장만 남았다. active가 아니므로 저장소에는
      * 설정을 마친 것으로 남는다 — 그 화면에서 앱을 닫아도 다시 열면 오늘 화면이다.
      */
-    state.onboarding = { active: false, step: 0, result: result, ready: true, redo: wasRedo };
+    // 백업으로 기록을 들인 사람은 쓰던 사람이다 — 준비됐습니다 대신 오늘 화면과 들인 것 알림으로
+    state.onboarding = { active: false, step: 0, result: result, ready: !restored, redo: wasRedo };
     state.tab = 'today';
     loadScenario('normal');
     if (restored) reviveTodayFromStorage();
@@ -21894,19 +22419,11 @@
     step.render();
 
     var isLast = state.onboarding.step === STEPS.length - 1;
-    var nav = el('div', { class: 'wizard-nav' }, []);
-    if (state.onboarding.redo) {
-      nav.appendChild(el('button', {
-        type: 'button', class: 'ghost redo-cancel', text: '그만두기',
-        onclick: cancelRedoSetup,
-      }));
-    }
-    if (state.onboarding.step > 0) {
-      nav.appendChild(el('button', {
-        type: 'button', class: 'ghost', text: '이전',
-        onclick: function () { state.onboarding.step -= 1; render(); },
-      }));
-    }
+    /*
+     * 주 버튼 하나만 넓게. "이전"은 뺐다 — 폰의 뒤로가기가 앞 장으로 간다(backLayer 'wizard').
+     * 다시 설정하는 중이면 "그만두기"를 주 버튼 아래 글자 링크로 둔다.
+     */
+    var nav = el('div', { class: 'wizard-nav' + (state.onboarding.redo ? ' stack-nav' : '') }, []);
     // 필수 동의 전에는 아무것도 묻지 않는다. 동의가 수집보다 먼저다.
     var picked = onboardingPicked();
     var needs = step.id === 'me' && !picked.level ? '운동 경력 단계를 골라 주세요.'
@@ -21958,6 +22475,12 @@
           if (isLast) completeOnboarding();
           else { state.onboarding.step += 1; render(); }
         },
+      }));
+    }
+    if (state.onboarding.redo) {
+      nav.appendChild(el('button', {
+        type: 'button', class: 'linkish nav-link redo-cancel', text: '그만두기',
+        onclick: cancelRedoSetup,
       }));
     }
     screen.appendChild(nav);
@@ -22155,7 +22678,7 @@
       ]),
       el('div', { class: 'consent-body' }, [
         consentRow('받는 알림', items.join(' / ')),
-        consentRow('언제 묻나', '"다음"을 누르면 폰이 알림 허용을 한 번 묻습니다. 그 뒤로는 따로 묻지 않습니다.'),
+        consentRow('언제 묻나', '아래 주 버튼을 누르면 폰이 알림 허용을 한 번 묻습니다. 그 뒤로는 따로 묻지 않습니다.'),
         consentRow('거부하면', '알림만 안 옵니다. 휴식 끝 소리는 알림 없이도 울립니다. 내 정보 › 코치 · 알림에서 언제든 바꿉니다.'),
       ]),
       denied ? el('p', { class: 'hint-line warn', text: '이 브라우저에서 알림이 막혀 있습니다. 브라우저 설정에서 허용해야 옵니다.' }) : null,
@@ -22204,66 +22727,134 @@
    */
   function onboardingPicked() {
     var ob = state.onboarding;
-    if (!ob.picked) ob.picked = ob.redo ? { level: true, sex: true, months: true, weight: true } : {};
+    if (!ob.picked) {
+      ob.picked = ob.redo ? { level: true, sex: true, months: true, weight: true } : {};
+      if (!ob.redo) {
+        // 처음 설정의 기본값 — 주 3일 · 근육 키우기 · 헬스장은 "잘 모르겠어요"(흔한 기구, 내 정보 › 헬스장에서 고침)
+        state.answers.daysPerWeek = 3;
+        state.answers.goals = ['hypertrophy'];
+        ob.gymPreset = ob.gymPreset || 'unknown';
+      }
+    }
     return ob.picked;
   }
 
   // 단계를 고르면 기간 칸도 그 단계에 흔한 값으로 — 직접 고친 뒤에는 건드리지 않는다
   var TYPICAL_MONTHS = { beginner: 3, intermediate: 12, advanced: 36, expert: 72 };
 
-  /** 나에 대해 — 경력 · 몸 · 주 몇 번 · 목표를 한 화면에. */
-  function stepMe() {
-    stepLevel();
-    stepProfile();
-  }
+  /*
+   * 세 가지만 알려 주세요 — 경력 · 성별 · 주 며칠. 체중(미리 채움)과 목표(근육 키우기)는 기본값이
+   * 있어서 안 건드려도 된다. 경력과 성별만 직접 골라야 넘어간다(첫 무게가 거기서 갈린다).
+   * 전문가 · 운동한 기간은 "자세히 보기 ›" 안에, 1 · 5 · 6 · 7일은 "더 보기" 안에 있다.
+   */
+  var LEVEL_CHIPS = [
+    { level: 'beginner', label: '처음입니다' },
+    { level: 'intermediate', label: '6개월~2년' },
+    { level: 'advanced', label: '2년 이상' },
+  ];
 
-  function stepLevel() {
+  function stepMe() {
+    var ob = state.onboarding;
     var picked = onboardingPicked();
     // 처음 온 사람의 기간 칸은 0에서 — 미리 적힌 18개월은 중급이라고 말하는 셈이다
     if (!picked.level && !picked.months) state.answers.monthsTraining = 0;
-    var body = el('div', { class: 'sheet-body' }, []);
-    E.TRAINING_LEVELS.forEach(function (level) {
-      var profile = E.levelProfile(level);
-      body.appendChild(el('button', {
-        type: 'button',
-        class: 'choice',
-        'aria-pressed': String(Boolean(picked.level) && state.answers.selfReportedLevel === level),
-        onclick: function () {
-          state.answers.selfReportedLevel = level;
-          picked.level = true;
-          if (!picked.months) state.answers.monthsTraining = TYPICAL_MONTHS[level];
-          render();
-        },
-      }, [
-        el('span', { class: 'choice-title', text: profile.label }),
-        el('span', { class: 'choice-hint', text: profile.description }),
-      ]));
+    var pickLevel = function (level) {
+      state.answers.selfReportedLevel = level;
+      picked.level = true;
+      if (!picked.months) state.answers.monthsTraining = TYPICAL_MONTHS[level];
+      render();
+    };
+    var level = picked.level ? state.answers.selfReportedLevel : null;
+    var levelMore = Boolean(ob.levelMore) || level === 'expert';
+    var levelChips = LEVEL_CHIPS.map(function (chip) {
+      return { label: chip.label, active: level === chip.level, onSelect: function () { pickLevel(chip.level); } };
     });
-
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [el('h3', { text: '운동 경력은 어느 단계인가요?' })]),
-      body,
-    ]));
-
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '운동한 기간' }),
-        el('span', { class: 'meta', text: '첫 무게를 고르는 데 씁니다' }),
-      ]),
-      el('div', { class: 'sheet-body' }, [
-        numberRow({
-          name: '기간', value: state.answers.monthsTraining,
-          min: 0, max: 360, unit: '개월', id: 'months',
-          hint: '쉬지 않고 꾸준히 한 기간을 대략 적으세요. 처음이면 0개월입니다.',
-          onInput: function (value) {
-            state.answers.monthsTraining = value;
-            onboardingPicked().months = true;
-            renderPreviewNote();
-          },
+    if (levelMore) levelChips.push({ label: '전문가', active: level === 'expert', onSelect: function () { pickLevel('expert'); } });
+    screen.appendChild(obQuestion('운동을 얼마나 해 보셨습니까?', [
+      el('div', { class: 'ob-row ob-level' }, [
+        segmented(levelChips),
+        el('button', {
+          type: 'button', class: 'linkish ob-more level-more', 'aria-expanded': String(levelMore),
+          text: levelMore ? '접기' : '자세히 ›',
+          onclick: function () { ob.levelMore = !levelMore; render(); },
         }),
-        el('p', { class: 'hint-line', id: 'level-preview', text: levelPreview() }),
+      ]),
+      levelMore ? numberRow({
+        name: '운동한 기간', value: state.answers.monthsTraining,
+        min: 0, max: 360, unit: '개월', id: 'months',
+        hint: '쉬지 않고 꾸준히 한 기간을 대략 적으세요. 처음이면 0개월입니다.',
+        onInput: function (value) {
+          state.answers.monthsTraining = value;
+          onboardingPicked().months = true;
+          renderPreviewNote();
+        },
+      }) : null,
+      levelMore ? el('p', { class: 'hint-line', id: 'level-preview', text: levelPreview() }) : null,
+    ]));
+
+    screen.appendChild(obQuestion('성별', [
+      segmented(['male', 'female'].map(function (sex) {
+        return {
+          label: sex === 'male' ? '남성' : '여성',
+          active: Boolean(picked.sex) && state.answers.sex === sex,
+          onSelect: function () {
+            state.answers.sex = sex;
+            picked.sex = true;
+            // 체중을 아직 안 고쳤으면 그 성별에 흔한 값에서 시작한다 — 78kg에서 시작하면 첫 무게가 무겁다
+            if (!picked.weight) state.answers.bodyweightKg = sex === 'female' ? 58 : 74;
+            render();
+          },
+        };
+      })),
+    ]));
+
+    var days = state.answers.daysPerWeek;
+    var daysMore = Boolean(ob.daysMore) || [2, 3, 4].indexOf(days) < 0;
+    screen.appendChild(obQuestion('일주일에 며칠 운동하시겠습니까?', [
+      el('div', { class: 'ob-row ob-days' }, [
+        segmented((daysMore ? [1, 2, 3, 4, 5, 6, 7] : [2, 3, 4]).map(function (n) {
+          return { label: n + '일', active: days === n, onSelect: function () { state.answers.daysPerWeek = n; render(); } };
+        })),
+        daysMore ? null : el('button', {
+          type: 'button', class: 'linkish ob-more days-more', text: '더 보기',
+          onclick: function () { ob.daysMore = true; render(); },
+        }),
       ]),
     ]));
+
+    // 체중은 칸 이름이 곧 제목이다(선택) — 제목을 또 달면 "체중"이 두 번
+    screen.appendChild(el('div', { class: 'ob-q ob-weight' }, [
+      numberRow({
+        name: '체중', value: state.answers.bodyweightKg, min: 30, max: 200,
+        step: 0.5, unit: 'kg', id: 'bw',
+        hint: '체중을 알려 주시면 첫 무게가 더 정확해집니다 (선택)',
+        onInput: function (value) { state.answers.bodyweightKg = value; onboardingPicked().weight = true; },
+      }),
+    ]));
+
+    // 목표 — 자주 고르는 다섯 가지 중 하나. 섞어 고르기는 내 정보 › 프로그램 › 운동 횟수 · 목표 바꾸기에
+    var now = (state.answers.goals || []).slice().sort().join();
+    var matched = GOAL_PERSONAS.some(function (persona) { return persona.goals.slice().sort().join() === now; });
+    screen.appendChild(obQuestion('목표', [
+      el('div', { class: 'chip-row ob-goals' }, GOAL_PERSONAS.map(function (persona) {
+        return el('button', {
+          type: 'button', class: 'pick goal-persona', 'data-persona': persona.id,
+          'aria-pressed': String(persona.goals.slice().sort().join() === now),
+          text: persona.label.replace(/ \(.*\)$/, ''),
+          onclick: function () { state.answers.goals = persona.goals.slice(); render(); },
+        });
+      })),
+      matched ? null : el('p', { class: 'hint-line', text: '지금 목표: ' +
+        (state.answers.goals || []).map(function (id) { return E.GOAL_LABELS_KO[id]; }).join(' · ') }),
+    ]));
+
+    screen.appendChild(el('p', { class: 'hint-line ob-later', text:
+      '목표와 헬스장 기구는 나중에 내 정보에서 바꿀 수 있습니다.' }));
+  }
+
+  /** 질문 하나 — 제목 한 줄과 고르는 칸. */
+  function obQuestion(title, children) {
+    return el('div', { class: 'ob-q' }, [el('h3', { class: 'ob-q-title', text: title })].concat(children));
   }
 
   function levelPreview() {
@@ -22280,104 +22871,6 @@
   function renderPreviewNote() {
     var node = document.getElementById('level-preview');
     if (node) node.textContent = levelPreview();
-  }
-
-  function stepProfile() {
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '몸' }),
-        el('span', { class: 'meta', text: '첫 무게 계산용' }),
-      ]),
-      el('div', { class: 'sheet-body' }, [
-        segmented(['male', 'female'].map(function (sex) {
-          return {
-            label: sex === 'male' ? '남성' : '여성',
-            active: Boolean(onboardingPicked().sex) && state.answers.sex === sex,
-            onSelect: function () {
-              var picked = onboardingPicked();
-              state.answers.sex = sex;
-              picked.sex = true;
-              // 체중을 아직 안 고쳤으면 그 성별에 흔한 값에서 시작한다 — 78kg에서 시작하면 첫 무게가 무겁다
-              if (!picked.weight) state.answers.bodyweightKg = sex === 'female' ? 58 : 74;
-              render();
-            },
-          };
-        })),
-        numberRow({
-          name: '체중', value: state.answers.bodyweightKg, min: 30, max: 200,
-          step: 0.5, unit: 'kg', id: 'bw',
-          hint: '종목마다 처음 들 무게를 정하는 데 씁니다. 대략이면 됩니다.',
-          onInput: function (value) { state.answers.bodyweightKg = value; onboardingPicked().weight = true; },
-        }),
-      ]),
-    ]));
-
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '주당 운동 일수' }),
-        el('span', { class: 'meta', text: '날마다 할 부위가 달라집니다' }),
-      ]),
-      el('div', { class: 'sheet-body' }, [
-        segmented([1, 2, 3, 4, 5, 6, 7].map(function (days) {
-          return {
-            label: days + '일',
-            active: state.answers.daysPerWeek === days,
-            onSelect: function () { state.answers.daysPerWeek = days; render(); },
-          };
-        })),
-        el('p', { class: 'hint-line', text: splitPreview() }),
-        splitCaution(),
-      ]),
-    ]));
-
-    /*
-     * 목표는 여러 개를 고를 수 있다. "근비대도 하고 근력도 늘리면서 살도
-     * 빼고 싶다"가 현장에서 가장 흔한 대답인데, 하나만 고르게 하면 그걸
-     * 담지 못한다. 대신 상충되는 부분은 아래에 그대로 적는다.
-     */
-    var goals = el('div', { class: 'sheet-body' }, []);
-    goalPersonaRows(state.answers.goals, function (picked) { state.answers.goals = picked; render(); })
-      .forEach(function (node) { goals.appendChild(node); });
-    goals.appendChild(el('div', { class: 'list-label', text: '직접 섞어 고르기' }));
-    Object.keys(E.GOAL_LABELS_KO).forEach(function (id) {
-      var on = state.answers.goals.indexOf(id) >= 0;
-      goals.appendChild(el('button', {
-        type: 'button', class: 'choice',
-        'aria-pressed': String(on),
-        onclick: function () {
-          state.answers.goals = on
-            ? state.answers.goals.filter(function (item) { return item !== id; })
-            : state.answers.goals.concat([id]);
-          render();
-        },
-      }, [
-        el('span', { class: 'choice-title' }, [
-          document.createTextNode(E.GOAL_LABELS_KO[id] + ' '),
-          // "선택"은 동의 화면에서 "안 해도 되는 항목"이라는 뜻이다 — 고른 표시는 ✓로
-          on ? el('span', { class: 'tag-personal', 'aria-label': '고름', text: '✓' }) : null,
-        ]),
-        el('span', { class: 'choice-hint', text: E.GOAL_HINTS_KO[id] }),
-      ]));
-    });
-
-    var plan = E.planGoals(state.answers.goals);
-    plan.notes.forEach(function (note) {
-      goals.appendChild(el('p', { class: 'hint-line', text: note }));
-    });
-
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '목표' }),
-        el('span', { class: 'meta', text: '여러 개 고를 수 있습니다' }),
-      ]),
-      goals,
-    ]));
-
-  }
-
-  function splitPreview() {
-    var program = E.buildProgram(state.answers, state.answers.selfReportedLevel);
-    return program.name + ' — ' + program.templates.map(function (t) { return t.name; }).join(' · ');
   }
 
   /**
@@ -22726,241 +23219,43 @@
     }
   }
 
-  function stepGym() {
-    state.equipScope = 'answers';
-    var selected = state.answers.gym.equipmentIds;
-    var available = E.availableExercises(selected).length;
-    var onb = state.onboarding;
-
-    /*
-     * 어디 다니는지부터 묻는다.
-     *
-     * 예전에는 기구만 고르고 끝났고, 앱은 그곳을 "내 헬스장"이라고만 불렀다.
-     * 설문을 마친 사람은 자기 헬스장이 앱 어디에 있는지, 어디로 등록됐는지
-     * 몰랐다. 이름 하나만 받아도 앱이 그 이름으로 부르고, 헬스장 탭에서
-     * 주소를 찾아 이어 붙일 때 그 이름으로 찾는다.
-     */
-    var nameInput = el('input', {
-      type: 'text', id: 'onb-gym-name', class: 'text-input',
-      value: onb.gymName || '', maxlength: String(E.GYM_NAME_MAX),
-      placeholder: '예: 스포애니 역삼점, 우리 아파트 헬스장',
-      autocomplete: 'off',
-      oninput: function (event) { onb.gymName = event.target.value; },
-    });
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '어디 다니세요?' }),
-        el('span', { class: 'meta', text: '안 적어도 됩니다' }),
-      ]),
-      el('div', { class: 'sheet-body' }, [
-        nameInput,
-        el('p', { class: 'hint-line', text: onb.gymPreset === 'home'
-          ? '집에서 하면 안 적어도 됩니다 — "우리 집"으로 부릅니다.'
-          : '헬스장 이름을 적어 두면 앱이 그 이름으로 부릅니다. 주소로 찾아 등록하는 건 ' +
-            '시작한 뒤 내 정보 › 헬스장에서 언제든 할 수 있습니다.' }),
-      ]),
-    ]));
-
-    /*
-     * 기구 이름을 모르는 사람이 훨씬 많다. "펙덱"이 뭔지 모르면 고를 수가
-     * 없으니, 유형으로 한 번에 채우는 길과 그림을 보고 고르는 길을 둘 다 연다.
-     */
-    var picked = onb.gymPreset ? E.gymPreset(onb.gymPreset) : null;
-    var presets = el('div', { class: 'chip-row' }, E.GYM_PRESETS.map(function (preset) {
-      return el('button', {
-        type: 'button', class: 'pick', text: preset.label,
-        'aria-pressed': String(onb.gymPreset === preset.id),
-        onclick: function () {
-          var next = E.presetEquipment(preset.id);
-          onb.gymPreset = preset.id;
-          setEquipmentIds(next);
-          // 집은 유형으로 채워지는 게 거의 없다 — 가진 것을 직접 켜야 하니 그림 칸을 바로 연다
-          if (preset.id === 'home') onb.equipOpen = true;
-          pushLog('기구 설정', '<b>' + preset.label + '</b> 기준으로 기구 ' +
-            next.length + '개를 켰습니다.');
-          render();
-        },
-      });
-    }));
-
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '어떤 곳인가요?' }),
-        el('span', { class: 'meta', text: '고르면 기구가 채워집니다' }),
-      ]),
-      el('div', { class: 'sheet-body' }, [
-        presets,
-        el('p', { class: 'hint-line', text: !picked
-          ? '비슷한 곳을 고르면 기구가 대부분 채워집니다. 정확하지 않아도 됩니다 — ' +
-            '운동하다 그 종목이 나왔을 때 "이 기구 없어요"를 누르면 그때 빠집니다.'
-          : picked.id === 'home'
-            ? '집에 있는 기구를 아래 그림에서 눌러 ✓ 하세요. 맨몸 운동은 기구 없이도 됩니다.'
-            : picked.hint + ' — 기구 ' + selected.length + '개를 채웠습니다. 없는 것은 아래 그림에서 눌러 빼세요.' }),
-      ]),
-    ]));
-
-    /*
-     * "플랫 벤치"와 "인클라인 벤치"가 뭔지 모르는 사람이 훨씬 많다.
-     * 여기서 붙잡아 두면 앱을 닫는다. 그냥 넘어가는 길을 눈에 보이게 둔다.
-     * 집은 가진 것을 본인이 안다 — "헬스장 가서 할게요"는 맞지 않는다.
-     */
-    if (onb.gymPreset !== 'home') screen.appendChild(el('div', { class: 'notice' }, [
-      el('div', { class: 'label', text: '몰라도 괜찮습니다' }),
-      el('div', { text:
-        '흔한 기구로 시작해 두고, 헬스장에 가서 눈앞에 기구가 있을 때 고치는 게 제일 정확합니다.' }),
-      el('button', {
-        type: 'button', class: 'pick',
-        text: '잘 모르겠어요 — 헬스장 가서 할게요',
-        onclick: function () {
-          state.answers.gym.equipmentIds = E.presetEquipment('unknown');
-          state.answers.gym.measurements = {};
-          onb.gymPreset = 'unknown';
-          pushLog('기구 설정', '흔한 기구 ' + state.answers.gym.equipmentIds.length +
-            '개로 시작합니다. 없는 건 운동하면서 뺍니다.');
-          /*
-           * 실측까지 건너뛴다. 기구를 모르겠다고 한 사람에게 바로 "빈 바 무게가
-           * 몇 kg인가요"를 묻는 건 더 모르는 걸 묻는 것이다. 기본값(20kg·5kg)이
-           * 한국 헬스장의 대부분이고, 틀리면 헬스장 탭에서 고치면 된다.
-           */
-          state.onboarding.step = stepIndex('result');
-          render();
-        },
-      }),
-    ]));
-
-    /*
-     * 기구를 하나씩 고르는 건 접어 둔다 — 유형만 고르면 대부분 맞고, 처음 오는 사람이
-     * 기구 114개 목록을 보면 거기서 나간다. 고치고 싶은 사람만 연다.
-     */
-    var gridOpen = Boolean(onb.equipOpen);
-    screen.appendChild(el('button', {
-      type: 'button', class: 'extras-toggle equip-toggle', 'aria-expanded': String(gridOpen),
-      onclick: function () { onb.equipOpen = !gridOpen; render(); },
-    }, [
-      el('span', { text: '기구 하나씩 고치기 · 있음 ' + selected.length + '개' }),
-      el('span', { class: 'extras-caret', text: gridOpen ? '접기' : '열기' }),
-    ]));
-    if (!gridOpen) return;
-
-    var search = el('input', {
-      type: 'search', value: state.equipmentQuery || '',
-      placeholder: '이름이나 생김새로 찾기 (예: 굽은 봉, 나비)',
-      oninput: function (event) { state.equipmentQuery = event.target.value; renderEquipmentList(); },
-    });
-    var listHost = el('div', { id: 'equipment-list' }, []);
-
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '그림 보고 고르기' }),
-        el('span', { class: 'meta', text: '있음 ' + selected.length + '개' }),
-      ]),
-      el('div', { class: 'sheet-body' }, [
-        el('p', { class: 'hint-line', text:
-          '있는 기구를 눌러 ✓ 하세요. 없는 건 다시 누르면 빠집니다. 할 수 있는 종목 ' +
-          available + ' / ' + E.EXERCISES.length + '개.' }),
-        search, listHost,
-      ]),
-    ]));
-    renderEquipmentList();
-
-    var gaps = E.coverageReport(selected).filter(function (item) { return !item.sufficient; });
-    if (gaps.length > 0) {
-      screen.appendChild(el('div', { class: 'notice' }, [
-        el('div', { class: 'label', text: '아직 부족한 부위' }),
-        el('div', { text: gaps.map(function (gap) {
-          return gap.label + (gap.suggestion ? ' (' + gap.suggestion.name + ')' : '');
-        }).join(', ') }),
-      ]));
-    }
-  }
-
-  function stepIndex(id) {
-    var list = steps();
-    for (var i = 0; i < list.length; i += 1) {
-      if (list[i].id === id) return i;
-    }
-    return list.length - 1;
-  }
-
-  function stepResult() {
+  /**
+   * 전체 프로그램 — 처음 설정의 프로그램 화면에 있던 것(프로그램 이름 · 부위별로 충분한지 · 요일별 종목).
+   * 이제 처음 설정은 "준비됐습니다" 한 장이라, 내 정보 › 프로그램의 "전체 프로그램 보기"에서 연다.
+   */
+  function openProgramView() {
     var result = E.runOnboarding(state.answers);
-
-    /*
-     * 중급부터는 약점과 메인 종목을 여기서 고른다. 초보는 아직 고를 것이
-     * 없다 — 약점이 보이려면 기본부터 몇 달은 해 봐야 한다.
-     */
-    if (result.level.level !== 'beginner') {
-      var draft = {
-        priorities: (state.answers.priorities || []).slice(),
-        mainLifts: Object.assign({}, state.answers.mainLifts || {}),
-      };
-      var apply = function () {
-        state.answers.priorities = draft.priorities;
-        state.answers.mainLifts = draft.mainLifts;
-        render();
-      };
-      screen.appendChild(el('details', { class: 'sheet tune-sheet' }, [
-        el('summary', { class: 'sheet-head' }, [
-          el('h3', { text: '더 키우고 싶은 부위 · 먼저 하는 큰 운동 (선택)' }),
-          el('span', { class: 'meta', text: (draft.priorities.length || Object.keys(draft.mainLifts).length) ? '고름' : '건너뛰어도 됩니다' }),
-        ]),
-        el('div', { class: 'sheet-body' }, programTuneBody(draft, apply)),
-      ]));
-      if (draft.priorities.length || Object.keys(draft.mainLifts).length) {
-        screen.lastChild.setAttribute('open', '');
-      }
-    }
-
-    screen.appendChild(el('div', { class: 'sheet' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: result.program.name }),
-        el('span', {
-          class: 'badge accum',
-          // 위 상태 줄과 같은 말 — "여유 4개"는 뜻을 배울 곳이 없었다
-          text: E.LEVEL_LABELS_KO[result.level.level] + ' · 세트마다 ' + leaveText(result.firstWeek.targetRir),
-        }),
-      ]),
-      el('div', { class: 'sheet-body' }, result.notes.map(function (note) {
-        return el('p', { class: 'hint-line', text: note });
-      })),
-    ]));
-
-    // 이 프로그램으로 근육이 크는가 — 부위마다 한 주 세트를 기준선과 맞대어 보여 준다
+    var templates = (state.program && state.program.templates) || result.program.templates;
     var growth = E.growthCheck({
-      planned: E.templateWeekLogs(result.program.templates, undefined, result.firstWeek.targetRir), done: [],
+      planned: E.templateWeekLogs(templates, undefined, result.firstWeek.targetRir), done: [],
       landmarks: E.landmarksFor(result.level.level), index: index,
     });
-    /*
-     * 부위별 막대 · 요일별 종목 목록은 "자세히 보기 ›" 안에 — 다 펼쳐 두면 "이 프로그램으로 시작"까지 화면 서너 장을
-     * 내려가야 했다. 무엇을 하는지는 위 카드 한 장이 말하고, 숫자가 궁금한 사람만 연다.
-     */
-    var more = el('details', { class: 'program-more' }, [
-      el('summary', { class: 'program-more-toggle', text: '자세히 보기 ›' }),
-    ]);
-    screen.appendChild(more);
-    more.appendChild(el('div', { class: 'sheet growth-card' }, [
-      el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '부위별로 충분한지' }),
-        el('span', { class: 'meta', text: growth.enough + ' / ' + growth.total + ' 부위' }),
+    var body = [
+      el('p', { class: 'hint-line', text: (state.program && state.program.name || result.program.name) + ' · ' +
+        E.LEVEL_LABELS_KO[result.level.level] + ' · 세트마다 ' + leaveText(result.firstWeek.targetRir) }),
+      splitCaution(),
+      el('div', { class: 'sheet growth-card' }, [
+        el('div', { class: 'sheet-head' }, [
+          el('h3', { text: '부위별로 충분한지' }),
+          el('span', { class: 'meta', text: growth.enough + ' / ' + growth.total + ' 부위' }),
+        ]),
+        el('div', { class: 'sheet-body' }, growthBody(growth, false)),
       ]),
-      el('div', { class: 'sheet-body' }, growthBody(growth, false)),
-    ]));
-
-    result.program.templates.forEach(function (template) {
-      var body = el('div', { class: 'sheet-body' }, []);
-      template.slots.forEach(function (slot) {
-        var exercise = index.get(slot.exerciseId);
-        body.appendChild(el('div', { class: 'delta' }, [
-          el('span', { text: exercise ? exercise.name : slot.exerciseId }),
-          el('span', { class: 'num', text: slot.sets + '세트' }),
-          el('span', { class: 'num flat', text: E.countRangeLabel(slot.exerciseId, slot.repRange) }),
-        ]));
-      });
-      more.appendChild(el('div', { class: 'sheet' }, [
+    ];
+    templates.forEach(function (template) {
+      body.push(el('div', { class: 'sheet program-day' }, [
         el('div', { class: 'sheet-head' }, [el('h3', { text: template.name })]),
-        body,
+        el('div', { class: 'sheet-body' }, template.slots.map(function (slot) {
+          var exercise = index.get(slot.exerciseId);
+          return el('div', { class: 'delta' }, [
+            el('span', { text: exercise ? exercise.name : slot.exerciseId }),
+            el('span', { class: 'num', text: slot.sets + '세트' }),
+            el('span', { class: 'num flat', text: E.countRangeLabel(slot.exerciseId, slot.repRange) }),
+          ]);
+        })),
       ]));
     });
+    openModal('전체 프로그램', null, body);
   }
 
   /* ── 시작 ──────────────────────────────────────── */

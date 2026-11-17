@@ -2,7 +2,7 @@
 //   내 정보에서 불러오면 빠진 날만 채운다. 통증 · 식단은 지금 그 항목에 동의했을 때만 들어온다.
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { check, choosePt, onboard, startWorkout, tab } from './lib.mjs';
+import { check, choosePt, onboard, startWorkout, tab, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 async function chooseFile(page, button, path) {
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), button.click()]);
@@ -25,10 +25,10 @@ export default async function ({ page, url, shot, out }) {
   await page.locator('.coach-settings .coach-mode', { hasText: '혼자' }).click();
   await tab(page, '오늘');
   await startWorkout(page);
-  await page.locator('.now-done').click();
-  await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
-  await page.locator('.now-done').click();
-  await page.locator('button', { hasText: '운동 끝내기' }).first().click();
+  await doneSet(page);
+  await skipRest(page);
+  await doneSet(page);
+  await stageMenu(page, '운동 끝내기');
   await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();
 
   // 다음 날 내려받는다
@@ -64,12 +64,8 @@ export default async function ({ page, url, shot, out }) {
   check(/운동 기록\s*1일 · 본세트 2개/.test(ready), '불러온 내용: ' + ready);
   check(ready.includes('설문 답 · 프로그램 들어 있음'), '프로그램이 없다고 합니다: ' + ready);
   await shot('1-ready');
-  check(await page.locator('.wizard-nav .primary').isDisabled(), '동의 전에 이어 할 수 있습니다');
-  const cards = page.locator('.consent-card');
-  for (let i = 0; i < await cards.count(); i += 1) {
-    const card = cards.nth(i);
-    if (await card.locator('.consent-tag.req').count()) await card.locator('.consent-toggle').click();
-  }
+  // 주 버튼이 필수 동의를 받으면서 이어 한다 — 필수 줄은 따로 보인다
+  check(await page.locator('.consent-line').count() === 3, '필수 동의 줄이 안 보입니다');
   check((await page.locator('.wizard-nav .primary').textContent()).trim() === '동의하고 이어 하기', '이어 하기 버튼이 아닙니다');
   await page.locator('.wizard-nav .primary').click();
 

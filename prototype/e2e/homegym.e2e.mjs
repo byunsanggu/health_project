@@ -1,39 +1,34 @@
 // 홈짐 — 집에서 하는 사람을 "아직 연결 안 된 헬스장 회원"으로 대하지 않는다.
-//   처음 설정: 홈짐을 고르면 그림 칸이 바로 열리고, 집에 흔한 맨몸 · 소도구(밴드 · 케틀벨 · 스텝박스 · 폼롤러)가
+//   내 정보 › 헬스장 › 기구 고치기: 홈짐을 고르면 이름표가 집이 되고, 집에 흔한 맨몸 · 소도구(밴드 · 케틀벨 · 스텝박스 · 폼롤러)가
 //   "더 보기" 없이 맨 위에 있다. 켜도 열리는 종목이 없는 기구는 칸에 그렇다고 적는다.
 //   오늘: 헬스장 등록 안내가 없고, ⋯ 메뉴에 "사람 있어요" · "맨 뒤로 미루기"가 없다.
 //   내 정보 › 헬스장: 빨간 "등록 안 됨"도, 찾아서 등록하기도 없다. 바벨 · 머신이 없으니 무게 설정은 덤벨 두 줄뿐이다.
 //   내 정보 › 설정: "운동 횟수 · 목표 바꾸기"로 주 몇 번을 바로 바꾼다. 개발자 말(PWA · 서버 · Wear OS)이 없다.
-import { check, gymTab, pickMe, tab } from './lib.mjs';
+import { agreeConsent, check, gymTab, pickMe, tab, todayDetail } from './lib.mjs';
 
 const tileNamed = (page, name) => page.locator('.equip-tile', { has: page.locator('.name', { hasText: name }) });
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
-  await page.waitForSelector('.consent-card');
-  const cards = page.locator('.consent-card');
-  for (let i = 0; i < await cards.count(); i += 1) {
-    if (await cards.nth(i).locator('.consent-tag.req').count()) await cards.nth(i).locator('.consent-toggle').click();
-  }
-  await page.click('.wizard-nav .primary');
+  await agreeConsent(page);
 
-  // 나에 대해 — 검증 · 대조 · 분할 같은 말이 없다
-  await pickMe(page, { level: '초보', sex: '여성' });
+  // 세 가지만 알려 주세요 — 검증 · 대조 · 분할 같은 말이 없다
+  await pickMe(page, { level: '초보', sex: '여성', days: 4 });
   const me = (await page.locator('#screen').innerText()).replace(/\s+/g, ' ');
   for (const word of ['검증', '대조', '분할이', '환산', '볼륨', '알아두세요']) {
-    check(!me.includes(word), '나에 대해에 "' + word + '": ' + (me.match(new RegExp('.{0,20}' + word + '.{0,20}')) || [''])[0]);
+    check(!me.includes(word), '세 가지에 "' + word + '": ' + (me.match(new RegExp('.{0,20}' + word + '.{0,20}')) || [''])[0]);
   }
   await page.click('.wizard-nav .primary');
+  await page.locator('.ready-later').click();
+  await page.waitForSelector('.tabbar [role="tab"]');
 
-  // 헬스장 — 홈짐을 고르면 그림 칸이 바로 열린다
-  await page.locator('.chip-row .pick', { hasText: '홈짐' }).click();
-  check(await page.locator('.equip-toggle[aria-expanded="true"]').count() === 1, '홈짐인데 그림 칸이 접혀 있습니다');
-  const hint = await page.locator('.sheet', { hasText: '어떤 곳인가요?' }).textContent();
-  check(hint.includes('집에 있는 기구') && !hint.includes('없는 것만 끄세요'), '홈짐 안내: ' + hint);
-  check(await page.locator('button', { hasText: '헬스장 가서 할게요' }).count() === 0, '집인데 "헬스장 가서 할게요"가 있습니다');
+  // 홈짐은 처음 설정이 아니라 내 정보 › 헬스장 › 기구 고치기에서 고른다 — 이름표가 "우리 집"이 된다
+  await gymTab(page);
+  await page.locator('.gym-here').getByRole('button', { name: '기구 고치기' }).click();
+  await page.locator('dialog .chip-row .pick', { hasText: '홈짐' }).click();
   // 맨 위 묶음이 집에 흔한 것 — 밴드 · 케틀벨 · 스텝박스 · 폼롤러가 "더 보기" 없이
-  const firstGroup = (await page.locator('.equip-group-head .list-label').first().textContent()).trim();
+  const firstGroup = (await page.locator('dialog .equip-group-head .list-label').first().textContent()).trim();
   check(firstGroup.includes('맨몸') && firstGroup.includes('소도구'), '첫 묶음: ' + firstGroup);
   for (const name of ['밴드', '케틀벨', '스텝 박스', '폼롤러']) {
     check(await tileNamed(page, name).count() >= 1, name + ' 칸이 바로 안 보입니다');
@@ -44,21 +39,15 @@ export default async function ({ page, url, shot }) {
   check(/\+[3-9]종목/.test(bandNote) && !bandNote.includes('아직 이 기구로 하는 종목이 없습니다'), '밴드 칸: ' + bandNote);
   await band.click();
   check(await tileNamed(page, '밴드').first().getAttribute('aria-pressed') === 'true', '밴드가 안 켜집니다');
-  check((await page.locator('.equip-toggle').textContent()).includes('있음'), '개수를 "켜짐"으로 셉니다');
+  check(!(await page.locator('dialog #equip-count').textContent()).includes('켜짐'), '개수를 "켜짐"으로 셉니다');
   await shot('1-gymstep');
-
-  // 프로그램 → 시작
-  for (let i = 0; i < 4; i += 1) {
-    const next = page.locator('.wizard-nav .primary');
-    const text = (await next.textContent()).trim();
-    await next.click();
-    if (text === '이 프로그램으로 시작') break;
-  }
-  await page.waitForSelector('.tabbar [role="tab"]');
+  await page.locator('dialog .modal-close').click();
+  await tab(page, '오늘');
 
   // 오늘 — 헬스장 등록 안내가 없다
   check(await page.locator('.gym-link-nudge').count() === 0, '홈짐인데 헬스장 등록 안내가 뜹니다');
   // ⋯ 메뉴 — 사람 있어요 · 맨 뒤로 미루기가 없다
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.plan-row .row-menu').first().click();
   const menu = await page.locator('dialog').textContent();
   check(!menu.includes('사람 있어요') && !menu.includes('맨 뒤로 미루기'), '집인데 메뉴에: ' + menu.replace(/\s+/g, ' ').slice(0, 200));

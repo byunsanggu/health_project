@@ -1,6 +1,6 @@
 // 헬스장 › 초기 설정 다시 하기 — 확인을 받고, 그만둘 수 있고, 다시 짜도 운동 기록이 남는다
 // (전에는 확인 없이 저장소를 통째로 지웠다)
-import { check, finishWizard, gymTab, onboard, startWorkout, tab } from './lib.mjs';
+import { check, finishWizard, gymTab, onboard, startWorkout, tab, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 async function weekSets(page) {
   await tab(page, '기록');
@@ -13,7 +13,7 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
   await startWorkout(page);
-  await page.locator('.now-done').click();
+  await doneSet(page);
   const before = await weekSets(page);
   check(before > 0, '세트를 했는데 볼륨이 비었습니다');
 
@@ -23,7 +23,7 @@ export default async function ({ page, url, shot }) {
   check((await page.locator('dialog').textContent()).includes('운동 중에는'), '운동 중인데 다시 설정을 열었습니다');
   await page.locator('dialog .modal-close').click();
   await tab(page, '오늘');
-  await page.locator('button', { hasText: '운동 끝내기' }).first().click();
+  await stageMenu(page, '운동 끝내기');
   await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();
 
   // 그대로 두기 — 아무것도 안 바뀐다
@@ -37,7 +37,7 @@ export default async function ({ page, url, shot }) {
   await gymTab(page);
   await page.getByRole('button', { name: '초기 설정 다시 하기' }).click();
   await page.locator('dialog .redo-go').click();
-  check(await page.locator('.session-head h2').textContent() === '나에 대해', '나에 대해부터가 아닙니다: ' + await page.locator('.session-head h2').textContent());
+  check(await page.locator('.session-head h2').textContent() === '세 가지만 알려 주세요', '세 가지만 알려 주세요부터가 아닙니다: ' + await page.locator('.session-head h2').textContent());
   await page.locator('.redo-cancel').click();
   check(await page.locator('.tabbar [role="tab"]').count() > 0, '그만뒀는데 앱으로 안 돌아왔습니다');
   check(await weekSets(page) === before, '그만뒀는데 기록이 바뀌었습니다');
@@ -47,7 +47,7 @@ export default async function ({ page, url, shot }) {
   await page.getByRole('button', { name: '초기 설정 다시 하기' }).click();
   await page.locator('dialog .redo-go').click();
   // 지금 답이 이미 골라져 있으니 그대로 넘어간다
-  check(await page.locator('.choice[aria-pressed="true"]', { hasText: /^(초보|중급|고급|전문가)/ }).count() === 1, '지금 단계가 골라져 있지 않습니다');
+  check(await page.locator('.ob-level .segmented button[aria-pressed="true"]').count() === 1, '지금 단계가 골라져 있지 않습니다');
   await finishWizard(page);
   check(await weekSets(page) === before, '다시 설정했더니 이번 주 기록이 사라졌습니다');
   await page.reload();

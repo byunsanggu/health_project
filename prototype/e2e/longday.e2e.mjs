@@ -1,6 +1,6 @@
 // 시작 전 한 장 · 운동 화면을 단순하게 — 몸은 좋아요가 기본, 시간은 90분까지(넉넉하면 세트를 더한다),
 //   혼자 할 때는 박자 세어주기 · 속도 칸이 없다(세어 주는 건 PT), 휴식 시간은 내 정보에서 고른다.
-import { check, onboard, startWorkout, tab } from './lib.mjs';
+import { adjustToday, check, onboard, startWorkout, tab, todayDetail, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 const sets = async (page) => (await page.locator('.plan-row .plan-sets').allTextContents())
   .reduce((sum, line) => sum + Number((line.match(/(\d+)세트/) || [0, 0])[1]), 0);
@@ -11,9 +11,9 @@ export default async function ({ page, url, shot }) {
   await onboard(page);
 
   // 90분 — 평소보다 넉넉하면 큰 복합 운동부터 세트를 더한다
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   const before = await sets(page);
-  await page.locator('.start-cta').click();
-  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
+  await adjustToday(page); // 오늘 조정 — "오늘은 평소와 다릅니다 ›"에서 질문 넷
   check(await page.locator('dialog .segmented button[aria-pressed="true"]', { hasText: '좋아요' }).count() === 1, '몸 기본이 좋아요가 아닙니다');
   await page.locator('dialog .segmented button', { hasText: '90분' }).click();
   const said = await page.locator('dialog').textContent();
@@ -26,6 +26,7 @@ export default async function ({ page, url, shot }) {
 
   // 혼자 하는 운동 화면 — 세어주기 · 속도 칸이 없다
   await startWorkout(page);
+  await openDetail(page);
   check(await page.locator('.count-panel, .count-start, .count-settings').count() === 0, '혼자인데 세어주기 칸이 있습니다');
   check(!(await page.locator('#screen').textContent()).includes('박자'), '박자 말이 남았습니다');
   check(await page.locator('.lift-more').count() === 1, '종목 ⋯ 메뉴가 없습니다');

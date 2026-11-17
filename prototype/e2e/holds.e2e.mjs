@@ -2,12 +2,13 @@
 //   혼자: 세트 칸 · 목표 · 목록이 "초"로 쓰이고, 세트 줄 아래 "버티기 시작"이 3초 준비 뒤 목표 초부터 화면에서 줄여 간다.
 //   끝까지 가면 목표 초가, 중간에 "여기서 멈추기"를 누르면 버틴 초가 칸에 들어간다. 숫자는 손으로 고쳐도 된다.
 //   PT: 개수 대신 남은 초를 크게 보여 주고, 시작 · 절반 · 5초 전 · 넷 셋 둘 하나 · 끝을 말한 뒤 버틴 초를 적고 쉰다.
-import { begin, check, choosePt, onboard, runUntil, startWorkout } from './lib.mjs';
+import { begin, check, choosePt, onboard, runUntil, startWorkout, todayDetail, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 const saved = (page) => page.evaluate(() => (JSON.parse(localStorage.getItem('volume-coach.proto.state') || '{}').settings || {}));
 
 /** 편집 › 종목 추가에서 플랭크를 넣고 맨 앞으로 옮긴다 */
 async function plankFirst(page) {
+  await todayDetail(page); // 편집은 오늘 › 자세히 보기 안에
   await page.locator('.list-edit').click();
   await page.locator('.head-actions .demo-open', { hasText: '종목 추가' }).click();
   await page.locator('dialog input[type=search]').fill('플랭크');
@@ -32,7 +33,8 @@ export default async function ({ page, url, shot }) {
 
   // 혼자 — 세트 칸 · 목표가 초
   await startWorkout(page);
-  const head = (await page.locator('.set-strip-head').first().textContent()).trim();
+  await openDetail(page);
+  const head = (await page.locator('.effort-hint').textContent()).trim();
   const range = head.match(/(\d+)~(\d+)초 중 자세가 무너지기 전에 멈추세요/);
   check(range, '목표가 초가 아닙니다: ' + head);
   const target = Number(range[2]);
@@ -54,11 +56,11 @@ export default async function ({ page, url, shot }) {
   await page.clock.runFor((target - 5) * 1000 + 1500);
   check(await page.locator('#count-now').count() === 0, '다 버텼는데 세기가 안 끝났습니다');
   check(Number(await page.locator('.set-box.now .set-in-reps').inputValue()) === target, '다 버틴 초가 칸에 안 들어갔습니다: ' + await page.locator('.set-box.now .set-in-reps').inputValue());
-  await page.locator('.now-done').click();
+  await doneSet(page);
   const after = await saved(page);
   const logged = (after.todaySets || []).filter((set) => set.exerciseId === 'plank');
   check(logged.length === 1 && logged[0].reps === target, '기록: ' + JSON.stringify(logged));
-  if (await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).count()) await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
+  await skipRest(page);
 
   // 끝낸 줄 — "맨몸 × 30초 ✓"
   const doneText = (await page.locator('.set-box.done').first().textContent()).replace(/\s+/g, ' ');
@@ -74,13 +76,13 @@ export default async function ({ page, url, shot }) {
   await page.locator('.set-box.now .set-in-reps').press('Enter');
   await page.locator('.set-box.now .set-in-reps').blur().catch(() => {});
   await page.clock.runFor(200);
-  await page.locator('.now-done').click();
+  await doneSet(page);
   const second = ((await saved(page)).todaySets || []).filter((set) => set.exerciseId === 'plank');
   check(second.length === 2 && second[1].reps === 18, '고친 초: ' + JSON.stringify(second));
   await shot('3-solo-done');
 
   // PT — 남은 초를 크게, 시작 · 절반 · 5초 전 · 넷 셋 둘 하나 · 끝을 말하고 버틴 초를 적는다
-  if (await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).count()) await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
+  await skipRest(page);
   await choosePt(page);
   await page.evaluate(() => { window.__said.length = 0; });
   if (await page.locator('.start-cta').count()) await begin(page);

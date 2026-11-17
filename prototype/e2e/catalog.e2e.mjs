@@ -3,7 +3,7 @@
 //   내 정보 › 헬스장 › 무게 설정에 덤벨 두 줄(가벼운 덤벨 간격 · 가장 무거운 덤벨)이 있고, 고른 것이 덤벨 목록을 바꾸고 다시 열어도 남는다.
 //   내 정보 › 설정에서 코치 · 알림 칸이 프로그램 바로 아래다. 시작 전 한 장의 "말투 바꾸기"로 코치 말투를 고르고 돌아온다.
 //   집 표시가 생기기 전에 만든 홈짐 이름표("우리 집")는 앱을 다시 열면 집으로 바뀌어 "등록하기" · 빨간 "등록 안 됨"이 사라진다.
-import { check, gymTab, onboard, tab } from './lib.mjs';
+import { adjustToday, check, gymTab, onboard, tab, todayDetail } from './lib.mjs';
 
 const STORE = 'volume-coach.proto.state';
 
@@ -27,6 +27,7 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('.gym-link-nudge').count() === 0, '첫날 오늘 화면에 등록 안내가 떠 있습니다');
 
   // 종목 추가 — 부르는 이름으로 찾는다
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.list-edit').click();
   await page.locator('.head-actions .demo-open', { hasText: '종목 추가' }).click();
   const search = page.locator('dialog input[type=search]');
@@ -103,8 +104,7 @@ export default async function ({ page, url, shot }) {
 
   // 시작 전 한 장 — PT를 고르면 "말투 바꾸기"가 있고, 거기서 고른 말투로 돌아온다
   await tab(page, '오늘');
-  await page.locator('.start-cta').click();
-  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
+  await adjustToday(page); // 오늘 조정 — "오늘은 평소와 다릅니다 ›"에서 질문 넷
   check(await page.locator('dialog .coach-style-link').count() === 0, '혼자인데 말투 바꾸기가 보입니다');
   await page.locator('dialog .segmented button', { hasText: 'PT 코치' }).click();
   await page.locator('dialog .coach-style-link').click();
@@ -113,7 +113,7 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('dialog .coach-style[aria-pressed="true"]').textContent().then((text) => text.includes('빡세게')), '빡세게가 안 골라집니다');
   await shot('5-style-picker');
   await page.locator('dialog .start-go', { hasText: '돌아가기' }).click();
-  check((await page.locator('dialog .modal-head h3').textContent()).trim() === '오늘 운동 준비', '돌아가기 뒤 시작 전 한 장이 아닙니다');
+  check((await page.locator('dialog .modal-head h3').textContent()).trim() === '오늘 조정', '돌아가기 뒤 오늘 조정 창이 아닙니다');
   check((await page.locator('dialog').textContent()).includes('"빡세게"'), '고른 말투가 시작 전 한 장에 안 보입니다');
   await page.locator('dialog .segmented button', { hasText: '혼자' }).click();
   await page.locator('dialog .modal-close').click();

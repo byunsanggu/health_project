@@ -1,7 +1,7 @@
 // PT 화면에서 뒤로가기 — 막 시작했으면 없던 일로, 한참 했으면 멈춰 두고 목록 맨 위로.
 //   전에는 시작하자마자 뒤로가기를 누르면 목록이 중간쯤(운동 화면에서 내려 둔 자리)에서 뜨고,
-//   버튼은 "시작하기"인데 시계는 계속 돌았다. 다시 누르면 0:17부터 몸 풀기 중간으로 들어갔다.
-import { begin, check, choosePt, focusPhase, onboard, runUntil } from './lib.mjs';
+//   버튼은 "운동 시작"인데 시계는 계속 돌았다. 다시 누르면 0:17부터 몸 풀기 중간으로 들어갔다.
+import { begin, check, choosePt, focusPhase, onboard, runUntil, todayDetail } from './lib.mjs';
 
 const back = async (page) => {
   await page.goBack({ waitUntil: 'commit' }).catch(() => null);
@@ -19,25 +19,27 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
   await choosePt(page);
+  // 몸 풀기 줄(시작 전 · N/M 하다 멈춤)은 오늘 › 자세히 보기 안에 있다
+  await todayDetail(page);
   const home = page.url();
 
-  // 1) 시작하자마자 뒤로가기 → 시작 취소: 목록 맨 위, "시작하기", 시계 없음, 코치 말 멈춤
+  // 1) 시작하자마자 뒤로가기 → 시작 취소: 목록 맨 위, "운동 시작", 시계 없음, 코치 말 멈춤
   await begin(page);
   await runUntil(page, 'prep');
   await back(page);
   check(await focusPhase(page) === null, 'PT 화면이 안 닫혔습니다');
   const first = await view(page);
   check(first.scroll === 0, '목록이 맨 위가 아닙니다: ' + first.scroll);
-  check(first.cta === '시작하기', '막 시작하고 나왔는데 버튼이: ' + first.cta);
+  check(first.cta === '운동 시작', '막 시작하고 나왔는데 버튼이: ' + first.cta);
   check(!first.started, '시작을 취소했는데 시계가 남았습니다');
   await page.clock.runFor(20000);
   check((await view(page)).said === first.said, '목록에 나왔는데 코치가 계속 말합니다');
   check(page.url() === home, '앱을 나갔습니다');
   await shot('1-cancelled');
-  // 취소한 것이 저장됐다 — 다시 켜도 "시작하기", 몸 풀기는 "시작 전"
+  // 취소한 것이 저장됐다 — 다시 켜도 "운동 시작", 몸 풀기는 "시작 전"
   await page.reload();
   await page.waitForSelector('.start-cta');
-  check((await page.locator('.start-cta').textContent()) === '시작하기', '취소하고 다시 켰더니 버튼이: ' + await page.locator('.start-cta').textContent());
+  check((await page.locator('.start-cta').textContent()) === '운동 시작', '취소하고 다시 켰더니 버튼이: ' + await page.locator('.start-cta').textContent());
   check((await page.locator('.warm-sheet .warm-status').textContent()).startsWith('시작 전'), '취소하고 다시 켰더니 몸 풀기 줄이: ' + await page.locator('.warm-sheet .warm-status').textContent());
 
   // 2) 몸 풀기를 한참 하다가 뒤로가기 → 멈춤: 목록 맨 위, "이어서 하기", 다시 누르면 그 자리에서

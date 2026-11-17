@@ -1,7 +1,7 @@
 // 동작 보기 — 종목마다 자기 동작이 돌고, 멈추고, 보는 쪽을 고르고, 흔한 실수를 동작으로 본 뒤
 //   바른 동작으로 돌아온다. 입체(three.js)로 뜨든 평면으로 떨어지든 같은 길이어야 한다.
 //   E2E_THREE에 three.min.js 경로를 주면 CDN이 막힌 곳에서도 입체로 본다 (run.mjs 참고).
-import { check, onboard } from './lib.mjs';
+import { check, onboard, todayDetail } from './lib.mjs';
 
 /**
  * 시연 그림을 읽는다 — 빨간(실수) 화소 수와 그림 전체의 지문. 그림 위 글씨(실수 띠 · 안내)는
@@ -50,6 +50,7 @@ export default async function ({ page, url, shot }) {
     for (let spent = 0; spent < ms; spent += 50) await page.clock.fastForward(50);
   };
 
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.plan-row .row-menu').first().click();
   await page.locator('dialog .menu-row', { hasText: '동작 보기' }).click();
   await page.locator('dialog .demo-canvas').waitFor();

@@ -2,15 +2,14 @@
 //   예전에는 "오늘 PT 끝입니다" 뒤에도 운동이 열려 있어 폰을 넣고 나가면 10분 뒤 5:01이 15:01이 됐다.
 //   스트레칭 카드 밑에 마지막 세트 뒤 휴식 막대가 같이 뜨지 않고, 스트레칭 초는 말한 초를 넘지 않는다.
 //   작별 인사(오늘 정리)는 스트레칭이 끝날 때 한 번만.
-import { begin, check, choosePt, focusPhase, onboard, runUntil } from './lib.mjs';
+import { adjustToday, begin, check, choosePt, focusPhase, onboard, runUntil } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
   // 오늘만 20분 — 종목이 적어 빨리 끝난다
-  await page.locator('.start-cta').click();
-  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
+  await adjustToday(page); // 오늘 조정 — "오늘은 평소와 다릅니다 ›"에서 질문 넷
   await page.locator('dialog .segmented button', { hasText: '20분' }).click();
   await page.locator('dialog .modal-close').click();
   await choosePt(page);

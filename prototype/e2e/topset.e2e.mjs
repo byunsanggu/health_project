@@ -1,6 +1,6 @@
 // 주 1회 무거운 세트 — 중급이 켜면 이번 주 차례인 바벨 메인 종목 앞에 1~3회 무거운 세트가 하나 붙는다.
 //   그 뒤 원래 세트(백오프)는 무게가 그대로고(2회 했다고 깎지 않는다), 기록에는 무거운 세트로 남는다.
-import { check, onboard, startWorkout, tab } from './lib.mjs';
+import { check, onboard, startWorkout, tab, todayDetail, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -31,6 +31,7 @@ export default async function ({ page, url, shot }) {
   await page.reload();
   await page.waitForSelector('.tabbar [role="tab"]');
   await tab(page, '오늘');
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.day-switch').click();
   await page.locator('dialog .day-row', { hasText: pick.day }).first().click();
   await page.waitForFunction(() => !document.querySelector('dialog')?.open);
@@ -47,17 +48,18 @@ export default async function ({ page, url, shot }) {
 
   // 그 종목으로 가서 무거운 세트를 한다
   await startWorkout(page);
+  await openDetail(page);
   for (let i = 0; i < 12; i += 1) {
-    if ((await page.locator('.progress-name > span').first().textContent()).trim() === pick.name) break;
-    await page.locator('.now-done').click();
-    await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click().catch(() => {});
+    if ((await page.locator('.stage-name').textContent()).trim() === pick.name) break;
+    await doneSet(page);
+    await skipRest(page);
   }
   check((await page.locator('.top-tag').textContent()).includes('무거운 세트'), '무거운 세트 표시가 없습니다');
   await page.locator('.set-box.now .set-in-reps').fill('2');
   await page.locator('.set-box.now .set-in-reps').dispatchEvent('change');
   await shot('3-top');
   const backoffBefore = await page.evaluate(() => document.querySelectorAll('.set-plan .set-plan-line')[0]?.textContent || '');
-  await page.locator('.now-done').click();
+  await doneSet(page);
   const kg = Number(await page.locator('.set-box.now .set-in-weight').inputValue());
   check(kg <= 60 && kg >= 50, `무거운 세트 뒤 백오프가 ${kg}kg (전: ${backoffBefore})`);
   check(await page.locator('.top-tag').count() === 0, '2세트도 무거운 세트로 표시됩니다');

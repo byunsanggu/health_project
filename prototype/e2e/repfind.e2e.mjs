@@ -1,7 +1,7 @@
 // 반복 기능을 찾기 쉬운가 — 내 정보의 "반복 · 강도"에서 한 곳에서 보고 바꾸고, 종목 줄(세트 · 무게 · 반복)을
 //   누르면 바로 그 종목 반복 수가 열리고, 직접 정한 종목은 목록에 표시된다. 여러 종목을 늘 많이 하면
 //   종목마다가 아니라 평소 반복 스타일을 한 번 묻는다.
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, todayDetail } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -21,6 +21,7 @@ export default async function ({ page, url, shot }) {
   // 종목 줄을 누르면 그 줄의 뜻(세트 · 회 · 쉬는 시간)이 먼저 — 처음 온 사람에게는 "평소 반복"이 없다.
   // 반복 수 바꾸기는 그 창 안의 작은 링크
   const name = (await page.locator('.plan-row .name > span:first-child').nth(0).textContent()).trim();
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.plan-sets-btn').first().click();
   check((await dialog.locator('#modal-title').textContent()).includes(name), '누른 종목의 설명 창이 아닙니다');
   const explain = await dialog.textContent();

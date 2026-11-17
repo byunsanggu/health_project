@@ -1,6 +1,6 @@
 // 화면에 나가는 말 — 현장 용어(RIR · 1RM · 축적 · 디로드 · 볼륨 · 처방 · PR · 수행 큐 …)와 2026-10-22 같은 날짜를 쓰지 않는다.
 //   좁은 폰(320px)에서 편집 버튼 줄이 카드 밖으로 잘리지 않고, "원래대로"가 두 줄로 쪼개지지 않는다.
-import { check, onboard, startWorkout, tab } from './lib.mjs';
+import { adjustToday, check, onboard, startWorkout, tab, todayDetail, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 // 현장 용어 — 화면에서 쉬운 말로 바꾼 것들. 다시 들어오면 여기서 잡힌다
 const JARGON = /RIR|1RM|축적|디로드|템플릿|기준선|볼륨|처방|환산|본세트|수행 큐|\bPR\b|자극선|1회 최대|주동근|유효 세트|복합 운동|고립 운동|여유 \d개/;
@@ -17,6 +17,7 @@ export default async function ({ page, url, shot }) {
   await onboard(page);
 
   // 편집 — "종목 추가"(하나 더 끼운다), 버튼 줄은 카드 안에서 다음 줄로 넘어간다
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.list-edit').click();
   const chips = await page.locator('.head-actions .demo-open').allTextContents();
   check(chips.includes('종목 추가') && !chips.includes('다른 운동'), '편집 버튼: ' + chips.join(', '));
@@ -34,8 +35,7 @@ export default async function ({ page, url, shot }) {
   await page.locator('.list-edit').click();
 
   // 짧은 날 — "원래대로"는 한 줄
-  await page.locator('.start-cta').click();
-  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
+  await adjustToday(page); // 오늘 조정 — "오늘은 평소와 다릅니다 ›"에서 질문 넷
   await page.locator('dialog .segmented button', { hasText: /^20분$/ }).click();
   await page.locator('dialog .modal-close').click();
   await page.waitForTimeout(200);
@@ -50,12 +50,12 @@ export default async function ({ page, url, shot }) {
 
   // 두 세트 하고 마친 뒤 요약
   await startWorkout(page);
-  await page.locator('.now-done').click();
+  await doneSet(page);
   // 쉬는 동안 — 휴식 막대의 이유 줄 · 운동 카드
   const resting = await visibleText(page, '#screen') + ' ' + await visibleText(page, '#rest-host');
   check(!JARGON.test(resting), '쉬는 화면에 현장 용어: ' + (resting.match(new RegExp('.{0,20}(' + JARGON.source + ').{0,20}')) || [''])[0]);
-  await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
-  await page.locator('.now-done').click();
+  await skipRest(page);
+  await doneSet(page);
   const doneLine = await visibleText(page, '#screen');
   check(!/RIR/.test(doneLine), '끝낸 세트 줄에 RIR: ' + (doneLine.match(/.{20}RIR.{10}/) || [''])[0]);
   // 동작 보기 창 — 자세 요령 · 흔한 실수 · 쓰는 근육
@@ -63,7 +63,7 @@ export default async function ({ page, url, shot }) {
   const demo = await visibleText(page, 'dialog');
   check(!JARGON.test(demo), '동작 보기 창에 현장 용어: ' + (demo.match(new RegExp('.{0,20}(' + JARGON.source + ').{0,20}')) || [''])[0]);
   await page.locator('dialog .modal-close').click();
-  await page.locator('button', { hasText: '운동 끝내기' }).first().click();
+  await stageMenu(page, '운동 끝내기');
   await page.locator('dialog').getByRole('button', { name: '오늘 마치기' }).click();
   await page.getByRole('button', { name: '요약 다시 보기' }).click();
   const tag = (await page.locator('dialog .modal-head .pattern').textContent()).trim();

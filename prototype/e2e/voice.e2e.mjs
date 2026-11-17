@@ -3,7 +3,7 @@
 //   활기찬 코치는 남 · 여 목소리를 고른다. 한 번 받으면 이 폰에 남는다.
 import { clipId, speechPieces } from '../../src/engine/speech.ts';
 import { COACH_STYLES } from '../../src/engine/coach.ts';
-import { check, choosePt, onboard, tab } from './lib.mjs';
+import { check, choosePt, onboard, tab, todayDetail } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   const asked = [];
@@ -53,6 +53,7 @@ export default async function ({ page, url, shot }) {
   await tab(page, '오늘');
 
   // 종목 설명을 코치 목소리로
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page.locator('.plan-row .row-menu').first().click();
   await page.locator('dialog .menu-row', { hasText: '동작 보기' }).click();
   const button = page.locator('dialog .guide-listen');

@@ -1,26 +1,18 @@
 // 기구 그림 칸 — 이름 아래 흔한 별명, "크게"를 누르면 큰 그림 · 이렇게 생겼습니다 · 이 기구로 하는 운동.
 //   카탈로그의 모든 기구가 그림과 함께 나오고(빈 칸 없음), 밝은 화면 · 어두운 화면 전체 칸을 찍어 둔다.
 import { join } from 'node:path';
-import { check, pickMe } from './lib.mjs';
+import { check, gymTab, onboard } from './lib.mjs';
 
 const cellNamed = (page, name) => page.locator('.equip-cell', { has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) });
 
 export default async function ({ page, url, shot, out }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
-  await page.waitForSelector('.consent-card');
-  const cards = page.locator('.consent-card');
-  for (let i = 0; i < await cards.count(); i += 1) {
-    if (await cards.nth(i).locator('.consent-tag.req').count()) await cards.nth(i).locator('.consent-toggle').click();
-  }
-  for (let i = 0; i < 6; i += 1) {
-    const step = (await page.locator('.session-head h2').textContent()).trim();
-    if (step === '헬스장') break;
-    if (step === '나에 대해') await pickMe(page, { level: '초보' });
-    await page.locator('.wizard-nav .primary').click();
-  }
-  await page.locator('.chip-row .pick', { hasText: '동네 헬스장' }).click();
-  await page.locator('.equip-toggle').click();
+  // 처음 설정은 헬스장을 묻지 않는다 — 기구 그림 칸은 내 정보 › 헬스장 › 기구 고치기에 있다
+  await onboard(page, { level: '초보' });
+  await gymTab(page);
+  await page.locator('.gym-here').getByRole('button', { name: '기구 고치기' }).click();
+  await page.locator('dialog .chip-row .pick', { hasText: '동네 헬스장' }).click();
   // 덜 흔한 기구까지 전부 펼친다
   for (let i = 0; i < 8 && await page.locator('.equip-more[aria-expanded="false"]').count(); i += 1) {
     await page.locator('.equip-more[aria-expanded="false"]').first().click();

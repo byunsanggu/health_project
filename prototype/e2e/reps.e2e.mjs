@@ -1,7 +1,7 @@
 // 반복 수를 사람에게 — 내 정보에서 "가볍게 많이"를 고르면 그대로 처방하고, 종목마다 직접 정한 반복이 블록보다
 //   먼저이고, 블록 유형을 바꾸면 처방 횟수가 실제로 바뀐다. 처방보다 두 번 연속 많이 했으면
 //   "바꿀까요?"를 묻고 — 안 누르면 그대로, "그대로 두기"면 다시 안 묻는다.
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, todayDetail } from './lib.mjs';
 
 const rowReps = async (page, name) => (await page.locator('.plan-row', { has: page.locator('.name', { hasText: name }) })
   .first().locator('.plan-sets').textContent()).trim();
@@ -18,6 +18,7 @@ export default async function ({ page, url, shot }) {
   await tab(page, '오늘');
 
   // 가볍게 많이 — 주 종목도 10~15회
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   const lines = await page.locator('.plan-row .plan-sets').allTextContents();
   check(lines.some((line) => /10~15회/.test(line)), '가볍게 많이를 골랐는데 10~15회가 없습니다: ' + lines.join(' / '));
   check(!lines.some((line) => /[456]~[68]회/.test(line)), '가볍게 많이인데 저반복이 있습니다: ' + lines.join(' / '));

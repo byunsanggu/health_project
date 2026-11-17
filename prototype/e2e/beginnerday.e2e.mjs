@@ -1,11 +1,11 @@
 // 처음 온 초보의 첫날(360×740 폰) — 맨 위 주차 칩 · "처음이세요?" · 헬스장 등록 안내 없이 첫 종목이 첫 화면에 보인다.
-//   시작 전 한 장은 접힌 한 줄 + 시작. 운동 화면은 지금 세트 줄이 가려지지 않고, 안내는 한 줄("6~10회 중 힘이 조금 남을 때"),
+//   첫날만 시작 전 한 장(질문 넷), 그 뒤로는 운동 시작 한 번. 운동 화면은 지금 세트 줄이 가려지지 않고, 안내는 한 줄("6~10회 중 힘이 조금 남을 때"),
 //   숫자 칸은 48px 이상, kg/lb는 ⋯ › 단위 바꾸기(알림 + 되돌리기).
 //   기록이 없으면 횟수 칸은 범위 가운데로 채운다. 좁은 폰에서도 ✕가 "회"와 겹치지 않는다.
 //   끝내기 창은 늘 왼쪽 "계속 운동" · 오른쪽 "오늘 마치기". 첫날 요약에는
 //   PR · 1회 최대 · 부족이 없다. 혼자 한 날은 마무리 스트레칭을 고를 수 있고, 그림과 초를 센다.
 //   기록 탭 첫 주는 큰 0 대신 "첫 주 진행 중", 근성장 막대는 "자세히" 안에.
-import { check, onboard, startWorkout, tab } from './lib.mjs';
+import { check, onboard, startWorkout, tab, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.setViewportSize({ width: 360, height: 740 });
@@ -25,26 +25,20 @@ export default async function ({ page, url, shot }) {
   check(/이름을 누르면 동작을/.test(await page.locator('.first-hint').textContent()), '모르는 동작을 어디서 보는지 한 줄이 없습니다');
   await shot('1-today');
 
-  // 시작 전 한 장 — 접힌 한 줄 바로 아래 "시작"
+  // 맨 처음 운동 시작 한 번만 "오늘 운동 준비" — 질문 넷이 펼쳐져 있고, 다음부터는 묻지 않는다는 한 줄
   await page.locator('.start-cta').click();
-  const line = (await page.locator('dialog .start-summary').textContent()).trim();
-  check(/아픈 데 없음/.test(line) && /평소대로/.test(line) && /혼자/.test(line) && /바꾸기/.test(line), '접힌 한 줄: ' + line);
-  check(await page.locator('dialog .segmented').count() === 0, '시작 전 한 장이 펼쳐진 채로 열립니다');
-  const sum = await page.locator('dialog .start-summary').boundingBox();
-  const go = await page.locator('dialog .start-go').boundingBox();
-  check(go.y - (sum.y + sum.height) < 24, '시작이 한 줄 바로 아래에 없습니다');
-  await page.locator('dialog .start-summary').click();
-  check(await page.locator('dialog .segmented').count() === 4, '바꾸기를 눌러도 질문 넷이 안 펼쳐집니다');
+  check((await page.locator('dialog .modal-head h3').textContent()).trim() === '오늘 운동 준비', '첫날 시작 한 장이 안 뜹니다');
+  check(await page.locator('dialog .segmented').count() === 4, '첫날 한 장에 질문 넷이 없습니다');
+  check(/다음부터는 묻지 않고/.test(await page.locator('dialog .start-first-note').textContent()), '다음부터 바로 시작한다는 말이 없습니다');
   await page.locator('dialog .start-go').click();
   if (await page.locator('.mobility-skip, .warm-skip').count()) await page.locator('.mobility-skip, .warm-skip').first().click();
 
-  // 운동 — 지금 세트 줄이 머리띠 밑에 가려지지 않는다(360×740)
-  await page.locator('.set-box.now').waitFor();
-  const rowTop = (await page.locator('.set-box.now').boundingBox()).y;
-  const headBottom = await page.locator('.progress-head').evaluate((node) => node.getBoundingClientRect().bottom);
-  check(rowTop >= headBottom - 1, `지금 세트 줄이 머리띠 밑에 가려졌습니다: 줄 ${rowTop} · 머리띠 ${headBottom}`);
+  // 운동(간단히) — 360×740 한 화면에 스크롤 없이: 위 한 줄 · 이름 · 그림 · 세트 · 큰 숫자 · 안내 한 줄 · 채운 버튼 하나
+  await page.locator('#solo-stage .now-done').waitFor();
+  const fits = await page.evaluate(() => { const s = document.getElementById('screen'); return s.scrollHeight <= s.clientHeight + 1; });
+  check(fits, '간단히 화면이 360×740에서 스크롤됩니다');
   // 안내는 한 줄 — 범위와 멈출 곳, 누르면 뜻
-  const head = await page.locator('.set-strip-head').first().textContent();
+  const head = await page.locator('.effort-hint').textContent();
   check(/\d+~\d+회 중 힘이 조금 남을 때 멈추세요\./.test(head), '한 줄 안내: ' + head);
   check(await page.locator('.effort-hint').count() === 1, '안내 줄이 하나가 아닙니다');
   const screenText = await page.locator('#screen').innerText();
@@ -52,28 +46,41 @@ export default async function ({ page, url, shot }) {
   await page.locator('.effort-hint').click();
   check(/번쯤 더 할 수 있겠다/.test(await page.locator('dialog').textContent()), '한 줄 안내를 눌러도 뜻이 안 나옵니다');
   await page.locator('dialog .modal-close').click();
-  // 숫자 칸은 높이 48px 이상, 무게 칸은 폭 72px 이상
-  const boxes = await page.evaluate(() => [...document.querySelectorAll('.set-box.now .set-in')].map((n) => ({ c: n.className, w: n.getBoundingClientRect().width, h: n.getBoundingClientRect().height })));
-  check(boxes.every((b) => b.h >= 48) && boxes.filter((b) => b.c.includes('weight')).every((b) => b.w >= 72), '숫자 칸이 작습니다: ' + JSON.stringify(boxes));
-  // kg / lb는 세트 줄에 없고 ⋯ 메뉴에 — 바꾸면 알리고 되돌릴 수 있다
-  check(await page.locator('.set-box .unit-pick').count() === 0, '세트 줄에 단위 버튼이 남아 있습니다');
+  // 큰 숫자 칸은 높이 64px 이상, − / +는 48px 이상
+  const tiles = await page.evaluate(() => [...document.querySelectorAll('.stage-tile')].map((n) => n.getBoundingClientRect().height));
+  check(tiles.length === 2 && tiles.every((h) => h >= 64), '큰 숫자 칸이 작습니다: ' + JSON.stringify(tiles));
+  const steps = await page.evaluate(() => [...document.querySelectorAll('.stage-tile .pt-num-step')].map((n) => Math.min(n.getBoundingClientRect().width, n.getBoundingClientRect().height)));
+  check(steps.length === 4 && steps.every((s) => s >= 48), '− / +가 작습니다: ' + JSON.stringify(steps));
+  // kg / lb는 ⋯ 메뉴에 — 바꾸면 알리고 되돌릴 수 있다
   await page.locator('.lift-more').click();
   check(await page.locator('dialog .menu-row', { hasText: '동작 보기' }).count() === 0, '운동 화면 ⋯에 동작 보기가 또 있습니다');
   await page.locator('dialog .menu-row', { hasText: '단위 바꾸기 (kg / lb)' }).click();
   check((await page.locator('#pt-toast').textContent()).includes('lb'), '단위를 바꿔도 알리지 않습니다');
-  check((await page.locator('.set-box.now .set-unit').first().textContent()).includes('lb'), '단위가 lb로 안 바뀌었습니다');
+  check((await page.locator('.stage-in-weight').getAttribute('aria-label')).includes('lb'), '단위가 lb로 안 바뀌었습니다');
   await page.locator('#pt-toast .undo-btn').click();
-  check((await page.locator('.set-box.now .set-unit').first().textContent()).includes('kg'), '되돌리기 뒤에 kg이 아닙니다');
+  check((await page.locator('.stage-in-weight').getAttribute('aria-label')).includes('kg'), '되돌리기 뒤에 kg이 아닙니다');
   const range = head.match(/(\d+)~(\d+)회/);
   if (range) {
     const mid = Math.round((Number(range[1]) + Number(range[2])) / 2);
-    const reps = Number(await page.locator('.set-box.now .set-in-reps').inputValue());
+    const reps = Number(await page.locator('.stage-in-reps').inputValue());
     check(reps === mid, `기록이 없는데 횟수가 범위 가운데(${mid})가 아닙니다: ${reps}`);
   }
   // 초보 첫 주에는 강도 기법 줄이 없다
   check(await page.locator('.tech-row').count() === 0, '초보 첫 주에 강도 기법이 보입니다');
+  // 종목 이름은 잘리지 않는다(두 줄까지 감싼다)
+  const name = await page.locator('.stage-name').evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
+  check(name, '지금 종목 이름이 잘립니다');
+  // 동작 보기 — 그림을 누르면 열린다, 44px 이상
+  const demo = page.locator('.lift-demo');
+  check((await demo.textContent()).includes('동작 보기'), '운동 화면 그림: ' + await demo.textContent());
+  check((await demo.boundingBox()).height >= 44, '동작 보기가 작습니다');
+  await shot('2-set-360');
 
-  // 360px — 남은 세트의 ✕는 44px 이상이고 "회"와 겹치지 않는다
+  // 자세히 — 세트 표. 360px에서 남은 세트의 ✕는 44px 이상이고 "회"와 겹치지 않는다. 숫자 칸은 48px 이상
+  await openDetail(page);
+  const boxes = await page.evaluate(() => [...document.querySelectorAll('.set-box.now .set-in')].map((n) => ({ c: n.className, w: n.getBoundingClientRect().width, h: n.getBoundingClientRect().height })));
+  check(boxes.length > 0 && boxes.every((b) => b.h >= 48) && boxes.filter((b) => b.c.includes('weight')).every((b) => b.w >= 72), '숫자 칸이 작습니다: ' + JSON.stringify(boxes));
+  check(await page.locator('.set-box .unit-pick').count() === 0, '세트 줄에 단위 버튼이 남아 있습니다');
   const fit = await page.evaluate(() => [...document.querySelectorAll('.set-box')].filter((box) => box.querySelector('.set-remove')).map((box) => {
     const units = [...box.querySelectorAll('.set-unit')];
     const unit = units[units.length - 1].getBoundingClientRect();
@@ -83,33 +90,22 @@ export default async function ({ page, url, shot }) {
   check(fit.length > 0, '남은 세트 줄이 없습니다');
   check(fit.every((row) => row.gap >= 0), '✕가 "회"와 겹칩니다: ' + JSON.stringify(fit));
   check(fit.every((row) => row.w >= 44 && row.h >= 44), '✕가 44px보다 작습니다: ' + JSON.stringify(fit));
-  // 종목 이름은 잘리지 않는다(두 줄까지 감싼다)
-  const name = await page.locator('.progress-name > span').first().evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
-  check(name, '지금 종목 이름이 잘립니다');
-  // 동작 보기 칩 — 크게, "시연"이 아니라 "동작 보기"
-  const demo = page.locator('.lift-demo');
-  check((await demo.textContent()).includes('동작 보기'), '운동 카드 칩: ' + await demo.textContent());
-  check((await demo.boundingBox()).height >= 44, '동작 보기 칩이 작습니다');
-  await shot('2-set-360');
+  await page.locator('#solo-stage .detail-toggle').click();
 
-  // 한 세트 하고 끝내기 — 남은 것을 말하고, 왼쪽 "계속 운동"(권함) · 오른쪽 "오늘 마치기"
-  await page.locator('.now-done').click();
-  await page.locator('.end-workout').first().click();
+  // 한 세트 하고 끝내기(⋯ › 운동 끝내기) — 남은 것을 말하고, 왼쪽 "계속 운동"(권함) · 오른쪽 "오늘 마치기"
+  await doneSet(page);
+  await stageMenu(page, '운동 끝내기');
   const left = await page.locator('dialog .summary-left').textContent();
   check(/종목\(\d+세트\) 남았습니다/.test(left), '남은 것을 말하지 않습니다: ' + left);
   const foot = (await page.locator('dialog .summary-foot button').allTextContents()).map((t) => t.trim());
   check(foot[0] === '계속 운동' && foot[1] === '오늘 마치기', '아래 버튼: ' + foot.join(', '));
   check(!(await page.locator('dialog .summary-foot button').first().getAttribute('class')).includes('quiet'), '남았을 때 계속 운동이 채워진 버튼이 아닙니다');
   await page.locator('dialog .summary-foot button', { hasText: '계속 운동' }).click();
-  check(await page.locator('dialog[open]').count() === 0 && await page.locator('.progress-head').count() === 1, '계속 운동 뒤에 운동 화면이 아닙니다');
+  check(await page.locator('dialog[open]').count() === 0 && await page.locator('#solo-stage').count() === 1, '계속 운동 뒤에 운동 화면이 아닙니다');
 
   // 이 종목을 마저 하고 끝낸다 — 첫날 요약에 현장 용어 · "부족"이 없다
-  while (await page.locator('.now-done').count() && (await page.locator('.now-done-sub').textContent()).includes('남음')) {
-    await page.locator('.now-done').click();
-    if (await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).count()) await page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' }).click();
-  }
-  await page.locator('.now-done').click();
-  await page.locator('.end-workout').first().click();
+  for (let i = 0; i < 10 && (await page.locator('.progress-count b').textContent()) === '1'; i += 1) await doneSet(page);
+  await stageMenu(page, '운동 끝내기');
   await page.locator('dialog .summary-more > summary').click();
   const summary = (await page.locator('dialog').innerText()).replace(/\s+/g, ' ');
   check(!/\bPR\b|1회 최대|처방|유효 세트|부족/.test(summary), '첫날 요약에: ' + (summary.match(/.{0,20}(\bPR\b|1회 최대|처방|유효 세트|부족).{0,20}/) || [''])[0]);
@@ -124,12 +120,11 @@ export default async function ({ page, url, shot }) {
   const foot2 = (await page.locator('dialog .summary-foot button').allTextContents()).map((t) => t.trim());
   check(foot2[0] === '계속 운동' && foot2[1] === '오늘 마치기', '다 한 날 아래 버튼 순서: ' + foot2.join(', '));
   await page.locator('dialog .summary-foot button', { hasText: '오늘 마치기' }).click();
-  // 끝난 화면 — 요약 다시 보기 · 다른 운동 더 하기는 글자 링크
-  check(await page.locator('.closed-link').count() === 2, '끝난 화면의 두 링크가 글자 링크가 아닙니다');
-  // 헬스장 주소 등록 안내는 첫 운동을 마친 뒤 여기서 한 번
-  check(await page.locator('.gym-link-nudge').count() === 1, '첫 운동을 마친 화면에 헬스장 등록 안내가 없습니다');
-  await page.locator('.gym-link-nudge .gym-link-close').click();
-  check(await page.locator('.gym-link-nudge').count() === 0, '닫았는데 등록 안내가 남았습니다');
+  // 끝난 화면 — 카드 한 장: 다음 운동 한 줄, 요약 다시 보기 · 운동 더 하기 · 이어서 하기는 글자 링크
+  check(await page.locator('.closed-link').count() === 3, '끝난 화면의 세 링크가 글자 링크가 아닙니다');
+  check(/^다음 운동은 .요일 .+입니다\.$/.test((await page.locator('.done-next').textContent()).trim()), '다음 운동 한 줄: ' + await page.locator('.done-next').textContent());
+  // 헬스장 주소 등록 안내는 끝난 카드에 섞지 않는다(오늘 › 자세히 안에)
+  check(await page.locator('.gym-link-nudge').count() === 0, '끝난 화면에 헬스장 등록 안내가 섞였습니다');
 
   // 마무리 스트레칭(혼자) — 고르면 그림과 초, 다 세면 저절로 ✓
   await page.locator('.cool-offer').click();

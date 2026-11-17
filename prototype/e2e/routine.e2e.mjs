@@ -1,7 +1,7 @@
 // 내 루틴 — 내 정보 › 프로그램에서 하던 루틴을 넣는다. 빈 칸에서 날 이름을 치고, 부위별 목록에서
 //   종목을 넣고, 세트 · 반복을 바꾸고, 빈 날을 빼고 저장하면 오늘 목록이 그 루틴 그대로(세트도 그대로)
 //   나온다. 껐다 켜도 남고, 앱 프로그램으로 돌아가도 루틴은 넣어 둬서 다시 불러올 수 있다.
-import { check, onboard, tab } from './lib.mjs';
+import { check, onboard, tab, todayDetail } from './lib.mjs';
 
 async function openMe(page) {
   await tab(page, '내 정보');
@@ -81,6 +81,7 @@ export default async function ({ page, url, shot }) {
 
   // 오늘 — 루틴 그대로, 세트도 그대로
   await tab(page, '오늘');
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   const lifts = page.locator('.plan-row', { has: page.locator('.row-menu') });
   await lifts.first().waitFor();
   const today = await lifts.locator('.name').allTextContents();

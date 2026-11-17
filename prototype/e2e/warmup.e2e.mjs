@@ -1,65 +1,66 @@
-// 몸 풀기는 따로 — 오늘 목록에는 종목만 있고 몸 풀기는 그 위 "시작 전" 칸에. 시작하면 머리띠가
-//   "종목 1"이 아니라 "몸 풀기"로 뜨고, 다 하면 첫 종목으로 간다. 지금 하는 종목 이름은 크게.
-import { begin, check, onboard } from './lib.mjs';
+// 몸 풀기 — 오늘 목록에는 운동만(몸 풀기 목록을 따로 또 두지 않는다). 운동 시작을 누르면 몸 풀기 카드가 먼저:
+//   카드 한 장에 동작 하나(그림 · 남은 초, 초는 저절로 간다), 아래에 붙은 "다음 동작" 하나,
+//   글자 링크 "몸 풀기 건너뛰기" · "전체 목록 보기". 마지막 동작에서는 "첫 운동 시작: …".
+import { begin, check, onboard, todayDetail } from './lib.mjs';
+
+const count = async (page) => (await page.locator('.warm-count').textContent()).trim();
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
 
-  // 목록에 몸 풀기가 섞이지 않는다
+  // 오늘 간단히 — 운동 이름만, 몸 풀기 목록은 없다
   const names = (await page.locator('.plan-row .name > span:first-child').allTextContents()).map((t) => t.trim());
-  check(!names.some((name) => name.startsWith('몸 풀기')), '종목 목록에 몸 풀기가 섞여 있습니다: ' + names.join(', '));
-  const sheet = page.locator('.warm-sheet');
-  check(await sheet.count() === 1 && (await sheet.locator('h3').textContent()).includes('몸 풀기'), '몸 풀기 칸이 따로 없습니다');
-  // 접혀 있다 — 한 줄로 무엇을 하는지만, 누르면 펼친다
-  check(await sheet.locator('.warm-moves').count() === 0, '몸 풀기가 펼쳐져 있어 목록을 밀어냅니다');
-  // 목록만 펼치는 버튼이다 — "동작 보기"는 동작 그림을 여는 이름이라 여기서 쓰지 않는다
-  check((await sheet.locator('.warm-toggle-label').textContent()).trim() === '목록 펼치기', '몸 풀기 펼치기 이름: ' + await sheet.locator('.warm-toggle-label').textContent());
-  await sheet.locator('.warm-summary').click();
-  check(await page.locator('.warm-sheet .warm-moves li').count() >= 2, '펼쳐도 몸 풀기 동작이 안 보입니다');
-  await page.locator('.warm-sheet .warm-toggle').click();
-  const size = await page.locator('.plan-row .name.lift-name-big').first().evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
-  check(size >= 17, '목록의 종목 이름이 작습니다: ' + size);
+  check(names.length >= 2 && !names.some((name) => name.startsWith('몸 풀기')), '종목 목록이 이상합니다: ' + names.join(', '));
+  check(await page.locator('.warm-sheet').count() === 0, '간단히 화면에 몸 풀기 목록이 또 있습니다');
   await shot('1-list');
 
-  // 시작 — 몸 풀기 단계
+  // 시작 — 몸 풀기 카드 한 장
   await begin(page);
-  const head = (await page.locator('.progress-name > span').first().textContent()).trim();
-  check(head.startsWith('몸 풀기'), '시작했는데 머리띠가 몸 풀기가 아닙니다: ' + head);
-  check((await page.locator('.progress-count').textContent()).includes('준비'), '머리띠가 종목 번호를 말합니다');
-  await page.locator('.warm-step').first().click();
-  check(await page.locator('.warm-step[aria-pressed="true"]').count() === 1, '동작을 눌러도 ✓가 안 됩니다');
-  check((await page.locator('.warm-done').textContent()).includes(names[0]), '다음 종목을 말하지 않습니다');
-  // 지금 할 동작 — 그림이 돌고, "따라 하기"를 누르면 초를 세고, 다 세면 저절로 ✓
-  check(await page.locator('.stretch-now .live-motion').count() === 1, '몸 풀기 동작 그림이 없습니다');
-  const secs = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1] || 60);
-  await page.locator('.stretch-go').click();
+  const moves = Number((await count(page)).match(/\/ (\d+)/)[1]);
+  check((await count(page)) === '몸 풀기 1 / ' + moves, '몸 풀기 머리줄: ' + await count(page));
+  check(await page.locator('.warm-card .live-motion').count() === 1, '몸 풀기 동작 그림이 없습니다');
+  check((await page.locator('.start-dock .warm-next').textContent()).trim() === '다음 동작', '아래 버튼이 "다음 동작"이 아닙니다');
+  check((await page.locator('.warm-skip').textContent()).trim() === '몸 풀기 건너뛰기', '건너뛰기 글자 링크가 없습니다');
+  check((await page.locator('.warm-list-toggle').textContent()).trim() === '전체 목록 보기', '전체 목록 보기가 없습니다');
+  check(await page.locator('.warm-step').count() === 0, '동작 목록이 처음부터 펼쳐져 있습니다');
+  // 초는 저절로 간다 — 다 세면 다음 동작으로
+  const secs = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1] || 120);
   await page.clock.runFor(2500);
-  const ticking = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1]);
-  check(ticking < secs, `몸 풀기 초가 줄지 않습니다: ${secs} → ${ticking}`);
-  await shot('2-stage');
+  const ticking = Number(((await page.locator('#stretch-left').textContent()).match(/(\d+)초/) || [])[1] || 120);
+  check(ticking < secs, `몸 풀기 초가 저절로 줄지 않습니다: ${secs} → ${ticking}`);
+  await shot('2-card');
   await page.clock.runFor(secs * 1000 + 1000);
-  check(await page.locator('.warm-step[aria-pressed="true"]').count() === 2, '다 셌는데 다음 동작에 ✓가 안 됩니다');
+  check((await count(page)) === '몸 풀기 2 / ' + moves, '다 셌는데 다음 동작으로 안 넘어갑니다: ' + await count(page));
+  await page.locator('.warm-next').click();
+  check((await count(page)) === '몸 풀기 3 / ' + moves, '다음 동작을 눌러도 안 넘어갑니다: ' + await count(page));
+
+  // 전체 목록 — 한 동작에 ✓, 누르면 그 동작으로
+  await page.locator('.warm-list-toggle').click();
+  check(await page.locator('.warm-list .warm-step').count() === moves, '전체 목록에 동작이 다 없습니다');
+  check(await page.locator('.warm-step[aria-pressed="true"]').count() === 2, '한 동작 ✓가 맞지 않습니다');
+  await page.locator('.warm-list-toggle').click();
 
   // 껐다 켜도 몸 풀기에서 잇는다
   await page.reload();
   await page.waitForSelector('.tabbar [role="tab"]');
-  check((await page.locator('.progress-name > span').first().textContent()).trim().startsWith('몸 풀기'), '다시 켜니 몸 풀기가 사라졌습니다');
-  check(await page.locator('.warm-step[aria-pressed="true"]').count() === 2, '체크한 동작이 사라졌습니다');
+  check((await count(page)) === '몸 풀기 3 / ' + moves, '다시 켜니 몸 풀기 자리가 사라졌습니다: ' + await page.locator('#screen').innerText());
 
-  // 끝 — 첫 종목, 이름이 크게
+  // 끝까지 — 마지막 동작에서는 "첫 운동 시작: 첫 종목"
+  for (let i = 0; i < moves && await page.locator('.warm-next').count(); i += 1) await page.locator('.warm-next').click();
+  const done = (await page.locator('.start-dock .warm-done').textContent()).trim();
+  check(done === '첫 운동 시작: ' + names[0], '마지막 동작 버튼: ' + done);
   await page.locator('.warm-done').click();
-  const lift = page.locator('.progress-name > span').first();
-  check((await lift.textContent()).trim() === names[0], '몸 풀기 뒤 첫 종목이 아닙니다: ' + await lift.textContent());
-  const big = await lift.evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
-  check(big >= 20, '지금 종목 이름이 작습니다: ' + big);
-  check((await page.locator('.progress-count').textContent()).includes('1'), '종목 번호가 없습니다');
+  check(await page.locator('.warm-card').count() === 0, '몸 풀기 뒤에 운동 화면이 아닙니다');
+  check((await page.locator('#screen').textContent()).includes(names[0]), '몸 풀기 뒤 첫 종목이 아닙니다');
   await shot('3-lift');
 
   // 목록으로 갔다 다시 시작해도 몸 풀기를 또 하지 않는다
-  await page.locator('.progress-top .demo-open', { hasText: '목록' }).click();
+  await page.goBack({ waitUntil: 'commit' }).catch(() => null);
+  await page.waitForSelector('.start-cta');
+  await todayDetail(page);
   check((await page.locator('.warm-sheet .meta').textContent()).includes('오늘 했음'), '몸 풀기 칸이 했음으로 안 바뀝니다');
   await begin(page);
-  check((await page.locator('.progress-name > span').first().textContent()).trim() === names[0], '몸 풀기를 또 합니다');
+  check(await page.locator('.warm-card').count() === 0, '몸 풀기를 또 합니다');
 }

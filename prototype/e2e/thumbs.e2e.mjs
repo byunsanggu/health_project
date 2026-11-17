@@ -1,6 +1,6 @@
 // 3D 썸네일 — 기구 칸 · 크게 보기 · 종목 고르기 목록 · 오늘 목록에 구워 둔 3D 그림이 실제로 뜬다.
 //   그림을 못 받으면(막아 둔다) 예전 선 그림이 그대로 보인다.
-import { check, onboard, pickMe, FAKE_SPEECH } from './lib.mjs';
+import { check, gymTab, onboard, FAKE_SPEECH, todayDetail } from './lib.mjs';
 
 const cellNamed = (page, name) => page.locator('.equip-cell', { has: page.locator('.name', { hasText: new RegExp(`^${name}`) }) });
 const loaded = (locator) => locator.evaluate((img) => new Promise((done) => {
@@ -10,19 +10,11 @@ const loaded = (locator) => locator.evaluate((img) => new Promise((done) => {
 
 async function toGymTiles(page, url) {
   await page.goto(url);
-  await page.waitForSelector('.consent-card');
-  const cards = page.locator('.consent-card');
-  for (let i = 0; i < await cards.count(); i += 1) {
-    if (await cards.nth(i).locator('.consent-tag.req').count()) await cards.nth(i).locator('.consent-toggle').click();
-  }
-  for (let i = 0; i < 6; i += 1) {
-    const step = (await page.locator('.session-head h2').textContent()).trim();
-    if (step === '헬스장') break;
-    if (step === '나에 대해') await pickMe(page, { level: '초보' });
-    await page.locator('.wizard-nav .primary').click();
-  }
-  await page.locator('.chip-row .pick', { hasText: '동네 헬스장' }).click();
-  await page.locator('.equip-toggle').click();
+  // 처음 설정은 헬스장을 묻지 않는다 — 기구 그림 칸은 내 정보 › 헬스장 › 기구 고치기에 있다
+  await onboard(page, { level: '초보' });
+  await gymTab(page);
+  await page.locator('.gym-here').getByRole('button', { name: '기구 고치기' }).click();
+  await page.locator('dialog .chip-row .pick', { hasText: '동네 헬스장' }).click();
   for (let i = 0; i < 8 && await page.locator('.equip-more[aria-expanded="false"]').count(); i += 1) {
     await page.locator('.equip-more[aria-expanded="false"]').first().click();
   }
@@ -98,6 +90,7 @@ export default async function ({ page, url, shot, out }) {
   await onboard(page3);
   const today = page3.locator('.plan-row .lift-thumb img.pic-img').first();
   check(await loaded(today) > 0, '오늘 목록에 3D 그림이 안 떴습니다');
+  await todayDetail(page3); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   await page3.locator('.list-edit').click();
   await page3.locator('.head-actions .demo-open', { hasText: '종목 추가' }).click();
   // 오늘 이미 하는 종목(랫 풀다운 등)은 고르기 목록에 없다 — 오늘 목록 쪽에서 본다

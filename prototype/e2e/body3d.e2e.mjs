@@ -1,6 +1,6 @@
 // 3D 근육 그림 — 오늘 목록의 썸네일이 입체 그림으로 바뀌고(평면 그림은 장을 읽기 전 잠깐만),
 //   주로 쓰는 근육이 실제로 칠해진다. 동작 시연의 "쓰는 근육"은 앞 · 뒤 전신 한 쌍.
-import { check, onboard } from './lib.mjs';
+import { check, onboard, todayDetail } from './lib.mjs';
 
 /** 캔버스에서 칠한 색(파란 보라)이 든 화소 수 */
 async function painted(locator) {
@@ -20,8 +20,9 @@ export default async function ({ page, url, shot }) {
   await onboard(page);
   await page.waitForFunction(() => document.querySelectorAll('.lift-thumb.three canvas').length > 0);
 
+  await todayDetail(page); // 세트 · ⋯ · 편집은 오늘 › 자세히 보기 안에
   const lifts = await page.locator('.plan-row .row-menu').count();
-  check(await page.locator('.lift-thumb.three canvas').count() === lifts, '입체 썸네일 수가 종목 수와 다릅니다');
+  check(await page.locator('.plan-row .lift-thumb.three canvas').count() === lifts, '입체 썸네일 수가 종목 수와 다릅니다');
   check(await page.locator('.lift-thumb .thumb-body').count() === 0, '평면 그림이 남아 있습니다');
   const first = page.locator('.lift-thumb.three canvas').first();
   check(await painted(first) > 40, '첫 종목 썸네일에 칠한 근육이 없습니다');

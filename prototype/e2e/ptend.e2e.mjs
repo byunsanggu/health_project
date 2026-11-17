@@ -1,7 +1,7 @@
 // 짧은 날 PT를 끝까지 — 평소 60분 · 오늘 20분에서 −는 15분(평소 값에서 빼면 55분이 됐다)
 //   → 세트마다 묻지 않고 "여기까지"로 바로 적힌다 · 마지막 세트 뒤에 "한 번 더"라고 하지 않는다
 //   → 스트레칭 중 멈춘 채로 끝내도 일시정지 화면이 남지 않는다
-import { begin, check, choosePt, focusPhase, onboard, runUntil, setVisible } from './lib.mjs';
+import { adjustToday, begin, check, choosePt, focusPhase, onboard, runUntil, setVisible, todayDetail } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -9,11 +9,11 @@ export default async function ({ page, url, shot }) {
   await onboard(page);
 
   // 오늘만 20분 — 시작 전 한 장에서 고른다. 짧은 날이 되고 목록 위에 한 줄로 남는다
-  await page.locator('.start-cta').click();
-  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
+  await adjustToday(page); // 오늘 조정 — "오늘은 평소와 다릅니다 ›"에서 질문 넷
   await page.locator('dialog .segmented button', { hasText: '20분' }).click();
   await page.locator('dialog .modal-close').click();
   check((await page.locator('.today-adjust').textContent()).includes('20분'), '오늘 시간이 안 보입니다');
+  await todayDetail(page); // 짧은 날 설명은 자세히 안에
   check(await page.locator('.short-note').count() === 1, '20분인데 짧은 날이 아닙니다');
 
   await choosePt(page);

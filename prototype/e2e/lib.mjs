@@ -87,47 +87,64 @@ export const FAKE_SPEECH = () => {
 };
 
 /**
- * 처음 설정을 끝까지 넘긴다.
- *
- * consent: 'required'면 필수만, 'all'이면 선택까지 전부 동의한다.
- * 단계 · 성별은 직접 골라야 넘어가므로 level · sex로 고른다. 나머지는 기본값 그대로.
+ * 처음 설정 첫 장(동의) — 필수 셋은 줄마다 따로 보이고, 주 버튼 "필수 항목에 동의하고 시작합니다"가 필수만 더한다.
+ * consent: 'required'면 필수만, 'all'이면 "선택 항목 보기"를 펼쳐 선택(알림 포함)까지 켠다.
+ * press: false면 주 버튼은 누르지 않는다(백업 불러오기처럼 그 화면에서 더 할 것이 있을 때).
  */
-export async function onboard(page, { consent = 'required', level = '중급', sex = '남성' } = {}) {
-  await page.waitForSelector('.consent-card');
-  // 선택 항목은 접혀 있다 — 전부 동의하려면 펼친다
-  if (consent === 'all' && await page.locator('.consent-more[aria-expanded="false"]').count()) await page.locator('.consent-more').click();
-  const cards = page.locator('.consent-card');
-  for (let i = 0; i < await cards.count(); i += 1) {
-    const card = cards.nth(i);
-    const required = await card.locator('.consent-tag.req').count() > 0;
-    if (consent === 'all' || required) {
-      const toggle = card.locator('.consent-toggle');
-      if (await toggle.getAttribute('aria-pressed') !== 'true') await toggle.click();
+export async function agreeConsent(page, { consent = 'required', press = true } = {}) {
+  await page.waitForSelector('.consent-line');
+  if (consent === 'all') {
+    if (await page.locator('.consent-more[aria-expanded="false"]').count()) await page.locator('.consent-more').click();
+    const toggles = page.locator('.consent-card .consent-toggle');
+    for (let i = 0; i < await toggles.count(); i += 1) {
+      if (await toggles.nth(i).getAttribute('aria-pressed') !== 'true') await toggles.nth(i).click();
     }
   }
-  await finishWizard(page, { level, sex });
+  if (press) await page.locator('.wizard-nav .primary').click();
 }
 
-/** 설문 나머지를 "다음"으로 넘긴다. 고르라고 막혀 있으면 고른다. */
-export async function finishWizard(page, { level = '중급', sex = '남성' } = {}) {
-  for (let i = 0; i < 14; i += 1) {
-    const step = (await page.locator('.session-head h2').textContent()).trim();
-    if (step === '나에 대해') await pickMe(page, { level, sex });
-    const next = page.locator('.wizard-nav .primary');
-    const text = (await next.textContent()).trim();
-    await next.click();
-    if (text === '이 프로그램으로 시작') break;
+/**
+ * 처음 설정을 끝까지 넘긴다 — 동의 → 세 가지만 알려 주세요 → 준비됐습니다 › 나중에 하겠습니다(오늘 화면).
+ *
+ * 경력 · 성별은 직접 골라야 넘어가므로 level · sex로 고른다. days는 시험들이 4일(상체 · 하체 번갈아)을
+ * 기준으로 짜여 있어 4가 기본이다 — 앱의 기본값(3일)은 onboard60 · onboard가 본다.
+ */
+export async function onboard(page, { consent = 'required', level = '중급', sex = '남성', days = 4 } = {}) {
+  await agreeConsent(page, { consent });
+  await finishWizard(page, { level, sex, days });
+}
+
+/** "세 가지만 알려 주세요"부터 — 고르고, 내 운동 만들기, 준비됐습니다에서 나중에 하겠습니다(start: true면 첫 운동 시작). */
+export async function finishWizard(page, { level = '중급', sex = '남성', days = 4, start = false } = {}) {
+  await page.waitForSelector('.ob-q');
+  await pickMe(page, { level, sex, days });
+  await page.locator('.wizard-nav .primary').click();
+  // 백업으로 기록을 들였으면 준비됐습니다 없이 바로 오늘 화면이다
+  await page.waitForSelector('.ready-nav, .tabbar [role="tab"]:visible');
+  if (await page.locator('.ready-nav').count()) {
+    const later = page.locator('.ready-later');
+    if (!start && await later.count()) await later.click();
+    else await page.locator('.ready-go').click();
   }
-  await page.waitForSelector('.tabbar [role="tab"]');
+  await page.waitForSelector('.tabbar [role="tab"], #focus:not([hidden])');
 }
 
-/** 처음 설정 "나에 대해" — 경력 단계와 성별을 아직 안 골랐으면 고른다. */
-export async function pickMe(page, { level = '중급', sex = '남성' } = {}) {
-  if (await page.locator('.choice[aria-pressed="true"]', { hasText: /초보|중급|고급|전문가/ }).count() === 0) {
-    await page.locator('.choice', { hasText: level }).first().click();
+const LEVEL_CHIP = { 초보: '처음입니다', 중급: '6개월~2년', 고급: '2년 이상', 전문가: '전문가' };
+
+/** "세 가지만 알려 주세요" — 경력 · 성별을 아직 안 골랐으면 고르고, days를 주면 그 일수로. */
+export async function pickMe(page, { level = '중급', sex = '남성', days } = {}) {
+  const levelRow = page.locator('.ob-q').first();
+  if (await levelRow.locator('.segmented button[aria-pressed="true"]').count() === 0) {
+    if (level === '전문가' && await page.locator('.level-more[aria-expanded="false"]').count()) await page.locator('.level-more').click();
+    await levelRow.locator('.segmented button', { hasText: LEVEL_CHIP[level] || level }).click();
   }
   const male = page.locator('.segmented button', { hasText: sex });
   if (await male.getAttribute('aria-pressed') !== 'true') await male.click();
+  if (days) {
+    const want = page.locator('.ob-days .segmented button', { hasText: new RegExp(`^${days}일$`) });
+    if (!await want.count()) await page.locator('.days-more').click();
+    if (await want.getAttribute('aria-pressed') !== 'true') await want.click();
+  }
 }
 
 /** 아래 탭 하나를 누른다. */
@@ -163,8 +180,28 @@ export async function choosePt(page) {
 }
 
 /**
- * 시작하기 — 처음이면 "오늘 운동 준비" 한 장이 뜨고 거기서 시작을 누른다.
- * 이어서 하기(세트를 한 뒤 · PT 멈춘 뒤)는 바로 시작한다.
+ * 오늘 › 자세히 보기 — 세트 · 무게 · 줄마다 ⋯ · 순서 바꾸기 · 편집 · 다른 날 바꾸기가 여기 있다.
+ * 고른 쪽을 기억하므로 이미 펼쳐져 있으면 그대로 둔다.
+ */
+export async function todayDetail(page) {
+  const toggle = page.locator('.today-more');
+  if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+}
+
+/**
+ * 오늘 조정(몸 상태 · 아픈 데 · 시간 · 혼자/PT)을 연다 — "오늘은 평소와 다릅니다 ›",
+ * 이미 바꾼 게 있으면 그 줄("오늘 … 바꾸기"). 맨 처음 운동이면 운동 시작이 이 창을 연다.
+ */
+export async function adjustToday(page) {
+  const line = page.locator('.start-dock .today-diff, .start-dock .today-adjust');
+  if (await line.count()) await line.first().click();
+  else await page.locator('.start-cta').click();
+  await page.waitForSelector('dialog[open] .start-go');
+}
+
+/**
+ * 운동 시작 — 맨 처음 한 번은 "오늘 운동 준비" 한 장이 뜨고 거기서 시작을 누른다.
+ * 그 뒤로는 한 번에 시작한다(지난번 그대로). 이어서 하기도 바로 시작한다.
  */
 export async function begin(page) {
   await page.locator('.start-cta').click();
@@ -205,7 +242,7 @@ export async function runUntil(page, phases, { stepMs = 1000, maxMs = 300000 } =
   throw new Error(`${maxMs / 1000}초를 돌려도 ${want.join('/')} 단계가 안 나왔습니다 (지금 ${await focusPhase(page)})`);
 }
 
-/** 시작하기 — 혼자 모드는 몸 풀기 단계가 먼저 뜬다. 종목을 보려는 시험은 건너뛴다. */
+/** 운동 시작 — 혼자 모드는 몸 풀기 카드가 먼저 뜬다. 종목을 보려는 시험은 "몸 풀기 건너뛰기"로 넘긴다. */
 export async function startWorkout(page) {
   await begin(page);
   if (await page.locator('.warm-skip').count()) await page.locator('.warm-skip').click();
@@ -222,4 +259,31 @@ export async function restGuideOff(page) {
   await page.locator('.list-label:has-text("세트 중 동작 그림") ~ .segmented').first().locator('button', { hasText: '끄기' }).click();
   if (was >= 0) await modes.nth(was).click();
   await tab(page, '오늘');
+}
+
+/** 혼자 운동 화면 — 쉬는 중이면 "바로 다음 세트"로 휴식을 끝낸다(다른 화면이면 아래 휴식 막대의 건너뛰기). 쉬는 중이 아니면 그대로. */
+export async function skipRest(page) {
+  const now = page.locator('#solo-stage .rest-now');
+  if (await now.count()) { await now.click(); return true; }
+  const bar = page.locator('#rest-host .rest-skip', { hasText: '건너뛰기' });
+  if (await bar.count() && await bar.isVisible()) { await bar.click(); return true; }
+  return false;
+}
+
+/** 혼자 운동 화면 — 지금 세트 완료. 쉬는 중이면 휴식부터 끝낸다. */
+export async function doneSet(page) {
+  await skipRest(page);
+  await page.locator('.now-done').click();
+}
+
+/** 혼자 운동 화면의 "자세히 보기 ›"(세트 표 · 워밍업 · 세트 더하기) — 닫혀 있으면 연다. */
+export async function openDetail(page) {
+  const toggle = page.locator('#solo-stage .detail-toggle');
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+}
+
+/** 혼자 운동 화면의 ⋯에서 하나 고른다(기구에 사람이 있어요 · 아픈 데가 있어요 · 운동 끝내기 …). */
+export async function stageMenu(page, label) {
+  await page.locator('#solo-stage .stage-more').click();
+  await page.locator('dialog .menu-row', { hasText: label }).click();
 }

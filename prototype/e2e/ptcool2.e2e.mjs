@@ -1,13 +1,12 @@
 // 스트레칭 중에 "운동 끝내기"로 요약을 열면 — 스트레칭은 거기서 끝나고 코치는 조용하다(요약 위로 정리 말이 나오지 않는다).
 //   "스트레칭 끝내기" 단추는 정리 말을 한다. 시계는 요약을 연 그 시각에 멈춘다.
-import { begin, check, choosePt, focusPhase, onboard, runUntil } from './lib.mjs';
+import { adjustToday, begin, check, choosePt, focusPhase, onboard, runUntil } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   await onboard(page);
-  await page.locator('.start-cta').click();
-  await page.locator('dialog .start-summary').click(); // 접힌 한 줄 → 바꾸기로 질문 넷을 펼친다
+  await adjustToday(page); // 오늘 조정 — "오늘은 평소와 다릅니다 ›"에서 질문 넷
   await page.locator('dialog .segmented button', { hasText: '20분' }).click();
   await page.locator('dialog .modal-close').click();
   await choosePt(page);

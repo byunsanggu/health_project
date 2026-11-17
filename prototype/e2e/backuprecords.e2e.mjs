@@ -1,7 +1,7 @@
 // 설문 답이 없는 백업(기록만 든 파일) — 설문은 새로 하고, 기록은 설문을 마칠 때 들어간다
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { check, finishWizard, tab } from './lib.mjs';
+import { agreeConsent, check, finishWizard, tab } from './lib.mjs';
 
 export default async function ({ page, url, out }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -17,12 +17,8 @@ export default async function ({ page, url, out }) {
   const ready = await page.locator('.backup-ready').textContent();
   check(ready.includes('설문은 새로 합니다'), '설문 이야기가 없습니다: ' + ready);
 
-  const cards = page.locator('.consent-card');
-  for (let i = 0; i < await cards.count(); i += 1) {
-    const card = cards.nth(i);
-    if (await card.locator('.consent-tag.req').count()) await card.locator('.consent-toggle').click();
-  }
-  check((await page.locator('.wizard-nav .primary').textContent()).trim() === '다음', '설문 없이 이어 하려 합니다');
+  check((await page.locator('.wizard-nav .primary').textContent()).trim() === '필수 항목에 동의하고 시작합니다', '설문 없이 이어 하려 합니다');
+  await agreeConsent(page);
   await finishWizard(page);
 
   await page.locator('dialog .backup-report').first().waitFor();
