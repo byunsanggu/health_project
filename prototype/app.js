@@ -301,6 +301,11 @@
         skipToday: state.skipToday,
         // 오늘 컨디션 — 이 폰에만, 하루짜리
         dayFeel: state.dayFeel,
+        // 오늘 화면 간단히 / 자세히 · 첫날 한 장을 봤는가 · 다음 날로 넘기는 몸 상태(보통만) · 지난번 통증을 오늘 물었는가 — 이 폰에만
+        todayDetail: state.todayDetail,
+        startSheetSeen: state.startSheetSeen,
+        feelDefault: state.feelDefault,
+        painAsk: state.painAsk,
         todayExtras: state.todayExtras,
         friendName: state.friendName,
         friendCode: state.friendCode,
@@ -407,6 +412,10 @@
       state.ptPrep = settings.ptPrep || null;
       state.skipToday = settings.skipToday || null;
       state.dayFeel = settings.dayFeel || null;
+      state.todayDetail = Boolean(settings.todayDetail);
+      state.startSheetSeen = Boolean(settings.startSheetSeen);
+      state.feelDefault = settings.feelDefault === 'ok' ? 'ok' : null;
+      state.painAsk = settings.painAsk || null;
       state.todayExtras = settings.todayExtras || null;
       state.friendName = settings.friendName || null;
       state.friendCode = settings.friendCode || null;
@@ -5273,7 +5282,12 @@
 
   /** 오늘 직접 고른 컨디션. 어제 고른 것은 오늘 것이 아니다. */
   function todayFeel() {
-    return state.dayFeel && state.dayFeel.date === state.todayDate ? state.dayFeel.feel : null;
+    if (state.dayFeel && state.dayFeel.date === state.todayDate) return state.dayFeel.feel;
+    /*
+     * 고르지 않은 날은 지난번에 고른 몸 상태 — 단 "보통"만 넘긴다(기록으로 본 컨디션대로 하겠다는 평소 선택이다).
+     * "별로예요"는 그날 하루 일이다 — 넘기면 다음 운동까지 말없이 가벼워진다.
+     */
+    return state.feelDefault === 'ok' ? 'ok' : null;
   }
 
   /** 판단에 쓰는 컨디션 — 직접 고른 것이 기록보다 먼저다. */
@@ -5283,7 +5297,9 @@
   }
 
   function setDayFeel(feel) {
-    state.dayFeel = feel === 'good' ? null : { date: state.todayDate, feel: feel };
+    // 직접 고른 좋아요 · 보통은 다음 날의 기본이 된다(별로예요는 그날만)
+    if (feel !== 'low') state.feelDefault = feel === 'ok' ? 'ok' : null;
+    state.dayFeel = feel === 'good' && !state.feelDefault ? null : { date: state.todayDate, feel: feel };
     rebuildSession();
     persist();
     if (feel === 'low') {
@@ -5883,17 +5899,29 @@
     ]);
   }
 
+  /**
+   * 오늘 — 간단히가 기본이다. 제목 한 줄("오늘은 상체 운동입니다") · 첫 운동 · 이름만 적은 목록 ·
+   * 마무리 한 줄 · "자세히 보기 ›" · 아래에 붙은 "운동 시작" 하나.
+   * 세트 · 무게 · 줄마다 ⋯ · 순서 바꾸기 · 편집 · 유산소 · 다른 날로 바꾸기는 자세히 안에 있다(고른 쪽을 기억한다).
+   * 운동 시간 · 몸 상태 · 아픈 데 · 혼자/PT는 묻지 않고 지난번 그대로 시작한다 — 바꿀 날만 "오늘은 평소와 다릅니다 ›".
+   */
   function renderPlanList() {
-    var head = sessionHead();
-    screen.appendChild(head.node);
-
-    /*
-     * 오늘 화면은 할 것 목록과 시작 버튼만. 운동 시간 · 컨디션 · 아픈 데 · 운동 방식은
-     * 시작하기를 누르면 한 장에 묻는다(openStartSheet) — 전에는 목록 위아래에 줄이
-     * 다섯 개 붙어 있어 무엇을 먼저 골라야 하는지 몰랐다. 바꾼 게 있으면 한 줄로만 보인다.
-     */
-    var adjusted = todayAdjustLine();
-    if (adjusted) screen.appendChild(adjusted);
+    var detail = Boolean(state.todayDetail);
+    var estimate = sessionHead().estimate;
+    var doneSets = state.todaySets.length;
+    // 이번 주에 하기로 한 날을 다 채운 날 — 쉬는 날이다. 더 하고 싶은 사람을 위해 목록은 그대로 둔다
+    var restDay = LIVE && doneSets === 0 && !state.sessionStartedAt && weekSessionsDone() >= trainingDays().length;
+    screen.appendChild(el('div', { class: 'session-head today-head' }, [
+      el('h2', { class: 'today-title', text: restDay ? '오늘은 쉬는 날입니다' : '오늘은 ' + dayTitle(state.session.name) + '입니다' }),
+      el('p', { class: 'meta today-sub', text: restDay
+        ? '이번 주 ' + trainingDays().length + '번을 다 했습니다 · 더 하고 싶으시면 ' + dayTitle(state.session.name) + '을 하셔도 됩니다'
+        : '운동 ' + state.lifts.length + '개 · 약 ' + estimate.totalMinutes + '분' }),
+    ]));
+    if (restDay) {
+      var restNotes = conditioningPlanNotes(false);
+      screen.appendChild(restNotes.length ? restNotes[0]
+        : el('p', { class: 'hint-line rest-day-text', text: '쉬는 날에는 가볍게 걷거나 스트레칭만 해도 충분합니다. 근육은 쉬는 동안 자랍니다.' }));
+    }
 
     renderWarnings();
 
@@ -5907,6 +5935,190 @@
     var back = comebackCard();
     if (back) screen.appendChild(back);
 
+    // 지난번에 아프다고 했으면 시작 전에 그것 하나만 묻는다 — 오늘 할 운동이 바뀌는 질문이라서
+    var painAsk = painAskCard();
+    if (painAsk) screen.appendChild(painAsk);
+
+    var reordering = Boolean(state.reorderMode) && state.lifts.length > 1;
+    var nextLift = state.lifts.filter(function (lift) { return lift.sets.some(function (set) { return !set.done; }); })[0];
+    if (nextLift && !reordering) screen.appendChild(todayHero(nextLift, doneSets > 0));
+
+    if (!detail) {
+      screen.appendChild(el('div', { class: 'simple-list' }, state.lifts.map(simplePlanRow)));
+      if (!state.started && !everClosedWorkout()) {
+        screen.appendChild(el('p', { class: 'hint-line first-hint', text: '위에서부터 한 운동씩 합니다. 이름을 누르면 동작을 보여 드립니다.' }));
+      }
+    }
+
+    // 오늘만 뺀 종목 — 목록에서 사라졌다고 잊히지 않게, 되돌릴 수 있게
+    var skipped = todaySkips().map(function (id) { return index.get(id); }).filter(Boolean);
+    if (skipped.length) {
+      screen.appendChild(el('div', { class: 'skip-today-line' }, [
+        el('span', { class: 'skip-today-label', text: '오늘만 뺌' }),
+      ].concat(skipped.map(function (exercise) {
+        return el('button', {
+          type: 'button', class: 'pick skip-undo', text: exercise.name + ' 되돌리기',
+          onclick: function () { unskipForToday(exercise.id); },
+        });
+      }))));
+    }
+
+    if (!detail) {
+      // 마무리 운동(체력 기르기 · 체지방 감량)은 한 줄로 — 자세한 카드는 자세히 안에
+      var finisherNow = finisherToday();
+      if (finisherNow) {
+        screen.appendChild(el('p', { class: 'finisher-line' }, [
+          el('span', { class: 'finisher-line-key', text: '마지막에' }),
+          el('span', { text: finisherNow.spec.title.replace(/^마무리 (운동|유산소) · /, '') + ' · ' + finisherNow.spec.minutes + '분' }),
+        ]));
+      }
+    }
+    if (!restDay && weekSessionsDone() >= trainingDays().length) {
+      conditioningPlanNotes(false).forEach(function (node) { screen.appendChild(node); });
+    }
+
+    screen.appendChild(el('button', {
+      type: 'button', class: 'more-toggle today-more', 'aria-expanded': String(detail),
+      onclick: function () {
+        state.todayDetail = !detail;
+        if (detail) { state.reorderMode = false; state.listToolsOpen = false; }
+        persist();
+        render();
+      },
+    }, [
+      el('span', { text: detail ? '간단히 보기' : '자세히 보기' }),
+      el('span', { class: 'more-toggle-go', 'aria-hidden': 'true', text: detail ? '‹' : '›' }),
+    ]));
+    if (detail) renderPlanDetail(reordering);
+
+    var fresh = doneSets === 0 && !state.sessionStartedAt && !(state.ptRun && state.ptRun.paused);
+    var adjusted = todayAdjustLine();
+    screen.appendChild(el('div', { class: 'start-dock' }, [
+      adjusted || (fresh ? el('button', {
+        type: 'button', class: 'today-diff',
+        onclick: function () { openTodayAdjust('start'); },
+      }, [
+        el('span', { text: '오늘은 평소와 다릅니다' }),
+        el('span', { class: 'today-diff-go', 'aria-hidden': 'true', text: '›' }),
+      ]) : null),
+      el('button', {
+        type: 'button', class: 'finish start-cta',
+        // 시작해 두고 목록에 온 것(PT 멈춤 · 몸 풀기 중)도 "이어서 하기" — "운동 시작"이면 처음부터인 줄 안다
+        text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : state.sessionStartedAt ? '이어서 하기' : '운동 시작',
+        onclick: function () {
+          /*
+           * 한 번에 시작한다 — 몸 상태 · 아픈 데 · 시간 · 혼자/PT는 지난번 그대로.
+           * 맨 처음 한 번만 "오늘 운동 준비" 한 장을 보여 준다 — 이런 걸 바꿀 수 있다는 걸 알게.
+           */
+          if (fresh && !state.startSheetSeen && !everClosedWorkout()) openTodayAdjust('first');
+          else beginToday();
+        },
+      }),
+    ]));
+
+    // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다.
+    if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
+    // 시작은 했는데 아직 기록이 없을 때도 끝낼 길은 있어야 한다.
+    else if (state.sessionStartedAt) {
+      screen.appendChild(el('button', { type: 'button', class: 'finish quiet', text: '운동 끝내기', onclick: endWorkout }));
+    }
+  }
+
+  /** "상체 A" → "상체 운동" — 오늘 제목 한 줄에 쓴다. 날 이름(A · B)은 자세히 안 "다른 날 운동으로 바꾸기"에 있다. */
+  function dayTitle(name) {
+    var base = String(name || '').replace(/\s+[A-Z]$/, '').trim() || String(name || '');
+    return /(운동|루틴)$/.test(base) ? base : base + ' 운동';
+  }
+
+  /** 오늘 첫 운동(이어서 할 때는 다음 운동) 한 장 — 그림과 이름. 누르면 동작 보기. */
+  function todayHero(lift, resumed) {
+    return el('button', {
+      type: 'button', class: 'today-hero',
+      'aria-label': (resumed ? '다음 운동: ' : '첫 운동: ') + lift.exercise.name + ' — 눌러서 동작 보기',
+      onclick: function () { openDemo(lift.exercise); },
+    }, [
+      liftThumb(lift.exercise),
+      el('span', { class: 'today-hero-text' }, [
+        el('span', { class: 'today-hero-key', text: resumed ? '다음 운동' : '첫 운동' }),
+        el('b', { class: 'today-hero-name', text: lift.exercise.name }),
+      ]),
+    ]);
+  }
+
+  /** 간단히 목록의 한 줄 — 작은 그림과 이름만. 누르면 동작 보기. 세트 · 무게 · ⋯은 자세히 안에. */
+  function simplePlanRow(lift) {
+    var done = lift.sets.filter(function (set) { return set.done; }).length;
+    return el('button', {
+      type: 'button', class: 'plan-row simple-row' + (done > 0 && done === lift.sets.length ? ' is-done' : ''),
+      'aria-label': lift.exercise.name + ' 동작 보기',
+      onclick: function () { openDemo(lift.exercise); },
+    }, [
+      liftThumb(lift.exercise, true),
+      el('span', { class: 'name' }, [el('span', { text: lift.exercise.name })]),
+      done > 0 ? el('span', { class: 'plan-done', text: done + '/' + lift.sets.length }) : null,
+    ]);
+  }
+
+  /** 지난 운동 날에 적은 통증 — 오늘 아직 적지 않았을 때 물을 거리. 없으면 null. */
+  function lastPainReport() {
+    if (!E.allows(state.consent, 'painGate')) return null;
+    var earlier = state.checkIns.filter(function (item) { return item.date < state.todayDate && (item.pain || []).some(function (p) { return p.score > 0; }); })
+      .sort(function (a, b) { return a.date < b.date ? 1 : -1; })[0];
+    if (!earlier) return null;
+    // 그 뒤에 아프지 않다고 적은 날(빈 체크인)이 있으면 지난 일이다
+    var later = state.checkIns.some(function (item) { return item.date > earlier.date && item.date < state.todayDate && !(item.pain || []).some(function (p) { return p.score > 0; }); });
+    return later ? null : earlier.pain.filter(function (p) { return p.score > 0; });
+  }
+
+  /** "지난번에 어깨가 아프다고 하셨습니다. 오늘은 어떻습니까?" — 오늘 답하기 전까지, 오늘 화면에 바로. */
+  function painAskCard() {
+    if (state.started || state.todaySets.length > 0 || activePain().length > 0) return null;
+    if (state.painAsk && state.painAsk.date === state.todayDate) return null;
+    var last = lastPainReport();
+    if (!last || last.length === 0) return null;
+    var where = last.map(function (p) { return E.JOINT_LABELS_KO[p.joint]; }).join(' · ');
+    return el('div', { class: 'pain-ask' }, [
+      el('p', { class: 'pain-ask-q', text: '지난번에 ' + withParticleJs(where, '이/가') + ' 아프다고 하셨습니다. 오늘은 어떻습니까?' }),
+      el('div', { class: 'pain-ask-row' }, [
+        el('button', {
+          type: 'button', class: 'pick pain-ask-ok', text: '괜찮습니다',
+          onclick: function () { state.painAsk = { date: state.todayDate, answer: 'ok' }; persist(); render(); },
+        }),
+        el('button', {
+          type: 'button', class: 'pick pain-ask-hurt', text: '아직 아픕니다',
+          onclick: function () {
+            state.painAsk = { date: state.todayDate, answer: 'hurt' };
+            // 지난번 점수를 넣어 두고 고치게 한다 — 0부터 다시 고르게 하지 않는다
+            last.forEach(function (p) {
+              state.pain.forEach(function (report) { if (report.joint === p.joint) report.score = p.score; });
+            });
+            rebuildSession();
+            rebuildPlan();
+            persist();
+            render();
+            openPainCheck('지난번 점수를 넣어 두었습니다. 오늘 느끼는 만큼으로 고쳐 주세요.');
+          },
+        }),
+      ]),
+    ]);
+  }
+
+  /** 자세히 — 세트 · 무게 · 줄마다 ⋯ · 순서 바꾸기 · 편집, 그리고 오늘 화면의 나머지 안내들. */
+  function renderPlanDetail(reordering) {
+    // 다른 날 운동으로 바꾸기 — 전에는 제목 옆 "바꾸기"였다
+    screen.appendChild(el('button', {
+      type: 'button', class: 'day-switch day-switch-row',
+      'aria-label': '다른 날 운동으로 바꾸기 — 지금은 ' + state.session.name,
+      onclick: openDayPicker,
+    }, [
+      el('span', { class: 'day-switch-text', text: '다른 날 운동으로 바꾸기' }),
+      el('span', { class: 'day-switch-caret', text: '지금 ' + state.session.name + ' ›' }),
+    ]));
+
+    // 헬스장 주소 등록 안내 — 첫 운동을 한 뒤에, 자세히 안에서만
+    var gymNudge = gymLinkNudge();
+    if (gymNudge) screen.appendChild(gymNudge);
+
     /*
      * 짧은 날 — 운동 시간을 25분 밑으로 정하면 그날만 큰 복합 운동만 남긴다.
      * 따로 "시간이 없는 날" 카드를 두지 않는다. 오늘 화면은 단순해야 한다.
@@ -5919,19 +6131,8 @@
     var topNote = topSetNotice();
     if (topNote) screen.appendChild(topNote);
 
-    /*
-     * 설문을 막 마친 사람은 자기 헬스장이 앱 어디에 있는지 모른다. 연결
-     * 전이면 한 줄로 알려 주고, 거기서 바로 간다. 닫으면 다시 안 띄운다 —
-     * 헬스장 탭에는 그대로 남아 있다.
-     */
-    // 헬스장 주소 등록 안내는 여기 두지 않는다 — 첫 운동을 마친 화면에서 한 번만(gymLinkNudge), 그리고 내 정보 › 헬스장에 늘 있다
-
     var rows = [];
 
-    // 워밍업은 종목이 아니라 준비라 맨 위에 한 줄로 둔다.
-    var warmupSets = state.lifts.reduce(function (sum, lift) {
-      return sum + (lift.warmup && lift.warmup.sets ? lift.warmup.sets.length : 0);
-    }, 0);
     /*
      * 시작은 몸 풀기 5분(움직이는 스트레칭). 종목마다 워밍업 세트를 밟는 대신이다 —
      * 워밍업 세트는 오늘 처음 하는 복합 동작에만 남는다.
@@ -5949,7 +6150,6 @@
      * 같은 목록을 또 보는 셈이었다. 지금은 "순서 바꾸기"를 누르면 이 목록
      * 줄마다 ↑↓가 붙고, 바뀐 순서가 그 자리에서 보인다.
      */
-    var reordering = Boolean(state.reorderMode) && state.lifts.length > 1;
     var orderIssues = reordering
       ? E.reviewOrder(state.lifts.map(function (lift) { return lift.exercise; })) : [];
 
@@ -6117,26 +6317,9 @@
       ]),
     ]));
 
-    // 오늘만 뺀 종목 — 목록에서 사라졌다고 잊히지 않게, 되돌릴 수 있게
-    var skipped = todaySkips().map(function (id) { return index.get(id); }).filter(Boolean);
-    if (skipped.length) {
-      screen.appendChild(el('div', { class: 'skip-today-line' }, [
-        el('span', { class: 'skip-today-label', text: '오늘만 뺌' }),
-      ].concat(skipped.map(function (exercise) {
-        return el('button', {
-          type: 'button', class: 'pick skip-undo', text: exercise.name + ' 되돌리기',
-          onclick: function () { unskipForToday(exercise.id); },
-        });
-      }))));
-    }
-
     // 목표가 체력 기르기 · 체지방 감량이면 근력 운동 뒤에 붙는 것을 미리 보여 준다
     var finisherPreview = finisherCard('preview');
     if (finisherPreview) screen.appendChild(finisherPreview);
-    // 이번 주 운동을 다 한 날 — 쉬는 날에 할 것을 알려 준다
-    if (weekSessionsDone() >= trainingDays().length) {
-      conditioningPlanNotes(false).forEach(function (node) { screen.appendChild(node); });
-    }
 
     renderMaxTest();
     // 유산소 · 컨디셔닝은 한 줄로 접어 둔다 — 고른 게 있으면 펼친 채로
@@ -6154,24 +6337,19 @@
       renderConditioning();
     }
 
-    var doneSets = state.todaySets.length;
+    // 다른 날 운동으로 바꾸기 — 전에는 제목 옆 "바꾸기"였다
     screen.appendChild(el('button', {
-      type: 'button', class: 'finish start-cta',
-      // 시작해 두고 목록에 온 것(PT 멈춤 · 몸 풀기 중)도 "이어서 하기" — "시작하기"면 처음부터인 줄 안다
-      text: doneSets > 0 ? '이어서 하기 · ' + doneSets + '세트 완료' : state.sessionStartedAt ? '이어서 하기' : '시작하기',
-      onclick: function () {
-        // 처음 시작할 때만 묻는다 — 이어서 할 때는 바로
-        if (doneSets === 0 && !state.sessionStartedAt && !(state.ptRun && state.ptRun.paused)) openStartSheet(false);
-        else beginToday();
-      },
-    }));
+      type: 'button', class: 'day-switch day-switch-row',
+      'aria-label': '다른 날 운동으로 바꾸기 — 지금은 ' + state.session.name,
+      onclick: openDayPicker,
+    }, [
+      el('span', { class: 'day-switch-text', text: '다른 날 운동으로 바꾸기' }),
+      el('span', { class: 'day-switch-caret', text: '지금 ' + state.session.name + ' ›' }),
+    ]));
 
-    // 시간이 없어 중간에 끝내야 하는 날도 있다. 길은 열어 두되 조용히 둔다.
-    if (doneSets > 0) renderFinish(!allSetsDone() ? true : false);
-    // 시작은 했는데 아직 기록이 없을 때도 끝낼 길은 있어야 한다.
-    else if (state.sessionStartedAt) {
-      screen.appendChild(el('button', { type: 'button', class: 'finish quiet', text: '운동 끝내기', onclick: endWorkout }));
-    }
+    // 헬스장 주소 등록 안내 — 첫 운동을 한 뒤에, 자세히 안에서만
+    var gymNudge = gymLinkNudge();
+    if (gymNudge) screen.appendChild(gymNudge);
   }
 
   /** 한 번이라도 운동을 끝내(오늘 마치기) 본 적이 있는가. */
@@ -21316,16 +21494,14 @@
 
   var ALL_STEPS = [
     { id: 'account', title: '시작', render: stepAccount },
-    { id: 'consent', title: '동의', render: stepConsent },
+    { id: 'consent', title: '시작하기 전에 동의가 필요합니다', render: stepConsent },
     /*
-     * 처음 설정은 넷(동의 · 나 · 헬스장 · 프로그램)이다. 전에는 경력 · 내 정보 · 기구 · 실측 ·
-     * 코치까지 여덟 단계였다. 실측(빈 바 무게 · 스택 간격)은 대부분 기본값이 맞아서 내 정보 ›
-     * 헬스장으로, 혼자 / PT는 운동을 시작할 때 묻는 한 장으로 옮겼다. 반복 스타일은 목표에
-     * 맞춰 정하고 내 정보 › 반복 · 강도에서 바꾼다.
+     * 처음 설정은 세 장(동의 · 세 가지 · 준비됐습니다)이다. 전에는 동의 · 나 · 헬스장 · 프로그램
+     * 넷이었고, 그 전에는 여덟 단계였다. 헬스장은 "잘 모르겠어요"(흔한 기구)로 시작하고 내 정보 ›
+     * 헬스장에서 고친다. 프로그램 전체와 부위별 막대는 내 정보 › 프로그램 · 기록 › 자세히에 있다.
+     * "준비됐습니다"는 단계 목록이 아니라 프로그램을 만든 뒤에 뜨는 한 장(renderReady)이다.
      */
-    { id: 'me', title: '나에 대해', render: stepMe },
-    { id: 'gym', title: '헬스장', render: stepGym },
-    { id: 'result', title: '프로그램', render: stepResult },
+    { id: 'me', title: '세 가지만 알려 주세요', render: stepMe },
   ];
 
   /**
@@ -21584,8 +21760,8 @@
     }
     openModal('초기 설정 다시 하기', null, [
       el('p', { class: 'asset-note', text:
-        '경력 · 운동 횟수 · 목표 · 헬스장 기구를 다시 고르고 프로그램을 새로 짭니다. ' +
-        '지난 운동 기록과 체중 · 식단 기록은 그대로 남습니다.' }),
+        '경력 · 운동 횟수 · 목표를 다시 고르고 프로그램을 새로 짭니다. ' +
+        '지난 운동 기록과 체중 · 식단 기록, 헬스장 기구는 그대로 남습니다.' }),
       state.customRoutine ? el('p', { class: 'hint-line warn', text:
         '내 루틴을 쓰는 중입니다. 다시 설정하면 앱이 새로 짠 프로그램으로 바뀝니다 — 루틴은 지우지 않고 넣어 둡니다(내 정보 › 프로그램에서 다시 불러오기).' }) : null,
       el('p', { class: 'hint-line', text: '지금 답이 채워진 채로 열립니다. 중간에 그만두면 아무것도 바뀌지 않습니다.' }),
@@ -21678,7 +21854,12 @@
     // 설문 답 없는 백업으로 시작했으면 기록은 지금 들어간다
     var restored = state.onboarding.restore ? applyBackup(state.onboarding.restore, false) : null;
     var wantNudge = state.onboarding.alerts === true;
-    state.onboarding = { active: false, step: 0, result: result };
+    var wasRedo = Boolean(state.onboarding.redo);
+    /*
+     * ready: 프로그램은 이미 저장했고, "준비됐습니다" 한 장만 남았다. active가 아니므로 저장소에는
+     * 설정을 마친 것으로 남는다 — 그 화면에서 앱을 닫아도 다시 열면 오늘 화면이다.
+     */
+    state.onboarding = { active: false, step: 0, result: result, ready: true, redo: wasRedo };
     state.tab = 'today';
     loadScenario('normal');
     if (restored) reviveTodayFromStorage();
@@ -21693,22 +21874,22 @@
     if (restored) showBackupReport(restored);
   }
 
-  function renderOnboarding() {
-    var STEPS = steps();
-    var step = STEPS[state.onboarding.step];
-
-    var dots = el('div', { class: 'steps' }, []);
-    STEPS.forEach(function (item, i) {
-      dots.appendChild(el('span', {
-        class: 'step' + (i === state.onboarding.step ? ' on' : i < state.onboarding.step ? ' done' : ''),
-        text: item.title,
-      }));
+  /** 처음 설정 맨 위 — 제목 한 줄과 몇 번째 장인지 가는 막대(글자 없이). 준비됐습니다 장이 마지막이다. */
+  function onboardingHead(title, at) {
+    var titles = steps().map(function (item) { return item.title; }).concat(['준비됐습니다']);
+    var dots = el('div', { class: 'steps dots', role: 'img', 'aria-label': (at + 1) + ' / ' + titles.length + '단계' }, []);
+    titles.forEach(function (name, i) {
+      dots.appendChild(el('span', { class: 'step' + (i === at ? ' on' : i < at ? ' done' : ''), title: name }));
     });
+    screen.appendChild(el('div', { class: 'session-head onboarding-head' }, [el('h2', { text: title }), dots]));
+  }
 
-    screen.appendChild(el('div', { class: 'session-head' }, [
-      el('h2', { text: step.title }),
-      dots,
-    ]));
+  function renderOnboarding() {
+    if (state.onboarding.ready) { renderReady(); return; }
+    var STEPS = steps();
+    var step = STEPS[Math.min(state.onboarding.step, STEPS.length - 1)];
+
+    onboardingHead(step.title, state.onboarding.step);
 
     step.render();
 
@@ -21731,7 +21912,7 @@
     var needs = step.id === 'me' && !picked.level ? '운동 경력 단계를 골라 주세요.'
       : step.id === 'me' && !picked.sex ? '성별을 골라 주세요 — 첫 무게를 정하는 데 씁니다.'
       : null;
-    var blocked = (step.id === 'consent' && !E.canUseService(state.consent)) || Boolean(needs);
+    var blocked = Boolean(needs);
     if (needs) screen.appendChild(el('p', { class: 'hint-line warn wizard-needs', text: needs }));
 
     /*
@@ -21759,14 +21940,74 @@
       nav.appendChild(el('button', {
         type: 'button', class: 'primary',
         disabled: blocked ? '' : null,
-        text: (step.id === 'result' || isLast) ? '이 프로그램으로 시작' : resuming ? '동의하고 이어 하기' : '다음',
+        text: step.id === 'consent' ? (resuming ? '동의하고 이어 하기' : '필수 항목에 동의하고 시작합니다')
+          : step.id === 'me' ? '내 운동 만들기' : '다음',
         onclick: function () {
           if (blocked) return;
-          if (step.id === 'consent') applyAlertConsent();
+          if (step.id === 'consent') {
+            /*
+             * 필수 셋은 줄마다 따로 보이고 따로 펼쳐 읽는다. 이 버튼은 "필수 항목에 동의"라고 말하는
+             * 그대로 필수만 더한다 — 선택 항목은 직접 켠 것만 남는다(쓰는 자리에서 다시 묻는다).
+             */
+            E.CONSENT_ITEMS.forEach(function (item) {
+              if (item.required && state.consent.indexOf(item.id) < 0) state.consent = state.consent.concat([item.id]);
+            });
+            applyAlertConsent();
+          }
           if (resuming) { finishBackupOnboarding(); return; }
           if (isLast) completeOnboarding();
           else { state.onboarding.step += 1; render(); }
         },
+      }));
+    }
+    screen.appendChild(nav);
+  }
+
+  /**
+   * 준비됐습니다 — 프로그램을 만든 뒤 한 장.
+   *
+   * 한 문장(주 몇 번 · 한 번에 몇 분 · 오늘 무엇부터)과 첫 세 종목만. 전에는 프로그램 이름 · 안내
+   * 문단 · 부위별 막대 · 요일별 종목을 다 보여 준 뒤에 "이 프로그램으로 시작"이 있었다. 처음 온
+   * 사람에게 필요한 건 "그래서 오늘 뭘 하나"다. 전체 프로그램은 내 정보 › 프로그램, 부위별로
+   * 충분한지는 기록 › 자세히에 있다.
+   */
+  function renderReady() {
+    var redo = Boolean(state.onboarding.redo);
+    onboardingHead('준비됐습니다', steps().length);
+    var lifts = (state.lifts || []).filter(function (lift) { return lift && lift.exercise; });
+    var canStart = lifts.length > 0 && !state.started && !state.sessionClosed;
+    var minutes = state.session ? sessionHead().estimate.totalMinutes : 0;
+    var day = String((state.session && state.session.name) || '').replace(/\s+[A-Z]$/, '');
+    var dayText = !day ? '' : /운동$/.test(day) ? day : day + ' 운동';
+    var line = '주 ' + state.answers.daysPerWeek + '회' + (minutes ? ', 한 번에 약 ' + Math.round(minutes / 5) * 5 + '분' : '') + '입니다.' +
+      (canStart && dayText ? ' 오늘은 ' + dayText + '부터 시작합니다.' : '');
+    screen.appendChild(el('p', { class: 'ready-line', text: line }));
+    if (canStart) {
+      screen.appendChild(el('ol', { class: 'ready-list' }, lifts.slice(0, 3).map(function (lift) {
+        return el('li', { text: lift.exercise.name });
+      })));
+      if (lifts.length > 3) screen.appendChild(el('p', { class: 'hint-line ready-more', text: '그 밖에 ' + (lifts.length - 3) + '개' }));
+    }
+
+    var finish = function () {
+      state.onboarding = { active: false, step: 0, result: state.onboarding.result };
+      state.tab = 'today';
+    };
+    var nav = el('div', { class: 'wizard-nav ready-nav' }, []);
+    nav.appendChild(el('button', {
+      type: 'button', class: 'primary ready-go',
+      text: canStart ? (redo ? '오늘 운동 시작' : '첫 운동 시작') : '오늘 화면으로',
+      onclick: function () {
+        finish();
+        // 처음 온 사람은 여기서 바로 몸 풀기로 — "오늘 운동 준비" 한 장은 다음 날부터
+        if (canStart) beginToday();
+        else render();
+      },
+    }));
+    if (canStart) {
+      nav.appendChild(el('button', {
+        type: 'button', class: 'linkish ready-later', text: '나중에 하겠습니다',
+        onclick: function () { finish(); render(); },
       }));
     }
     screen.appendChild(nav);
@@ -21789,55 +22030,62 @@
      * 로그인하고 들어온 사람에게 또 로그인을 권하는 줄이 된다.
      */
 
-    screen.appendChild(el('div', { class: 'notice' }, [
-      el('div', { class: 'label', text: '먼저 확인해 주세요' }),
-      el('div', { text:
-        '체중과 운동·통증 기록은 건강에 관한 정보라 따로 동의를 받아야 합니다. ' +
-        '무엇을 왜 받고 얼마나 갖고 있는지 아래에 그대로 적었습니다. ' +
-        '선택 항목은 거부해도 앱을 쓰는 데 지장이 없습니다.' }),
-    ]));
+    screen.appendChild(el('p', { class: 'hint-line consent-lead', text:
+      '체중과 운동 기록은 건강 정보라 따로 동의를 받습니다. 줄마다 내용을 펼쳐 읽을 수 있습니다.' }));
 
     /*
-     * 전체 동의 — 동의할 것과 알림을 한 번에.
-     *
-     * 알림 권한을 기능마다 따로 물으면(휴식 끝 알림은 코치 단계에서, 다시 부르기는 연속 카드에서)
-     * 사람은 몇 번째 묻는지 세다가 거절한다. 처음 한 번에 다 받고, 브라우저 권한 창도 한 번만 띄운다.
-     * 항목은 아래에 하나씩 그대로 보인다 — 따로 끄고 켤 수 있어야 동의다.
+     * 필수 셋은 한 줄씩 따로 — 이용약관 · 개인정보 · 건강정보(민감정보)가 각자 한 줄이고, 줄마다
+     * "내용 보기 ›"로 수집 항목 · 목적 · 보유 기간 · 거부하면을 그대로 펼친다. 민감정보는 다른 동의와
+     * 묶지 않는다 — 건강정보 줄은 늘 따로 보이고, 아래 주 버튼은 "필수 항목에 동의"라고 그대로 말한다.
+     * 전에는 카드 세 장이 내용을 다 펼친 채 화면을 채웠고, 맨 위의 큰 "전체 동의하기"가 선택까지 켰다.
      */
-    var everything = E.CONSENT_ITEMS.every(function (item) { return state.consent.indexOf(item.id) >= 0; }) &&
-      state.onboarding.alerts === true;
-    screen.appendChild(el('button', {
-      type: 'button', class: 'consent-all', 'aria-pressed': String(everything),
-      text: everything ? '전체 동의함 (선택 · 알림 포함)' : '전체 동의하기 (선택 · 알림 포함)',
-      onclick: function () {
-        state.consent = everything ? [] : E.CONSENT_ITEMS.map(function (item) { return item.id; });
-        state.onboarding.alerts = !everything;
-        render();
-      },
-    }));
+    var opened = state.onboarding.consentOpen || (state.onboarding.consentOpen = {});
+    E.CONSENT_ITEMS.filter(function (item) { return item.required; }).forEach(function (item) {
+      var open = Boolean(opened[item.id]);
+      screen.appendChild(el('div', { class: 'consent-card consent-line' + (open ? ' open' : ''), 'data-consent': item.id }, [
+        el('div', { class: 'consent-head' }, [
+          el('span', { class: 'consent-tag req', text: '필수' }),
+          el('span', { class: 'consent-title', text: item.label }),
+          el('button', {
+            type: 'button', class: 'consent-view', 'aria-expanded': String(open),
+            'aria-label': item.label + ' 내용 ' + (open ? '접기' : '보기'),
+            text: open ? '접기' : '내용 보기 ›',
+            onclick: function () { opened[item.id] = !open; render(); },
+          }),
+        ]),
+        open ? consentBody(item) : null,
+      ]));
+    });
 
     /*
-     * 필수 셋만 펼쳐 둔다. 선택 다섯(통증 · 식단 · 위치 · 마케팅 · 알림)은 한 줄로 접는다 —
-     * 여덟 장이 한 화면에 다 펼쳐져 있으면 무엇이 꼭 필요한지 안 보인다. 선택은 쓰는 자리에서도
-     * 다시 묻는다(아픈 데 · 식단 탭). 위 "전체 동의"는 접힌 항목 이름까지 버튼 아래에 적는다.
+     * 선택 다섯(통증 · 식단 · 위치 · 마케팅 · 알림)은 글자 링크 하나 뒤에. 기본은 모두 꺼짐이고,
+     * 쓰는 자리에서 다시 묻는다(아픈 데 · 식단 탭 · 근처 헬스장). "전체 동의하기"는 그 안의 작은
+     * 버튼이다 — 주 버튼보다 크면 선택까지 한 번에 켜는 길이 제일 쉬운 길이 된다.
      */
     var optional = E.CONSENT_ITEMS.filter(function (item) { return !item.required; });
     var optionalOn = optional.filter(function (item) { return state.consent.indexOf(item.id) >= 0; }).length +
       (state.onboarding.alerts === true ? 1 : 0);
     var optOpen = Boolean(state.onboarding.optOpen);
-
-    E.CONSENT_ITEMS.filter(function (item) { return item.required; }).forEach(consentCard);
-
     screen.appendChild(el('button', {
-      type: 'button', class: 'extras-toggle consent-more', 'aria-expanded': String(optOpen),
+      type: 'button', class: 'linkish consent-more', 'aria-expanded': String(optOpen),
+      text: (optOpen ? '선택 항목 접기' : '선택 항목 보기') + (optionalOn ? ' · ' + optionalOn + '개 동의함' : ''),
       onclick: function () { state.onboarding.optOpen = !optOpen; render(); },
-    }, [
-      el('span', { text: '선택 항목 ' + (optional.length + 1) + '개 · ' +
-        optional.map(function (item) { return item.label.replace(/ (수집·이용 |수신 |이용 )?동의.*$/, ''); }).join(' · ') + ' · 알림' +
-        (optionalOn ? ' — ' + optionalOn + '개 동의함' : '') }),
-      el('span', { class: 'extras-caret', text: optOpen ? '접기' : '보기' }),
-    ]));
+    }));
     if (optOpen) {
+      screen.appendChild(el('p', { class: 'hint-line', text:
+        '선택 항목은 거부해도 앱을 쓰는 데 지장이 없습니다. 필요한 때 다시 여쭙니다.' }));
+      // 알림 권한을 기능마다 따로 물으면 몇 번째인지 세다가 거절한다 — 원하는 사람은 여기서 한 번에
+      var everything = E.CONSENT_ITEMS.every(function (item) { return state.consent.indexOf(item.id) >= 0; }) &&
+        state.onboarding.alerts === true;
+      screen.appendChild(el('button', {
+        type: 'button', class: 'consent-all', 'aria-pressed': String(everything),
+        text: everything ? '전체 동의함 (선택 · 알림 포함)' : '전체 동의하기 (선택 · 알림 포함)',
+        onclick: function () {
+          state.consent = everything ? [] : E.CONSENT_ITEMS.map(function (item) { return item.id; });
+          state.onboarding.alerts = !everything;
+          render();
+        },
+      }));
       optional.forEach(consentCard);
       screen.appendChild(alertConsentCard());
     }
@@ -21854,12 +22102,7 @@
         item.sensitive ? el('span', { class: 'consent-tag sensitive', text: '민감정보' }) : null,
       ]);
 
-      var rows = el('div', { class: 'consent-body' }, [
-        consentRow('수집 항목', item.items.join(' · ')),
-        consentRow('이용 목적', item.purpose),
-        consentRow('보유 기간', item.retention),
-        consentRow('거부하면', item.ifDeclined),
-      ]);
+      var rows = consentBody(item);
 
       screen.appendChild(el('div', { class: 'consent-card' }, [
         head,
@@ -21879,26 +22122,22 @@
       ]));
     }
 
-    var missing = E.missingRequired(state.consent);
-    if (missing.length > 0) {
-      screen.appendChild(el('p', { class: 'hint-line warn', text:
-        '필수 항목 ' + missing.length + '개가 남았습니다 — ' +
-        missing.map(function (item) { return item.label; }).join(', ') }));
-    } else {
-      var blockedList = E.blockedFeatures(state.consent);
-      screen.appendChild(el('p', { class: 'hint-line', text: blockedList.length === 0
-        ? '모두 동의했습니다. 모든 기능을 쓸 수 있습니다.'
-        : '거부한 선택 항목 때문에 꺼지는 기능: ' +
-          blockedList.map(function (gate) { return gate.label; }).join(', ') +
-          '. 나머지는 그대로 동작합니다.' }));
-    }
-
     screen.appendChild(el('p', { class: 'asset-note', text:
-      '동의는 언제든 철회할 수 있습니다(아래 "내 정보" 탭). 철회하면 해당 기록을 바로 지웁니다.' +
+      '동의는 내 정보에서 언제든 철회할 수 있고, 철회하면 그 기록을 바로 지웁니다.' +
       (devMode() ? ' 이 문구는 프로토타입용이며, 실제 출시 전에는 법률 검토가 필요합니다.' : '') }));
 
     // 다시 설정할 때는 동의 단계를 안 거친다 — 이 문은 처음 설정에만 뜬다
     screen.appendChild(restoreDoor());
+  }
+
+  /** 동의 한 항목의 전문 — 수집 항목 · 이용 목적 · 보유 기간 · 거부하면. 문구는 consent.ts 그대로. */
+  function consentBody(item) {
+    return el('div', { class: 'consent-body' }, [
+      consentRow('수집 항목', item.items.join(' · ')),
+      consentRow('이용 목적', item.purpose),
+      consentRow('보유 기간', item.retention),
+      consentRow('거부하면', item.ifDeclined),
+    ]);
   }
 
   /** 동의 화면의 알림 카드 — 받을 알림을 다 적고, 한 번에 켠다. */
