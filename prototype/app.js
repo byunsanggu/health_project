@@ -16052,7 +16052,7 @@
       ]);
     }).reverse();
     var weeksDone = progress.weeks.filter(function (week) { return !week.future; }).length;
-    var adherence = progress.adherence === null ? '아직 끝난 주가 없습니다' : Math.round(progress.adherence * 100) + '%';
+    var adherence = progress.adherence === null ? '' : Math.round(progress.adherence * 100) + '%';
     var unlocks = E.STAGE_UNLOCKS.map(function (item) {
       var open = career.stage >= item.stage;
       return el('li', { class: 'unlock' + (open ? ' is-open' : '') }, [
@@ -16066,7 +16066,9 @@
         el('div', { class: 'season-sheet-now' }, [
           el('p', { class: 'season-stage', text: E.stageLabel(career.track, career.stage, progress.subStep) }),
           el('p', { class: 'hint-line', text: '시즌 ' + career.current.number + ' · ' + weeksDone + '/' + progress.weeks.length + '주째 · ' + daysToShowLine(progress.daysLeft) }),
-          el('p', { class: 'season-adherence' }, [el('span', { text: '이번 시즌 약속 지킨 비율 ' }), el('b', { text: adherence })]),
+          progress.adherence === null
+            ? el('p', { class: 'hint-line', text: '약속 지킨 비율은 첫 주가 끝나면 보입니다.' })
+            : el('p', { class: 'season-adherence' }, [el('span', { text: '이번 시즌 약속 지킨 비율 ' }), el('b', { text: adherence })]),
         ]),
       ]),
       el('ol', { class: 'ladder', 'aria-label': '무대 사다리' }, rungs),
@@ -16133,7 +16135,7 @@
     var current = ceremony;
     setTimeout(function () {
       if (ceremony !== current || !canvas.isConnected || !window.FitDemo3D) return;
-      current.handle = window.FitDemo3D.mount(canvas, clipFor(routine[0]), { dark: true, build: growth, cosmetics: cosmetics });
+      current.handle = window.FitDemo3D.mount(canvas, clipFor(routine[0]), { dark: true, build: growth, cosmetics: cosmetics, zoom: 1.22 });
       if (current.handle && current.handle.setYaw) current.handle.setYaw(36, 6);
     }, 0);
     routine.forEach(function (id, i) {
@@ -16230,12 +16232,25 @@
     ctx.fillStyle = '#6f7790';
     ctx.font = '500 22px "IBM Plex Sans KR", sans-serif';
     ctx.fillText('볼륨 코치 · 내 선수', 360, 862);
-    var link = document.createElement('a');
-    link.download = '내-선수-시즌' + result.season + '.png';
-    link.href = out.toDataURL('image/png');
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    var name = 'my-player-season-' + result.season + '.png';
+    var give = function (href, done) {
+      var link = document.createElement('a');
+      link.download = name;
+      link.href = href;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(function () { link.remove(); if (done) done(); }, 1500);
+    };
+    // 이 폰 안의 주소(blob:)로 받는다 — 어디에도 올리지 않는다
+    if (out.toBlob && window.URL && URL.createObjectURL) {
+      out.toBlob(function (blob) {
+        if (!blob) return;
+        var href = URL.createObjectURL(blob);
+        give(href, function () { URL.revokeObjectURL(href); });
+      }, 'image/png');
+    } else {
+      give(out.toDataURL('image/png'));
+    }
   }
 
   function closeCeremony() {

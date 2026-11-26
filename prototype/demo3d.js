@@ -1057,6 +1057,8 @@
         dist = Math.max(dist, x / tanW - z, y / tanH - z);
       });
       dist = Math.max(1.2, dist * 1.08) * state.zoom;
+      // 한 발 물러서서 보는 칸(대회 당일 무대) — 기본은 그대로
+      if (options.zoom) dist *= options.zoom;
       camera.position.set(center[0] + back[0] * dist, center[1] + back[1] * dist, center[2] + back[2] * dist);
       camera.lookAt(center[0], center[1], center[2]);
       // 화면 1화소가 몸 있는 곳에서 몇 m인지 — 케이블처럼 가는 것은 0.65화소 반지름(1.3화소 굵기) 밑으로 안 내려가게
