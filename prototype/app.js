@@ -2311,13 +2311,14 @@
     var seconds = override ? override.seconds : prescription.seconds;
     var reason = override ? override.reason : prescription.reason;
 
-    var nextLift = state.lifts[state.lifts.indexOf(lift) + 1];
+    var nextAt = ptOn() ? nextOpenLift(state.lifts.indexOf(lift)) : state.lifts.indexOf(lift) + 1;
+    var nextLift = nextAt >= 0 ? state.lifts[nextAt] : null;
     // 슈퍼세트면 쉬고 나서 하는 것은 짝 종목의 세트다
     var partner = override && typeof override.nextIndex === 'number' ? state.lifts[override.nextIndex] : null;
     var partnerSet = partner && partner !== lift ? partner.sets.findIndex(function (one) { return !one.done; }) : -1;
     var nextText = partnerSet >= 0
       ? partner.exercise.name + ' ' + (partnerSet + 1) + '세트'
-      : !isLast ? (setIndex + 2) + '세트' : (nextLift ? nextLift.exercise.name : '마무리');
+      : !isLast ? (setNo(lift, setIndex) + 1) + '세트' : (nextLift ? nextLift.exercise.name : '마무리');
     state.rest = {
       exerciseId: lift.exercise.id,
       exerciseName: lift.exercise.name,
@@ -2343,7 +2344,7 @@
       body: (partnerSet >= 0
         ? nextText + '를 시작하세요.'
         : lift.exercise.name + ' ' + (setIndex + 2 <= lift.sets.length
-          ? (setIndex + 2) + '세트를 시작하세요.'
+          ? (setNo(lift, setIndex) + 1) + '세트를 시작하세요.'
           : '다음 종목으로 넘어가세요.')) + (ptOn() ? ' 앱을 열고 ▶ 계속을 누르면 세어 드립니다.' : ''),
     });
     renderRest();
@@ -7806,8 +7807,9 @@
     return {
       style: state.coach.style,
       exerciseName: lift.exercise.name,
-      setIndex: setIndex,
-      totalSets: lift.sets.length,
+      // 건너뛴 세트가 있으면 원래 자리 번호로 — 1세트를 건너뛰고 "첫 세트"라고 다시 소개하지 않는다
+      setIndex: setNo(lift, setIndex) - 1,
+      totalSets: setTotal(lift),
       weightKg: set.weightKg,
       pounds: inPounds(lift.exercise.id),
       repsMin: set.targetReps.min,
@@ -11277,7 +11279,7 @@
     var after = lift.sets.findIndex(function (set, at) { return at > setIndex && !set.done; });
     if (after >= 0) {
       var set = lift.sets[after];
-      return '다음 · ' + (after + 1) + '세트 ' + loadText(lift, set.weightKg) + ' × ' + repsText(set.targetReps, lift.exercise);
+      return '다음 · ' + setNo(lift, after) + '세트 ' + loadText(lift, set.weightKg) + ' × ' + repsText(set.targetReps, lift.exercise);
     }
     for (var i = liftIndex + 1; i < state.lifts.length; i += 1) {
       var other = state.lifts[i];
@@ -11496,7 +11498,7 @@
     // 단계마다 채운다 — 아래에서 같은 순서로 그린다
     var view = {
       kicker: '', name: lift ? lift.exercise.name : '', line: null, pic: null, zoom: lift ? lift.exercise : null,
-      badge: null, go: null, side: null, more: [], sets: -1, hint: '', cue: false,
+      badge: null, go: null, skip: null, more: [], sets: -1, hint: '', cue: false,
     };
     var menu = { phase: phase, title: lift ? lift.exercise.name : 'PT', lift: lift };
     var resume = { text: '▶ 계속', cls: 'pt-pause pt-resume', run: resumePt };
@@ -11541,9 +11543,11 @@
         // 준비 중 — 이미 바 앞에 섰으면 기다리지 않고 바로 센다
         : { text: '바로 시작', cls: 'focus-go-now', run: function () {
             ptUnpauseQuiet();
-            stopSpeech();
+            ptJump();
             startCounting(ref.liftIndex, ref.setIndex, 1);
           } };
+      // 다음 › — 이 세트는 적지 않고 다음 세트(마지막 세트면 다음 운동)로
+      view.skip = ptSkipSetTarget(ref.liftIndex, ref.setIndex);
     } else if (phase === 'rest') {
       var restLift = state.lifts.findIndex(function (item) { return item.exercise.id === state.rest.exerciseId; });
       if (state.ptSets && !ptSetsOpenFor(restLift)) state.ptSets = null;
@@ -11578,11 +11582,25 @@
       menu.shorter = true;
       view.go = paused ? resume : {
         text: !ref ? '휴식 끝내기' : switching ? '다음 운동 시작' : '다음 세트 시작', cls: 'rest-now',
-        run: function () { ptUnpauseQuiet(); stopRest(); },
+        // 하던 말(방금 운동 이야기 · 이동 안내 · 쉬는 동안 한마디)을 끊고 넘어간다 — 새 세트 말이 그 뒤로 밀리지 않게
+        run: function () { ptUnpauseQuiet(); ptJump(); stopRest(); },
       };
-      // 코치가 "화면에서 30초 추가"라고 한다 — 쉬는 동안은 버튼 옆에 늘 보인다
-      view.side = paused ? null : el('button', { type: 'button', class: 'focus-side rest-more', text: '+30초', 'aria-label': '30초 추가',
-        onclick: function () { extendRest(30); } });
+      /*
+       * 다음 › — 다음 세트는 채운 버튼이 이미 시작하니, 쉬는 동안에는 "다음 운동 ›"(이 운동 남은 세트를 건너뛴다).
+       * 종목이 바뀌는 휴식에서는 채운 버튼이 곧 다음 운동이라 두지 않는다(다른 운동은 위 "1 / 7" 목록에서).
+       */
+      if (ref && !switching && restLift >= 0 && liftOpen(state.lifts[restLift])) {
+        var after = nextOpenLift(restLift);
+        var afterName = after >= 0 ? state.lifts[after].exercise.name : '';
+        view.skip = after < 0 ? ptSkipEnd() : {
+          main: '다음 운동 ›', sub: afterName,
+          aria: '남은 세트 건너뛰고 ' + afterName + particleOf(afterName, '으로/로'),
+          run: function () { ptSkipLift(restLift); },
+        };
+      }
+      // +30초 — 그림 위 휴식 숫자에 붙은 작은 단추(코치가 "휴식 시간 옆 30초"라고 한다). 아래 줄은 버튼 셋까지
+      view.chip = paused ? null : el('button', { type: 'button', class: 'focus-chip rest-more', text: '+30초', 'aria-label': '30초 추가',
+        title: '휴식을 30초 늘립니다', onclick: function () { extendRest(30); } });
     } else if (phase === 'prep' && pt && pt.prep) {
       var prep = pt.prep;
       var waitingPrep = prep.index < 0;
@@ -11603,8 +11621,19 @@
       menu.skipPrep = function () { ptUnpauseQuiet(); endPrep(false); };
       view.go = paused ? resume : {
         text: waitingPrep ? '지금 시작' : lastMove ? '운동 시작' : '다음 동작', cls: 'prep-next',
-        run: function () { ptUnpauseQuiet(); stopSpeech(); prepStep(prep, prep.index + 1); },
+        run: function () { ptUnpauseQuiet(); ptJump(); prepStep(prep, prep.index + 1); },
       };
+      /*
+       * 다음 › — 다음 동작은 채운 버튼이 이미 하니, 몸 풀기에서는 남은 동작을 건너뛰고 첫 운동으로(쉬는 동안의
+       * "다음 운동 ›"과 같은 자리 · 같은 뜻). 마지막 동작이면 채운 버튼이 곧 운동 시작이라 두지 않는다.
+       */
+      if (!lastMove || paused) {
+        var firstName = lift ? lift.exercise.name : '운동';
+        view.skip = {
+          main: '다음 ›', sub: firstName, aria: '몸 풀기 건너뛰고 ' + firstName + particleOf(firstName, '으로/로'),
+          run: function () { ptUnpauseQuiet(); ptJump(); endPrep(false); },
+        };
+      }
     } else if (phase === 'warm' && warmNow) {
       // 하는 중이거나, 하다가 멈춘 워밍업(멈춘 자리의 개수 · 남은 준비 초 · 남은 쉬는 초)
       var warm = warmNow;
@@ -11651,6 +11680,15 @@
       menu.dropWarm = warmEditable ? function () { ptDropWarmups(warm.liftIndex); } : null;
       menu.skipWarm = function () { ptUnpauseQuiet(); stopSpeech(); skipWarmup(warm.liftIndex); };
       menu.hurt = function () { ptHurt(warm.liftIndex, Math.max(0, first)); };
+      // 다음 › — 이 워밍업은 건너뛰고 다음 워밍업(마지막이면 본 운동 1세트)으로. 워밍업 사이 휴식이면 남은 워밍업을 건너뛴다
+      var warmNext = !resting && warm.index + 1 < warmSets.length ? warm.index + 1 : -1;
+      view.skip = warmNext >= 0 ? {
+        main: '다음 ›', sub: '워밍업 ' + (warmNext + 1), aria: '이번 워밍업 건너뛰고 워밍업 ' + (warmNext + 1) + '로',
+        run: function () { ptWarmGo(warm.liftIndex, warmNext, null); },
+      } : {
+        main: '다음 ›', sub: '본 운동', aria: (resting ? '남은 워밍업' : '이번 워밍업') + ' 건너뛰고 본 운동으로',
+        run: function () { ptUnpauseQuiet(); ptJump(); finishWarmup(warm.liftIndex, true); },
+      };
       view.go = paused ? resume
         : resting ? { text: '다음 워밍업', cls: 'warm-next', run: function () { ptWarmGo(warm.liftIndex, warm.index + 1, null); } }
         : leading ? { text: '바로 시작', cls: 'focus-go-now', run: function () { ptWarmGo(warm.liftIndex, warm.index, { quick: true }); } }
@@ -11675,17 +11713,21 @@
         title: '무게 · 횟수 칸과 오늘 목록 — 기록을 고칠 수 있습니다',
         onclick: function () { state.focusHidden = true; render(); },
       }),
-      phase === 'prep'
-        ? el('span', { class: 'stage-progress focus-progress' }, [el('span', { class: 'progress-count', text: '운동 전' })])
-        : el('span', { class: 'stage-progress focus-progress' }, [
-          el('span', { class: 'progress-count' }, [
-            el('b', { text: String(liftPos + 1) }),
-            el('span', { text: ' / ' + total }),
-          ]),
-          el('span', { class: 'progress-bar' }, [
-            el('i', { style: 'width:' + Math.round(((liftPos + 1) / Math.max(1, total)) * 100) + '%' }),
-          ]),
+      // 몇 번째 운동 — 누르면 오늘 운동 목록(완료 · 지금 · 남음), 남은 운동을 골라 그리로 간다
+      el('button', {
+        type: 'button', class: 'stage-progress focus-progress',
+        'aria-label': (phase === 'prep' ? '운동 전' : (liftPos + 1) + ' / ' + total + '번째 운동') + ' — 오늘 운동 목록 보기',
+        title: '오늘 운동 목록 — 다른 운동으로 갈 수 있습니다',
+        onclick: function () { openFocusList(phase === 'prep' ? -1 : liftPos); },
+      }, phase === 'prep' ? [el('span', { class: 'progress-count', text: '운동 전' })] : [
+        el('span', { class: 'progress-count' }, [
+          el('b', { text: String(liftPos + 1) }),
+          el('span', { text: ' / ' + total }),
         ]),
+        el('span', { class: 'progress-bar' }, [
+          el('i', { style: 'width:' + Math.round(((liftPos + 1) / Math.max(1, total)) * 100) + '%' }),
+        ]),
+      ]),
       el('button', {
         type: 'button', class: 'demo-open lift-more stage-more focus-menu', text: '⋯',
         'aria-label': '더 보기 — PT 끄기 · 빠르기 · 주머니 모드 · 세트 고치기 · 운동 끝내기',
@@ -11698,6 +11740,7 @@
     if (trouble) focusHost.appendChild(el('p', { class: 'focus-trouble', role: 'status', text: trouble }));
 
     // 2. 동작 그림(오른쪽 아래에 숫자 배지) — 세트 고치기를 열면 그 자리에 고치는 칸, 배지는 위에 한 줄로
+    if (view.badge && view.chip) view.badge.appendChild(view.chip);
     if (view.sets >= 0) {
       focusHost.appendChild(el('div', { class: 'focus-stage with-sets' }, [view.badge, ptSetsPanel(view.sets)]));
     } else {
@@ -11747,18 +11790,29 @@
       if (detailOn) focusHost.appendChild(el('div', { class: 'focus-detail' }, view.more));
     }
 
-    // 6. 아래에 붙은 버튼 하나 — 다음에 일어날 일. 옆에 일시정지(멈춰 있으면 버튼이 "▶ 계속"이고 Ⅱ는 없다)
+    /*
+     * 6. 아래 줄 — [Ⅱ] [채운 버튼: 다음에 일어날 일] [다음 ›: 지금 것을 안 하고 넘어가기]. 버튼은 셋까지.
+     * 멈춰 있으면 채운 버튼이 "▶ 계속"이고 Ⅱ는 없다 — 다음 ›는 그대로(누르면 멈춤을 풀고 새 자리에서 잇는다).
+     * 다음 ›의 작은 둘째 줄은 어디로 가는지("2세트" · "워밍업 2" · "스쿼트" · "본 운동").
+     */
     var go = view.go;
+    var skip = view.skip;
     focusHost.appendChild(el('div', { class: 'focus-dock' }, [
-      go ? el('button', {
-        type: 'button', class: 'focus-go' + (go.cls ? ' ' + go.cls : ''), text: go.text,
-        'aria-label': go.aria || null, onclick: go.run,
-      }) : null,
-      view.side,
       paused ? null : el('button', {
         type: 'button', class: 'focus-pause pt-pause', text: 'Ⅱ', 'aria-label': '일시정지', title: '일시정지',
         onclick: function () { pausePt(null); render(); },
       }),
+      go ? el('button', {
+        type: 'button', class: 'focus-go' + (go.cls ? ' ' + go.cls : ''), text: go.text,
+        'aria-label': go.aria || null, onclick: go.run,
+      }) : null,
+      skip ? el('button', {
+        type: 'button', class: 'focus-skip' + (skip.end ? ' end' : ''), 'aria-label': skip.aria, title: skip.aria,
+        onclick: skip.run,
+      }, [
+        el('span', { class: 'focus-skip-main', text: skip.main }),
+        skip.sub ? el('span', { class: 'focus-skip-sub', text: skip.sub }) : null,
+      ]) : null,
     ]));
 
     settleLiveMotion();
@@ -11832,10 +11886,10 @@
       var text = loadText(lift, one.weightKg) + ' × ' + ptCountText(lift, one.done ? one.reps : one.targetReps.max);
       return el('button', {
         type: 'button', class: 'pt-set-chip focus-set-chip' + (one.done ? ' done' : ''), disabled: canEdit ? null : '',
-        'aria-label': (i + 1) + '세트 ' + text + (canEdit ? ' — 고치기' : ''),
+        'aria-label': setNo(lift, i) + '세트 ' + text + (canEdit ? ' — 고치기' : ''),
         onclick: function () { openPtSets(liftIndex, i); },
       }, [
-        el('b', { text: (i + 1) + '세트' + (one.done ? ' ✓' : '') }),
+        el('b', { text: setNo(lift, i) + '세트' + (one.done ? ' ✓' : '') }),
         el('span', { text: text }),
       ]);
     }));
@@ -12220,7 +12274,8 @@
     var lift = state.lifts[liftIndex];
     var set = lift && lift.sets[setIndex];
     if (!set) return null;
-    var head = el('span', { class: 'focus-what-head', text: (setIndex + 1) + '세트 / ' + lift.sets.length + '세트 · ' });
+    // 건너뛴 세트가 있으면 번호는 원래 자리 그대로(setNo) — "2세트 / 3세트"
+    var head = el('span', { class: 'focus-what-head', text: setNo(lift, setIndex) + '세트 / ' + setTotal(lift) + '세트 · ' });
     var unit = countUnit(lift.exercise);
     var unloaded = !(set.weightKg > 0) && E.isUnloaded(lift.exercise);
     if (!editable || set.done) {

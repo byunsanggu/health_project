@@ -1,11 +1,13 @@
 // PT 화면이 작은 폰(360×640 · 375×667)부터 큰 폰(390×844)까지 스크롤 없이 들어간다 — 단계마다(몸 풀기 · 워밍업 준비 ·
 //   워밍업 사이 · 세트 준비 · 세는 중 · 멈춤 · 같은 종목 휴식 · 종목이 바뀌는 휴식).
 //   동작 그림이 주인공 — 화면 폭의 40% 넘게, 정사각형에 가깝게. 채운 버튼은 딱 하나(다음에 일어날 일).
+//   아래 줄은 버튼 셋까지 — [Ⅱ] [채운 버튼] [다음 ›(둘째 줄에 어디로 가는지)]. +30초는 휴식 숫자에 붙은 작은 단추.
 import { begin, check, choosePt, focusPhase, focusText, onboard, ptDetail, ptGo, ptPause, runUntil, skipPrep, skipWarm } from './lib.mjs';
 
 const SIZES = [[360, 640], [375, 667], [390, 844]];
 
-async function fits(page, label, { shot = null } = {}) {
+/** 다음 › — skip: { main, sub }(sub는 글자 또는 정규식) 이면 그 글자, null이면 없어야 한다. */
+async function fits(page, label, { shot = null, skip } = {}) {
   for (const [width, height] of SIZES) {
     await page.setViewportSize({ width, height });
     await page.clock.runFor(100);
@@ -56,8 +58,29 @@ async function fits(page, label, { shot = null } = {}) {
       if (filled.length !== 1) out.push(`채운 버튼이 ${filled.length}개: ${filled.map((node) => node.textContent).join(' / ')}`);
       const go = host.querySelector('.focus-go');
       if (!go || go.getBoundingClientRect().height < 56) out.push('아래 버튼이 56px보다 작습니다');
+      const dock = host.querySelectorAll('.focus-dock button');
+      if (dock.length > 3) out.push(`아래 줄 버튼이 ${dock.length}개`);
+      const next = host.querySelector('.focus-skip');
+      if (next) {
+        const box = next.getBoundingClientRect();
+        if (box.height < 56) out.push('다음 ›가 56px보다 작습니다');
+        if (box.right > vw + 1) out.push('다음 ›가 화면 밖');
+      }
       return out;
     });
+    if (skip !== undefined) {
+      const got = await page.evaluate(() => {
+        const node = document.querySelector('#focus .focus-skip');
+        return node ? { main: node.querySelector('.focus-skip-main').textContent, sub: node.querySelector('.focus-skip-sub')?.textContent || '' } : null;
+      });
+      if (skip === null) bad.push(got ? '다음 ›가 없어야 합니다: ' + JSON.stringify(got) : null);
+      else if (!got) bad.push('다음 ›가 없습니다');
+      else {
+        if (got.main !== skip.main) bad.push(`다음 › 글자 ${got.main} (기대 ${skip.main})`);
+        if (skip.sub instanceof RegExp ? !skip.sub.test(got.sub) : got.sub !== skip.sub) bad.push(`다음 › 둘째 줄 ${got.sub} (기대 ${skip.sub})`);
+      }
+      for (let i = bad.length - 1; i >= 0; i -= 1) if (!bad[i]) bad.splice(i, 1);
+    }
     if (shot) await shot(`${label.replace(/\s+/g, '-')}-${width}x${height}`);
     check(bad.length === 0, `${label} ${width}×${height}: ${bad.join(' / ')}`);
   }
@@ -78,28 +101,29 @@ export default async function ({ page, url, shot }) {
   await runUntil(page, 'prep');
   if (await page.locator('#focus .focus-go', { hasText: '지금 시작' }).count()) await ptGo(page, '지금 시작');
   await page.clock.runFor(1000);
-  await fits(page, '몸 풀기', { shot });
+  await fits(page, '몸 풀기', { shot, skip: { main: '다음 ›', sub: /\S/ } });
   await skipPrep(page);
   if (await runUntil(page, ['warm', 'count']) === 'warm') {
-    await fits(page, '워밍업 준비', { shot });
+    await fits(page, '워밍업 준비', { shot, skip: { main: '다음 ›', sub: /^(워밍업 2|본 운동)$/ } });
     // 바로 시작 → 다 세면 워밍업 사이 휴식
     await ptGo(page, '바로 시작');
     for (let i = 0; i < 240 && await focusText(page, '#focus-cap') !== '휴식'; i += 1) await page.clock.runFor(500);
     check(await focusText(page, '#focus-cap') === '휴식', '워밍업 사이 휴식이 안 나왔습니다');
-    await fits(page, '워밍업 사이', { shot });
+    await fits(page, '워밍업 사이', { shot, skip: { main: '다음 ›', sub: '본 운동' } });
     await skipWarm(page);
     await runUntil(page, 'count');
   }
-  await fits(page, '1세트 준비', { shot });
+  await fits(page, '1세트 준비', { shot, skip: { main: '다음 ›', sub: '2세트' } });
   await ptPause(page);
-  await fits(page, '1세트 준비 멈춤', { shot });
+  await fits(page, '1세트 준비 멈춤', { shot, skip: { main: '다음 ›', sub: '2세트' } });
   await page.locator('#focus .pt-resume').click();
   for (let i = 0; i < 120 && await reps(page) < 2; i += 1) await page.clock.runFor(500);
-  await fits(page, '1세트 세는 중', { shot });
+  await fits(page, '1세트 세는 중', { shot, skip: { main: '다음 ›', sub: '2세트' } });
   await ptGo(page, '세트 완료');
   await runUntil(page, 'rest');
   await page.clock.runFor(500);
-  await fits(page, '같은 종목 휴식', { shot });
+  await fits(page, '같은 종목 휴식', { shot, skip: { main: '다음 운동 ›', sub: /\S/ } });
+  check(await page.locator('#focus .focus-badge .focus-chip[aria-label="30초 추가"]').count() === 1, '+30초가 휴식 숫자에 붙어 있지 않습니다');
   // 자세히를 펼쳐도 아래 버튼은 화면 안 · PT 화면은 스크롤하지 않는다(자세히 칸만 안에서 내린다)
   await ptDetail(page);
   for (const [width, height] of SIZES) {
@@ -136,7 +160,7 @@ export default async function ({ page, url, shot }) {
     await page.clock.runFor(500);
   }
   check(await switching(), '종목이 바뀌는 휴식까지 못 갔습니다');
-  await fits(page, '종목이 바뀌는 휴식', { shot });
+  await fits(page, '종목이 바뀌는 휴식', { shot, skip: null });
   check((await page.locator('#focus .focus-go').textContent()) === '다음 운동 시작', '종목이 바뀌는 휴식 버튼: ' + await page.locator('#focus .focus-go').textContent());
   check(await page.locator('#focus .focus-zoom').count() === 1, '그림에 "크게 보기"가 없습니다');
   await page.setViewportSize({ width: 360, height: 640 });

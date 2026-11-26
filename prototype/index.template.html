@@ -2890,6 +2890,18 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus > * { flex: none; margin: 0; }
 .focus .focus-top { margin: 0; }
 .focus-progress .progress-count { font-variant-numeric: tabular-nums; }
+/* "1 / 7" — 누르면 오늘 운동 목록. 글자처럼 보이되 손가락 크기는 44px */
+button.focus-progress { min-height: 44px; min-width: 0; padding: 4px 8px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; cursor: pointer; }
+button.focus-progress:active { background: var(--surface-2); }
+/* 오늘 운동 목록 — 번호 · 이름(몇 세트 했는지) · 완료 / 지금 / 남음 */
+.focus-list .menu-row { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; min-height: 56px; }
+.focus-list .plan-main { justify-items: start; text-align: left; }
+.focus-list-no { flex: none; width: 24px; font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--muted); text-align: center; }
+.focus-list-state { flex: none; min-width: 44px; padding: 2px 8px; border-radius: 999px; font-size: 13px; font-weight: 700; text-align: center; }
+.focus-list-state.now { background: var(--accent); color: var(--accent-ink); }
+.focus-list-state.left { border: 1px solid var(--accent); color: var(--accent); }
+.focus-list-state.done { color: var(--muted); background: var(--surface-2); }
+.focus-list .menu-row.now:disabled { opacity: 1; }
 .focus-menu { font-size: 20px; line-height: 1; }
 /* 소리가 안 날 때 — 맨 위 한 줄 */
 .focus-trouble { margin: 0; padding: 6px 10px; border-radius: 10px; border-left: 3px solid var(--zone-over); background: var(--surface-2); font-size: 13px; font-weight: 600; line-height: 1.4; }
@@ -2916,6 +2928,9 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-badge.big .focus-num { font-size: clamp(40px, 31cqmin, 104px); }
 .focus-num.wide { font-size: clamp(26px, 14cqmin, 44px); }
 .focus-badge.paused .focus-num { color: var(--muted); }
+/* 휴식 숫자에 붙은 +30초 — 배지 안의 작은 단추(배지는 눌리지 않고 이것만 눌린다) */
+.focus-chip { pointer-events: auto; align-self: stretch; min-height: 40px; margin-top: 6px; padding: 0 12px; border: 1px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--accent); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.focus-stage.with-sets .focus-badge .focus-chip { align-self: center; margin: 0 0 0 4px; }
 .focus-zoom { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface); background: color-mix(in srgb, var(--surface) 82%, transparent); color: var(--ink); font-size: 20px; line-height: 1; }
 /* 세트 고치기를 열면 그림 자리에 고치는 칸 — 배지는 위에 한 줄로 */
 .focus-stage.with-sets { flex: 0 1 auto; min-height: 0; flex-direction: column; justify-content: flex-start; gap: 6px; overflow-y: auto; }
@@ -2962,10 +2977,14 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 .focus-fix-row { display: flex; align-items: center; gap: 6px; }
 .focus-fix-row .nudge { min-width: 44px; min-height: 44px; }
 .focus-fix-reps { min-width: 48px; text-align: center; font-family: var(--mono); font-size: 18px; }
-/* 아래에 붙은 버튼 — 채운 버튼 하나(다음에 일어날 일) · 쉬는 동안 +30초 · 일시정지 Ⅱ */
+/* 아래에 붙은 버튼 — 일시정지 Ⅱ · 채운 버튼 하나(다음에 일어날 일) · 다음 ›(건너뛰기) */
 .focus-dock { display: flex; align-items: stretch; gap: 8px; margin: auto -16px 0; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line-soft); background: var(--surface); }
 .focus-go { flex: 1 1 auto; min-width: 0; min-height: 56px; padding: 0 12px; border: 1px solid var(--accent); border-radius: 14px; background: var(--accent); color: var(--accent-ink); font-size: 19px; font-weight: 700; }
-.focus-side { flex: none; min-width: 72px; min-height: 56px; padding: 0 10px; border: 1px solid var(--accent); border-radius: 14px; background: var(--surface); color: var(--accent); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* 다음 › — 지금 것을 안 하고 넘어가기. 테두리만(채운 버튼은 하나), 둘째 줄에 어디로 가는지 */
+.focus-skip { flex: 0 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 88px; max-width: 38%; min-height: 56px; padding: 4px 10px; border: 1.5px solid var(--accent); border-radius: 14px; background: var(--surface); color: var(--accent); }
+.focus-skip-main { font-size: 17px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.focus-skip-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; line-height: 1.2; color: var(--muted); }
+.focus-skip.end { border-color: var(--line); color: var(--ink); }
 .focus-pause { flex: none; width: 56px; min-height: 56px; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); font-size: 20px; font-weight: 700; }
 .focus-menu-list .menu-row:disabled { opacity: .55; cursor: default; }
 .focus-menu-list .menu-row:disabled:hover { background: none; }
