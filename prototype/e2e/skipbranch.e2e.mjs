@@ -29,7 +29,29 @@ export default async function ({ page, url, shot }) {
   await page.locator('dialog .menu-row', { hasText: '이 운동 빼기' }).click();
   await page.locator('dialog .menu-row', { hasText: '그냥 하기 싫어요' }).click();
   check((await page.locator('dialog').textContent()).includes('비워 둡니다'), '빈자리를 채운다고 합니다');
-  await page.locator('dialog .finish', { hasText: '당분간 빼기' }).click();
+  // 기간은 고를 수 있다 — 기본 4주, 1·2·8주도 있다
+  const spans = await page.locator('dialog .exclude-spans .pick').allTextContents();
+  check(['1주', '2주', '4주', '8주'].every((label) => spans.includes(label)), '빼는 기간을 고를 수 없습니다: ' + spans.join(', '));
+  check((await page.locator('dialog .exclude-spans .pick[aria-checked="true"]').textContent()).trim() === '4주', '기본이 4주가 아닙니다');
+  await page.locator('dialog .exclude-spans .pick', { hasText: '2주' }).click();
+  check((await page.locator('dialog .exclude-go').textContent()).trim() === '2주 빼기', '고른 기간이 버튼에 안 보입니다');
+  await shot('2b-span');
+  await page.locator('dialog .exclude-go').click();
+  const stored = await page.evaluate(() => {
+    for (const key of Object.keys(localStorage)) {
+      try {
+        const saved = JSON.parse(localStorage.getItem(key));
+        const list = saved?.exclusions ?? saved?.settings?.exclusions;
+        if (Array.isArray(list) && list.length) return list;
+      } catch { /* 다음 */ }
+    }
+    return null;
+  });
+  check(stored?.some((item) => item.days === 14), '2주로 저장되지 않았습니다: ' + JSON.stringify(stored));
+  // 앱을 다시 열어도 뺀 종목은 빠져 있다
+  await page.reload();
+  await page.waitForSelector('.plan-row');
+  check(!(await names(page)).includes(before[1]), '다시 여니 뺀 종목이 돌아왔습니다');
   const afterExclude = await names(page);
   check(afterExclude.length === before.length - 1 && !afterExclude.includes(before[1]), `뺐는데 다른 종목이 생겼습니다: ${afterExclude.join(', ')}`);
   check(afterExclude.every((name) => before.includes(name)), '목록에 없던 종목이 생겼습니다: ' + afterExclude.join(', '));

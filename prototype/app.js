@@ -236,6 +236,8 @@
         // 먹은 것 — 이 폰에만 둔다(서버 설정 묶음에 안 싣는다. 하루 수십 줄이라 금방 커진다)
         foodLog: state.foodLog,
         promise: state.promise,
+        // 시즌 · 내 선수 — 운동 기록으로 계산한 것이라 이 폰에만(SHARED_SETTINGS에 넣지 않는다)
+        season: state.season,
         /*
          * "같은 기계예요"라고 답한 종목. 날짜를 같이 적는다 — 하루짜리
          * 답이라 내일까지 들고 가면 영영 안 묻게 된다.
@@ -263,6 +265,8 @@
         diet: state.diet,
         comeback: state.comeback,
         comebackDeclined: state.comebackDeclined,
+        // 뺀 종목 · 배우는 중인 종목 — 저장 안 하면 앱을 다시 열 때 뺀 종목이 돌아온다
+        exclusions: state.exclusions,
         /*
          * 어디까지 했는지도 저장한다. 헬스장에서 화면이 꺼지거나 앱이
          * 다시 뜨는 일은 늘 있는데, 그때마다 목록 화면으로 돌아가서
@@ -385,8 +389,11 @@
       state.dayBudget = settings.dayBudget || null;
       state.foodLog = E.normalizeFoodLog(settings.foodLog);
       state.promise = settings.promise || null;
+      // 예전 저장소에는 없다 — 빈 커리어로 시작한다(advanceSeason이 첫 시즌을 연다)
+      state.season = settings.season ? E.normalizeCareer(settings.season) : null;
       state.comeback = settings.comeback || null;
       state.comebackDeclined = settings.comebackDeclined || null;
+      state.exclusions = Array.isArray(settings.exclusions) ? settings.exclusions : [];
       state.started = Boolean(settings.started);
       state.sessionClosed = Boolean(settings.sessionClosed);
       state.liftCursor = settings.liftCursor || 0;
@@ -785,6 +792,8 @@
     timeBudget: null,
     /* 오늘 하루만 짧게 — { date, minutes }. 내일이면 저절로 풀린다. */
     shortDay: null,
+    /* 시즌 · 내 선수(season.ts의 CareerState) — 이 기기에만 */
+    season: null,
     /* 복귀 — { startedOn, plan }. 다 끝나면 저절로 풀린다. */
     promise: null,
     comeback: null,
@@ -1261,6 +1270,8 @@
     refreshLandmarks();
     rebuildPlan();
     rebuildSession();
+    // 시즌 — 대회 당일이 지났으면 닫고, 새 블록이면 새 시즌을 연다
+    advanceSeason();
   }
 
   /**
@@ -3170,6 +3181,8 @@
     renderScreens();
     // 이번에 그린 화면이 쓰지 않은 동작은 내린다(다른 동작으로 바뀌었거나 화면이 바뀌었다)
     settleLiveMotion();
+    // 시즌이 끝났으면 대회 당일 — 한 번(다음 시즌 시작을 누를 때까지)
+    if (ceremonyDue()) openCeremony();
   }
 
   function renderScreens() {
@@ -3404,6 +3417,10 @@
         el('span', { class: 'key', text: '든 무게' }),
       ]),
     ]));
+
+    // 시즌 — 오늘 운동으로 오른 점수와 다음 걸음까지 한 줄
+    var seasonLine = summary.setsCompleted > 0 ? seasonFeedback() : null;
+    if (seasonLine) body.push(el('p', { class: 'season-feedback', text: seasonLine }));
 
     // 오늘 쓴 부위 — 세트를 많이 채운 곳일수록 진하게
     var todayMap = todayMuscleMap(summary.byMuscle);
@@ -5999,6 +6016,10 @@
       conditioningPlanNotes(false).forEach(function (node) { screen.appendChild(node); });
     }
 
+    // 내 선수 — 시작 전에만(운동 중에는 할 일만 보이게)
+    var player = !state.started && doneSets === 0 ? seasonCard() : null;
+    if (player) screen.appendChild(player);
+
     screen.appendChild(el('button', {
       type: 'button', class: 'more-toggle today-more', 'aria-expanded': String(detail),
       onclick: function () {
@@ -7363,32 +7384,51 @@
       el('div', { text: '다른 종목을 대신 넣지 않습니다. 더 하고 싶으면 "편집 › 종목 추가"로 직접 넣으세요.' }),
     ]));
 
+    var days = E.DEFAULT_EXCLUDE_DAYS;
     var commit = function (forever) {
       state.exclusions = E.addExclusion(state.exclusions, {
-        exerciseId: exercise.id, reason: 'dislike', today: state.todayDate, forever: forever,
+        exerciseId: exercise.id, reason: 'dislike', today: state.todayDate,
+        forever: forever, days: days,
       });
       shareSkipNow(exercise.id, 'dislike');
       modal.close();
       rebuildSession();
       pushLog('종목 빼기', '<b>' + exercise.name + '</b>' +
         particleOf(exercise.name, '을/를') + ' 뺐습니다. ' +
-        (forever ? '다시 여쭤보지 않습니다.' : E.REVIEW_WEEKS + '주 뒤에 한 번 여쭤봅니다.'));
+        (forever ? '다시 여쭤보지 않습니다.'
+          : days <= 1 ? '내일부터 다시 나옵니다.'
+          : E.spanLabel(days) + ' 뒤에 한 번 여쭤봅니다.'));
       render();
     };
 
-    body.push(el('button', {
-      type: 'button', class: 'finish',
-      text: '당분간 빼기 (' + E.REVIEW_WEEKS + '주)',
-      onclick: function () { commit(false); },
-    }));
+    var spanRow = el('div', { class: 'exclude-spans', role: 'radiogroup', 'aria-label': '빼는 기간' });
+    var goButton = el('button', { type: 'button', class: 'finish exclude-go' });
+    var hint = el('p', { class: 'hint-line' });
+    var drawSpans = function () {
+      spanRow.textContent = '';
+      E.EXCLUDE_SPANS.forEach(function (span) {
+        var on = span.days === days;
+        spanRow.appendChild(el('button', {
+          type: 'button', class: 'pick' + (on ? ' on' : ''), role: 'radio',
+          'aria-checked': on ? 'true' : 'false', 'data-days': String(span.days),
+          text: span.label,
+          onclick: function () { days = span.days; drawSpans(); },
+        }));
+      });
+      goButton.textContent = E.spanLabel(days) + ' 빼기';
+      hint.textContent = E.spanLabel(days) + ' 뒤에 딱 한 번 여쭤봅니다. ' +
+          '사람은 바뀝니다 — 어깨가 나으면 오버헤드를 다시 합니다.';
+    };
+    goButton.onclick = function () { commit(false); };
+    drawSpans();
+    body.push(spanRow);
+    body.push(goButton);
     body.push(el('button', {
       type: 'button', class: 'finish quiet',
       text: '영원히 빼기',
       onclick: function () { commit(true); },
     }));
-    body.push(el('p', { class: 'hint-line', text:
-      '당분간을 고르시면 ' + E.REVIEW_WEEKS + '주 뒤에 딱 한 번 여쭤봅니다. ' +
-      '사람은 바뀝니다 — 어깨가 나으면 오버헤드를 다시 합니다.' }));
+    body.push(hint);
 
     openModal(exercise.name, '얼마나 뺄까요', body);
   }
@@ -7412,7 +7452,7 @@
     return el('button', {
       type: 'button', class: 'report-nudge',
       onclick: function () {
-        openModal(exercise.name, E.REVIEW_WEEKS + '주가 지났습니다', [
+        openModal(exercise.name, E.spanLabel(E.exclusionDays(item)) + ' 지났습니다', [
           el('p', { class: 'asset-note', text: E.reviewQuestion(item, exercise) }),
           el('button', {
             type: 'button', class: 'finish', text: '다시 해볼게요',
@@ -7430,7 +7470,7 @@
               state.exclusions = E.keepExcluded(state.exclusions, item.exerciseId, state.todayDate);
               pushLog('종목 빼기', '<b>' + exercise.name + '</b>' +
                 particleOf(exercise.name, '은/는') + ' 계속 뺍니다. ' +
-                E.REVIEW_WEEKS + '주 뒤에 한 번 더 여쭤봅니다.');
+                E.spanLabel(E.exclusionDays(item)) + ' 뒤에 한 번 더 여쭤봅니다.');
               after();
             },
           }),
@@ -13695,6 +13735,8 @@
     state.started = false;
     stopRest();
     modal.close();
+    // 대회 당일에 운동을 마쳤으면 시즌을 그 자리에서 닫는다 — 대회 당일 화면이 바로 뜬다
+    advanceSeason();
     render();
   }
 
@@ -15859,6 +15901,340 @@
       .filter(function (item) { return item.date !== today; })
       .concat([saved]);
     syncSoon();
+  }
+
+  /* ── 시즌 · 내 선수 ─────────────────────────────── */
+
+  /*
+   * 한 블록이 한 시즌, 덜어내는 주가 피킹 주, 그 주 일요일이 대회 당일(엔진 season.ts).
+   * 점수는 운동 횟수가 아니라 약속을 지킨 정도로 쌓이고, 대회 당일에 약속을 잘 지켰으면 다음 무대로 오른다.
+   *
+   * 전부 이 폰 안에서만 — 운동 기록 · 통증으로 계산하는 것이라 서버 설정 묶음(SHARED_SETTINGS)에도,
+   * 친구 · 헬스장 표에도 싣지 않는다. 저장은 settings.season(이 기기) 하나다.
+   */
+  var ceremony = null;
+
+  function seasonOn() {
+    return LIVE && Boolean(state.block) && Boolean(state.program) && !state.onboarding.active;
+  }
+
+  function seasonSessions(withToday) {
+    var sessions = state.history.slice();
+    if (withToday && state.todaySets.length > 0) sessions = sessions.concat([{ date: state.todayDate, sets: state.todaySets }]);
+    return sessions;
+  }
+
+  /** 통증을 5점 넘게 적은 날 — 그 주는 못 지켜도 깎지 않는다(등급 계산과 같은 기준) */
+  function seasonPainDates() {
+    var out = [];
+    (state.checkIns || []).forEach(function (item) {
+      if (item && (item.pain || []).some(function (report) { return report.score >= 5; })) out.push(item.date);
+    });
+    if ((state.pain || []).some(function (report) { return report.score >= 5; })) out.push(state.todayDate);
+    return out;
+  }
+
+  function seasonInput(withToday, dayDone) {
+    return {
+      block: state.block,
+      today: state.todayDate,
+      sessions: seasonSessions(withToday),
+      target: trainingDays().length,
+      goals: (state.answers && state.answers.goals) || [],
+      painDates: seasonPainDates(),
+      startDate: state.startedOn || undefined,
+      dayDone: Boolean(dayDone),
+    };
+  }
+
+  /** 오늘 줄여서(15분 · 25분) 한 날인가 — 세트를 했을 때만 */
+  function shortToday(career) {
+    var short = Boolean(state.shortDay && state.shortDay.date === state.todayDate && state.todaySets.length > 0);
+    return E.markShortDate(career, state.todayDate, short);
+  }
+
+  /** 앱을 열 때 · 오늘을 마칠 때 — 시즌을 닫고 열고, 지킨 주를 쌓는다 */
+  function advanceSeason() {
+    if (!seasonOn()) return;
+    var career = shortToday(E.normalizeCareer(state.season));
+    state.season = E.advanceCareer(career, seasonInput(true, state.sessionClosed && state.todaySets.length > 0)).career;
+  }
+
+  /** 지금 시즌 — withToday면 오늘 한 세트까지 넣어서 */
+  function seasonNow(withToday) {
+    if (!seasonOn() || !state.season || !state.season.current) return null;
+    var career = E.normalizeCareer(state.season);
+    if (withToday) career = shortToday(career);
+    var input = seasonInput(withToday);
+    var progress = E.seasonProgress(E.scoreInput(career, input, E.windowOf(career.current)));
+    var open = progress.weeks.filter(function (week) { return week.open; })[0];
+    var growth = E.currentGrowth(career, Boolean(open && open.kept));
+    return { career: career, progress: progress, growth: growth };
+  }
+
+  function seasonLooks(stage) {
+    return E.cosmeticsFor(stage);
+  }
+
+  /** "대회까지 23일" · 당일이면 "오늘 대회 당일" */
+  function daysToShowLine(days) {
+    return days > 0 ? '대회까지 ' + days + '일' : '오늘 대회 당일';
+  }
+
+  /** 그림 칸 — 자란 몸 · 꾸밈 그대로. 그릴 수 없는 폰이면 빈 칸 */
+  function seasonFigure(now, cls) {
+    var stage = now.career.stage;
+    var clip = E.stageMotionFor('stage-idle', now.growth.posture);
+    var key = 'season:' + stage + ':' + E.GROWTH_PARTS.map(function (part) { return Math.round(now.growth[part] * 50); }).join('.');
+    var canvas = liveMotion(key, clip, { build: now.growth, cosmetics: seasonLooks(stage), label: '내 선수' });
+    return el('span', { class: cls || 'season-fig', 'aria-hidden': 'true' }, canvas ? [canvas] : []);
+  }
+
+  /** 오늘 화면의 "내 선수" 카드 — 무대 이름 · 걸음 · 다음 걸음까지 · 대회까지 며칠. 누르면 사다리 */
+  function seasonCard() {
+    var now = seasonNow(true);
+    if (!now) return null;
+    var career = now.career;
+    var progress = now.progress;
+    var label = E.stageLabel(career.track, career.stage, progress.subStep);
+    var next = progress.toNext === null
+      ? '이 무대 맨 위입니다'
+      : E.SUB_STEP_LABELS[progress.subStep + 1] + '까지 ' + progress.toNext + '점';
+    return el('button', {
+      type: 'button', class: 'season-card', 'aria-label': '내 선수: ' + label + '. 자세히 보기',
+      onclick: openSeasonSheet,
+    }, [
+      seasonFigure(now),
+      el('span', { class: 'season-main' }, [
+        el('span', { class: 'season-kicker', text: '내 선수 · ' + E.TRACK_LABELS_KO[career.track] }),
+        el('span', { class: 'season-stage', text: label }),
+        el('span', { class: 'season-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(progress.stepProgress * 100)) }, [
+          el('span', { class: 'season-bar-fill', style: 'width:' + Math.round(progress.stepProgress * 100) + '%' }),
+        ]),
+        el('span', { class: 'season-meta' }, [
+          el('span', { text: next }),
+          el('span', { class: 'season-days', text: daysToShowLine(progress.daysLeft) }),
+        ]),
+      ]),
+      el('span', { class: 'season-go', 'aria-hidden': 'true', text: '›' }),
+    ]);
+  }
+
+  /** 사다리 · 이번 시즌 · 점수 쌓는 법 · 꾸밈 — 한 장 */
+  function openSeasonSheet() {
+    var now = seasonNow(true);
+    if (!now) return;
+    var career = now.career;
+    var progress = now.progress;
+    var ladder = E.CAREER_LADDERS[career.track];
+    var rungs = ladder.map(function (name, i) {
+      var where = i < career.stage ? 'done' : i === career.stage ? 'now' : 'ahead';
+      return el('li', { class: 'ladder-rung is-' + where }, [
+        el('span', { class: 'ladder-mark', 'aria-hidden': 'true', text: where === 'done' ? '✓' : String(i + 1) }),
+        el('span', { class: 'ladder-name', text: name }),
+        where === 'now' ? el('span', { class: 'ladder-now', text: E.SUB_STEP_LABELS[progress.subStep] + ' · 지금' }) : null,
+      ]);
+    }).reverse();
+    var weeksDone = progress.weeks.filter(function (week) { return !week.future; }).length;
+    var adherence = progress.adherence === null ? '아직 끝난 주가 없습니다' : Math.round(progress.adherence * 100) + '%';
+    var unlocks = E.STAGE_UNLOCKS.map(function (item) {
+      var open = career.stage >= item.stage;
+      return el('li', { class: 'unlock' + (open ? ' is-open' : '') }, [
+        el('span', { class: 'unlock-name', text: item.label }),
+        el('span', { class: 'unlock-where', text: open ? '열림' : ladder[item.stage] }),
+      ]);
+    });
+    openModal('내 선수', E.TRACK_LABELS_KO[career.track], [
+      el('div', { class: 'season-sheet-head' }, [
+        seasonFigure(now, 'season-fig big'),
+        el('div', { class: 'season-sheet-now' }, [
+          el('p', { class: 'season-stage', text: E.stageLabel(career.track, career.stage, progress.subStep) }),
+          el('p', { class: 'hint-line', text: '시즌 ' + career.current.number + ' · ' + weeksDone + '/' + progress.weeks.length + '주째 · ' + daysToShowLine(progress.daysLeft) }),
+          el('p', { class: 'season-adherence' }, [el('span', { text: '이번 시즌 약속 지킨 비율 ' }), el('b', { text: adherence })]),
+        ]),
+      ]),
+      el('ol', { class: 'ladder', 'aria-label': '무대 사다리' }, rungs),
+      el('p', { class: 'hint-line', text: '대회 당일(덜어내는 주의 마지막 날)에 약속을 80% 넘게 지켰으면 다음 무대로 올라갑니다. 내려가는 일은 없습니다.' }),
+      el('div', { class: 'season-rules' }, [
+        el('h4', { text: '점수는 이렇게 쌓입니다' }),
+        el('ul', {}, [
+          el('li', { text: '약속한 운동을 할 때마다 쌓입니다. 한 주에 30점까지, 약속보다 더 해도 같습니다.' }),
+          el('li', { text: '약속을 다 지킨 주는 20점을 더 받고, 연달아 지키면 최대 1.5배가 됩니다.' }),
+          el('li', { text: '아픈 주 · 쉼표 주 · 덜어내는 주는 점수를 깎지 않습니다.' }),
+        ]),
+      ]),
+      el('div', { class: 'season-unlocks' }, [
+        el('h4', { text: '무대에 오르면 열립니다' }),
+        el('ul', { class: 'unlock-list' }, unlocks),
+      ]),
+      el('p', { class: 'hint-line season-private', text: '이 기록은 이 폰에만 있습니다. 친구나 헬스장에 보이지 않습니다.' }),
+    ]);
+  }
+
+  /** 운동을 마친 요약 창의 한 줄 — "+20점 · 시 대회 Ⅱ까지 30점" */
+  function seasonFeedback() {
+    var after = seasonNow(true);
+    var before = seasonNow(false);
+    if (!after || !before) return null;
+    return E.seasonFeedbackLine(after.career.track, after.career.stage, before.progress, after.progress);
+  }
+
+  /* ── 대회 당일 ─────────────────────────────────── */
+
+  function ceremonyDue() {
+    if (ceremony || !seasonOn() || !state.season || !state.season.pending) return false;
+    if (state.tab !== 'today' || modal.open || state.authOpen) return false;
+    // 운동 중이면 끝날 때까지 기다린다
+    return !(state.started && !state.sessionClosed);
+  }
+
+  /**
+   * 대회 당일 — 화면 가득. 선수가 걸어 나와 포즈 둘(플랫폼은 들어 잠그기)을 하고 결과 카드가 뜬다.
+   * "다음 시즌 시작"을 눌러야 끝난다 — 누르기 전에 앱을 닫으면 다음에 다시 뜬다.
+   */
+  function openCeremony() {
+    var result = state.season.pending;
+    var career = E.normalizeCareer(state.season);
+    var growth = E.currentGrowth(career, false);
+    var routine = E.STAGE_ROUTINES[result.track] || E.STAGE_ROUTINES.physique;
+    var canvas = el('canvas', { class: 'ceremony-canvas', 'aria-label': '무대에 선 내 선수' });
+    var results = el('div', { class: 'ceremony-results', hidden: 'hidden' });
+    var skip = el('button', { type: 'button', class: 'ceremony-skip', text: '결과 바로 보기', onclick: function () { showCeremonyResults(); } });
+    var overlay = el('div', { class: 'ceremony', role: 'dialog', 'aria-modal': 'true', 'aria-label': '대회 당일' }, [
+      el('div', { class: 'ceremony-top' }, [
+        el('p', { class: 'ceremony-kicker', text: '대회 당일 · 시즌 ' + result.season }),
+        el('h2', { class: 'ceremony-title', text: E.stageName(result.track, result.stageBefore) }),
+      ]),
+      el('div', { class: 'ceremony-floor' }, [canvas]),
+      skip,
+      results,
+    ]);
+    document.body.appendChild(overlay);
+    ceremony = { result: result, overlay: overlay, canvas: canvas, results: results, skip: skip, handle: null, timers: [], growth: growth, shown: false };
+    var clipFor = function (id) { return E.stageMotionFor(id, growth.posture); };
+    var cosmetics = seasonLooks(result.stageBefore);
+    var at = 0;
+    var current = ceremony;
+    setTimeout(function () {
+      if (ceremony !== current || !canvas.isConnected || !window.FitDemo3D) return;
+      current.handle = window.FitDemo3D.mount(canvas, clipFor(routine[0]), { dark: true, build: growth, cosmetics: cosmetics });
+      if (current.handle && current.handle.setYaw) current.handle.setYaw(36, 6);
+    }, 0);
+    routine.forEach(function (id, i) {
+      if (i === 0) { at += 2400; return; }
+      var clip = clipFor(id);
+      current.timers.push(setTimeout(function () {
+        if (!current.handle) return;
+        current.handle.setClip(clip);
+        if (current.handle.setYaw) current.handle.setYaw(14, 6);
+        canvas.classList.remove('cut');
+        void canvas.offsetWidth;
+        canvas.classList.add('cut');
+      }, at));
+      at += clip.cycle * 1000;
+    });
+    current.timers.push(setTimeout(showCeremonyResults, at));
+    speak(E.forSpeech(E.seasonDayLine(state.coach.style, result.outcome)));
+  }
+
+  function showCeremonyResults() {
+    if (!ceremony || ceremony.shown) return;
+    var c = ceremony;
+    var result = c.result;
+    c.shown = true;
+    c.skip.hidden = true;
+    c.overlay.classList.add('is-results');
+    var unlocked = E.STAGE_UNLOCKS.filter(function (item) { return item.stage > result.stageBefore && item.stage <= result.stageAfter; })[0];
+    var adherence = result.adherence === null ? '—' : Math.round(result.adherence * 100) + '%';
+    var strength = result.strength
+      ? result.strength.name + ' +' + fmt(result.strength.changeKg) + 'kg'
+      : '꾸준함이 이번 시즌의 기록입니다';
+    var withNumbers = Boolean(state.season && state.season.shareNumbers);
+    var numbersToggle = el('button', {
+      type: 'button', class: 'ceremony-numbers', 'aria-pressed': String(withNumbers),
+      text: '그림에 기록 숫자 넣기',
+      onclick: function () {
+        withNumbers = !withNumbers;
+        state.season = Object.assign({}, state.season, { shareNumbers: withNumbers });
+        numbersToggle.setAttribute('aria-pressed', String(withNumbers));
+        persist();
+      },
+    });
+    c.results.textContent = '';
+    [
+      el('p', { class: 'ceremony-outcome' + (result.outcome === 'again' ? ' again' : ''), text: E.outcomeLine(result) }),
+      el('dl', { class: 'ceremony-stats' }, [
+        el('div', {}, [el('dt', { text: '약속 지킨 비율' }), el('dd', { class: 'ceremony-adherence', text: adherence })]),
+        el('div', {}, [el('dt', { text: result.strength ? '힘이 가장 오른 운동' : '힘 기록' }), el('dd', { class: 'ceremony-strength', text: strength })]),
+      ]),
+      unlocked ? el('p', { class: 'ceremony-unlock', text: '새로 열림 · ' + unlocked.label }) : null,
+      el('button', { type: 'button', class: 'finish major ceremony-next', text: '다음 시즌 시작', onclick: finishCeremony }),
+      el('div', { class: 'ceremony-share' }, [
+        el('button', { type: 'button', class: 'link-btn ceremony-save', text: '그림 저장', onclick: saveCeremonyImage }),
+        numbersToggle,
+      ]),
+      el('p', { class: 'ceremony-note', text: '그림은 이 폰에 저장됩니다. 숫자는 켠 때만 들어갑니다.' }),
+    ].forEach(function (node) { if (node) c.results.appendChild(node); });
+    c.results.hidden = false;
+  }
+
+  /** 그림 저장 — 선수 그림과 무대 이름만(숫자는 켠 때만). 이 폰에 파일로 받는다. 어디에도 보내지 않는다 */
+  function saveCeremonyImage() {
+    if (!ceremony) return;
+    var c = ceremony;
+    var result = c.result;
+    var out = document.createElement('canvas');
+    out.width = 720;
+    out.height = 900;
+    var ctx = out.getContext('2d');
+    if (!ctx) return;
+    var bg = ctx.createLinearGradient(0, 0, 0, 900);
+    bg.addColorStop(0, '#1d2130');
+    bg.addColorStop(1, '#0f1116');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, 720, 900);
+    try {
+      if (c.handle && c.handle.render) c.handle.render();
+      ctx.drawImage(c.canvas, 60, 150, 600, 600);
+    } catch (err) { void err; }
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#9aa2b4';
+    ctx.font = '500 26px "IBM Plex Sans KR", sans-serif';
+    ctx.fillText('시즌 ' + result.season + ' · ' + E.TRACK_LABELS_KO[result.track], 360, 80);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '600 44px "IBM Plex Sans KR", sans-serif';
+    ctx.fillText(E.outcomeLine(result), 360, 132);
+    if (state.season && state.season.shareNumbers) {
+      ctx.font = '500 28px "IBM Plex Sans KR", sans-serif';
+      ctx.fillStyle = '#d7dbe6';
+      var line = '약속 ' + (result.adherence === null ? '—' : Math.round(result.adherence * 100) + '%');
+      if (result.strength) line += ' · ' + result.strength.name + ' +' + fmt(result.strength.changeKg) + 'kg';
+      ctx.fillText(line, 360, 812);
+    }
+    ctx.fillStyle = '#6f7790';
+    ctx.font = '500 22px "IBM Plex Sans KR", sans-serif';
+    ctx.fillText('볼륨 코치 · 내 선수', 360, 862);
+    var link = document.createElement('a');
+    link.download = '내-선수-시즌' + result.season + '.png';
+    link.href = out.toDataURL('image/png');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  function closeCeremony() {
+    if (!ceremony) return;
+    ceremony.timers.forEach(function (id) { clearTimeout(id); });
+    if (ceremony.handle && ceremony.handle.dispose) ceremony.handle.dispose();
+    ceremony.overlay.remove();
+    ceremony = null;
+  }
+
+  function finishCeremony() {
+    state.season = Object.assign({}, E.normalizeCareer(state.season), { pending: null });
+    closeCeremony();
+    persist();
+    render();
   }
 
   /* ── 티어 ──────────────────────────────────────── */

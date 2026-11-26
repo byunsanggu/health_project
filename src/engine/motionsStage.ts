@@ -7,24 +7,24 @@
  *   stage-idle      — 홈 카드에서 숨 쉬며 서 있기
  *   stage-walk      — 무대로 걸어 나오기 (바닥이 뒤로 흐르는 제자리 걷기)
  *   stage-front     — 앞에서 두 팔 들어 힘주기
- *   stage-side      — 옆으로 서서 팔을 모아 힘주기
+ *   stage-abs       — 두 손을 머리 뒤로, 한 다리 앞으로 내밀고 배 · 허벅지에 힘주기
  *   stage-lockout   — 플랫폼: 바닥에서 들어 잠그고 버티기
  *
  * posture(0..1)는 자란 자세 — 가슴을 조금 더 펴고 날개뼈를 모은다. 0이면 기본 자세.
  */
-import { BODY, rotateAbout, type ArmSpec, type LegSpec, type Pose3, type Vec3 } from './rig.ts';
+import { BODY, type ArmSpec, type LegSpec, type Pose3 } from './rig.ts';
 import { ballAt, hangingArms, hipHinge, keys, mat, plant, standing, type Clip } from './motionKit.ts';
 
 type KeyList = [number, string | undefined, Pose3][];
 
-export const STAGE_MOTION_IDS = ['stage-idle', 'stage-walk', 'stage-front', 'stage-side', 'stage-lockout'] as const;
+export const STAGE_MOTION_IDS = ['stage-idle', 'stage-walk', 'stage-front', 'stage-abs', 'stage-lockout'] as const;
 export type StageMotionId = typeof STAGE_MOTION_IDS[number];
 
 /** 무대별 대회 당일 순서 — 걸어 나와서 포즈 둘 */
 export const STAGE_ROUTINES: Record<'physique' | 'platform' | 'open', StageMotionId[]> = {
-  physique: ['stage-walk', 'stage-front', 'stage-side'],
+  physique: ['stage-walk', 'stage-front', 'stage-abs'],
   platform: ['stage-walk', 'stage-lockout', 'stage-front'],
-  open: ['stage-walk', 'stage-front', 'stage-side'],
+  open: ['stage-walk', 'stage-abs', 'stage-front'],
 };
 
 /** 자란 자세 — 가슴을 펴고(척추를 살짝 젖힘) 날개뼈를 모은다 */
@@ -101,40 +101,40 @@ function front(posture: number): Clip {
   return { id: 'stage-front', cycle: 4.4, view: [14, 6], keys: keys(...list), scene: [], work: [0.24, 0.76] };
 }
 
-/** 다리 하나를 몸과 같이 돌린다 (y축 둘레 yaw도) */
-function turnLeg(leg: LegSpec, yaw: number): LegSpec {
-  const axis: Vec3 = [0, 1, 0];
-  const r = (v?: Vec3): Vec3 | undefined => (v ? rotateAbout(v, axis, yaw) : undefined);
-  return { ...leg, ankle: r(leg.ankle), fwd: r(leg.fwd), up: r(leg.up), pole: r(leg.pole) };
-}
-
 /**
- * 옆으로 서서 힘주기 — 몸을 왼쪽으로 돌려 오른쪽 옆구리를 앞(보는 쪽)에 둔다. 앞쪽 다리는 무릎을 살짝
- * 굽혀 발끝으로, 두 팔은 배 앞에서 모아 가슴 · 팔을 조인다.
+ * 두 손을 머리 뒤로 — 팔꿈치를 옆으로 벌리고, 한 다리를 앞으로 내밀어 배와 허벅지에 힘을 준다.
+ * 앞에서 봐도 무엇을 하는지 바로 보이는 포즈다.
  */
-function side(posture: number): Clip {
-  const yaw = 62;
-  const legL = turnLeg(plant(0.13, -0.04, 12), yaw);
-  const legR = turnLeg(plant(-0.11, 0.1, 18, { heel: 22 }), yaw);
-  const base = (extra: Partial<Pose3>): Pose3 => upright({ pelvis: rotateAbout([0, 0.9, -0.02], [0, 1, 0], yaw), yaw, pitch: 1, spine: 0, neck: 0, legL, legR, ...extra }, posture);
-  const rest = base({ ...hangingArms(90, 8, 10, 12) });
-  const flex = (squeeze: number): Pose3 => base({
-    spine: -3 - 2 * squeeze,
-    twist: -10 - 6 * squeeze,
-    neck: 4,
-    scap: [0.06, 0.15],
-    // 앞쪽(오른)팔은 굽혀 배 앞으로, 뒤쪽(왼)팔은 그 손목 쪽으로
-    armR: { fk: [8, 34 + 6 * squeeze, 30, 96 + 6 * squeeze, 8], turn: 40 },
-    armL: { fk: [28, 40 + 4 * squeeze, 60, 104, 0], turn: 80 },
+function abs(posture: number): Clip {
+  const legL = plant(0.15, -0.03, 12);
+  const step = plant(-0.13, 0.16, 18);
+  const base = (extra: Partial<Pose3>): Pose3 => upright({ pelvis: [0, 0.9, 0.02], pitch: 0, spine: 0, neck: 0, legL, legR: step, ...extra }, posture);
+  // 키마다 팔을 같은 방식(닿을 곳)으로 — 각도 ↔ 닿을 곳은 섞이지 않아 중간에 팔이 튄다
+  const hang = (s: 1 | -1): ArmSpec => ({ ik: [s * 0.215, -0.35, 0.01], in: 'chest', pole: [s * 0.2, 0, -1], hand: [0, 0, 1] });
+  const rest = base({ armL: hang(1), armR: hang(-1) });
+  const behind = (s: 1 | -1, squeeze: number): ArmSpec => ({
+    ik: [s * (0.06 - 0.01 * squeeze), 0.4, -0.07], in: 'chest', pole: [s, 0.35, -0.15], hand: [0, 1, 0],
   });
+  const flex = (squeeze: number): Pose3 => base({
+    spine: 3 + 5 * squeeze,
+    neck: 6 + 4 * squeeze,
+    scap: [0.1, 0.1],
+    armL: behind(1, squeeze),
+    armR: behind(-1, squeeze),
+  });
+  // 팔을 옆으로 들어 올렸다가 머리 뒤로 — 곧장 가면 손이 가슴을 뚫고 지나간다
+  const out = (s: 1 | -1): ArmSpec => ({ ik: [s * 0.5, 0.22, 0.04], in: 'chest', pole: [s * 0.2, -1, -0.3], hand: [0, 1, 0] });
+  const raise = base({ armL: out(1), armR: out(-1), scap: [0.08, 0] });
   const list: KeyList = [
     [0, undefined, rest],
+    [0.12, undefined, raise],
     [0.24, undefined, flex(0)],
     [0.5, undefined, flex(1)],
     [0.76, undefined, flex(0.6)],
+    [0.88, undefined, raise],
     [1, undefined, rest],
   ];
-  return { id: 'stage-side', cycle: 4.4, view: [14, 6], keys: keys(...list), scene: [], work: [0.24, 0.76] };
+  return { id: 'stage-abs', cycle: 4.4, view: [14, 6], keys: keys(...list), scene: [], work: [0.24, 0.76] };
 }
 
 /** 플랫폼 — 바닥에서 들어 잠그고 버틴 뒤 내려놓는다 (데드리프트 시연과 같은 힌지 도구로) */
@@ -163,7 +163,7 @@ const MAKERS: Record<StageMotionId, (posture: number) => Clip> = {
   'stage-idle': idle,
   'stage-walk': walk,
   'stage-front': front,
-  'stage-side': side,
+  'stage-abs': abs,
   'stage-lockout': lockout,
 };
 

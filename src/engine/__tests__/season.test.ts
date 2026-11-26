@@ -398,6 +398,17 @@ describe('무대 동작', () => {
     }
   });
 
+  it('키마다 팔다리를 같은 방식으로 움직인다 (각도 ↔ 닿을 곳이 섞이면 중간에 튄다)', () => {
+    const mode = (spec: object | undefined) => (!spec ? 'none' : 'fk' in spec && spec.fk ? 'fk' : 'bar' in spec && spec.bar !== undefined ? 'bar' : 'ik');
+    for (const id of STAGE_MOTION_IDS) {
+      const clip = stageMotionFor(id)!;
+      for (const limb of ['armL', 'armR', 'legL', 'legR'] as const) {
+        const modes = new Set(clip.keys.map((key) => mode(key.pose[limb])));
+        assert.equal(modes.size, 1, `${id} ${limb}: ${[...modes].join(', ')}`);
+      }
+    }
+  });
+
   it('플랫폼 동작은 손이 바를 놓치지 않는다', () => {
     const clip = stageMotionFor('stage-lockout')!;
     for (let i = 0; i <= 24; i += 1) {

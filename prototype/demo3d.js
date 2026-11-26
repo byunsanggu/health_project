@@ -291,7 +291,7 @@
   }
 
   // 무대 꾸밈 색 — 은은하게. 반바지는 무대 칸마다 한 단계씩
-  var OUTFITS = [null, 0x1f6f6c, 0x3a3f99, 0x76284a, 0x1b2236];
+  var OUTFITS = [null, 0x1f6763, 0x343f78, 0x672a40, 0x1b2236];
   var LOOKS = { band: 0xe9ecf2, belt: 0x4a3326, gold: 0xc8a24c, buckle: 0xb4bbc5, plate: 0x2e5cb8, plateRim: 0xe6e8ee };
 
   /* ── 몸 ───────────────────────────────────────── */

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   COACH_LOAD_RATIO,
   EXCLUDE_REASONS,
+  EXCLUDE_SPANS,
   REVIEW_WEEKS,
   activeExclusions,
   addExclusion,
@@ -12,11 +13,13 @@ import {
   dueForReview,
   excludeForever,
   excludedIds,
+  exclusionDays,
   keepExcluded,
   removeExclusion,
   replacementFor,
   reasonSpec,
   reviewQuestion,
+  spanLabel,
   type Exclusion,
 } from '../exclusions.ts';
 import { EXERCISES } from '../exercises.ts';
@@ -171,5 +174,51 @@ describe('목록 다루기', () => {
     // 잘못 눌러서 종목이 사라지고 돌아오지 않으면 사용자는 앱을 못 믿는다.
     const list = removeExclusion(one(), DEAD.id);
     assert.equal(list.length, 0);
+  });
+});
+
+describe('빼는 기간을 고른다', () => {
+  const base = { exerciseId: DEAD.id, reason: 'dislike' as const, today: TODAY };
+  it('고르지 않으면 4주 — 예전 기록과 같다', () => {
+    const list = addExclusion([], base);
+    assert.equal(list[0]!.days, undefined);
+    assert.equal(exclusionDays(list[0]!), REVIEW_WEEKS * 7);
+  });
+  it('1주로 빼면 1주 뒤에 돌아오고 한 번 묻는다', () => {
+    const list = addExclusion([], { ...base, days: 7 });
+    assert.equal(excludedIds(list, plus(6)).size, 1);
+    assert.equal(excludedIds(list, plus(7)).size, 0);
+    assert.equal(dueForReview(list, plus(6)).length, 0);
+    assert.equal(dueForReview(list, plus(7)).length, 1);
+    assert.match(reviewQuestion(list[0]!, DEAD), /1주가 됐습니다/);
+    assert.match(describeExclusion(list[0]!, plus(2)), /5일 뒤에 다시 여쭤봅니다/);
+  });
+  it('8주로 빼면 8주 동안 빠져 있다', () => {
+    const list = addExclusion([], { ...base, days: 56 });
+    assert.equal(excludedIds(list, plus(55)).size, 1);
+    assert.equal(dueForReview(list, plus(REVIEW_WEEKS * 7)).length, 0);
+    assert.equal(dueForReview(list, plus(56)).length, 1);
+    assert.match(describeExclusion(list[0]!, TODAY), /8주 뒤에/);
+  });
+  it('하루짜리는 내일 조용히 돌아오고 묻지 않는다', () => {
+    const list = addExclusion([], { ...base, days: 1 });
+    assert.equal(excludedIds(list, TODAY).size, 1);
+    assert.equal(excludedIds(list, plus(1)).size, 0);
+    assert.equal(dueForReview(list, plus(30)).length, 0);
+  });
+  it('계속 빼두면 같은 기간으로 다시 센다', () => {
+    const list = keepExcluded(addExclusion([], { ...base, days: 14 }), base.exerciseId, plus(14));
+    assert.equal(dueForReview(list, plus(27)).length, 0);
+    assert.equal(dueForReview(list, plus(28)).length, 1);
+  });
+  it('영원히는 기간을 남기지 않는다', () => {
+    const list = addExclusion([], { ...base, days: 14, forever: true });
+    assert.equal(list[0]!.days, undefined);
+    assert.equal(dueForReview(list, plus(400)).length, 0);
+  });
+  it('기간 이름', () => {
+    assert.deepEqual(EXCLUDE_SPANS.map((span) => span.label), ['1주', '2주', '4주', '8주']);
+    assert.equal(spanLabel(21), '3주');
+    assert.equal(spanLabel(10), '10일');
   });
 });

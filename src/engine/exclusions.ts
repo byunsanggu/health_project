@@ -91,6 +91,46 @@ export function reasonSpec(reason: ExcludeReason): ReasonSpec {
  */
 export const REVIEW_WEEKS = 4;
 
+/**
+ * 얼마나 뺄까 — 사람마다 다르다.
+ *
+ * 잠깐 질린 사람은 1주, 어깨를 다친 사람은 두 달, 기본은 한
+ * 메소사이클(4주)이다. 4주를 기본으로 두되 고를 수 있게 한다.
+ * "오늘만"은 여기 없다 — 이유를 묻기 전 첫 화면의 "오늘만 빼기"가 따로 한다.
+ *
+ * days가 1이면(오늘만) 다시 묻지 않는다 — 내일이면 조용히 돌아온다.
+ * 그 밖의 기간은 끝나면 한 번 묻는다(아래 dueForReview).
+ */
+export interface ExcludeSpan {
+  /** 빠져 있는 날 수. 1 = 오늘만 */
+  days: number;
+  label: string;
+}
+
+export const EXCLUDE_SPANS: readonly ExcludeSpan[] = [
+  { days: 7, label: '1주' },
+  { days: 14, label: '2주' },
+  { days: REVIEW_WEEKS * 7, label: '4주' },
+  { days: 56, label: '8주' },
+];
+
+/** 고르지 않았을 때의 기간(일) */
+export const DEFAULT_EXCLUDE_DAYS = REVIEW_WEEKS * 7;
+
+/** 이 제외가 얼마 동안인가(일). 예전 기록은 days가 없다 — 그때는 4주였다. */
+export function exclusionDays(item: Pick<Exclusion, 'days'>): number {
+  const days = item.days;
+  return typeof days === 'number' && days >= 1 ? Math.round(days) : DEFAULT_EXCLUDE_DAYS;
+}
+
+/** "오늘만" · "2주" 같은 기간 이름 */
+export function spanLabel(days: number): string {
+  if (days <= 1) return '오늘만';
+  const known = EXCLUDE_SPANS.find((span) => span.days === days);
+  if (known) return known.label;
+  return days % 7 === 0 ? `${days / 7}주` : `${days}일`;
+}
+
 export interface Exclusion {
   exerciseId: string;
   reason: ExcludeReason;
@@ -103,6 +143,8 @@ export interface Exclusion {
    * 한 번 힘들었던 날의 기분이 프로그램에 영영 남는다.
    */
   forever?: boolean;
+  /** 빠져 있는 날 수. 없으면 4주(예전 기록). 1이면 오늘만 — 다시 묻지 않는다. */
+  days?: number;
   /** 아파서 뺀 경우에만 */
   joint?: Joint;
 }
@@ -126,7 +168,7 @@ export function activeExclusions(
   return list.filter((item) => {
     if (reasonSpec(item.reason).route === 'coach') return false;
     if (item.forever) return true;
-    return daysBetween(item.since, today) < REVIEW_WEEKS * 7;
+    return daysBetween(item.since, today) < exclusionDays(item);
   });
 }
 
@@ -152,7 +194,9 @@ export function dueForReview(
   return list.filter((item) => {
     if (item.forever) return false;
     if (reasonSpec(item.reason).route === 'coach') return false;
-    return daysBetween(item.since, today) >= REVIEW_WEEKS * 7;
+    // 오늘만 뺀 것은 묻지 않는다 — 내일 조용히 돌아온다.
+    if (exclusionDays(item) <= 1) return false;
+    return daysBetween(item.since, today) >= exclusionDays(item);
   });
 }
 
@@ -183,6 +227,8 @@ export interface ExclusionInput {
   reason: ExcludeReason;
   today: string;
   forever?: boolean;
+  /** 빠져 있는 날 수(EXCLUDE_SPANS). 없으면 4주 */
+  days?: number;
   joint?: Joint;
 }
 
@@ -196,6 +242,9 @@ export function addExclusion(
     reason: input.reason,
     since: input.today,
     ...(input.forever ? { forever: true } : {}),
+    ...(!input.forever && typeof input.days === 'number' && input.days >= 1 &&
+      Math.round(input.days) !== DEFAULT_EXCLUDE_DAYS
+      ? { days: Math.round(input.days) } : {}),
     ...(input.joint ? { joint: input.joint } : {}),
   };
   return [...list.filter((item) => item.exerciseId !== input.exerciseId), next];
@@ -311,16 +360,20 @@ export function describeExclusion(item: Exclusion, today: string): string {
 
   if (item.forever) return `${spec.label} · 계속 뺍니다`;
 
-  const left = REVIEW_WEEKS * 7 - days;
-  if (left <= 0) return `${spec.label} · ${REVIEW_WEEKS}주가 지나 다시 여쭤봅니다`;
+  const span = exclusionDays(item);
+  if (span <= 1) return `${spec.label} · 오늘만 뺍니다 — 내일부터 다시 나옵니다`;
+  const left = span - days;
+  if (left <= 0) return `${spec.label} · ${withParticle(spanLabel(span), '이/가')} 지나 다시 여쭤봅니다`;
+  if (left < 7) return `${spec.label} · ${left}일 뒤에 다시 여쭤봅니다`;
   return `${spec.label} · ${Math.ceil(left / 7)}주 뒤에 다시 여쭤봅니다`;
 }
 
 /** 다시 물을 때의 한 줄. 조르지 않고 사실만 말한다. */
 export function reviewQuestion(item: Exclusion, exercise: Exercise): string {
   const named = withParticle(exercise.name, '을/를');
+  const span = spanLabel(exclusionDays(item));
   if (item.reason === 'pain') {
-    return `${named} 뺀 지 ${REVIEW_WEEKS}주가 됐습니다. 지금은 어떠신가요?`;
+    return `${named} 뺀 지 ${withParticle(span, '이/가')} 됐습니다. 지금은 어떠신가요?`;
   }
-  return `${named} 뺀 지 ${REVIEW_WEEKS}주가 됐습니다. 다시 해 보시겠어요?`;
+  return `${named} 뺀 지 ${withParticle(span, '이/가')} 됐습니다. 다시 해 보시겠어요?`;
 }
