@@ -91,17 +91,42 @@ export function warmupDoneLine(style: CoachStyle): string {
 }
 
 /**
- * PT로 처음 세는 본세트 앞에서 한 번 — 다 못 하면 "여기까지"를 누르라고.
+ * PT로 처음 세는 본세트 앞에서 한 번 — 다 못 하면 화면의 "세트 완료"를 누르라고(PT 화면 아래의 채운 버튼).
  *
  * PT는 세트가 끝나면 묻지 않고 센 개수를 바로 적는다. 일곱 개에서 멈추고 바를 내려놓았는데
  * 누르지 않으면 열 개가 적히고, 다음 무게가 그걸로 오른다. 처음에 한 번은 알려 줘야 한다.
  */
 export function stopHintLine(style: CoachStyle): string {
   const lines: ByStyle<string> = {
-    tough: '다 못 하겠으면 화면에서 여기까지 눌러. 누른 데까지 적는다.',
-    energetic: '다 못 하겠으면 화면에서 여기까지를 눌러요! 누른 데까지 적어요!',
-    gentle: '다 못 하시겠으면 화면에서 여기까지를 누르세요. 누른 데까지 적습니다.',
-    fun: '다 못 하겠으면 화면에서 여기까지! 누른 데까지만 적어요. 부풀리기 없어요.',
+    tough: '다 못 하겠으면 화면에서 세트 완료 눌러. 센 데까지 적는다.',
+    energetic: '다 못 하겠으면 화면에서 세트 완료를 눌러요! 센 데까지 적어요!',
+    gentle: '다 못 하시겠으면 화면에서 세트 완료를 누르세요. 센 데까지 적습니다.',
+    fun: '다 못 하겠으면 화면에서 세트 완료! 센 데까지만 적어요. 부풀리기 없어요.',
+  };
+  return lines[style];
+}
+
+/**
+ * PT 화면의 "다음 ›"으로 이번 세트를 건너뛰었을 때 — 짧게 한마디. 바로 뒤에 다음 세트 · 다음 운동의 말이 이어지니
+ * 숫자 · 이름은 넣지 않는다(그건 다음 말이 한다). 건너뛴 세트는 적지 않는다.
+ */
+export function skipSetLine(style: CoachStyle): string {
+  const lines: ByStyle<string> = {
+    tough: '이번 세트는 넘어간다.',
+    energetic: '이번 세트는 넘어갈게요!',
+    gentle: '이번 세트는 넘어가겠습니다.',
+    fun: '이번 세트는 패스할게요.',
+  };
+  return lines[style];
+}
+
+/** 쉬는 동안 "다음 운동 ›"으로 이 운동의 남은 세트를 건너뛰었을 때 — 뒤에 다음 종목 이동 안내가 이어진다. */
+export function skipLiftLine(style: CoachStyle): string {
+  const lines: ByStyle<string> = {
+    tough: '이 운동은 여기서 넘어간다.',
+    energetic: '이 운동은 넘어갈게요!',
+    gentle: '이 운동은 여기서 넘어가겠습니다.',
+    fun: '이 운동은 다음 기회에! 넘어갈게요.',
   };
   return lines[style];
 }
@@ -123,6 +148,7 @@ export function restSpoken(seconds: number): string {
  * 쉬는 시간을 모르고 쉬면 계속 화면을 보게 된다. "1분 30초 쉬고 3세트"를
  * 듣고 나면 물 마시러 가도 된다. 처음 한 번은 더 쉬는 법도 같이 알려 준다
  * — PT는 시간이 되면 알아서 시작하니까, 더 쉬고 싶은 사람이 멈출 줄 알아야 한다.
+ * PT 화면에서 +30초는 그림 위 휴식 숫자 옆에 붙은 작은 단추다 — 그 자리를 말한다.
  */
 export function restAnnounceLine(
   style: CoachStyle,
@@ -139,10 +165,10 @@ export function restAnnounceLine(
   };
   if (!input.firstTime) return lines[style];
   const more: ByStyle<string> = {
-    tough: '더 쉬고 싶으면, 화면에서 30초 추가 눌러.',
-    energetic: '더 쉬고 싶으면, 화면에서 30초 추가 눌러요!',
-    gentle: '더 쉬고 싶으시면, 화면에서 30초 추가를 누르세요.',
-    fun: '더 쉬고 싶으면, 화면에서 30초 추가! 몰래 눌러도 돼요.',
+    tough: '더 쉬고 싶으면, 휴식 시간 옆에 30초 눌러.',
+    energetic: '더 쉬고 싶으면, 휴식 시간 옆에 30초를 눌러요!',
+    gentle: '더 쉬고 싶으시면, 휴식 시간 옆의 30초를 누르세요.',
+    fun: '더 쉬고 싶으면, 휴식 시간 옆에 30초! 몰래 눌러도 돼요.',
   };
   return `${lines[style]} ${more[style]}`;
 }

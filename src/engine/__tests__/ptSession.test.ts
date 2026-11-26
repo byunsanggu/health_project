@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   COOLDOWN_SECONDS, MOBILITY_SECONDS, PACE_TOLERANCE_SECONDS, mobilityDoneLine, mobilityFor, mobilityLine, mobilityMinutes, cooldownDoneLine, cooldownFor, cooldownLine,
-  paceCheck, restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, restTalkPlan, restSpoken, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
+  paceCheck, restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, restTalkPlan, restSpoken, skipLiftLine, skipSetLine, stopHintLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from '../ptSession.ts';
 import { forSpeech, speechSeconds } from '../coach.ts';
 import {
@@ -151,7 +151,9 @@ describe('세트 사이 휴식 안내', () => {
       const later = restAnnounceLine(style, { seconds: 40, nextSet: 2 });
       assert.match(first, /1분 30초/);
       assert.match(first, /3세트/);
-      assert.match(first, /30초 추가/);
+      // PT 화면의 +30초는 휴식 숫자 옆 작은 단추 — 그 자리를 말한다(없어진 "30초 추가" 버튼 이름이 아니다)
+      assert.match(first, /휴식 시간 옆.*30초/);
+      assert.doesNotMatch(first, /30초 추가/);
       assert.match(later, /40초/);
       assert.doesNotMatch(later, /추가/);
     }
@@ -161,6 +163,48 @@ describe('세트 사이 휴식 안내', () => {
     assert.doesNotMatch(restAnnounceLine('tough', { seconds: 60, nextSet: 2, firstTime: true }), POLITE_END);
     assert.match(restAnnounceLine('gentle', { seconds: 60, nextSet: 2 }), /니다/);
     assert.match(restAnnounceLine('gentle', { seconds: 20, nextSet: 1, nextName: '레그 컬' }), /20초 쉬고, 레그 컬, 1세트/);
+  });
+});
+
+describe('화면 버튼을 말하는 안내', () => {
+  it('다 못 하면 "세트 완료"를 누르라고 한다 — 없어진 "여기까지" 버튼을 말하지 않는다', () => {
+    for (const style of STYLES) {
+      const line = stopHintLine(style);
+      assert.match(line, /세트 완료/, style);
+      assert.match(line, /센 데까지/, style);
+      assert.doesNotMatch(line, /여기까지|누른 데까지/, style);
+    }
+    assert.doesNotMatch(stopHintLine('tough'), POLITE_END);
+    for (const style of ['energetic', 'gentle', 'fun'] as const) assert.doesNotMatch(stopHintLine(style), BANMAL, style);
+  });
+});
+
+describe('건너뛰기 한마디', () => {
+  it('세트 · 운동을 건너뛰었다고 짧게 말한다 — 숫자 · 이름은 다음 말이 한다', () => {
+    for (const style of STYLES) {
+      for (const line of [skipSetLine(style), skipLiftLine(style)]) {
+        assert.ok(speechSeconds(line) < 4, `${style}: ${line}`);
+        assert.doesNotMatch(line, /\d/, `${style}: ${line}`);
+        assert.match(line, /넘어|패스/, `${style}: ${line}`);
+      }
+      assert.match(skipSetLine(style), /세트/, style);
+      assert.match(skipLiftLine(style), /운동/, style);
+    }
+  });
+  it('빡센 코치만 반말, 나머지는 존댓말', () => {
+    assert.doesNotMatch(skipSetLine('tough') + ' ' + skipLiftLine('tough'), POLITE_END);
+    for (const style of ['energetic', 'gentle', 'fun'] as const) {
+      assert.doesNotMatch(skipSetLine(style) + ' ' + skipLiftLine(style), BANMAL, style);
+      assert.match(skipSetLine(style) + ' ' + skipLiftLine(style), /(니다|요)[.!?]/, style);
+    }
+  });
+  it('말 조각 목록에 들어 있다 — 목소리 파일이 없으면 소리가 안 난다', () => {
+    for (const style of STYLES) {
+      const corpus = new Set(speechCorpus(style));
+      for (const line of [skipSetLine(style), skipLiftLine(style), stopHintLine(style), restAnnounceLine(style, { seconds: 90, nextSet: 2, firstTime: true })]) {
+        for (const piece of speechPieces(forSpeech(line), (sentence) => corpus.has(sentence))) assert.ok(corpus.has(piece), `${style}: ${piece}`);
+      }
+    }
   });
 });
 

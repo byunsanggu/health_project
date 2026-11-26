@@ -19,7 +19,7 @@ import { EXERCISES } from './exercises.ts';
 import { mistakesFor, type MistakeMoment } from './mistakes.ts';
 import {
   COOLDOWN_STEPS, FINISHER_FORMATS, FINISHER_ZONES, MOBILITY_STEPS, cooldownDoneLine, finisherCueLine, finisherIntroLine, cooldownLine, cooldownSwitchLine, mobilityDoneLine, mobilityLine,
-  restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, stopHintLine, weightChangedLine, setsChangedLine, repsChangedLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
+  restAnnounceLine, restBreathLine, restCheerLine, restCueLine, restFeedbackLine, skipLiftLine, skipSetLine, stopHintLine, weightChangedLine, setsChangedLine, repsChangedLine, timeCheck, transitionLines, trimLine, warmupDoneLine, warmupRestLine, warmupSetLine,
 } from './ptSession.ts';
 import { setupFor } from './setupGuide.ts';
 import { numberInventory, sentences, speechNames, speechPieces } from './speech.ts';
@@ -197,6 +197,9 @@ export function coachTexts(style: CoachStyle): string[] {
   say(warmupRestLine(style, 45));
   say(warmupDoneLine(style));
   say(stopHintLine(style));
+  // PT 화면의 "다음 ›" · "다음 운동 ›" — 건너뛰었다는 한마디(뒤에 다음 것의 말이 이어진다)
+  say(skipSetLine(style));
+  say(skipLiftLine(style));
   for (const firstTime of [false, true]) {
     say(restAnnounceLine(style, { seconds: 90, nextSet: 2, firstTime }));
     say(restAnnounceLine(style, { seconds: 30, nextSet: 1, firstTime, nextName: two }));
