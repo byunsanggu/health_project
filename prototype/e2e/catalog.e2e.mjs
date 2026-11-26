@@ -84,7 +84,7 @@ export default async function ({ page, url, shot }) {
   await shot('4-dumbbell-rows');
 
   // 다시 열어도 남는다
-  await page.reload();
+  await reloadSafely(page);
   await gymTab(page);
   check(await page.locator('.gym-weights .list-label:has-text("가벼운 덤벨 간격") + .segmented button[aria-pressed="true"]').textContent() === '2kg씩',
     '다시 여니 가벼운 덤벨 간격이 돌아갔습니다');
@@ -133,11 +133,21 @@ export default async function ({ page, url, shot }) {
     saved.settings.gymLinkHidden = false;
     localStorage.setItem(key, JSON.stringify(saved));
   }, STORE);
-  await page.reload();
+  await reloadSafely(page);
   await page.waitForSelector('.tabbar [role="tab"]');
   check(await page.locator('.gym-link-nudge').count() === 0, '예전 홈짐 이름표인데 등록 안내가 뜹니다');
   await gymTab(page);
   check(await page.locator('.gym-here-where.unset').count() === 0, '예전 홈짐 이름표인데 빨간 "등록 안 됨"이 있습니다');
   check((await page.locator('.gym-here').textContent()).includes('홈짐'), '예전 홈짐 이름표가 집으로 안 보입니다');
   await shot('6-old-home');
+}
+
+// 새로고침이 앱의 서비스 워커 교체와 겹치면 브라우저가 net::ERR_ABORTED로 끊는다 — 한 번 더 연다.
+async function reloadSafely(page) {
+  try { await page.reload(); }
+  catch (err) {
+    if (!/ERR_ABORTED/.test(String(err && err.message))) throw err;
+    await page.waitForLoadState('load').catch(() => {});
+    await page.reload();
+  }
 }
