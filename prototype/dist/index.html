@@ -2894,7 +2894,8 @@ html:not([data-dev]) .tabbar { padding-bottom: env(safe-area-inset-bottom, 0px);
 button.focus-progress { min-height: 44px; min-width: 0; padding: 4px 8px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; cursor: pointer; }
 button.focus-progress:active { background: var(--surface-2); }
 /* 오늘 운동 목록 — 번호 · 이름(몇 세트 했는지) · 완료 / 지금 / 남음 */
-.focus-list .menu-row { gap: 10px; }
+.focus-list .menu-row { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; min-height: 56px; }
+.focus-list .plan-main { justify-items: start; text-align: left; }
 .focus-list-no { flex: none; width: 24px; font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--muted); text-align: center; }
 .focus-list-state { flex: none; min-width: 44px; padding: 2px 8px; border-radius: 999px; font-size: 13px; font-weight: 700; text-align: center; }
 .focus-list-state.now { background: var(--accent); color: var(--accent-ink); }
