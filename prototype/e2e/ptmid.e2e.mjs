@@ -1,7 +1,7 @@
 // 운동 중에 PT 켜기 — 혼자 하다가 ⋯의 "PT 코치 켜기"를 누르면 그 자리부터 오늘 남은 운동을 끝까지 이끈다.
 //   세트마다 묻지 않고, 화면을 안 만져도 멈추지 않는다(예전에는 세 세트 안 만지면 멈춰서 세트마다 다시 켜는 꼴이었다).
 //   "PT 끄기"로 언제든 혼자 모드로 돌아간다.
-import { check, doneSet, focusPhase, onboard, restGuideOff, runUntil, skipRest, stageMenu, startWorkout } from './lib.mjs';
+import { check, doneSet, focusPhase, onboard, restGuideOff, runUntil, skipRest, stageMenu, startWorkout, ptMenu } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -36,7 +36,7 @@ export default async function ({ page, url, shot }) {
   await shot('2-going');
 
   // PT 끄기 — 집중 화면이 닫히고 혼자 모드로
-  await page.locator('#focus .pt-toggle').click();
+  await ptMenu(page, 'PT 끄기');
   await page.clock.runFor(500);
   check(await focusPhase(page) === null, 'PT를 껐는데 집중 화면이 남았습니다');
   check(await page.locator('#solo-stage').count() === 1, '혼자 운동 화면으로 안 돌아왔습니다');

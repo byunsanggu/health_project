@@ -223,6 +223,8 @@ export async function focusPhase(page) {
     if (host.querySelector('.focus-feels')) return 'ask';
     // 멈춰도 같은 화면이다 — 멈췄는지는 data-paused로 읽는다
     if (host.dataset.paused === '1') return 'paused';
+    // 앱이 지금 단계를 data-phase로 적는다(prep · warm · count · rest). 없으면(예전 빌드) 화면에 뜬 것으로
+    if (host.dataset.phase) return host.dataset.phase;
     if (host.querySelector('#focus-prep-left')) return 'prep';
     if (host.querySelector('#focus-rest-time')) return 'rest';
     if (/워밍업 \d/.test(host.querySelector('.focus-what')?.textContent || '')) return 'warm';
@@ -286,4 +288,43 @@ export async function openDetail(page) {
 export async function stageMenu(page, label) {
   await page.locator('#solo-stage .stage-more').click();
   await page.locator('dialog .menu-row', { hasText: label }).click();
+}
+
+/*
+ * PT 집중 화면 — 혼자 운동 화면과 같은 틀: 아래에 채운 버튼 하나(.focus-go)와 일시정지 Ⅱ,
+ * 나머지(PT 끄기 · 빠르기 · 주머니 모드 · 세트 고치기 · 워밍업 빼기 · 건너뛰기 · 아픈 데 · 운동 끝내기)는 ⋯에.
+ */
+
+/** PT 화면의 ⋯에서 하나 고른다. */
+export async function ptMenu(page, label) {
+  await page.locator('#focus .focus-menu').click();
+  await page.locator('dialog .menu-row', { hasText: label }).click();
+}
+
+/** PT 화면 아래의 채운 버튼(바로 시작 · 세트 완료 · 다음 세트 시작 · 다음 워밍업 · ▶ 계속 …). text를 주면 그 글자가 든 버튼인지 본다. */
+export async function ptGo(page, text) {
+  const go = page.locator('#focus .focus-go');
+  if (text) {
+    const now = await go.textContent();
+    check(now.includes(text), `PT 버튼이 "${text}"가 아니라 "${now}"입니다`);
+  }
+  await go.click();
+}
+
+/** 몸 풀기 · 워밍업 건너뛰기(⋯). */
+export const skipPrep = (page) => ptMenu(page, '몸 풀기 건너뛰기');
+export const skipWarm = (page) => ptMenu(page, '워밍업 건너뛰기');
+
+/** PT 일시정지(버튼 옆 Ⅱ). */
+export const ptPause = (page) => page.locator('#focus .focus-pause').click();
+
+/** PT 화면의 "자세히 보기 ›"(다음 할 것 · 워밍업 목록 · 세 줄 · 방금 적은 세트 · 세트 칸) — 닫혀 있으면 연다. 고른 쪽을 기억한다. */
+export async function ptDetail(page) {
+  const toggle = page.locator('#focus .focus-detail-toggle');
+  if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+}
+
+/** PT 화면에서 글자 하나 — 없으면 ''(기다리지 않는다). 예: focusText(page, '.focus-pos') → "다음 운동" */
+export function focusText(page, selector) {
+  return page.evaluate((sel) => document.querySelector('#focus ' + sel)?.textContent || '', selector);
 }

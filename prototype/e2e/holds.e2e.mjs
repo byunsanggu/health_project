@@ -89,8 +89,9 @@ export default async function ({ page, url, shot }) {
   await runUntil(page, 'count', { maxMs: 400000, stepMs: 1000 });
   // 시작 말이 나올 때까지 — 남은 초가 숫자로 뜬다
   for (let i = 0; i < 60 && !/^\d+$/.test(((await page.locator('#focus-num').textContent().catch(() => '')) || '').trim()); i += 1) await page.clock.runFor(1000);
-  const of = (await page.locator('#focus .focus-of').first().textContent()).trim();
-  check(of === '초 남음', 'PT 화면: ' + of);
+  // 배지의 작은 이름 — 개수가 아니라 초
+  const of = (await page.locator('#focus #focus-cap').textContent()).trim();
+  check(of === '초', 'PT 화면: ' + of);
   const left = Number((await page.locator('#focus-num').textContent()).trim());
   check(left > 0 && left <= target, 'PT 남은 초: ' + left);
   await shot('4-pt-hold');

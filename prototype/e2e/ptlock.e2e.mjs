@@ -1,6 +1,6 @@
 // 화면을 꺼도 PT 소리 — 쉬는 중에 폰을 잠그면 미리 만든 소리 파일(쉬는 시간 · 다음 세트 말 · 세기)을 튼다.
 //   다시 켜면 꺼져 있던 동안 센 세트가 기록돼 있고, PT는 멈추지 않고 그 자리부터 잇는다.
-import { check, choosePt, focusPhase, onboard, begin, runUntil, setVisible } from './lib.mjs';
+import { check, choosePt, focusPhase, onboard, begin, runUntil, setVisible, skipPrep, skipWarm } from './lib.mjs';
 
 // 오늘 적힌 본세트 수 — 화면의 칸은 지금 종목 것만이라(다 하면 다음 종목으로 넘어간다) 저장된 기록으로 센다
 const doneSets = (page) => page.evaluate(() => {
@@ -24,9 +24,9 @@ export default async function ({ page, url, shot }) {
 
   await begin(page);
   await runUntil(page, 'prep');
-  await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
+  await skipPrep(page);
   if (await runUntil(page, ['warm', 'count']) === 'warm') {
-    await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
+    await skipWarm(page);
     await runUntil(page, 'count');
   }
   await runUntil(page, 'rest', { maxMs: 180000 });

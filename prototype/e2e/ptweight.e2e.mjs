@@ -1,6 +1,6 @@
 // PT에서도 무게를 바꾼다 — 쉬는 동안 다음 세트 무게를 − / + 로(그 기구에서 만들 수 있는 무게로), 숫자를 누르면 직접.
 //   바꾸면 다음 세트가 그 무게로 적히고, 목록에도 그 무게가 보이고, 코치가 바뀐 무게를 말한다. 세는 중에는 보기만.
-import { begin, check, choosePt, onboard, runUntil } from './lib.mjs';
+import { begin, check, choosePt, onboard, runUntil, skipPrep, ptGo, ptMenu } from './lib.mjs';
 
 const reps = async (page) => {
   const text = await page.locator('#focus-num').textContent().catch(() => '');
@@ -27,12 +27,13 @@ export default async function ({ page, url, shot }) {
   await choosePt(page);
   await begin(page);
   await runUntil(page, 'prep');
-  await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
-  // 워밍업 무게도 PT 화면에서 — 준비 중에는 지금 워밍업, 워밍업 사이에는 다음 워밍업을 − / + 로
+  await skipPrep(page);
+  // 워밍업 무게도 PT 화면에서 — 준비 중에는 지금 워밍업, 워밍업 사이에는 다음 워밍업을 숫자를 눌러 친다
   check(await runUntil(page, ['warm', 'count']) === 'warm', '첫 종목에 워밍업이 없습니다');
   const warmKg = async () => Number(await page.locator('#focus .pt-warm-input').first().inputValue());
   const warm1 = await warmKg();
-  await page.locator('#focus .pt-warm-step', { hasText: '+' }).click();
+  check(await page.locator('#focus .pt-warm-step').count() === 0, 'PT 화면 한 줄에 − / + 가 있습니다');
+  await typeInto(page, page.locator('#focus .pt-warm-input').first(), String(warm1 + 5));
   const warm1Up = await warmKg();
   check(warm1Up > warm1, `워밍업 무게 +가 안 됩니다: ${warm1} → ${warm1Up}`);
   const savedWarm = async () => Object.values(((await page.evaluate(() => JSON.parse(localStorage.getItem('volume-coach.proto.state') || '{}').settings || {})).todayExtras || {}).warmKg || {})[0] || [];
@@ -47,7 +48,7 @@ export default async function ({ page, url, shot }) {
   for (let i = 0; i < 240 && !(await page.locator('#focus .focus-warm-next').count()); i += 1) await page.clock.runFor(500);
   check(await page.locator('#focus .focus-warm-next').count() === 1, '워밍업 사이에 다음 워밍업 무게 칸이 없습니다');
   const warm2 = Number(await page.locator('#focus .focus-warm-next .pt-warm-input').inputValue());
-  await page.locator('#focus .focus-warm-next .pt-warm-step', { hasText: '−' }).click();
+  await typeInto(page, page.locator('#focus .focus-warm-next .pt-warm-input'), String(warm2 - 5));
   const warm2Down = Number(await page.locator('#focus .focus-warm-next .pt-warm-input').inputValue());
   check(warm2Down < warm2, `다음 워밍업 무게 −가 안 됩니다: ${warm2} → ${warm2Down}`);
   check((await savedWarm())[1] === warm2Down, '다음 워밍업 무게가 오늘 것에 안 적혔습니다');
@@ -58,26 +59,26 @@ export default async function ({ page, url, shot }) {
   check((await savedWarm())[1] === warm2Typed, '친 워밍업 무게가 오늘 것에 안 적혔습니다: ' + JSON.stringify(await savedWarm()));
   await shot('0-warm-weight');
   // 워밍업 빼기 — 남은 워밍업을 빼고 바로 1세트 준비로. 한 워밍업은 남는다
-  await page.locator('#focus .pt-warm-drop').click();
+  await ptMenu(page, '워밍업 빼기');
   check(await runUntil(page, 'count', { maxMs: 5000 }) === 'count', '워밍업 빼기 뒤에 1세트로 안 갑니다');
   check((await page.locator('#focus .focus-what').textContent()).startsWith('1세트'), '워밍업 빼기 뒤가 1세트가 아닙니다');
   const warmCount = Object.values((await page.evaluate(() => JSON.parse(localStorage.getItem('volume-coach.proto.state') || '{}').settings.todayExtras.warmups || {})))[0];
   check(warmCount < 0, '워밍업 빼기가 오늘 것에 안 적혔습니다: ' + warmCount);
   // 준비 중에는 바꿀 수 있다
-  check(await page.locator('#focus .pt-weight-step').count() === 2, '준비 중에 무게 − / + 가 없습니다');
+  check(await page.locator('#focus .pt-weight-input').count() === 1, '준비 중에 무게 칸이 없습니다');
   for (let i = 0; i < 120 && await reps(page) < 1; i += 1) await page.clock.runFor(500);
   // 세는 중에는 보기만
-  check(await page.locator('#focus .pt-weight-step').count() === 0, '세는 중에 무게를 바꿀 수 있습니다');
+  check(await page.locator('#focus .pt-weight-input').count() === 0, '세는 중에 무게를 바꿀 수 있습니다');
   check(/kg/.test(await page.locator('#focus .pt-weight-text').textContent()), '세는 중에 무게가 안 보입니다');
-  await page.locator('#focus .focus-btn', { hasText: '여기까지' }).click();
+  await ptGo(page, '세트 완료');
   await runUntil(page, 'rest');
   await page.clock.runFor(500);
 
-  // 쉬는 동안 + 한 번 — 다음 세트 무게가 한 칸 오른다
+  // 쉬는 동안 다음 세트 무게를 숫자로 — 한 칸 올린다
   const input = page.locator('#focus .pt-weight-input');
   const shownKg = async () => Number(await input.inputValue());
   const before = await shownKg();
-  await page.locator('#focus .pt-weight-step', { hasText: '+' }).click();
+  await typeInto(page, input, String(before + 2.5));
   const up = await shownKg();
   check(up > before, `+를 눌렀는데 무게가 그대로입니다: ${before} → ${up}`);
   // 숫자를 누르면 바로 친다 — 숫자 자판(inputmode=decimal), 지금 값이 골라져 있어 치면 바뀐다
@@ -98,7 +99,7 @@ export default async function ({ page, url, shot }) {
   await shot('1-rest-weight');
 
   // 목록에도 그 무게
-  await page.locator('#focus .focus-more').click();
+  await page.locator('#focus .focus-back').click();
   const shown = await page.evaluate((w) => {
     const screen = document.getElementById('screen');
     return screen.textContent.includes(w + 'kg') || [...screen.querySelectorAll('input')].some((input) => Number(input.value) === w);
@@ -108,12 +109,12 @@ export default async function ({ page, url, shot }) {
 
   // 다음 세트를 그 무게로 하고 적는다 — 코치도 그 무게를 말한다
   const from = await page.evaluate(() => window.__said.length);
-  await page.locator('#focus .focus-btn', { hasText: '바로 시작' }).click();
+  await ptGo(page, '다음 세트 시작');
   await runUntil(page, 'count');
   for (let i = 0; i < 120 && await reps(page) < 1; i += 1) await page.clock.runFor(500);
   const said = (await page.evaluate((n) => window.__said.slice(n), from)).join(' ');
   check(said.includes(String(want).replace('.5', '점') ) || said.includes(want + '킬로'), '코치가 바꾼 무게를 말하지 않았습니다: ' + said.slice(0, 200));
-  await page.locator('#focus .focus-btn', { hasText: '여기까지' }).click();
+  await ptGo(page, '세트 완료');
   await page.clock.runFor(500);
   const sets = await logged(page);
   check(sets.length === 2 && sets[1].weightKg === want, '다음 세트가 바꾼 무게로 안 적혔습니다: ' + JSON.stringify(sets));

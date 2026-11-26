@@ -1,7 +1,7 @@
 // PT 화면에서 뒤로가기 — 막 시작했으면 없던 일로, 한참 했으면 멈춰 두고 목록 맨 위로.
 //   전에는 시작하자마자 뒤로가기를 누르면 목록이 중간쯤(운동 화면에서 내려 둔 자리)에서 뜨고,
 //   버튼은 "운동 시작"인데 시계는 계속 돌았다. 다시 누르면 0:17부터 몸 풀기 중간으로 들어갔다.
-import { begin, check, choosePt, focusPhase, onboard, runUntil, todayDetail } from './lib.mjs';
+import { begin, check, choosePt, focusPhase, onboard, runUntil, todayDetail, skipPrep, focusText } from './lib.mjs';
 
 const back = async (page) => {
   await page.goBack({ waitUntil: 'commit' }).catch(() => null);
@@ -74,10 +74,10 @@ export default async function ({ page, url, shot }) {
   await begin(page);
   await runUntil(page, 'prep');
   await page.clock.runFor(8000);
-  check((await page.locator('#focus').textContent()).includes('몸 풀기 ' + status.split(' ')[0].replace('/', ' / ')), '다시 켠 뒤 멈춘 동작부터 잇지 않습니다: ' + (await page.locator('#focus .focus-switch-time, #focus .focus-of').first().textContent()));
+  check((await page.locator('#focus').textContent()).includes('몸 풀기 ' + status.split(' ')[0].replace('/', ' / ')), '다시 켠 뒤 멈춘 동작부터 잇지 않습니다: ' + await focusText(page, '.focus-pos'));
 
   // 4) 몸 풀기를 끝내면(건너뛰어도) 목록에 "시작 전"이 아니다
-  await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
+  await skipPrep(page);
   await runUntil(page, ['warm', 'count']);
   await back(page);
   const ended = (await page.locator('.warm-sheet .warm-status').textContent()).trim();

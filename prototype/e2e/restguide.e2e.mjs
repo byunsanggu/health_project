@@ -1,6 +1,6 @@
 // PT — 쉬는 동안 다음 운동을 바로 보여 주고(동작이 돈다) 잡는 법 · 동작 · 흔한 실수를 말해 준다.
 //   종목이 바뀌는 휴식이면 "다음 종목, ○○!" 뒤에 이어서, 같은 종목 세트 사이에도 동작은 화면에.
-import { begin, check, choosePt, onboard, runUntil } from './lib.mjs';
+import { begin, check, choosePt, onboard, runUntil, skipPrep, skipWarm, ptGo, ptDetail, focusPhase } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -15,19 +15,17 @@ export default async function ({ page, url, shot }) {
   await begin(page);
   await runUntil(page, 'prep');
   // 몸 풀기도 동작이 화면에 돈다
-  await page.locator('#focus .focus-btn', { hasText: '지금 시작' }).click().catch(() => {});
+  if (await page.locator('#focus .focus-go', { hasText: '지금 시작' }).count()) await ptGo(page, '지금 시작');
   await page.clock.runFor(300);
   check(await page.locator('#focus .stretch-motion canvas').count() === 1, '몸 풀기 동작이 안 보입니다');
   await shot('0-prep');
-  await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
+  await skipPrep(page);
   await runUntil(page, ['warm', 'count']);
   // 워밍업 · 세트 하는 동안에도 그 운동 동작이 개수 위에(같은 캔버스를 이어 쓴다)
   check(await page.locator('#focus .set-motion canvas').count() === 1, '운동 중 동작이 안 보입니다');
-  check(await page.locator('#focus .focus-ring').count() === 1, '개수 원이 없습니다');
+  check(await page.locator('#focus .focus-hero .focus-badge #focus-num').count() === 1, '그림 위 개수 배지가 없습니다');
   await shot('0-set');
-  if (await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).count()) {
-    await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
-  }
+  if (await focusPhase(page) === 'warm') await skipWarm(page);
   // 그날 첫 종목 — 앞에 쉬는 시간이 없으니 첫 세트 앞(또는 첫 워밍업 앞)에서 하는 법을 말했다.
   // 처음 하는 종목이면 세팅 순서가 그 자리를 대신한다(둘을 붙이면 30초 넘는 강의가 된다). "쉬시는 동안"이라고는 하지 않는다.
   const said0 = await page.evaluate(() => window.__said.join(' | '));
@@ -37,8 +35,11 @@ export default async function ({ page, url, shot }) {
   // 같은 종목 세트 사이 휴식 — 동작과 세 줄이 화면에
   await runUntil(page, 'rest', { maxMs: 180000 });
   await page.clock.runFor(300);
+  check(await page.locator('#focus .focus-hero .live-motion').count() === 1, '쉬는 동안 동작이 안 보입니다');
+  // 세 줄(준비 · 동작 · 주의)과 사용법 보기는 자세히 안에 — 말로는 늘 한다
+  await ptDetail(page);
   check(await page.locator('#focus .rest-guide').count() === 1, '쉬는 동안 운동 설명 칸이 없습니다');
-  check(await page.locator('#focus .rest-guide .live-motion').count() === 1, '쉬는 동안 동작이 안 보입니다');
+  check(await page.locator('#focus .rest-guide .focus-demo').count() === 1, '사용법 보기 단추가 없습니다');
   const lines = await page.locator('#focus .rest-guide-lines li b').allTextContents();
   check(lines.join(',') === '준비,동작,주의', '세 줄이 아닙니다: ' + lines.join(','));
   await shot('1-rest');

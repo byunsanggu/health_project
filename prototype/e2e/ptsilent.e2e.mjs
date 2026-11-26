@@ -1,6 +1,6 @@
 // 코치 목소리를 못 받는 폰(지하 · 첫날 · 데이터 꺼짐) — PT 화면이 소리가 안 난다고 말하고, 코치가 한 말을 자막으로 보여 준다.
 //   예전에는 아무 말 없이 숫자만 보였다 — 세팅 순서도, 30초 더 쉬는 법도 사라졌다.
-import { begin, check, choosePt, onboard, runUntil } from './lib.mjs';
+import { begin, check, choosePt, onboard, runUntil, skipPrep, skipWarm } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.route('**/voice/**', (route) => route.abort());
@@ -19,9 +19,9 @@ export default async function ({ page, url, shot }) {
   await shot('1-silent-prep');
 
   // 세는 동안(첫 개수부터)에는 자막을 숨기고 숫자를 크게
-  await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
+  await skipPrep(page);
   if (await runUntil(page, ['warm', 'count']) === 'warm') {
-    await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
+    await skipWarm(page);
     await runUntil(page, 'count');
   }
   check(await page.locator('#focus-say').count() === 1, '준비 중에 자막이 없습니다');

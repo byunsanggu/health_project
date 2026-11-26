@@ -2,7 +2,7 @@
 //   예전에는 "오늘 PT 끝입니다" 뒤에도 운동이 열려 있어 폰을 넣고 나가면 10분 뒤 5:01이 15:01이 됐다.
 //   스트레칭 카드 밑에 마지막 세트 뒤 휴식 막대가 같이 뜨지 않고, 스트레칭 초는 말한 초를 넘지 않는다.
 //   작별 인사(오늘 정리)는 스트레칭이 끝날 때 한 번만.
-import { adjustToday, begin, check, choosePt, focusPhase, onboard, runUntil } from './lib.mjs';
+import { adjustToday, begin, check, choosePt, focusPhase, onboard, runUntil, skipPrep, skipWarm, ptGo } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -17,12 +17,12 @@ export default async function ({ page, url, shot }) {
   for (let guard = 0; guard < 80; guard += 1) {
     const phase = await runUntil(page, ['prep', 'warm', 'count', 'rest', 'cool'], { maxMs: 400000 });
     if (phase === 'cool') break;
-    if (phase === 'prep') await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
-    else if (phase === 'warm') await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
-    else if (phase === 'rest') await page.locator('#focus .focus-btn', { hasText: '바로 시작' }).click();
+    if (phase === 'prep') await skipPrep(page);
+    else if (phase === 'warm') await skipWarm(page);
+    else if (phase === 'rest') await ptGo(page, '시작');
     else {
       for (let i = 0; i < 120 && !/^\d+$/.test(await page.locator('#focus-num').textContent().catch(() => '')); i += 1) await page.clock.runFor(500);
-      await page.locator('#focus .focus-btn', { hasText: '여기까지' }).click();
+      await ptGo(page, '세트 완료');
     }
   }
   check(await focusPhase(page) === 'cool', '스트레칭까지 못 갔습니다');

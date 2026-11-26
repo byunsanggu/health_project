@@ -3,7 +3,7 @@
 //   · 앞에 적은 세트를 골라 무게 · 개수 고치기
 //   · 남은 세트의 목표 개수 − / +
 //   목록(혼자 화면)과 같은 함수를 쓰므로 목록에도 그대로 보이고, 다시 켜도 남는다. 작은 폰에도 들어간다.
-import { begin, check, choosePt, focusPhase, onboard, runUntil } from './lib.mjs';
+import { begin, check, choosePt, focusPhase, onboard, runUntil, skipPrep, skipWarm, ptGo, ptPause, ptDetail, focusText } from './lib.mjs';
 
 const reps = async (page) => {
   const text = await page.locator('#focus-num').textContent().catch(() => '');
@@ -32,15 +32,15 @@ export default async function ({ page, url, shot }) {
   await choosePt(page);
   await begin(page);
   await runUntil(page, 'prep');
-  await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
+  await skipPrep(page);
   if (await runUntil(page, ['warm', 'count']) === 'warm') {
-    await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
+    await skipWarm(page);
     await runUntil(page, 'count');
   }
-  // 준비 중에도 "세트 고치기"가 있다(접혀 있다)
-  check(await page.locator('#focus .focus-edits .pt-sets-open').count() === 1, '준비 중에 "세트 고치기"가 없습니다');
-  // 준비 중에 열어서 + 세트 · − 세트 — 준비 숫자는 그대로 보인다
-  await page.locator('#focus .pt-sets-open').click();
+  // 준비 중에도 ⋯에 "세트 고치기"가 있다 — 열어서 + 세트 · − 세트, 준비 숫자는 그대로 보인다
+  await page.locator('#focus .focus-menu').click();
+  check(await page.locator('dialog .menu-row:not([disabled])', { hasText: '세트 고치기' }).count() === 1, '준비 중에 "세트 고치기"가 없습니다');
+  await page.locator('dialog .menu-row', { hasText: '세트 고치기' }).click();
   check(await chips(page).count() === 3, '준비 중 세트 고치기에 세트가 3개가 아닙니다');
   check(await page.locator('#focus #focus-num').count() === 1, '세트 고치기를 열었더니 준비 숫자가 사라졌습니다');
   await page.locator('#focus .pt-sets-btn.plus').click();
@@ -51,9 +51,11 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('#focus .pt-sets').count() === 0, '준비 중 확인을 눌렀는데 안 닫힙니다');
   for (let i = 0; i < 120 && await reps(page) < 1; i += 1) await page.clock.runFor(500);
   // 세는 중에는 없다
-  check(await page.locator('#focus .pt-sets-open').count() === 0, '세는 중에 "세트 고치기"가 보입니다');
+  await page.locator('#focus .focus-menu').click();
+  check(await page.locator('dialog .menu-row[disabled]', { hasText: '세트 고치기' }).count() === 1, '세는 중에 "세트 고치기"를 누를 수 있습니다');
+  await page.locator('dialog .modal-close').click();
   // 세는 중에 일시정지 — 같은 화면(종목 · 몇 세트 · 무게), 센 개수에서 멈추고 "▶ 계속"
-  await page.locator('#focus .focus-btn', { hasText: '일시정지' }).click();
+  await ptPause(page);
   check(await focusPhase(page) === 'paused', '세는 중에 멈추지 않았습니다');
   const counted = await page.locator('#focus #focus-num').textContent();
   check(/^\d+$/.test(counted), '멈췄더니 센 개수가 안 보입니다: ' + counted);
@@ -67,7 +69,7 @@ export default async function ({ page, url, shot }) {
   await page.locator('#focus .pt-resume').click();
   check(await focusPhase(page) === 'count', '계속 뒤에 세기로 안 돌아갔습니다: ' + await focusPhase(page));
   await page.clock.runFor(6000);
-  await page.locator('#focus .focus-btn', { hasText: '여기까지' }).click();
+  await ptGo(page, '세트 완료');
   await runUntil(page, 'rest');
   await page.clock.runFor(500);
   const startSets = await chipsAfterOpen(page);
@@ -84,7 +86,7 @@ export default async function ({ page, url, shot }) {
   await page.locator('#focus .pt-sets-btn.minus').click();
   check(await chips(page).count() === 2, '− 세트 두 번 뒤 세트가 2개가 아닙니다: ' + await chips(page).count());
   check(await extraSets() === -1, '− 세트가 오늘 것에 안 적혔습니다: ' + await extraSets());
-  check((await page.locator('#focus .focus-rest-side .focus-what').textContent()).includes('2세트'), '쉬고 나서 할 세트가 2세트가 아닙니다');
+  check((await page.locator('#focus .focus-what').textContent()).startsWith('2세트 / 2세트'), '쉬고 나서 할 세트가 2세트가 아닙니다: ' + await page.locator('#focus .focus-what').textContent());
 
   // 쉬는 중에는 다음 세트도 뺀다 — 이 종목은 여기까지, 쉬고 나서는 다음 종목
   await page.locator('#focus .pt-sets-btn.minus').click();
@@ -92,13 +94,13 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('#focus .pt-sets-btn.minus').isDisabled(), '끝낸 세트만 남았는데 − 세트를 누를 수 있습니다');
   await page.clock.runFor(1500);
   check(/여기까지|마감/.test(await said(page, from)), '"이번 종목은 여기까지"를 말하지 않았습니다: ' + await said(page, from));
-  check((await page.locator('#focus .focus-pos').textContent()).includes('다음 종목'), '세트를 다 뺐는데 다음 종목으로 안 갑니다');
+  check((await focusText(page, '.focus-pos')).includes('다음 운동'), '세트를 다 뺐는데 다음 종목으로 안 갑니다');
 
   // 마음이 바뀌었다 — + 세트를 누르면 다음 종목 대신 이 종목 한 세트 더
   const from2 = await page.evaluate(() => window.__said.length);
   await page.locator('#focus .pt-sets-btn.plus').click();
   await page.clock.runFor(1500);
-  check(!(await page.locator('#focus .focus-pos').textContent()).includes('다음 종목'), '+ 세트를 눌렀는데 다음 종목으로 갑니다');
+  check(!(await focusText(page, '.focus-pos')).includes('다음 운동'), '+ 세트를 눌렀는데 다음 종목으로 갑니다');
   check(/세트 (하나 )?더|추가/.test(await said(page, from2)), '한 세트 더 한다고 말하지 않았습니다: ' + await said(page, from2));
   check(await chips(page).count() === 2, '+ 세트 뒤 세트가 2개가 아닙니다');
 
@@ -150,7 +152,7 @@ export default async function ({ page, url, shot }) {
     const bad = await page.evaluate(() => {
       const vh = window.innerHeight;
       const out = [];
-      for (const sel of ['.pt-sets', '.focus-actions', '#focus-rest-time']) {
+      for (const sel of ['.pt-sets', '.focus-dock', '#focus-rest-time']) {
         const node = document.querySelector('#focus ' + sel);
         const box = node && node.getBoundingClientRect();
         if (!box || box.height === 0) out.push(sel + ' 없음');
@@ -167,7 +169,7 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('#focus .pt-sets').count() === 0, '확인을 눌렀는데 고치는 칸이 안 닫힙니다');
 
   // 목록에도 그대로 — 2세트, 1세트 기록, 2세트 개수
-  await page.locator('#focus .focus-more').click();
+  await page.locator('#focus .focus-back').click();
   const list = async () => page.evaluate(() => [...document.querySelectorAll('#screen .set-strip .set-box')].map((box) => box.textContent));
   const rows = await list();
   check(rows.length === 2, '목록의 세트가 2개가 아닙니다: ' + JSON.stringify(rows));
@@ -185,15 +187,17 @@ export default async function ({ page, url, shot }) {
   check(back.todaySets[0].weightKg === after.weightKg && back.todaySets[0].reps === after.reps, '다시 켠 뒤 1세트 기록이 달라졌습니다');
   // PT가 이어서 2세트로 — 2세트 중 2세트, 고친 목표 개수
   const what = await page.locator('#focus .focus-what').textContent();
-  check(what.startsWith('2세트 / 2') && what.includes('~12회'), '다시 켠 뒤 2세트 계획이 달라졌습니다: ' + what);
+  check(what.startsWith('2세트 / 2세트'), '다시 켠 뒤 2세트 계획이 달라졌습니다: ' + what);
+  check(Number(await page.locator('#focus .focus-in-reps').inputValue()) === 12, '다시 켠 뒤 2세트 목표 개수가 달라졌습니다');
   check(Number(await page.locator('#focus .pt-weight-input').inputValue()) === nextKg, '다시 켠 뒤 2세트 무게가 달라졌습니다');
-  await page.locator('#focus .focus-more').click();
+  await page.locator('#focus .focus-back').click();
   check((await list()).length === 2, '다시 켠 뒤 목록의 세트가 2개가 아닙니다: ' + JSON.stringify(await list()));
 }
 
 /** 쉬는 화면의 "세트 고치기"를 열고 세트 번호 개수를 센다. */
 async function chipsAfterOpen(page) {
-  await page.locator('#focus .focus-logged .focus-fix', { hasText: '세트 고치기' }).click();
+  await ptDetail(page); // 방금 적은 세트 · 고치기는 자세히 안에
+  await page.locator('#focus .focus-logged .focus-fix', { hasText: '고치기' }).click();
   check(await page.locator('#focus .pt-sets').count() === 1, '"세트 고치기"를 눌렀는데 고치는 칸이 안 열립니다');
   return page.locator('#focus .pt-sets .pt-set-chip').count();
 }

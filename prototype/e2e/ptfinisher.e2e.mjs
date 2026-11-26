@@ -1,6 +1,6 @@
 // PT가 이끄는 날의 마무리 운동 — 코치가 말없이 서 있지 않는다.
 //   화면이 뜨면 무엇을 몇 분 하는지 소개하고, 시계를 누르면 시작 · 절반 · 1분 전 · 10초 전 · 끝을 말한다.
-import { adjustToday, agreeConsent, begin, check, choosePt, focusPhase, pickMe } from './lib.mjs';
+import { adjustToday, agreeConsent, begin, check, choosePt, focusPhase, pickMe, skipPrep, skipWarm, ptGo } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
@@ -21,11 +21,11 @@ export default async function ({ page, url, shot }) {
   const onFinisher = () => page.evaluate(() => document.querySelector('.session-head h2')?.textContent === '마무리 운동');
   for (let guard = 0; guard < 400 && !(await onFinisher()); guard += 1) {
     const phase = await focusPhase(page);
-    if (phase === 'prep') await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
-    else if (phase === 'warm') await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
-    else if (phase === 'rest') await page.locator('#focus .focus-btn', { hasText: '바로 시작' }).click();
+    if (phase === 'prep') await skipPrep(page);
+    else if (phase === 'warm') await skipWarm(page);
+    else if (phase === 'rest') await ptGo(page, '시작');
     else if (phase === 'count' && /^\d+$/.test(await page.locator('#focus-num').textContent().catch(() => ''))) {
-      await page.locator('#focus .focus-btn', { hasText: '여기까지' }).click();
+      await ptGo(page, '세트 완료');
     } else await page.clock.runFor(1000);
   }
   check(await onFinisher(), 'PT가 마무리 운동 화면까지 못 갔습니다');

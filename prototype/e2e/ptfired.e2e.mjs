@@ -1,6 +1,6 @@
 // 빡센 코치(반말)의 첫날 — 시작할 때 "무리 안 한다"고 했으면, 세트 앞에서도 세트 중에도
 //   "오늘이 마지막인 것처럼 · 밀어, 끝까지!"를 말하지 않는다
-import { begin, check, choosePt, onboard, runUntil, tab } from './lib.mjs';
+import { begin, check, choosePt, onboard, runUntil, tab, skipPrep, skipWarm } from './lib.mjs';
 
 // 자세 신호("끝까지 내려와서")나 "횟수는 끝까지 채운다"는 끝까지 밀자는 말이 아니다 — 각오 · 재촉만 본다
 const ALL_OUT = /마지막인 것처럼|갈아 넣|끝까지 간다|밀어, 끝까지|끝까지 버텨|더 할 수 있어|다 쏟고|포기 안 해|버티는 놈/;
@@ -17,9 +17,9 @@ export default async function ({ page, url, shot }) {
 
   await begin(page);
   await runUntil(page, 'prep');
-  await page.locator('#focus .focus-btn', { hasText: '몸 풀기 건너뛰기' }).click();
+  await skipPrep(page);
   if (await runUntil(page, ['warm', 'count']) === 'warm') {
-    await page.locator('#focus .focus-btn', { hasText: '워밍업 건너뛰기' }).click();
+    await skipWarm(page);
     await runUntil(page, 'count');
   }
   // 첫 세트를 끝까지 센다 — 끝나기 두 개 전의 재촉까지 들어야 한다
