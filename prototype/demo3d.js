@@ -239,12 +239,68 @@
     return { y: y, z: z, x: cross3(y, z), len: len3(sub3(bone.b, bone.a)) };
   }
 
+  /* ── 자란 몸 (시즌의 내 선수) ─────────────────── */
+
+  /*
+   * 시즌(season.ts의 avatarGrowth)이 주는 0..1 값을 그림 배율로. 값이 없으면(시연 · 썸네일) 이 길을 아예
+   * 타지 않는다 — 시연 그림은 한 화소도 바뀌지 않는다. 다 자라도(1) 팔 굵기 1.3배 안쪽으로, 만화처럼 부풀리지 않는다.
+   */
+  function growthScales(build) {
+    var g = function (key) { return clamp01(Number(build && build[key]) || 0); };
+    var shoulders = g('shoulders'), arms = g('arms'), chest = g('chest'), back = g('back'), legs = g('legs'), waist = g('waist');
+    return {
+      shift: 0.026 * shoulders + 0.01 * back,
+      upperArm: 1 + 0.3 * arms,
+      forearm: 1 + 0.16 * arms,
+      shoulderBall: 1 + 0.32 * shoulders,
+      elbow: 1 + 0.12 * arms,
+      chestW: 1 + 0.07 * chest + 0.09 * back,
+      chestD: 1 + 0.1 * chest,
+      lumbarW: 1 - 0.1 * waist + 0.03 * back,
+      lumbarD: 1 - 0.09 * waist,
+      pelvisW: 1 - 0.04 * waist + 0.03 * legs,
+      thigh: 1 + 0.2 * legs,
+      shin: 1 + 0.12 * legs,
+      neck: 1 + 0.18 * back,
+      muscle: {
+        chest: 1 + 0.4 * chest, back: 1 + 0.42 * back, traps: 1 + 0.4 * back, lowBack: 1 + 0.2 * back,
+        frontDelt: 1 + 0.42 * shoulders, sideDelt: 1 + 0.5 * shoulders, rearDelt: 1 + 0.42 * shoulders,
+        biceps: 1 + 0.42 * arms, triceps: 1 + 0.38 * arms, forearms: 1 + 0.2 * arms,
+        quads: 1 + 0.32 * legs, hamstrings: 1 + 0.3 * legs, calves: 1 + 0.26 * legs, glutes: 1 + 0.12 * legs,
+        abs: 1 + 0.18 * waist,
+      },
+      // 등 덩어리는 옆으로 퍼진다(역삼각형)
+      backSide: 0.022 * back,
+    };
+  }
+
+  /** 어깨를 넓힌 뼈 — 팔 세 마디를 가슴 틀 바깥쪽으로 옮긴다. 다른 뼈는 그대로 */
+  function widenShoulders(bones, shift) {
+    if (!shift) return bones;
+    var chest = boneBasis(bones.chest);
+    var out = {};
+    Object.keys(bones).forEach(function (name) { out[name] = bones[name]; });
+    ['L', 'R'].forEach(function (s) {
+      var d = mul3(chest.x, s === 'L' ? shift : -shift);
+      ['upperArm', 'forearm', 'hand'].forEach(function (part) {
+        var bone = bones[part + s];
+        out[part + s] = { a: add3(bone.a, d), b: add3(bone.b, d), f: bone.f };
+      });
+    });
+    return out;
+  }
+
+  // 무대 꾸밈 색 — 은은하게. 반바지는 무대 칸마다 한 단계씩
+  var OUTFITS = [null, 0x1f6f6c, 0x3a3f99, 0x76284a, 0x1b2236];
+  var LOOKS = { band: 0xe9ecf2, belt: 0x4a3326, gold: 0xc8a24c, buckle: 0xb4bbc5, plate: 0x2e5cb8, plateRim: 0xe6e8ee };
+
   /* ── 몸 ───────────────────────────────────────── */
 
-  function buildBody(scene, colors) {
+  function buildBody(scene, colors, looks) {
+    var outfit = looks && OUTFITS[Math.max(0, Math.min(OUTFITS.length - 1, looks.outfit || 0))];
     var mats = {
       skin: material(colors.skin, { roughness: 0.62 }),
-      shorts: material(colors.shorts, { roughness: 0.85 }),
+      shorts: material(outfit || colors.shorts, { roughness: 0.85 }),
       shoe: material(colors.shoe, { roughness: 0.6 }),
       sole: material(colors.sole, { roughness: 0.8 }),
       hair: material(colors.hair, { roughness: 0.9 }),
@@ -315,7 +371,28 @@
       });
     });
 
-    return { parts: parts, muscles: muscles, mats: mats, unit: unit };
+    // 무대 꾸밈 — 손목 밴드 · 벨트 (꾸밈을 받았을 때만 만든다)
+    var extras = {};
+    if (looks) {
+      var trim = Boolean(looks.trim);
+      var extra = function (name, geometry, hex, rough) {
+        var mesh = new THREE.Mesh(geometry, material(hex, { roughness: rough }));
+        mesh.matrixAutoUpdate = false;
+        mesh.castShadow = true;
+        scene.add(mesh);
+        extras[name] = mesh;
+      };
+      if (looks.wristbands) {
+        extra('bandL', unit.cylinder, trim ? LOOKS.gold : LOOKS.band, 0.8);
+        extra('bandR', unit.cylinder, trim ? LOOKS.gold : LOOKS.band, 0.8);
+      }
+      if (looks.belt) {
+        extra('belt', unit.cylinder, LOOKS.belt, 0.7);
+        extra('buckle', unit.hand, trim ? LOOKS.gold : LOOKS.buckle, 0.35);
+      }
+    }
+
+    return { parts: parts, muscles: muscles, mats: mats, unit: unit, extras: extras };
   }
 
   /** 뼈 하나에 회전체를 씌운다. width/depth는 단면 배율, ahead는 앞으로 비켜 놓기(m). */
@@ -329,16 +406,25 @@
     place(mesh, p, [1, 0, 0], [0, 1, 0], r, r, r);
   }
 
-  function poseBody(body, bones) {
+  function poseBody(body, bones, build) {
     var parts = body.parts;
+    // 자란 몸 — 배율 표. 없으면 전부 1(시연 그림 그대로)
+    var k = build ? growthScales(build) : null;
+    if (k) bones = widenShoulders(bones, k.shift);
     var pelvis = boneBasis(bones.pelvis);
     var pelvisCenter = add3(add3(bones.pelvis.a, mul3(pelvis.y, pelvis.len * 0.45)), mul3(pelvis.z, -0.012));
-    place(parts.pelvis, pelvisCenter, pelvis.x, pelvis.y, 0.168, 0.118, 0.118);
+    place(parts.pelvis, pelvisCenter, pelvis.x, pelvis.y, k ? 0.168 * k.pelvisW : 0.168, 0.118, 0.118);
     // 허리를 가슴 속으로 2cm 더 — 두 회전체가 맞닿는 곳에 고리 모양 이음매가 보이지 않게
-    wrap(parts.lumbar, bones.lumbar, 1, 0.66, 0.036, 0.02);
-    wrap(parts.chest, bones.chest, 1, 0.62, 0.042);
+    if (k) {
+      wrap(parts.lumbar, bones.lumbar, k.lumbarW, 0.66 * k.lumbarD, 0.036, 0.02);
+      wrap(parts.chest, bones.chest, k.chestW, 0.62 * k.chestD, 0.042);
+    } else {
+      wrap(parts.lumbar, bones.lumbar, 1, 0.66, 0.036, 0.02);
+      wrap(parts.chest, bones.chest, 1, 0.62, 0.042);
+    }
     var neck = boneBasis(bones.neck);
-    place(parts.neck, add3(bones.neck.a, mul3(neck.y, neck.len * 0.5)), neck.x, neck.y, 0.05, neck.len + 0.03, 0.052);
+    var neckW = k ? k.neck : 1;
+    place(parts.neck, add3(bones.neck.a, mul3(neck.y, neck.len * 0.5)), neck.x, neck.y, 0.05 * neckW, neck.len + 0.03, 0.052 * neckW);
     var head = boneBasis(bones.head);
     var headCenter = add3(add3(bones.head.a, mul3(head.y, 0.088)), mul3(head.z, 0.012));
     place(parts.head, headCenter, head.x, head.y, 0.088, 0.112, 0.1);
@@ -349,13 +435,34 @@
     place(parts.nose, add3(add3(headCenter, mul3(head.z, 0.098)), mul3(head.y, -0.012)), head.x, head.y, 0.014, 0.022, 0.016);
     // 반바지 허리 — 골반 위 띠
     var lumbar = boneBasis(bones.lumbar);
-    place(parts.waist, add3(add3(bones.lumbar.a, mul3(lumbar.y, 0.03)), mul3(lumbar.z, 0.03)), lumbar.x, lumbar.y, 0.158, 0.06, 0.112);
+    var waistW = k ? k.lumbarW : 1;
+    place(parts.waist, add3(add3(bones.lumbar.a, mul3(lumbar.y, 0.03)), mul3(lumbar.z, 0.03)), lumbar.x, lumbar.y, 0.158 * waistW, 0.06, 0.112 * waistW);
+    var extras = body.extras || {};
+    if (extras.belt) {
+      // 벨트 — 반바지 허리 바로 위, 허리를 한 바퀴
+      var beltAt = add3(add3(bones.lumbar.a, mul3(lumbar.y, 0.075)), mul3(lumbar.z, 0.028));
+      place(extras.belt, beltAt, lumbar.x, lumbar.y, 0.15 * waistW, 0.07, 0.108 * waistW);
+      place(extras.buckle, add3(beltAt, mul3(lumbar.z, 0.105 * waistW)), lumbar.x, lumbar.y, 0.05, 0.045, 0.012);
+    }
 
     ['L', 'R'].forEach(function (s) {
-      wrap(parts['upperArm' + s], bones['upperArm' + s], 1, 1, 0);
-      wrap(parts['forearm' + s], bones['forearm' + s], 1, 0.92, 0);
-      ball(parts['shoulder' + s], bones['upperArm' + s].a, 0.052);
-      ball(parts['elbow' + s], bones['forearm' + s].a, 0.037);
+      if (k) {
+        wrap(parts['upperArm' + s], bones['upperArm' + s], k.upperArm, k.upperArm, 0);
+        wrap(parts['forearm' + s], bones['forearm' + s], k.forearm, 0.92 * k.forearm, 0);
+        ball(parts['shoulder' + s], bones['upperArm' + s].a, 0.052 * k.shoulderBall);
+        ball(parts['elbow' + s], bones['forearm' + s].a, 0.037 * k.elbow);
+      } else {
+        wrap(parts['upperArm' + s], bones['upperArm' + s], 1, 1, 0);
+        wrap(parts['forearm' + s], bones['forearm' + s], 1, 0.92, 0);
+        ball(parts['shoulder' + s], bones['upperArm' + s].a, 0.052);
+        ball(parts['elbow' + s], bones['forearm' + s].a, 0.037);
+      }
+      if (extras['band' + s]) {
+        // 손목 밴드 — 아래팔 끝(손목 바로 위)에 감는다
+        var fore = boneBasis(bones['forearm' + s]);
+        var bandR = 0.031 * (k ? k.forearm : 1);
+        place(extras['band' + s], add3(bones['forearm' + s].a, mul3(fore.y, fore.len * 0.86)), fore.x, fore.y, bandR, 0.045, bandR * 0.95);
+      }
       // 손 — 손잡이를 쥔 주먹: 손가락 마디 폭(8cm)이 손잡이를 따라 놓이고, 손잡이는 주먹 한가운데를 지난다.
       // 바닥을 짚은 손(손바닥이 아래, 바닥 가까이)은 납작하게 편다
       var handBone = bones['hand' + s];
@@ -363,11 +470,13 @@
       var flat = clamp01((0.16 - handBone.a[1]) / 0.06) * clamp01((-hand.z[1] - 0.6) / 0.3);
       place(parts['hand' + s], add3(handBone.a, mul3(hand.y, 0.055 - 0.004 * flat)), hand.x, hand.y,
         0.08 + 0.006 * flat, 0.092 + 0.014 * flat, 0.05 - 0.02 * flat);
-      wrap(parts['thigh' + s], bones['thigh' + s], 1, 1, 0);
+      var legW = k ? k.thigh : 1;
+      wrap(parts['thigh' + s], bones['thigh' + s], legW, legW, 0);
       // 반바지 — 허벅지 가운데쯤까지(속옷처럼 보이지 않게). 조금 헐렁하게
       var thigh = boneBasis(bones['thigh' + s]);
-      place(parts['short' + s], add3(bones['thigh' + s].a, mul3(thigh.y, -0.04)), thigh.x, thigh.y, 1.17, thigh.len * 0.66, 1.17);
-      wrap(parts['shin' + s], bones['shin' + s], 1, 1, 0);
+      place(parts['short' + s], add3(bones['thigh' + s].a, mul3(thigh.y, -0.04)), thigh.x, thigh.y, 1.17 * legW, thigh.len * 0.66, 1.17 * legW);
+      var shinW = k ? k.shin : 1;
+      wrap(parts['shin' + s], bones['shin' + s], shinW, shinW, 0);
       ball(parts['knee' + s], bones['shin' + s].a, 0.05);
       ball(parts['ankle' + s], bones['shin' + s].b, 0.034);
       // 신발 — 발바닥 뒤꿈치(a) → 발끝(b), f = 발등 쪽
@@ -398,6 +507,18 @@
       var x = turn ? add3(mul3(basis.x, Math.cos(turn)), mul3(basis.z, -Math.sin(turn))) : basis.x;
       // 등 · 승모 · 허리 덩어리는 등판에 납작하게 — 0.88이면 등에 혹이 줄지어 솟아 보인다
       var flat = spec.group === 'back' || spec.group === 'traps' || spec.group === 'lowBack' ? 0.5 : 0.88;
+      if (k) {
+        // 자란 몸 — 덩어리를 키우고, 몸통 · 팔다리가 굵어진 만큼 바깥으로 밀어 묻히지 않게
+        var grow = k.muscle[spec.group] || 1;
+        var limb = spec.bone === 'upperArm' ? k.upperArm : spec.bone === 'forearm' ? k.forearm : spec.bone === 'thigh' ? k.thigh : spec.bone === 'shin' ? k.shin : 1;
+        var sideK = spec.bone === 'chest' ? k.chestW : spec.bone === 'lumbar' ? k.lumbarW : limb;
+        var frontK = spec.bone === 'chest' ? k.chestD : spec.bone === 'lumbar' ? k.lumbarD : limb;
+        p = add3(bone.a, mul3(basis.y, basis.len * spec.u));
+        p = add3(p, mul3(basis.x, outward * (spec.side * sideK + (spec.group === 'back' ? k.backSide : 0))));
+        p = add3(p, mul3(basis.z, spec.front * frontK));
+        place(m.mesh, p, x, basis.y, spec.r[0] * grow, spec.r[1] * (1 + (grow - 1) * 0.4), spec.r[2] * flat * grow);
+        return;
+      }
       place(m.mesh, p, x, basis.y, spec.r[0], spec.r[1], spec.r[2] * flat);
     });
   }
@@ -856,8 +977,14 @@
     floor.receiveShadow = true;
     scene.add(floor);
 
-    var body = buildBody(scene, colors);
+    var build = options.build || null;
+    var looks = options.cosmetics || null;
+    var body = buildBody(scene, colors, looks);
     var kit = buildKit(colors);
+    if (looks && looks.platesColored) {
+      kit.plate.color.copy(colorOf(LOOKS.plate));
+      kit.rim.color.copy(colorOf(LOOKS.plateRim));
+    }
     var sceneGroup = new THREE.Group();
     scene.add(sceneGroup);
     var movingGroup = new THREE.Group();
@@ -979,7 +1106,7 @@
       var visible = resize();
       // 카메라를 먼저 놓는다 — 가는 줄 굵기를 화면 화소에 맞추려면 거리를 알아야 한다
       placeCamera();
-      poseBody(body, frame.solved.bones);
+      poseBody(body, frame.solved.bones, build);
       paintMuscles(body, colors, weights, frame.effort, state.fault);
       drawMoving(movers, kit, state.clip, frame);
       gridTexture.offset.y = state.clip.walk ? ((state.t * state.clip.walk) % GRID_CELL) / GRID_CELL : 0;
@@ -1155,10 +1282,15 @@
 
       var skin = hex(colors.skin);
       var deep = hex(state.fault ? colors.fault : colors.accent);
+      var grown = options.build ? growthScales(options.build) : null;
       var order = ['thighR', 'shinR', 'footR', 'upperArmR', 'forearmR', 'handR', 'pelvis', 'lumbar', 'chest', 'neck', 'thighL', 'shinL', 'footL', 'upperArmL', 'forearmL', 'handL'];
       order.forEach(function (name) {
         var bone = bones[name];
         var thick = name === 'chest' || name === 'lumbar' ? 26 : name === 'pelvis' ? 24 : /thigh/.test(name) ? 14 : /shin|upperArm/.test(name) ? 10 : 8;
+        if (grown) {
+          thick *= name === 'chest' ? grown.chestW * 1.04 : name === 'lumbar' ? grown.lumbarW : /thigh/.test(name) ? grown.thigh : /shin/.test(name) ? grown.shin
+            : /upperArm/.test(name) ? grown.upperArm : /forearm/.test(name) ? grown.forearm : 1;
+        }
         line(bone.a, bone.b, thick * unit / 160, /R$/.test(name) ? hex(colors.muscle) : skin);
         // 평면 그림에도 반바지 — 골반과 허벅지 위쪽 2/3를 바지 색으로(맨살 막대 인형으로 보이지 않게)
         if (name === 'pelvis') line(bone.a, bone.b, (thick + 4) * unit / 160, hex(colors.shorts));
@@ -1215,6 +1347,7 @@
       seek: function (t) { state.t = t; draw(); },
       setClip: function (next, fault) { state.clip = next; state.fault = Boolean(fault); state.t = 0; },
       view: function (name) { state.yaw = name && VIEWS[name] ? VIEWS[name][0] : state.clip.view[0]; },
+      setYaw: function (yaw) { state.yaw = yaw; },
       render: function () { draw(); },
       dispose: function () { state.disposed = true; cancelAnimationFrame(state.frame); },
     };

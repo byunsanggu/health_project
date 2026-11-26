@@ -28,6 +28,7 @@ import { buildHoldCues, holdCountdownWord, holdFeedbackLine } from './hold.ts';
 import { isTimed } from './exercises.ts';
 import { forSpeech } from './coach.ts';
 import { CARDIO } from './cardio.ts';
+import { seasonDayLine } from './season.ts';
 
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 const MOMENTS: MistakeMoment[] = ['flagged', 'heavy', 'first', 'lastSet'];
@@ -222,6 +223,9 @@ export function coachTexts(style: CoachStyle): string[] {
   }
   for (const moment of ['start', 'half', 'oneMinute', 'last10', 'done'] as const) say(finisherCueLine(style, moment));
   for (const zone of FINISHER_ZONES) say(finisherCueLine(style, 'zone', zone));
+
+  // 시즌 대회 당일 — 오른 시즌 · 같은 무대에 다시 서는 시즌
+  for (const outcome of ['promoted', 'again'] as const) say(seasonDayLine(style, outcome));
 
   say(APP_SAYINGS);
   return out;
