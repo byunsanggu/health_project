@@ -15990,6 +15990,22 @@
     return el('span', { class: cls || 'season-fig', 'aria-hidden': 'true' }, canvas ? [canvas] : []);
   }
 
+  /** 사다리 창의 큰 그림 — 창이 닫히면(disposeDemo) 같이 내린다. 오늘 화면의 작은 그림과 따로 돈다 */
+  function seasonSheetFigure(now) {
+    var canvas = el('canvas', { class: 'live-motion', 'aria-label': '내 선수' });
+    var stage = now.career.stage;
+    setTimeout(function () {
+      if (!canvas.isConnected || !window.FitDemo3D) return;
+      var handle = window.FitDemo3D.mount(canvas, E.stageMotionFor('stage-front', now.growth.posture), {
+        dark: prefersDark(), build: now.growth, cosmetics: seasonLooks(stage),
+      });
+      if (handle && handle.setYaw) handle.setYaw(16, 6);
+      if (state.demo && state.demo !== handle) state.demo.dispose();
+      state.demo = handle;
+    }, 0);
+    return el('span', { class: 'season-fig big', 'aria-hidden': 'true' }, [canvas]);
+  }
+
   /** 오늘 화면의 "내 선수" 카드 — 무대 이름 · 걸음 · 다음 걸음까지 · 대회까지 며칠. 누르면 사다리 */
   function seasonCard() {
     var now = seasonNow(true);
@@ -16046,7 +16062,7 @@
     });
     openModal('내 선수', E.TRACK_LABELS_KO[career.track], [
       el('div', { class: 'season-sheet-head' }, [
-        seasonFigure(now, 'season-fig big'),
+        seasonSheetFigure(now),
         el('div', { class: 'season-sheet-now' }, [
           el('p', { class: 'season-stage', text: E.stageLabel(career.track, career.stage, progress.subStep) }),
           el('p', { class: 'hint-line', text: '시즌 ' + career.current.number + ' · ' + weeksDone + '/' + progress.weeks.length + '주째 · ' + daysToShowLine(progress.daysLeft) }),
