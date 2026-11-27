@@ -16829,14 +16829,28 @@
   function seasonSheetFigure(now, cls) {
     var canvas = el('canvas', { class: 'live-motion', 'aria-label': '내 선수' });
     var stage = now.career.stage;
+    var clip = E.stageMotionFor('stage-front', now.growth.posture);
     setTimeout(function () {
       if (!canvas.isConnected || !window.FitDemo3D) return;
-      var handle = window.FitDemo3D.mount(canvas, E.stageMotionFor('stage-front', now.growth.posture), {
+      var handle = window.FitDemo3D.mount(canvas, clip, {
         dark: prefersDark(), build: now.growth, cosmetics: seasonLooks(stage),
       });
       if (handle && handle.setYaw) handle.setYaw(16, 6);
       if (state.demo && state.demo !== handle) state.demo.dispose();
       state.demo = handle;
+      /*
+       * 운동 끝 창의 포즈는 두 번 하고 힘준 자세에서 멈춘다 — 창을 열어 둔 채 폰을 내려놓으면 그림이 계속
+       * 매 프레임 그려졌다. 평면 그림은 멈춘 뒤 내려도 마지막 그림이 남는다(입체는 멈춘 채로 둔다).
+       */
+      if (cls && handle && clip) {
+        setTimeout(function () {
+          if (state.demo !== handle) return;
+          var work = clip.work || [0.5, 0.5];
+          if (handle.pause) handle.pause();
+          if (handle.seek) handle.seek((work[0] + work[1]) / 2);
+          if (handle.three === false) { handle.dispose(); state.demo = null; }
+        }, Math.round((clip.cycle || 4) * 2000));
+      }
     }, 0);
     return el('span', { class: cls || 'season-fig big', 'aria-hidden': 'true' }, [canvas]);
   }
