@@ -13159,10 +13159,10 @@ var RestSound = (function () {
           // 제목을 눌러서 오늘 할 날을 바꾼다. 순서대로만 되면 앱을 무시하게 된다.
           el('button', {
             type: 'button', class: 'day-switch',
-            'aria-label': '오늘 할 날 바꾸기 — 지금은 ' + state.session.name,
+            'aria-label': '오늘 할 날 바꾸기 — 지금은 ' + E.dayPlainName(state.session.name),
             onclick: openDayPicker,
           }, [
-            el('h2', { text: state.session.name }),
+            el('h2', { text: E.dayPlainName(state.session.name) }),
             el('span', { class: 'day-switch-caret', text: '바꾸기' }),
           ]),
         ]),
@@ -14599,21 +14599,14 @@ var RestSound = (function () {
     ]));
   }
 
-  /** "상체 A" → "상체 운동" — 오늘 제목 한 줄에 쓴다. 날 이름(A · B)은 자세히 안 "다른 날 운동으로 바꾸기"에 있다. */
+  /** "상체 A" → "상체 (가슴·등·팔)" — 쉬운 날 이름(긴 것). 알림에서 시작하는 한 장의 제목에 쓴다. */
   function dayTitle(name) {
-    var base = String(name || '').replace(/\s+[A-Z]$/, '').trim() || String(name || '');
-    return /(운동|루틴)$/.test(base) ? base : base + ' 운동';
+    return E.dayPlainName(name);
   }
 
-  /**
-   * "상체 A" → "상체", "푸시" → "미는 날" — 오늘 제목 한 줄("오늘은 하체 · 5개 · 약 50분")에 쓴다.
-   * 쉬운 날 이름(E.dayShortName)에서 순서 표시(① · A)와 끝의 "운동"을 뺀다 — 어느 상체인지는 자세히 안에 있다.
-   */
+  /** "상체 A" → "상체 ①" — 오늘 제목 한 줄("오늘은 상체 ① · 5개 · 약 50분")에 쓴다. 쉬운 날 이름(짧은 것) 그대로. */
   function todayDayName(name) {
-    var raw = String(name || '');
-    var plain = typeof E.dayShortName === 'function' ? E.dayShortName(raw) : raw;
-    var base = String(plain).replace(/\s*[①②③④⑤]$/, '').replace(/\s+[A-Z]$/, '').trim() || raw;
-    return base.replace(/\s*운동$/, '') || base;
+    return E.dayShortName(name);
   }
 
   /**
@@ -14935,11 +14928,11 @@ var RestSound = (function () {
     // 다른 날 운동으로 바꾸기 — 전에는 제목 옆 "바꾸기"였다
     screen.appendChild(el('button', {
       type: 'button', class: 'day-switch day-switch-row',
-      'aria-label': '다른 날 운동으로 바꾸기 — 지금은 ' + state.session.name,
+      'aria-label': '다른 날 운동으로 바꾸기 — 지금은 ' + E.dayPlainName(state.session.name),
       onclick: openDayPicker,
     }, [
       el('span', { class: 'day-switch-text', text: '다른 날 운동으로 바꾸기' }),
-      el('span', { class: 'day-switch-caret', text: '지금 ' + state.session.name + ' ›' }),
+      el('span', { class: 'day-switch-caret', text: '지금 ' + E.dayShortName(state.session.name) + ' ›' }),
     ]));
 
     // 헬스장 주소 등록 안내 — 첫 운동을 한 뒤에, 자세히 안에서만
@@ -32606,7 +32599,8 @@ var RestSound = (function () {
     var lifts = (state.lifts || []).filter(function (lift) { return lift && lift.exercise; });
     var canStart = lifts.length > 0 && !state.started && !state.sessionClosed;
     var minutes = state.session ? sessionHead().estimate.totalMinutes : 0;
-    var day = String((state.session && state.session.name) || '').replace(/\s+[A-Z]$/, '');
+    // 쉬운 날 이름에서 순서 표시(①)를 뺀 것 — "오늘은 상체 운동부터"
+    var day = E.dayShortName(String((state.session && state.session.name) || '')).replace(/\s*[①②③④⑤]$/, '');
     var dayText = !day ? '' : /운동$/.test(day) ? day : day + ' 운동';
     var line = '주 ' + state.answers.daysPerWeek + '회' + (minutes ? ', 한 번에 약 ' + Math.round(minutes / 5) * 5 + '분' : '') + '입니다.' +
       (canStart && dayText ? ' 오늘은 ' + dayText + '부터 시작합니다.' : '');
