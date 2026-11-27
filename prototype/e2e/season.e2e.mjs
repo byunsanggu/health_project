@@ -1,7 +1,8 @@
-// 시즌 · 내 선수 — 오늘 화면의 카드(무대 이름 · 걸음 · 대회까지 며칠), 누르면 사다리 한 장.
+// 시즌 · 내 선수 — 기록 탭의 카드(무대 이름 · 걸음 · 대회까지 며칠), 누르면 사다리 한 장. 운동 끝 창에는 같은 카드가
+//   포즈를 잡고 오늘 오른 점수 한 줄과 함께 뜬다.
 //   시즌 끝(대회 당일 다음 날)을 기록으로 꾸며 다시 열면 대회 당일 화면이 한 번 뜨고, "다음 시즌 시작"을 누르면
 //   다음 무대 · 새 시즌. 이 기능은 아무것도 서버로 보내지 않는다(요청을 지켜본다).
-import { check, onboard } from './lib.mjs';
+import { begin, check, onboard, tab } from './lib.mjs';
 
 const DAY = 24 * 3600 * 1000;
 const KEY = 'volume-coach.proto.state';
@@ -25,7 +26,8 @@ export default async function ({ page, url, shot }) {
   });
   page.on('request', (req) => { if (req.method() !== 'GET') sent.push(req.method() + ' ' + req.url()); });
 
-  // 1) 오늘 화면의 카드
+  // 1) 기록 탭의 카드(오늘 화면에서 옮겨 왔다)
+  await tab(page, '기록');
   const card = page.locator('.season-card');
   await card.waitFor();
   const stage = (await card.locator('.season-stage').textContent()).trim();
@@ -55,9 +57,9 @@ export default async function ({ page, url, shot }) {
   await shot('1-card-360');
   await page.setViewportSize({ width: 390, height: 844 });
 
-  // 2-1) 운동 한 세트 → 요약 창에 한 줄 "+10점 · … Ⅱ까지 90점"
-  await page.locator('.start-cta').click();
-  if (await page.locator('dialog[open] .start-go').count()) await page.locator('dialog[open] .start-go').click();
+  // 2-1) 운동 한 세트 → 운동 끝 창의 내 선수 카드에 한 줄 "+10점 · … Ⅱ까지 90점"
+  await tab(page, '오늘');
+  await begin(page);
   if (await page.locator('.warm-skip').count()) await page.locator('.warm-skip').click();
   await page.locator('.now-done').or(page.getByRole('button', { name: /^1세트 완료/ })).first().click();
   await page.goBack({ waitUntil: 'commit' }).catch(() => null);
@@ -65,6 +67,7 @@ export default async function ({ page, url, shot }) {
   await page.locator('#screen button', { hasText: /세트 요약$/ }).click();
   const line = (await page.locator('dialog[open] .season-feedback').textContent()).trim();
   check(/^\+10점 · .+ Ⅱ까지 90점$/.test(line), '요약 창 시즌 한 줄: ' + line);
+  check(await page.locator('dialog[open] .season-card.is-finish .season-feedback').count() === 1, '운동 끝 창에 내 선수 카드가 없습니다');
   await shot('2b-summary-line');
   await page.locator('dialog[open] button', { hasText: '오늘 마치기' }).click();
   for (let i = 0; i < 4 && await page.locator('dialog[open]').count(); i += 1) {
@@ -131,6 +134,7 @@ export default async function ({ page, url, shot }) {
 
   // 5) 한 번만 — 다시 열어도 안 뜨고, 카드는 다음 무대 · 새 시즌
   await page.reload();
+  await tab(page, '기록');
   await page.locator('.season-card').waitFor();
   await page.waitForTimeout(500);
   check(await page.locator('.ceremony').count() === 0, '대회 당일이 또 뜹니다');

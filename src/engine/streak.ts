@@ -237,7 +237,7 @@ function messageOf(current: number, thisWeek: WeekResult, freezeUsed: boolean): 
   const left = Math.max(0, thisWeek.target - thisWeek.days);
 
   if (thisWeek.kept) {
-    if (thisWeek.deload) return '덜어내는 주의 약속을 지켰습니다. 이번 주는 이만하면 됩니다.';
+    if (thisWeek.deload) return '가볍게 하는 주의 약속을 지켰습니다. 이번 주는 이만하면 됩니다.';
     return current >= 2
       ? `${current}주 연속 약속을 지켰습니다.`
       : '이번 주 약속을 지켰습니다.';

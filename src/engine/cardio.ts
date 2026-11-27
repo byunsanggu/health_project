@@ -88,7 +88,7 @@ export const CARDIO: readonly CardioExercise[] = [
     muscles: ['quads'],
     needsMachine: true,
     equipmentId: 'stationary-bike',
-    note: '근력 세션과 제일 덜 부딪힙니다. 다리 한 날에도 이건 괜찮습니다.',
+    note: '근력 운동과 제일 덜 부딪힙니다. 다리 한 날에도 이건 괜찮습니다.',
   },
   {
     id: 'elliptical',
@@ -309,13 +309,13 @@ export function interference(input: CardioInterferenceInput): CardioInterference
   if (hardEnough && longEnough) {
     return {
       level: 'mild',
-      text: '세게 오래 하면 전신 회복을 나눠 씁니다. 다음 근력 세션이 무거우면 짧게 가세요.',
+      text: '세게 오래 하면 전신 회복을 나눠 씁니다. 다음 근력 운동이 무거우면 짧게 가세요.',
     };
   }
 
   return {
     level: 'none',
-    text: '오늘 근력 세션과 부딪히지 않습니다.',
+    text: '오늘 근력 운동과 부딪히지 않습니다.',
   };
 }
 

@@ -84,14 +84,14 @@ export function frequencyReport(
     } else if (detail.discountedSets > tolerance) {
       verdict = 'concentrated';
       advice =
-        `한 세션에 ${detail.maxSetsInOneSession}세트가 몰려 ${detail.discountedSets}세트가 자극으로 이어지지 않았습니다. ` +
+        `하루에 ${detail.maxSetsInOneSession}세트가 몰려 ${detail.discountedSets}세트가 자극으로 이어지지 않았습니다. ` +
         `같은 볼륨을 주 ${recommended}회로 나누면 그대로 인정됩니다`;
     } else if (detail.sessionCount < recommended) {
       verdict = 'insufficient';
       advice = `주 ${detail.sessionCount}회로 ${detail.effectiveSets}세트를 소화하고 있습니다. 주 ${recommended}회로 나누는 편이 회복과 자극 모두에 유리합니다`;
     } else {
       verdict = 'ok';
-      advice = `주 ${detail.sessionCount}회 · 세션당 평균 ${round1(detail.effectiveSets / detail.sessionCount)}세트`;
+      advice = `주 ${detail.sessionCount}회 · 하루 평균 ${round1(detail.effectiveSets / detail.sessionCount)}세트`;
     }
 
     return {

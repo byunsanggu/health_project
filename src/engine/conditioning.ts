@@ -389,7 +389,7 @@ function buildNotes(input: ConditioningInput, movements: readonly ConditioningMo
   }
   if ((input.avoidMuscles ?? []).length > 0) {
     const labels = (input.avoidMuscles ?? []).map((muscle) => MUSCLE_LABELS_KO[muscle]).join(', ');
-    notes.push(`${withParticle(labels, '은/는')} 근력 세션과 겹치지 않도록 피했습니다.`);
+    notes.push(`${withParticle(labels, '은/는')} 근력 운동과 겹치지 않도록 피했습니다.`);
   }
   return notes;
 }
@@ -435,7 +435,7 @@ export function checkInterference(input: InterferenceInput): InterferenceWarning
         weekday: conditioning.weekday,
         severity: gap === 0 ? 'info' : 'warning',
         message: gap === 0
-          ? `${session.label}요일 ${withParticle(session.templateName, '과/와')} 같은 날입니다 (${labels}). 근력 세션을 먼저 하세요.`
+          ? `${session.label}요일 ${withParticle(session.templateName, '과/와')} 같은 날입니다 (${labels}). 근력 운동을 먼저 하세요.`
           : `${session.label}요일 ${withParticle(session.templateName, '과/와')} 붙어 있습니다 (${labels}). 하루 띄우거나 겹치지 않는 부위로 바꾸세요.`,
       });
     }
@@ -446,7 +446,7 @@ export function checkInterference(input: InterferenceInput): InterferenceWarning
     warnings.push({
       weekday: 0,
       severity: 'warning',
-      message: `주 ${total}회 훈련입니다. 컨디셔닝을 줄이거나 근력 세션을 하루 빼는 편이 회복에 낫습니다.`,
+      message: `주 ${total}회 훈련입니다. 숨찬 운동을 줄이거나 근력 운동을 하루 빼는 편이 회복에 낫습니다.`,
     });
   }
 
@@ -805,7 +805,7 @@ export function weeklyConditioningPlan(input: WeeklyConditioningInput): WeeklyCo
 
     dayInfo.forEach((info, dayIndex) => {
       if (input.deload) {
-        specs.push(easyCardio(dayIndex, 10, 'easy', '덜어내는 주라 숨찬 운동 대신 가볍게 몸만 풉니다.'));
+        specs.push(easyCardio(dayIndex, 10, 'easy', '가볍게 하는 주라 숨찬 운동 대신 가볍게 몸만 풉니다.'));
         return;
       }
       const wanted = MODALITY_ROTATION[dayIndex % MODALITY_ROTATION.length]!;
@@ -853,7 +853,7 @@ export function weeklyConditioningPlan(input: WeeklyConditioningInput): WeeklyCo
     // 체지방 감량 — 숨이 덜 찬 유산소. 근력이 같이 있으면 쉽게, 짧게.
     dayInfo.forEach((info, dayIndex) => {
       if (input.deload) {
-        specs.push(easyCardio(dayIndex, 10, 'easy', '덜어내는 주에도 가볍게 걷는 것은 그대로 합니다.'));
+        specs.push(easyCardio(dayIndex, 10, 'easy', '가볍게 하는 주에도 가볍게 걷는 것은 그대로 합니다.'));
         return;
       }
       const early = week <= 2;

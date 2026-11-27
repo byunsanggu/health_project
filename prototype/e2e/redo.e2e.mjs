@@ -37,7 +37,8 @@ export default async function ({ page, url, shot }) {
   await gymTab(page);
   await page.getByRole('button', { name: '초기 설정 다시 하기' }).click();
   await page.locator('dialog .redo-go').click();
-  check(await page.locator('.session-head h2').textContent() === '세 가지만 알려 주세요', '세 가지만 알려 주세요부터가 아닙니다: ' + await page.locator('.session-head h2').textContent());
+  check(await page.locator('.session-head h2').textContent() === '운동 목표를 골라 주세요', '목표부터가 아닙니다: ' + await page.locator('.session-head h2').textContent());
+  check(await page.locator('.backup-pick').count() === 0, '다시 설정에 백업 불러오기가 있습니다');
   await page.locator('.redo-cancel').click();
   check(await page.locator('.tabbar [role="tab"]').count() > 0, '그만뒀는데 앱으로 안 돌아왔습니다');
   check(await weekSets(page) === before, '그만뒀는데 기록이 바뀌었습니다');
@@ -46,7 +47,8 @@ export default async function ({ page, url, shot }) {
   await gymTab(page);
   await page.getByRole('button', { name: '초기 설정 다시 하기' }).click();
   await page.locator('dialog .redo-go').click();
-  // 지금 답이 이미 골라져 있으니 그대로 넘어간다
+  // 지금 답이 이미 골라져 있으니 그대로 넘어간다 — 목표 다음 장에 지금 경력이 골라져 있다
+  await page.locator('.wizard-nav .primary').click();
   check(await page.locator('.ob-level .segmented button[aria-pressed="true"]').count() === 1, '지금 단계가 골라져 있지 않습니다');
   await finishWizard(page);
   check(await weekSets(page) === before, '다시 설정했더니 이번 주 기록이 사라졌습니다');

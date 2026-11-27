@@ -55,7 +55,8 @@ export default async function ({ page, url, shot }) {
   check((await page.locator('.start-cta').textContent()).trim() === '운동 시작', '주 버튼이 바뀌었습니다');
   // 다음 운동 날 오늘 화면 — 실제로 오르는 것이 있으면 한 줄
   const today = await page.locator('.today-challenge').textContent().catch(() => '');
-  check(/^오늘 · .+(첫 도전|도전)$/.test(today), '오늘 도전 한 줄이 없습니다: ' + today);
+  // 첫 운동의 도전이면 첫 카드 안에 "45kg 첫 도전!", 다른 운동이면 제목 아래 "오늘 · 벤치프레스 60kg 첫 도전"
+  check(/^오늘 · .+(첫 도전|도전)$/.test(today) || /(첫 도전|도전)!$/.test(today), '오늘 도전 한 줄이 없습니다: ' + today);
   await both(page, shot, '1-offer');
 
   await five.click();

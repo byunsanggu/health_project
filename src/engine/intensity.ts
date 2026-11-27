@@ -150,7 +150,7 @@ export function availableTechniques(context: TechniqueContext): TechniqueAvailab
     const technique = TECHNIQUES[id];
     const deny = (reason: string): TechniqueAvailability => ({ technique, allowed: false, reason });
 
-    if (context.deloadWeek) return deny('덜어내는 주에는 마지막 세트를 더 세게 하지 않습니다.');
+    if (context.deloadWeek) return deny('가볍게 하는 주에는 마지막 세트를 더 세게 하지 않습니다.');
     if (!styleAllows) {
       return deny(`지금 운동 방식(${styleProfile(style).label})에서는 쓰지 않습니다. 세게 하려면 무게를 올립니다.`);
     }
@@ -283,7 +283,7 @@ export function planMaxTest(input: MaxTestInput): MaxTestPlan {
     }
   }
   if (input.justDeloaded === false) {
-    blockers.push('덜어내는 주로 피로를 뺀 다음 주에 시도하세요. 지금은 기록이 아니라 컨디션을 재는 셈이 됩니다.');
+    blockers.push('가볍게 하는 주로 피로를 뺀 다음 주에 시도하세요. 지금은 기록이 아니라 컨디션을 재는 셈이 됩니다.');
   }
   if ((input.weeksAccumulated ?? 99) < 3) {
     blockers.push('한 블록을 3주 이상 쌓은 뒤에 시도하세요. 올릴 게 남아 있어야 기록이 갱신됩니다.');

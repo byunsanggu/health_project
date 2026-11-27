@@ -1,18 +1,16 @@
 // 목표 다섯 가지 — 체력 기르기(크로스핏식)를 고르면 근력 운동이 짧고 "마무리 · …" 카드가 붙는다
 //   → 마지막 종목 뒤에 마무리 운동을 하고 기록하면 남는다 → 쉬는 날 걷기 안내가 보인다
 //   → 체지방 감량은 마무리가 유산소다 · 근육 키우기는 붙는 것이 없다
-import { agreeConsent, check, pickMe, startWorkout, tab, todayDetail, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
+import { check, finishWizard, startWorkout, tab, todayDetail, doneSet, openDetail, skipRest, stageMenu } from './lib.mjs';
 
 async function onboardWith(page, persona) {
-  await agreeConsent(page);
-  // 목표는 "세 가지만 알려 주세요"의 칩 다섯 — 기본은 근육 키우기
-  await pickMe(page, { days: 4 });
+  // 목표는 처음 설정 첫 장의 그림 카드 다섯 — 기본은 근육 키우기
+  await page.waitForSelector('.onboarding-head[data-step="goal"]');
   check(await page.locator('.goal-persona').count() === 5, '자주 고르는 목표가 다섯 개가 아닙니다');
   check(await page.locator('.goal-persona[data-persona="bulk"]').getAttribute('aria-pressed') === 'true', '기본 목표가 근육 키우기가 아닙니다');
   await page.locator(`.goal-persona[data-persona="${persona}"]`).click();
   check(await page.locator(`.goal-persona[data-persona="${persona}"]`).getAttribute('aria-pressed') === 'true', '고른 표시가 없습니다');
-  await page.locator('.wizard-nav .primary').click();
-  await page.locator('.ready-later').click();
+  await finishWizard(page, { days: 4 });
   await page.waitForSelector('.tabbar [role="tab"]');
 }
 

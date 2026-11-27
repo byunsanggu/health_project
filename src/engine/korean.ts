@@ -93,3 +93,41 @@ export function particle(word: string, pair: ParticlePair): string {
 export function withParticle(word: string, pair: ParticlePair): string {
   return word + particle(word, pair);
 }
+
+/*
+ * 운동 날 이름 — 프로그램 안에서는 "상체 A · 하체 B · 전신 C"가 그날을 가리키는 이름(저장 · 순환에 그대로 쓴다)이고,
+ * 화면에는 처음 온 사람이 알아듣는 말로 바꿔 보여 준다. "A/B"는 무슨 뜻인지 몰랐다.
+ *   긴 이름: "상체 (가슴·등·팔)" — 머리줄 · 요약 제목처럼 자리가 있는 곳
+ *   짧은 이름: "상체 ①" — 이번 주 칸처럼 좁고, 같은 상체가 두 번 나와 구별해야 하는 곳
+ * 모르는 이름(내 루틴에서 직접 지은 이름)은 그대로 둔다.
+ */
+const DAY_BASES: Record<string, { base: string; parts: string }> = {
+  상체: { base: '상체', parts: '가슴·등·팔' },
+  하체: { base: '하체', parts: '엉덩이·허벅지' },
+  전신: { base: '전신', parts: '하체·가슴·등' },
+  푸시: { base: '미는 날', parts: '가슴·어깨·팔 뒤' },
+  풀: { base: '당기는 날', parts: '등·팔 앞' },
+  레그: { base: '하체', parts: '엉덩이·허벅지' },
+};
+const DAY_ORDER = ['①', '②', '③', '④', '⑤'];
+
+function splitDayName(name: string): { base: string; parts: string; order: string } | null {
+  const match = /^(\S+)(?:\s+([A-E]))?$/.exec(String(name || '').trim());
+  if (!match) return null;
+  const known = DAY_BASES[match[1]!];
+  if (!known) return null;
+  const order = match[2] ? DAY_ORDER[match[2].charCodeAt(0) - 65] ?? '' : '';
+  return { base: known.base, parts: known.parts, order };
+}
+
+/** "상체 A" → "상체 (가슴·등·팔)" · "푸시" → "미는 날 (가슴·어깨·팔 뒤)". 모르는 이름은 그대로. */
+export function dayPlainName(name: string): string {
+  const day = splitDayName(name);
+  return day ? `${day.base} (${day.parts})` : String(name || '');
+}
+
+/** "상체 A" → "상체 ①" · "레그" → "하체". 모르는 이름은 그대로. */
+export function dayShortName(name: string): string {
+  const day = splitDayName(name);
+  return day ? (day.order ? `${day.base} ${day.order}` : day.base) : String(name || '');
+}

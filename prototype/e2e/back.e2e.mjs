@@ -1,6 +1,6 @@
 // 안드로이드 뒤로가기 — 맨 위 층만 닫는다 (창 → 운동 화면 → 다른 탭 → 설정 단계)
 // (전에는 창을 연 채 뒤로가기를 누르면 앱이 통째로 닫혔다)
-import { agreeConsent, check, onboard, tab, startWorkout, stageMenu } from './lib.mjs';
+import { check, onboard, tab, startWorkout, stageMenu } from './lib.mjs';
 
 const back = async (page) => {
   await page.goBack({ waitUntil: 'commit' }).catch(() => null);
@@ -10,10 +10,11 @@ const back = async (page) => {
 export default async function ({ page, url }) {
   await page.goto(url);
   // 설정 단계 — 뒤로가기는 이전 단계
-  await agreeConsent(page);
-  check(await page.locator('.session-head h2').textContent() === '세 가지만 알려 주세요', '두 번째 장이 아닙니다');
+  await page.waitForSelector('.onboarding-head[data-step="goal"]');
+  await page.locator('.wizard-nav .primary').click();
+  check(await page.locator('.session-head h2').textContent() === '몇 가지만 알려 주세요', '두 번째 장이 아닙니다');
   await back(page);
-  check(await page.locator('.session-head h2').textContent() === '시작하기 전에 동의가 필요합니다', '뒤로가기로 이전 단계에 안 갔습니다');
+  check(await page.locator('.session-head h2').textContent() === '운동 목표를 골라 주세요', '뒤로가기로 이전 단계에 안 갔습니다');
   await page.reload();
   await onboard(page);
   const home = page.url();
@@ -24,7 +25,7 @@ export default async function ({ page, url }) {
   check(await page.locator('.tabbar [aria-selected="true"]').textContent() === '오늘', '다른 탭에서 뒤로가기가 오늘로 안 갔습니다');
   check(page.url() === home, '앱을 나갔습니다');
 
-  // 창 → 닫힘 (화면은 그대로) — 시작하기를 누르면 뜨는 "오늘 운동 준비"
+  // 창 → 닫힘 (화면은 그대로) — 운동 시작을 누르면 뜨는 "오늘 몸 어때요?"
   await page.locator('.start-cta').click();
   await page.locator('dialog[open]').waitFor();
   await back(page);

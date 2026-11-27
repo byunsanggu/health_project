@@ -1,5 +1,5 @@
 // 처음 온 초보의 첫날(360×740 폰) — 맨 위 주차 칩 · "처음이세요?" · 헬스장 등록 안내 없이 첫 종목이 첫 화면에 보인다.
-//   첫날만 시작 전 한 장(질문 넷), 그 뒤로는 운동 시작 한 번. 운동 화면은 지금 세트 줄이 가려지지 않고, 안내는 한 줄("6~10회 중 힘이 조금 남을 때"),
+//   운동 시작은 "오늘 몸 어때요?" 하나(누르면 바로 시작). 운동 화면은 지금 세트 줄이 가려지지 않고, 안내는 한 줄("두 개쯤 더 할 수 있을 때 멈추세요 (6~10회)"),
 //   숫자 칸은 48px 이상, kg/lb는 ⋯ › 단위 바꾸기(알림 + 되돌리기).
 //   기록이 없으면 횟수 칸은 범위 가운데로 채운다. 좁은 폰에서도 ✕가 "회"와 겹치지 않는다.
 //   끝내기 창은 늘 왼쪽 "계속 운동" · 오른쪽 "오늘 마치기". 첫날 요약에는
@@ -23,14 +23,15 @@ export default async function ({ page, url, shot }) {
   const firstRow = await page.locator('.plan-row').first().boundingBox();
   check(firstRow && firstRow.y + firstRow.height <= 740 - 64, '첫 종목이 첫 화면 밖에 있습니다: ' + JSON.stringify(firstRow));
   check(/이름을 누르면 동작을/.test(await page.locator('.first-hint').textContent()), '모르는 동작을 어디서 보는지 한 줄이 없습니다');
+  check(await page.locator('.season-card').count() === 0, '오늘 화면에 내 선수 카드가 남아 있습니다');
   await shot('1-today');
 
-  // 맨 처음 운동 시작 한 번만 "오늘 운동 준비" — 질문 넷이 펼쳐져 있고, 다음부터는 묻지 않는다는 한 줄
+  // 운동 시작 — "오늘 몸 어때요?" 하나(큰 버튼 셋). 맨 처음에는 누르면 바로 시작한다는 한 줄이 더 있다
   await page.locator('.start-cta').click();
-  check((await page.locator('dialog .modal-head h3').textContent()).trim() === '오늘 운동 준비', '첫날 시작 한 장이 안 뜹니다');
-  check(await page.locator('dialog .segmented').count() === 4, '첫날 한 장에 질문 넷이 없습니다');
-  check(/다음부터는 묻지 않고/.test(await page.locator('dialog .start-first-note').textContent()), '다음부터 바로 시작한다는 말이 없습니다');
-  await page.locator('dialog .start-go').click();
+  check((await page.locator('dialog .modal-head h3').textContent()).trim() === '오늘 몸 어때요?', '시작 창이 안 뜹니다');
+  check(await page.locator('dialog .feel-pick[data-feel]').count() === 3, '시작 창에 큰 버튼 셋이 없습니다');
+  check(/바로 시작합니다/.test(await page.locator('dialog .start-first-note').textContent()), '누르면 바로 시작한다는 말이 없습니다');
+  await page.locator('dialog .feel-pick[data-feel="good"]').click();
   if (await page.locator('.mobility-skip, .warm-skip').count()) await page.locator('.mobility-skip, .warm-skip').first().click();
 
   // 운동(간단히) — 360×740 한 화면에 스크롤 없이: 위 한 줄 · 이름 · 그림 · 세트 · 큰 숫자 · 안내 한 줄 · 채운 버튼 하나
@@ -39,7 +40,7 @@ export default async function ({ page, url, shot }) {
   check(fits, '간단히 화면이 360×740에서 스크롤됩니다');
   // 안내는 한 줄 — 범위와 멈출 곳, 누르면 뜻
   const head = await page.locator('.effort-hint').textContent();
-  check(/\d+~\d+회 중 힘이 조금 남을 때 멈추세요\./.test(head), '한 줄 안내: ' + head);
+  check(/^(한|두|세|네) 개쯤 더 할 수 있을 때 멈추세요 \(\d+~\d+회\)$/.test(head.trim()), '한 줄 안내: ' + head);
   check(await page.locator('.effort-hint').count() === 1, '안내 줄이 하나가 아닙니다');
   const screenText = await page.locator('#screen').innerText();
   check(!/숫자를 눌러 바꿀 수 있습니다|개쯤 남기고 멈춘 뒤|맞춰 짐작한 무게/.test(screenText), '겹치는 안내 줄이 남았습니다');
@@ -141,15 +142,15 @@ export default async function ({ page, url, shot }) {
   await page.locator('.cool-done').click();
   check(await page.locator('.cool-offer').count() === 0, '마친 뒤에도 마무리 스트레칭을 권합니다');
 
-  // 기록 탭 — 큰 0 대신 "첫 주 진행 중", 근성장 막대 · 등급은 자세히 안에, 리포트는 지난 일처럼 말하지 않는다
+  // 기록 탭 — 큰 0 대신 "첫 주 진행 중". 위에는 약속 · 내 선수 · 최근 운동 · 그래프만, 근성장 막대 · 등급 · 리포트는 자세히 안에
   await tab(page, '기록');
   const streak = await page.locator('.streak-num').first().textContent();
   check(streak.includes('첫 주') && streak.includes('진행 중'), '연속 카드: ' + streak);
-  check(await page.locator('.growth-card.folded').count() === 1 && await page.locator('.growth-list').count() === 0, '초보 첫 주인데 근성장 막대가 펼쳐져 있습니다');
-  check(await page.locator('.tier-card').count() === 0, '초보 첫 주인데 등급 카드가 위에 있습니다');
+  check(await page.locator('.growth-card').count() === 0 && await page.locator('.tier-card').count() === 0, '초보 첫 주인데 근성장 · 등급 카드가 위에 있습니다');
+  await page.locator('.record-more').click();
+  check(await page.locator('.growth-card.folded').count() === 1, '자세히 안에 첫 주 한 줄이 없습니다');
   const report = await page.locator('.report-cta').textContent();
   check(!report.includes('계획은'), '주가 남았는데 리포트가 지난 일처럼 말합니다: ' + report);
-  await page.locator('.record-more').click();
   check(await page.locator('.growth-list').count() === 1, '자세히 안에 근성장 막대가 없습니다');
   const growth = await page.locator('.growth-num').allTextContents();
   check(growth.every((text) => !/\d\.\d/.test(text)), '근성장 세트에 소수점: ' + growth.join(', '));

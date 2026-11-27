@@ -166,7 +166,7 @@ describe('덜어내는 주', () => {
     });
     assert.equal(streak.thisWeek.kept, true);
     assert.equal(streak.current, 6);
-    assert.match(streak.message, /덜어내는 주/);
+    assert.match(streak.message, /가볍게 하는 주/);
   });
 
   it('두 번 아래로는 내리지 않는다', () => {

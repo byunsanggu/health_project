@@ -1,17 +1,12 @@
 // PT가 이끄는 날의 마무리 운동 — 코치가 말없이 서 있지 않는다.
 //   화면이 뜨면 무엇을 몇 분 하는지 소개하고, 시계를 누르면 시작 · 절반 · 1분 전 · 10초 전 · 끝을 말한다.
-import { adjustToday, agreeConsent, begin, check, choosePt, focusPhase, pickMe, skipPrep, skipWarm, ptGo } from './lib.mjs';
+import { adjustToday, begin, check, choosePt, focusPhase, onboard, skipPrep, skipWarm, ptGo } from './lib.mjs';
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
   // 체력 기르기 — 근력 운동 뒤에 마무리 운동이 붙는다
-  await agreeConsent(page);
-  await pickMe(page, { days: 4 });
-  await page.locator('.goal-persona[data-persona="crossfit"]').click();
-  await page.locator('.wizard-nav .primary').click();
-  await page.locator('.ready-later').click();
-  await page.waitForSelector('.tabbar [role="tab"]');
+  await onboard(page, { goal: 'crossfit', days: 4 });
   await adjustToday(page);
   await page.locator('dialog .segmented button', { hasText: '20분' }).click();
   await page.locator('dialog .modal-close').click();

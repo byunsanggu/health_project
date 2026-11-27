@@ -209,7 +209,7 @@ function deloadVolume(currentSets: number, mev: number): VolumeDecision {
   const halved = Math.round(currentSets / 2);
   const floor = Math.max(2, Math.round(mev / 2));
   const sets = Math.max(floor, halved);
-  return { sets, action: 'deload', rationale: `덜어내는 주: ${currentSets}세트 → ${sets}세트 (무게는 90%로)` };
+  return { sets, action: 'deload', rationale: `가볍게 하는 주: ${currentSets}세트 → ${sets}세트 (무게는 90%로)` };
 }
 
 function accumulationVolume(args: {
@@ -312,7 +312,7 @@ function summarize(
       .slice(0, 2)
       .map((signal) => signal.label);
     // '처방 · 볼륨 · 근거' 대신 쉬운 말로. 디로드는 앱 전체에서 '덜어내는 주' 한 이름으로 부른다.
-    return `덜어내는 주입니다. 세트는 절반으로 줄이고, 무게는 평소의 90%로 합니다. 이유: ${top.join(' / ')}`;
+    return `가볍게 하는 주입니다. 세트는 절반으로 줄이고, 무게는 평소의 90%로 합니다. 이유: ${top.join(' / ')}`;
   }
 
   const increased = volume.filter((item) => item.action === 'increase');

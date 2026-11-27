@@ -46,10 +46,10 @@ export default async function ({ page, url, shot, out }) {
   check(saved['형식'] === 2 && saved['설정'] && saved['설정'].startedOn === '2026-10-21', '설정 칸: ' + JSON.stringify(saved['설정']).slice(0, 120));
   check(saved['운동기록'].some((day) => day.date === '2026-10-21' && day.sets.length === 2), '어제 운동이 파일에 없습니다');
 
-  // 전부 지운다 → 처음 설정
+  // 전부 지운다 → 처음 설정(첫 장 목표에 "쓰던 기록이 있습니다")
   await page.getByRole('button', { name: '전부 삭제' }).click();
   await page.locator('dialog').getByRole('button', { name: '네, 전부 삭제합니다' }).click();
-  await page.waitForSelector('.consent-card');
+  await page.waitForSelector('.backup-pick');
 
   // 남의 파일은 이유를 말하고 아무것도 안 바꾼다
   const junk = join(out, 'backup-junk.json');
@@ -58,11 +58,12 @@ export default async function ({ page, url, shot, out }) {
   check((await page.locator('dialog .backup-error').textContent()).includes('백업 파일이 아닙니다'), '남의 파일인데 이유가 없습니다');
   await page.locator('dialog .modal-close').click();
 
-  // 동의 화면에서 불러온다 — 필수만 동의하고 이어 한다
+  // 첫 장에서 불러온다 — 설문 답이 든 백업이라 동의 장으로 건너뛰고, 필수만 동의하고 이어 한다
   await chooseFile(page, page.locator('.backup-pick'), file);
   const ready = await page.locator('.backup-ready').textContent();
   check(/운동 기록\s*1일 · 본세트 2개/.test(ready), '불러온 내용: ' + ready);
   check(ready.includes('설문 답 · 프로그램 들어 있음'), '프로그램이 없다고 합니다: ' + ready);
+  check(await page.locator('.onboarding-head').getAttribute('data-step') === 'consent', '설문 답이 든 백업인데 동의 장으로 안 갔습니다');
   await shot('1-ready');
   // 주 버튼이 필수 동의를 받으면서 이어 한다 — 필수 줄은 따로 보인다
   check(await page.locator('.consent-line').count() === 3, '필수 동의 줄이 안 보입니다');

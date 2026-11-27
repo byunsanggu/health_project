@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   MEANINGFUL_KG,
   RELIABLE_REPS,
+  bestImprovement,
   biggestGain,
   compareToPast,
   describeComparison,
@@ -250,5 +251,31 @@ describe('지난번과 비교', () => {
     });
     // "백 스쿼트는" — 받침 없는 이름
     assert.match(monthLine(rows[0]!), /백 스쿼트는/);
+  });
+});
+
+describe('운동 끝 화면의 "지난번보다" 한 줄', () => {
+  const compare = (today: [number, number, number], before: [number, number, number]) => compareToPast({
+    todaySets: [{ exerciseId: SQUAT, weightKg: today[0], reps: today[1], rir: today[2] }] as SetLog[],
+    today: TODAY,
+    history: [session('2026-09-16', [[SQUAT, ...before]])],
+    index,
+  });
+
+  it('같은 무게로 한 번 더 한 것도 나아진 것이다(짐작 힘 2.5kg 아래여도)', () => {
+    const rows = compare([40, 9, 2], [40, 8, 2]);
+    assert.equal(biggestGain(rows), undefined);
+    assert.deepEqual(bestImprovement(rows), { exerciseId: SQUAT, name: rows[0]!.name, text: '같은 무게로 1회 더' });
+  });
+
+  it('무게가 오르면 무게로 말한다', () => {
+    assert.equal(bestImprovement(compare([62.5, 8, 2], [60, 8, 2]))!.text, '60kg → 62.5kg');
+  });
+
+  it('나아진 게 없으면 말하지 않는다', () => {
+    assert.equal(bestImprovement(compare([60, 7, 2], [60, 8, 2])), undefined);
+    assert.equal(bestImprovement(compareToPast({
+      todaySets: [{ exerciseId: SQUAT, weightKg: 60, reps: 8, rir: 2 }] as SetLog[], today: TODAY, history: [], index,
+    })), undefined);
   });
 });

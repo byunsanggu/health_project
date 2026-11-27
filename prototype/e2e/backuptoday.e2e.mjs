@@ -25,7 +25,7 @@ export default async function ({ page, url, out }) {
   await download.saveAs(file);
   await page.getByRole('button', { name: '전부 삭제' }).click();
   await page.locator('dialog').getByRole('button', { name: '네, 전부 삭제합니다' }).click();
-  await page.waitForSelector('.consent-card');
+  await page.waitForSelector('.backup-pick');
 
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.backup-pick').click()]);
   await chooser.setFiles(file);

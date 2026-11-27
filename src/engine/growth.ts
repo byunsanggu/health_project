@@ -96,7 +96,7 @@ export function growthCheck(input: GrowthInput): GrowthCheck {
   if (input.deload) {
     return {
       lines, enough, total: lines.length,
-      headline: '이번 주는 덜어내는 주 — 일부러 적게 해서 회복합니다',
+      headline: '이번 주는 가볍게 하는 주 — 일부러 적게 해서 회복합니다',
       note: '쌓인 피로를 빼야 다음 주부터 다시 늘릴 수 있습니다. 근육은 쉬는 동안 큽니다.',
     };
   }

@@ -304,7 +304,7 @@ export function calibrateFromSet(
   return {
     weightKg,
     estimated1RM: round(estimated, 0.5),
-    rationale: `${probe.weightKg}kg × ${probe.reps}회 (여유 ${probe.rir}개) → 1회 최대 약 ${round(estimated, 0.5)}kg. ` +
+    rationale: `${probe.weightKg}kg × ${probe.reps}회 (여유 ${probe.rir}개) → 한 번에 들 힘 약 ${round(estimated, 0.5)}kg. ` +
       `${target.repRange.max}회에 여유 ${target.targetRir}개 남기는 무게는 ${weightKg}kg입니다.`,
   };
 }

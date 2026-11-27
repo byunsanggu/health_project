@@ -99,7 +99,7 @@ export function planAroundOccupied(input: OccupancyInput): OccupancyPlan {
     return {
       action: 'wait',
       needsRewarmup: false,
-      reason: '오늘 세션에 없는 종목입니다.',
+      reason: '오늘 운동에 없는 종목입니다.',
       options: [],
     };
   }
@@ -156,7 +156,7 @@ export function planAroundOccupied(input: OccupancyInput): OccupancyPlan {
       needsRewarmup: false,
       reason:
         `${withParticle(blocked.exercise.name, '을/를')} 대신할 만한 종목이 이 헬스장에 없습니다. ` +
-        '기다리거나, 오늘은 건너뛰고 다음 세션에서 채우세요.',
+        '기다리거나, 오늘은 건너뛰고 다음 운동에서 채우세요.',
       options: [],
     };
   }

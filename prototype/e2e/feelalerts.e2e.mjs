@@ -1,6 +1,6 @@
 // 처음 동의 화면 — "전체 동의"로 알림까지 한 번에. 선택 항목은 접혀 있어도 동의한 수가 보인다.
 // 오늘 컨디션 — 시작하기를 누르면 뜨는 한 장에서 고른다. 별로예요면 세트가 줄고 무게가 내려간다. 내일은 다시 기록대로.
-import { adjustToday, check, finishWizard, pickMe, todayDetail } from './lib.mjs';
+import { adjustToday, agreeConsent, check, finishWizard, todayDetail } from './lib.mjs';
 
 const totals = async (page) => {
   const lines = await page.locator('.plan-row .plan-sets').allTextContents();
@@ -20,7 +20,8 @@ export default async function ({ page, context, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
 
-  // 전체 동의하기는 "선택 항목 보기" 안의 작은 버튼이다
+  // 전체 동의하기는 "선택 항목 보기" 안의 작은 버튼이다(동의 장은 목표 · 경력 다음)
+  await agreeConsent(page, { press: false });
   await page.waitForSelector('.consent-more');
   check(await page.locator('.consent-all').count() === 0, '전체 동의가 접힌 채로 보입니다');
   await page.locator('.consent-more').click();

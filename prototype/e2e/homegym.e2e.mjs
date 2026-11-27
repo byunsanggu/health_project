@@ -4,24 +4,23 @@
 //   오늘: 헬스장 등록 안내가 없고, ⋯ 메뉴에 "기구에 사람이 있어요" · "맨 뒤로 미루기"가 없다.
 //   내 정보 › 헬스장: 빨간 "등록 안 됨"도, 찾아서 등록하기도 없다. 바벨 · 머신이 없으니 무게 설정은 덤벨 두 줄뿐이다.
 //   내 정보 › 설정: "운동 횟수 · 목표 바꾸기"로 주 몇 번을 바로 바꾼다. 개발자 말(PWA · 서버 · Wear OS)이 없다.
-import { agreeConsent, check, gymTab, pickMe, tab, todayDetail } from './lib.mjs';
+import { check, finishWizard, gymTab, pickMe, tab, todayDetail } from './lib.mjs';
 
 const tileNamed = (page, name) => page.locator('.equip-tile', { has: page.locator('.name', { hasText: name }) });
 
 export default async function ({ page, url, shot }) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00+09:00') });
   await page.goto(url);
-  await agreeConsent(page);
+  await page.waitForSelector('.onboarding-head[data-step="goal"]');
+  await page.locator('.wizard-nav .primary').click();
 
-  // 세 가지만 알려 주세요 — 검증 · 대조 · 분할 같은 말이 없다
+  // 몇 가지만 알려 주세요 — 검증 · 대조 · 분할 같은 말이 없다
   await pickMe(page, { level: '초보', sex: '여성', days: 4 });
   const me = (await page.locator('#screen').innerText()).replace(/\s+/g, ' ');
   for (const word of ['검증', '대조', '분할이', '환산', '볼륨', '알아두세요']) {
     check(!me.includes(word), '세 가지에 "' + word + '": ' + (me.match(new RegExp('.{0,20}' + word + '.{0,20}')) || [''])[0]);
   }
-  await page.click('.wizard-nav .primary');
-  await page.locator('.ready-later').click();
-  await page.waitForSelector('.tabbar [role="tab"]');
+  await finishWizard(page, { level: '초보', sex: '여성', days: 4 });
 
   // 홈짐은 처음 설정이 아니라 내 정보 › 헬스장 › 기구 고치기에서 고른다 — 이름표가 "우리 집"이 된다
   await gymTab(page);

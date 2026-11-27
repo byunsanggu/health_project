@@ -267,7 +267,7 @@ export function reviewBlock(input: {
         decision: 'complete',
         level: to,
         transition: null,
-        reasons: [...reasons, `${LEVEL_LABELS_KO[to]} 볼륨으로 다 옮깁니다.`],
+        reasons: [...reasons, `${LEVEL_LABELS_KO[to]} 운동량으로 다 옮깁니다.`],
       };
     }
     return {
@@ -275,7 +275,7 @@ export function reviewBlock(input: {
       decision: 'hold',
       level: block.level,
       transition: block.transition,
-      reasons: [...reasons, `한 블록 더 지금 볼륨으로 다지고 ${LEVEL_LABELS_KO[to]}로 마저 옮깁니다.`],
+      reasons: [...reasons, `한 과정 더 지금 운동량으로 다지고 ${LEVEL_LABELS_KO[to]}로 마저 옮깁니다.`],
     };
   }
 
@@ -297,13 +297,13 @@ export function reviewBlock(input: {
       transition: { to: next, step: 1 },
       reasons: [
         ...reasons,
-        `${LEVEL_LABELS_KO[next]}로 올라갑니다. 한 번에 올리지 않고 이번 블록은 볼륨을 절반만 옮깁니다.`,
+        `${LEVEL_LABELS_KO[next]}로 올라갑니다. 한 번에 올리지 않고 이번 과정은 운동량을 절반만 옮깁니다.`,
       ],
     };
   }
 
   const why: string[] = [];
-  if (!showedUp) why.push(`출석이 ${Math.round(MIN_ATTENDANCE * 100)}%는 넘어야 볼륨을 올립니다`);
+  if (!showedUp) why.push(`출석이 ${Math.round(MIN_ATTENDANCE * 100)}%는 넘어야 운동량을 올립니다`);
   if (!progressed) why.push('기록이 아직 오르는 중이 아닙니다');
   if (!longEnough) why.push(`${LEVEL_LABELS_KO[next]}는 경력 ${MONTHS_FOR[next]}개월부터입니다 (지금 ${Math.floor(months)}개월)`);
   if (!strongEnough) why.push('근력 기록이 아직 그 단계에 못 미칩니다');

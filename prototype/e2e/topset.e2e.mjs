@@ -26,7 +26,8 @@ export default async function ({ page, url, shot }) {
       sets: [8, 8, 8].map((reps) => ({ exerciseId: exercise.id, weightKg: 60, reps, rir: 2 })),
     }]);
     localStorage.setItem('volume-coach.proto.state', JSON.stringify(saved));
-    return { name: exercise.name, day: saved.program.templates[choice.templateIndex].name };
+    // 날 고르기 창은 쉬운 이름("상체 ①")으로 보인다
+    return { name: exercise.name, day: window.FitEngine.dayShortName(saved.program.templates[choice.templateIndex].name) };
   });
   await page.reload();
   await page.waitForSelector('.tabbar [role="tab"]');

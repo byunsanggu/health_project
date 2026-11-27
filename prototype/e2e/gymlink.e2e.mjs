@@ -16,7 +16,7 @@ export default async function ({ page, url, shot }) {
     ] }),
   }));
   await page.goto(url);
-  await page.waitForSelector('.consent-card');
+  await page.waitForSelector('.onboarding-head');
   await onboardWithName(page, '역삼 튼튼짐');
 
   await gymTab(page);

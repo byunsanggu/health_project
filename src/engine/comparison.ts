@@ -278,6 +278,38 @@ export function biggestGain(rows: readonly LiftComparison[]): LiftComparison | u
   return gains.reduce((best, row) => ((row.deltaPrevious ?? 0) > (best.deltaPrevious ?? 0) ? row : best));
 }
 
+export interface Improvement {
+  exerciseId: string;
+  name: string;
+  /** "50kg → 52.5kg" · "같은 무게로 2회 더" · "힘이 약 3kg 늘었습니다" */
+  text: string;
+}
+
+/**
+ * 운동 끝 화면 맨 위의 "지난번보다" 한 줄 — 오늘 가장 나아진 종목 하나.
+ *
+ * biggestGain은 짐작한 힘이 2.5kg 넘게 오른 것만 본다. 처음 몇 주에 흔한 "같은 무게로 한 번 더"는
+ * 거기에 안 걸려서, 나아진 날에도 칭찬할 것이 없었다. 무게가 오르거나(힘이 줄지 않고) · 같은 무게로
+ * 더 했거나 · 짐작한 힘이 오른 종목 중 짐작한 힘이 가장 많이 오른 것. 나아진 게 없으면 undefined.
+ */
+export function bestImprovement(rows: readonly LiftComparison[]): Improvement | undefined {
+  let best: { row: LiftComparison; text: string } | undefined;
+  for (const row of rows) {
+    if (!row.previous || row.deltaPrevious === undefined) continue;
+    const was = row.previous.set;
+    const now = row.today.set;
+    const direction = directionOf(row.deltaPrevious);
+    let text = '';
+    if (now.weightKg > was.weightKg && direction !== 'down') text = `${was.weightKg}kg → ${now.weightKg}kg`;
+    else if (now.weightKg === was.weightKg && now.reps > was.reps) {
+      text = now.weightKg > 0 ? `같은 무게로 ${now.reps - was.reps}회 더` : `${now.reps - was.reps}회 더`;
+    } else if (direction === 'up' && row.reliable) text = `힘이 약 ${round1(row.deltaPrevious)}kg 늘었습니다`;
+    if (!text) continue;
+    if (!best || row.deltaPrevious > (best.row.deltaPrevious ?? 0)) best = { row, text };
+  }
+  return best ? { exerciseId: best.row.exerciseId, name: best.row.name, text: best.text } : undefined;
+}
+
 /** 한 종목의 한 달 변화를 문장으로. 사용자에게 그대로 나간다. */
 export function monthLine(row: LiftComparison): string {
   if (row.deltaMonth === undefined || !row.monthAgo) return '';

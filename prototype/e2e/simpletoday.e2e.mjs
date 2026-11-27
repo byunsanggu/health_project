@@ -1,8 +1,8 @@
-// 오늘 간단히 — 제목 한 줄 · 첫 운동 · 이름만 적은 목록 · "자세히 보기 ›"(고른 쪽을 기억) · 아래에 붙은 "운동 시작".
-//   맨 처음만 "오늘 운동 준비" 한 장, 그 뒤로는 운동 시작 → 몸 풀기 건너뛰기 → 1세트까지 두 번.
-//   "오늘은 평소와 다릅니다 ›"(오늘 조정)에서 바꾼 것은 목록에 바로 반영된다. 지난번에 아프다고 했으면 오늘 화면에서 바로 묻는다.
+// 오늘 간단히 — 제목 한 줄("오늘은 하체 · 5개 · 약 50분") · 첫 운동 큰 카드 · 나머지는 작은 그림 칸 · "자세히 보기 ›"(고른 쪽을 기억) · 아래에 붙은 "운동 시작".
+//   운동 시작 → "오늘 몸 어때요?"(누르면 바로 시작) → 몸 풀기 건너뛰기 → 1세트까지 세 번.
+//   "시간 · 코치 바꾸기"(오늘 조정)에서 바꾼 것은 목록에 바로 반영된다. 지난번에 아프다고 했으면 오늘 화면에서 바로 묻는다.
 //   끝난 날은 카드 한 장(다음 운동 · 마무리 스트레칭 · 글자 링크), 이번 주를 다 채운 날은 쉬는 날 글.
-import { adjustToday, check, onboard, todayDetail } from './lib.mjs';
+import { adjustToday, check, onboard, startSheetGo, todayDetail } from './lib.mjs';
 
 const DAY = 24 * 3600 * 1000;
 const logSet = (page) => page.locator('.now-done').or(page.getByRole('button', { name: /^1세트 완료/ })).first();
@@ -17,7 +17,7 @@ async function closeDialogs(page) {
 /** 한 세트 하고 오늘을 닫는다 — 목록의 "운동 끝내기 · 1세트 요약" → 오늘 마치기 */
 async function trainDay(page) {
   await page.locator('.start-cta').click();
-  if (await page.locator('dialog[open] .start-go').count()) await page.locator('dialog[open] .start-go').click();
+  await startSheetGo(page);
   if (await page.locator('.warm-skip').count()) await page.locator('.warm-skip').click();
   await logSet(page).click();
   await page.goBack({ waitUntil: 'commit' }).catch(() => null);
@@ -39,10 +39,10 @@ export default async function ({ page, url, shot }) {
   await page.goto(url);
   await onboard(page);
 
-  // 1) 간단히 — 제목 · 한 줄 · 첫 운동 · 이름 목록. 줄마다 ⋯ · 세트 줄은 없다. 시작 버튼은 아래에 붙어 있다
+  // 1) 간단히 — 제목 한 줄 · 첫 운동 큰 카드 · 작은 그림 칸. 줄마다 ⋯ · 세트 줄은 없다. 시작 버튼은 아래에 붙어 있다
   const title = (await page.locator('.today-title').textContent()).trim();
-  check(/^오늘은 .+입니다$/.test(title), '오늘 제목: ' + title);
-  check(/^운동 \d+개 · 약 \d+분$/.test((await page.locator('.today-sub').textContent()).trim()), '한 줄: ' + await page.locator('.today-sub').textContent());
+  check(/^오늘은 \S.* · \d+개 · 약 \d+분$/.test(title), '오늘 제목: ' + title);
+  check(/^· \d+개 · 약 \d+분$/.test((await page.locator('.today-sub').textContent()).trim()), '한 줄: ' + await page.locator('.today-sub').textContent());
   const names = (await page.locator('.simple-row .name').allTextContents()).map((t) => t.trim());
   // 첫 운동은 목록 첫 줄을 크게 — 따로 카드를 두어 이름이 두 번 나오지 않는다
   check(await page.locator('.simple-row.is-next').count() === 1 && (await page.locator('.simple-row.is-next').textContent()).includes('첫 운동') &&
@@ -53,7 +53,13 @@ export default async function ({ page, url, shot }) {
   check(await page.locator('.row-menu, .plan-sets, .list-edit, .list-order').count() === 0, '간단히에 자세한 것이 섞였습니다');
   const cta = await page.locator('.start-cta').boundingBox();
   check(cta.height >= 56 && cta.y + cta.height <= 740, '운동 시작이 아래에 붙은 56px 버튼이 아닙니다: ' + JSON.stringify(cta));
-  check((await page.locator('.start-dock .today-diff').textContent()).includes('오늘은 평소와 다릅니다'), '"오늘은 평소와 다릅니다" 줄이 없습니다');
+  // "오늘은 평소와 다릅니다"는 시작 창 안(시간 · 코치 바꾸기)으로 옮겼다. 내 선수 카드는 오늘 화면에 없다
+  check(await page.locator('.today-diff').count() === 0, '"오늘은 평소와 다릅니다" 줄이 오늘 화면에 남아 있습니다');
+  check(await page.locator('.season-card').count() === 0, '오늘 화면에 내 선수 카드가 있습니다');
+  // 첫 운동 카드는 작은 칸들보다 크고, 운동 시작이 첫 카드보다 아래에 있다(하는 순서대로)
+  const card = await page.locator('.first-card').boundingBox();
+  const strip = await page.locator('.today-strip .strip-item').first().boundingBox();
+  check(card.height > strip.height && card.y < strip.y && strip.y < cta.y, '오늘 화면 순서: ' + JSON.stringify({ card, strip, cta }));
   await page.locator('.simple-row').nth(1).click();
   check(await page.locator('dialog[open]').count() === 1, '이름을 눌러도 동작 보기가 안 열립니다');
   await closeDialogs(page);
@@ -71,9 +77,11 @@ export default async function ({ page, url, shot }) {
   await page.locator('.today-more').click();
   check(await page.locator('.row-menu').count() === 0, '간단히로 안 돌아갑니다');
 
-  // 3) 맨 처음 운동 시작 — "오늘 운동 준비" 한 장. 보통 · 어깨 4를 골라 둔다(고른 몸 상태는 다음 날의 기본)
+  // 3) 운동 시작 — "오늘 몸 어때요?". 시간 · 코치 바꾸기(오늘 조정)에서 보통 · 어깨 4를 골라 둔다(고른 몸 상태는 다음 날의 기본)
   await page.locator('.start-cta').click();
-  check((await page.locator('dialog .modal-head h3').textContent()).trim() === '오늘 운동 준비', '첫날 한 장이 안 뜹니다');
+  check((await page.locator('dialog .modal-head h3').textContent()).trim() === '오늘 몸 어때요?', '시작 창이 안 뜹니다');
+  await page.locator('dialog .start-more').click();
+  check((await page.locator('dialog .modal-head h3').textContent()).trim() === '오늘 조정', '시간 · 코치 바꾸기가 오늘 조정을 안 엽니다');
   await page.locator('dialog .segmented button', { hasText: '보통' }).click();
   await page.locator('dialog .segmented button', { hasText: '있어요' }).click();
   // 통증 기록은 따로 동의한다(민감정보)
@@ -114,11 +122,14 @@ export default async function ({ page, url, shot }) {
   const after = Number((await page.locator('.today-sub').textContent()).match(/약 (\d+)분/)[1]);
   check(after < before && (await page.locator('.today-adjust').textContent()).includes('30분'), `30분을 골랐는데 그대로입니다: ${before} → ${after}`);
 
-  // 7) 돌아온 날 — 운동 시작 → 몸 풀기 건너뛰기 → 1세트, 두 번
+  // 7) 돌아온 날 — 운동 시작 → 오늘 몸(지난번 그대로 보통이 눌려 있다) → 몸 풀기 건너뛰기 → 1세트, 세 번
   await page.locator('.start-cta').click();
-  check(await page.locator('dialog[open]').count() === 0, '돌아온 날에도 시작 창이 뜹니다');
+  check((await page.locator('dialog[open] .feel-pick[aria-pressed="true"]').getAttribute('data-feel')) === 'ok', '지난번 몸 상태(보통)가 눌려 있지 않습니다');
+  check(await page.locator('dialog[open] .start-first-note').count() === 0, '돌아온 날에도 첫날 한 줄이 뜹니다');
+  await page.locator('dialog[open] .feel-pick[data-feel="ok"]').click();
+  check(await page.locator('dialog[open]').count() === 0, '몸 상태를 눌렀는데 바로 시작하지 않습니다');
   await page.locator('.warm-skip').click();
-  check(await logSet(page).isVisible(), '두 번 눌렀는데 1세트 버튼이 안 보입니다');
+  check(await logSet(page).isVisible(), '세 번 눌렀는데 1세트 버튼이 안 보입니다');
   await shot('5-set1');
   await page.goBack({ waitUntil: 'commit' }).catch(() => null);
   await page.waitForSelector('.start-cta');

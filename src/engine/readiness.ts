@@ -159,7 +159,7 @@ export function assessFatigue(input: FatigueInput): FatigueAssessment {
   if (input.weekInBlock >= accumulationWeeks) {
     signals.push({
       id: 'blockComplete',
-      label: `덜어내는 주 없이 ${input.weekInBlock}주째입니다. 계획한 ${accumulationWeeks}주를 다 채웠습니다`,
+      label: `가볍게 하는 주 없이 ${input.weekInBlock}주째입니다. 계획한 ${accumulationWeeks}주를 다 채웠습니다`,
       weight: 2,
     });
   }

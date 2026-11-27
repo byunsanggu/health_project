@@ -12,9 +12,31 @@ export const MUSCLE_GROUPS: readonly MuscleGroup[] = [
   'quads', 'hamstrings', 'glutes', 'calves', 'abs',
 ];
 
+/*
+ * 화면에 쓰는 부위 이름 — 처음 헬스장에 온 사람이 바로 알아듣는 말. "전면 삼각근 · 삼두 · 대퇴사두"는
+ * 트레이너 말이라 어디인지 몰랐다. 해부학 이름은 MUSCLE_TECH_KO에 두고 "자세히"(동작 보기의 쓰는 근육)에서만 붙인다.
+ */
 export const MUSCLE_LABELS_KO: Record<MuscleGroup, string> = {
   chest: '가슴',
   back: '등',
+  frontDelt: '어깨 앞',
+  sideDelt: '어깨 옆',
+  rearDelt: '어깨 뒤',
+  traps: '등 위',
+  biceps: '팔 앞',
+  triceps: '팔 뒤',
+  forearms: '아래팔',
+  quads: '허벅지 앞',
+  hamstrings: '허벅지 뒤',
+  glutes: '엉덩이',
+  calves: '종아리',
+  abs: '복근',
+};
+
+/** 해부학 이름 — 자세히 안에서 쉬운 이름 옆에 괄호로. 쉬운 이름과 같으면 붙이지 않는다. */
+export const MUSCLE_TECH_KO: Record<MuscleGroup, string> = {
+  chest: '대흉근',
+  back: '광배근',
   frontDelt: '전면 삼각근',
   sideDelt: '측면 삼각근',
   rearDelt: '후면 삼각근',
@@ -25,8 +47,8 @@ export const MUSCLE_LABELS_KO: Record<MuscleGroup, string> = {
   quads: '대퇴사두',
   hamstrings: '햄스트링',
   glutes: '둔근',
-  calves: '종아리',
-  abs: '복근',
+  calves: '비복근',
+  abs: '복직근',
 };
 
 /**

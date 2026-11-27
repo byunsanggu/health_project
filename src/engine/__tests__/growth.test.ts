@@ -40,7 +40,7 @@ describe('근성장 체크', () => {
 
   it('덜어내는 주는 모자라다고 하지 않는다', () => {
     const result = check('intermediate', 3, true);
-    assert.match(result.headline, /덜어내는 주/);
+    assert.match(result.headline, /가볍게 하는 주/);
   });
 
   it('한 것은 따로 센다', () => {

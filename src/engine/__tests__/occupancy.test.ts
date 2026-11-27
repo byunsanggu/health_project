@@ -208,6 +208,6 @@ describe('planAroundOccupied', () => {
       gym: DEFAULT_GYM,
     });
     assert.equal(plan.action, 'wait');
-    assert.match(plan.reason, /세션에 없는/);
+    assert.match(plan.reason, /운동에 없는/);
   });
 });

@@ -23,7 +23,7 @@ export default async function ({ page, url }) {
   await tab(page, '내 정보');
   await page.getByRole('button', { name: '전부 삭제' }).click();
   await page.locator('dialog').getByRole('button', { name: '네, 전부 삭제합니다' }).click();
-  await page.waitForSelector('.consent-card');
+  await page.waitForSelector('.onboarding-head[data-step="goal"]');
   const left = await page.evaluate(() => {
     const raw = localStorage.getItem('volume-coach.proto.state');
     return raw ? JSON.parse(raw) : null;

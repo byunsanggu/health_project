@@ -356,13 +356,25 @@
     }
   }
 
+  /**
+   * 저장할 설문 답. 처음 설정에서 건강정보 동의 전이면 체중을 빼고 남긴다 — 동의 전에는 건강 정보를
+   * 저장하지 않는다(목표 · 경력 · 일수 · 성별 장이 동의보다 앞에 있다). 동의 뒤 체중 장에서 다시 들어간다.
+   */
+  function answersToStore() {
+    var ob = state.onboarding;
+    if (!ob || !ob.active || ob.redo || (state.consent || []).indexOf('healthData') >= 0) return state.answers;
+    var copy = Object.assign({}, state.answers);
+    delete copy.bodyweightKg;
+    return copy;
+  }
+
   function persist() {
     if (wiping) return;
     // 화면 상태와 별개로, 오늘 기록은 저장소의 세션으로도 남겨야 서버에 간다.
     if (state.todayDate && state.lifts) recordTodaySession();
     if (state.todayDate && state.pain) recordTodayCheckIn();
     storage.patch({
-      answers: state.answers,
+      answers: answersToStore(),
       program: state.program,
       lifter: state.lifter,
       settings: {
@@ -464,6 +476,8 @@
         restTalk: state.restTalk,
         setMotion: state.setMotion,
         reportSeenWeek: state.reportSeenWeek,
+        // 기록 탭에서 닫은 알림 카드 — 카드마다 한 번 닫으면 다시 안 뜬다(이 폰에만)
+        recordHidden: state.recordHidden,
         lastSyncedAt: state.lastSyncedAt,
         settingsUpdatedAt: state.settingsUpdatedAt,
         cardioToday: state.cardioToday,
@@ -580,6 +594,7 @@
       state.restTalk = settings.restTalk === 'more' || settings.restTalk === 'less' ? settings.restTalk : 'normal';
       state.setMotion = settings.setMotion !== false;
       state.reportSeenWeek = settings.reportSeenWeek || null;
+      state.recordHidden = settings.recordHidden && typeof settings.recordHidden === 'object' ? settings.recordHidden : {};
       state.lastSyncedAt = settings.lastSyncedAt || null;
       state.settingsUpdatedAt = settings.settingsUpdatedAt || null;
       state.cardioToday = settings.cardioToday || [];
@@ -1020,6 +1035,8 @@
     setMotion: true,
     /* 이번 주 리포트를 본 주(월요일). 같은 주에 두 번 조르지 않는다. */
     reportSeenWeek: null,
+    /* 기록 탭에서 닫은 알림 카드 { 카드 열쇠: true } — 한 번 닫으면 그 카드는 다시 안 뜬다 */
+    recordHidden: {},
     /* 오늘 한 유산소. [{exerciseId, minutes, zone, distanceKm, before}] */
     cardioToday: [],
     /* 이번 주 유산소 (날짜별) — 주간 부담을 세는 데 쓴다 */
@@ -3400,7 +3417,8 @@
 
     screen.textContent = '';
     if (onboarding) {
-      statusMeta.textContent = '초기 설정';
+      // 처음 설정 중에는 맨 위 오른쪽을 비운다 — "초기 설정"이 버튼처럼 보여 눌러 보는 사람이 있었다
+      statusMeta.textContent = '';
       renderOnboarding();
     } else if (auth) {
       statusMeta.textContent = '계정';
@@ -3448,7 +3466,7 @@
      * 끝낼 때 몇 개를 더 할 수 있게 남기라는 뜻이다 — 버튼("3회 더")과 같은 말이다.
      */
     // "쉬어 가는 주"라고 하면 안 나와도 되는 줄 안다 — 덜어내는 주는 나와서 가볍게 하는 주다
-    var phase = state.plan.phase === 'deload' ? '덜어내는 주' : state.plan.weekInBlock + '주차';
+    var phase = state.plan.phase === 'deload' ? '가볍게 하는 주' : state.plan.weekInBlock + '주차';
     /*
      * "여유 4개"는 뜻을 배울 곳이 없었다 — 쉬는 시간이나 남은 세트로 읽혔다. 무엇을 하라는지로
      * 쓰고, 누르면 한 장으로 풀어 준다.
@@ -3482,7 +3500,7 @@
         : '이번 주는 더 못 들 때까지 합니다. 자세가 무너지면 거기서 멈추세요.' }),
       rir > 0 ? el('p', { class: 'hint-line', text: '끝까지 짜내지 않습니다. 마지막 몇 번이 힘들어지기 시작하면 충분합니다.' }) : null,
       el('p', { class: 'hint-line', text: state.plan.phase === 'deload'
-        ? '이번 주는 덜어내는 주라 넉넉히 남기고 가볍게 합니다.'
+        ? '이번 주는 가볍게 하는 주라 넉넉히 남깁니다.'
         : '처음에는 자세를 익히려고 넉넉히 남기고, 주가 지나면 남기는 개수를 조금씩 줄입니다.' }),
       el('p', { class: 'hint-line', text: (range ? '목표 ' + E.repLabel(range) + ' 안에서 멈추면 됩니다. ' : '') +
         '멈춘 뒤 실제로 한 횟수로 숫자를 고치고 완료를 누르세요. 그 숫자로 다음 무게가 정해집니다.' }),
@@ -3562,7 +3580,27 @@
       ]));
     }
 
-    body.push(el('div', { class: 'summary-stats' }, [
+    /*
+     * 칭찬이 먼저다 — 처음 온 사람이 끝나고 볼 것은 "해냈다" 한 줄과 나아진 것 하나다. 순서:
+     *   🎉 오늘 운동 끝! (세트 · 분) → 지난번보다 한 줄 → 내 선수(포즈) · 오늘 오른 점수 → 다음 도전 → 마치기.
+     * 숫자 셋 · 오늘 쓴 부위 그림 · 지난번과 비교 표 · 신기록 · 다음 주 계획 · 주마다 세트는 "자세히" 안에.
+     */
+    var details = [];
+    var five = fiveMinShortToday();
+    var minutes = summary.durationMinutes || 0;
+    body.push(el('div', { class: 'summary-hero' }, [
+      el('p', { class: 'summary-hero-title', text: early ? '여기까지 잘했습니다' : five ? '🎉 오늘도 나왔습니다!' : '🎉 오늘 운동 끝!' }),
+      el('p', { class: 'summary-hero-meta' }, [
+        el('b', { text: summary.setsCompleted + '세트' }),
+        minutes ? el('span', { text: ' · ' + minutes + '분' }) : null,
+        // 플랭크처럼 버틴 초는 세트와 따로 — 30초 버티기가 반복 30회로 더해지면 안 된다
+        summary.holdSeconds > 0 ? el('span', { class: 'hold-total', text: ' · 버틴 시간 ' + E.formatDurationKo(summary.holdSeconds) }) : null,
+      ]),
+      // 5분만 하고 끝낸 날 — 실패가 아니라 짧게 한 날
+      five ? el('p', { class: 'summary-five', text: E.fiveMinuteDoneLine('short', summary.setsCompleted) }) : null,
+    ]));
+
+    details.push(el('div', { class: 'summary-stats' }, [
       el('div', { class: 'summary-stat' }, [
         el('span', { class: 'value', text: String(summary.setsCompleted) }),
         el('span', { class: 'key', text: '세트' }),
@@ -3576,17 +3614,9 @@
         el('span', { class: 'key', text: '든 무게' }),
       ]),
     ]));
-
-    // 시즌 — 오늘 운동으로 오른 점수와 다음 걸음까지 한 줄
-    var seasonLine = summary.setsCompleted > 0 ? seasonFeedback() : null;
-    if (seasonLine) body.push(el('p', { class: 'season-feedback', text: seasonLine }));
-
     // 오늘 쓴 부위 — 세트를 많이 채운 곳일수록 진하게
     var todayMap = todayMuscleMap(summary.byMuscle);
-    if (todayMap) body.push(todayMap);
-    if (summary.durationMinutes) body.push(el('p', { class: 'asset-note', text: '걸린 시간 · ' + summary.durationMinutes + '분' }));
-    // 플랭크처럼 버틴 초는 "총 반복"에 섞지 않고 따로 — 30초 버티기가 반복 30회로 더해지면 안 된다
-    if (summary.holdSeconds > 0) body.push(el('p', { class: 'asset-note hold-total', text: '버틴 시간 · ' + E.formatDurationKo(summary.holdSeconds) }));
+    if (todayMap) details.push(todayMap);
 
     /*
      * 첫 운동 뒤 근육통 — 처음 하는 사람은 이틀 뒤 뻐근한 것을 다친 줄 알고 그만둔다.
@@ -3596,13 +3626,12 @@
     var firstEver = summary.setsCompleted > 0 && !state.history.some(function (session) {
       return (session.sets || []).some(function (set) { return !set.warmup && set.reps > 0; });
     });
-    if (firstEver) {
-      body.push(el('div', { class: 'notice first-soreness' }, [
-        el('div', { class: 'label', text: '처음 운동한 다음 날' }),
-        el('div', { text: '내일·모레 운동한 부위가 뻐근할 수 있습니다. 처음 2~3주는 정상이고 움직이면 풀립니다. ' +
-            '관절이 찌르듯 아프거나 한쪽만 붓는다면 통증으로 적어 주세요.' }),
-      ]));
-    }
+    // 첫날에만 — 그만두지 않게 하는 말이라 "자세히"에 넣지 않는다(칭찬 줄들 다음에)
+    var soreness = firstEver ? el('div', { class: 'notice first-soreness' }, [
+      el('div', { class: 'label', text: '처음 운동한 다음 날' }),
+      el('div', { text: '내일·모레 운동한 부위가 뻐근할 수 있습니다. 처음 2~3주는 정상이고 움직이면 풀립니다. ' +
+          '관절이 찌르듯 아프거나 한쪽만 붓는다면 통증으로 적어 주세요.' }),
+    ]) : null;
 
     /*
      * "오늘 최고 수행 · … → 1회 최대 약 38.1kg"은 초보가 모르는 말이었고, 추정 최대 무게 순이라
@@ -3615,7 +3644,7 @@
     if (best) {
       var bestExercise = index.get(best.set.exerciseId);
       var bestLeft = inputMode() !== 'none' ? leftText(best.set.rir) : '';
-      body.push(el('p', {
+      details.push(el('p', {
         class: 'asset-note',
         text: '오늘 가장 힘을 쓴 세트 · ' + (bestExercise ? bestExercise.name : best.set.exerciseId) + ' ' +
           best.set.weightKg + 'kg × ' + best.set.reps + '회' + (bestLeft ? ' (' + bestLeft + ')' : '') +
@@ -3642,16 +3671,15 @@
     // 오늘 한 종목이 모두 처음이면 비교할 게 없다 — "이 종목은 오늘이 처음입니다 · 처음"을 줄마다 세우지 않고 한 줄로
     var allFirst = comparisons.length > 0 && comparisons.every(function (row) { return row.deltaPrevious === undefined; });
     if (allFirst) {
-      body.push(el('div', { class: 'list-label', text: '지난번과 비교' }));
-      body.push(el('p', { class: 'compare-headline', text: '오늘 한 종목은 모두 처음이라 다음부터 지난번과 비교해 드립니다.' }));
+      details.push(el('div', { class: 'list-label', text: '지난번과 비교' }));
+      details.push(el('p', { class: 'compare-headline', text: '오늘 한 종목은 모두 처음이라 다음부터 지난번과 비교해 드립니다.' }));
     }
-    var details = [];
     if (comparisons.length > 0 && !allFirst) {
       var rollup = E.summarizeComparison(comparisons);
-      body.push(el('div', { class: 'list-label', text: '지난번과 비교' }));
-      body.push(el('p', { class: 'compare-headline', text: rollup.headline }));
+      details.push(el('div', { class: 'list-label', text: '지난번과 비교' }));
+      details.push(el('p', { class: 'compare-headline', text: rollup.headline }));
 
-      body.push(el('div', { class: 'summary-list' }, comparisons.map(function (row) {
+      details.push(el('div', { class: 'summary-list' }, comparisons.map(function (row) {
         var dir = E.directionOf(row.deltaPrevious);
         return el('div', { class: 'compare-row' }, [
           el('span', { class: 'compare-main' }, [
@@ -3673,11 +3701,8 @@
       })));
 
       var gain = E.biggestGain(comparisons);
-      if (gain) {
-        var monthText = E.monthLine(gain);
-        body.push(el('p', { class: 'asset-note', text:
-          '오늘 가장 많이 오른 건 ' + gain.name + '입니다.' + (monthText ? ' ' + monthText : '') }));
-      }
+      var monthText = gain ? E.monthLine(gain) : '';
+      if (monthText) details.push(el('p', { class: 'asset-note', text: monthText }));
 
       // 어떻게 비교했는지는 궁금한 사람만 — "자세히" 안으로
       details.push(el('p', { class: 'asset-note', text:
@@ -3691,8 +3716,8 @@
      */
     var records = summary.records.filter(function (record) { return doneBefore(record.exerciseId); });
     if (records.length > 0) {
-      body.push(el('div', { class: 'list-label', text: '오늘 세운 신기록' }));
-      body.push(el('div', { class: 'summary-list' }, records.map(function (record) {
+      details.push(el('div', { class: 'list-label', text: '오늘 세운 신기록' }));
+      details.push(el('div', { class: 'summary-list' }, records.map(function (record) {
         return el('div', { class: 'record' }, [
           el('span', { class: 'pr', text: '신기록' }),
           el('span', { text: record.name }),
@@ -3705,8 +3730,8 @@
     }
 
     if (summary.highlights.length > 0) {
-      body.push(el('div', { class: 'list-label', text: '올린 것' }));
-      body.push(el('ul', { class: 'cue-list' }, summary.highlights.map(function (highlight) {
+      details.push(el('div', { class: 'list-label', text: '올린 것' }));
+      details.push(el('ul', { class: 'cue-list' }, summary.highlights.map(function (highlight) {
         return el('li', {}, [el('span', { text: highlight.name + ' — ' + highlight.message })]);
       })));
     }
@@ -3716,19 +3741,41 @@
     var nextLine = nextWeekLine(summary);
     if (nextLine) notes.push(nextLine);
     if (notes.length > 0) {
-      body.push(el('div', { class: 'list-label', text: '다음' }));
-      body.push(el('ul', { class: 'cue-list' }, notes.map(function (note) {
+      details.push(el('div', { class: 'list-label', text: '다음' }));
+      details.push(el('ul', { class: 'cue-list' }, notes.map(function (note) {
         return el('li', {}, [el('span', { text: note })]);
       })));
     }
 
+
     /*
-     * 주마다 몇 세트 · 이번 주 부위별 세트 · 비교 방법은 "자세히" 안에. 기본 순서는
-     * 숫자 셋 → 오늘 쓴 부위 → 비교 · 신기록 → 다음. 그래프 둘을 다 펼쳐 두니
-     * 하루를 닫는 버튼이 창 맨 아래로 묻혔다.
+     * 맨 위 칭찬 아래 — 지난번보다 나아진 것 하나(무게가 오르거나 같은 무게로 더 한 것), 내 선수와 오늘 오른 점수,
+     * 다음 도전. 셋 다 없을 수 있다(첫날 · 시즌 꺼짐 · 오를 것 없음).
+     */
+    var better = E.bestImprovement(comparisons);
+    if (better) {
+      body.push(el('p', { class: 'summary-better' }, [
+        el('span', { class: 'summary-better-kicker', text: '지난번보다' }),
+        el('b', { text: better.name }),
+        el('span', { text: ' ' + better.text }),
+      ]));
+    }
+    // 시즌 — 내 선수가 포즈를 잡고, 오늘 운동으로 오른 점수와 다음 걸음까지 한 줄(기록 탭과 같은 카드)
+    var seasonLine = summary.setsCompleted > 0 ? seasonFeedback() : null;
+    var player = summary.setsCompleted > 0 ? seasonCard({ finish: seasonLine || '' }) : null;
+    if (player) body.push(player);
+    else if (seasonLine) body.push(el('p', { class: 'season-feedback', text: seasonLine }));
+    // 다음 도전 — 다음 운동에서 실제로 오르는 것이 있을 때만
+    var teaser = summary.setsCompleted > 0 ? nextChallengeText() : '';
+    if (teaser) body.push(el('p', { class: 'challenge-line summary-challenge', text: teaser }));
+    if (soreness) body.push(soreness);
+
+    /*
+     * "자세히" 안의 순서 — 숫자 셋 → 오늘 쓴 부위 → 비교 · 신기록 → 다음 → 주마다 세트 → 이번 주 부위별 세트.
+     * 다 펼쳐 두니 하루를 닫는 버튼이 창 맨 아래로 묻혔다.
      */
     var trend = weeklyTrendChart();
-    if (trend) details.unshift(trend);
+    if (trend) details.push(trend);
     if (summary.byMuscle.length > 0) {
       details.push(el('div', { class: 'list-label', text: '이번 주 부위별 세트' }));
       details.push(muscleWeekChart(summary.byMuscle));
@@ -3750,7 +3797,7 @@
       ]));
     }
     if (details.length > 0) {
-      body.push(el('details', { class: 'summary-more' }, [el('summary', { text: '자세히 — 주마다 한 세트 · 부위별 세트' })].concat(details)));
+      body.push(el('details', { class: 'summary-more' }, [el('summary', { text: '자세히 보기 — 쓴 부위 · 지난번과 비교 · 다음 주' })].concat(details)));
     }
 
     /*
@@ -3777,7 +3824,8 @@
       body.push(el('div', { class: 'summary-foot' + (early ? ' early' : '') }, [keepGoing, closeDay]));
     }
 
-    openModal(state.session.name, dateText(state.todayDate), body);
+    // 제목은 쉬운 날 이름 — "하체 (엉덩이·허벅지)"
+    openModal(E.dayPlainName(state.session.name), dateText(state.todayDate), body);
     pushLog('세션 요약', '<b>' + summary.setsCompleted + '세트</b> · ' + summary.totalReps + '회 · ' +
       (summary.holdSeconds > 0 ? '버틴 시간 ' + E.formatDurationKo(summary.holdSeconds) + ' · ' : '') +
       fmt(summary.tonnageKg / 1000) + '톤' +
@@ -4296,6 +4344,9 @@
       return el('div', { class: 'body-legend-row' }, [
         el('span', { class: 'name' }, [
           el('span', { text: E.MUSCLE_LABELS_KO[muscle] || muscle }),
+          // 해부학 이름은 여기(동작 보기 › 쓰는 근육)에서만 — 괄호로 작게
+          E.MUSCLE_TECH_KO && E.MUSCLE_TECH_KO[muscle] && E.MUSCLE_TECH_KO[muscle] !== E.MUSCLE_LABELS_KO[muscle]
+            ? el('span', { class: 'tech', text: '(' + E.MUSCLE_TECH_KO[muscle] + ')' }) : null,
           primary ? el('span', { class: 'role', text: '주로 씀' }) : null,
         ]),
         el('span', { class: 'bar' }, [
@@ -4867,7 +4918,7 @@
         el('span', { class: 'mark', text: picked ? '✓' : '' }),
         el('span', { class: 'day-main' }, [
           el('span', { class: 'name' }, [
-            el('span', { text: option.template.name }),
+            el('span', { text: E.dayShortName(option.template.name) }),
             option.scheduled ? el('span', { class: 'day-tag', text: '오늘 차례' }) : null,
           ]),
           el('span', { class: 'day-muscles', text: option.muscles.slice(0, 4).map(function (muscle) {
@@ -4907,7 +4958,7 @@
       el('p', { class: 'asset-note', text:
         '오늘 기록한 ' + state.todaySets.length + '세트가 지워집니다. ' +
         withParticleJs(after.name, '은/는') + ' 다른 날이라 종목이 달라서, ' +
-        '기록을 남겨두면 어느 세션의 세트인지 알 수 없게 됩니다.' }),
+        '기록을 남겨두면 어느 날의 세트인지 알 수 없게 됩니다.' }),
       el('div', { class: 'sheet-body' }, [
         el('button', {
           type: 'button', class: 'finish danger',
@@ -5665,7 +5716,7 @@
     });
 
     var preview = E.buildPreview({
-      sessionName: template.name,
+      sessionName: E.dayShortName(template.name),
       whenLabel: E.nextSlotShort(next) || null,
       exercises: exercises,
       drop: state.plan.phase === 'deload' ? 'deload' : (comeback ? 'comeback' : null),
@@ -6101,10 +6152,14 @@
   }
 
   /**
-   * 오늘 — 간단히가 기본이다. 제목 한 줄("오늘은 상체 운동입니다") · 첫 운동 · 이름만 적은 목록 ·
-   * 마무리 한 줄 · "자세히 보기 ›" · 아래에 붙은 "운동 시작" 하나.
-   * 세트 · 무게 · 줄마다 ⋯ · 순서 바꾸기 · 편집 · 유산소 · 다른 날로 바꾸기는 자세히 안에 있다(고른 쪽을 기억한다).
-   * 운동 시간 · 몸 상태 · 아픈 데 · 혼자/PT는 묻지 않고 지난번 그대로 시작한다 — 바꿀 날만 "오늘은 평소와 다릅니다 ›".
+   * 오늘 — 위에서 아래로, 하는 순서대로:
+   *   1. 제목 한 줄 "오늘은 하체 · 5개 · 약 50분"
+   *   2. 첫 운동 큰 카드(그림 · 이름 · 도전 한 줄 "45kg 첫 도전!" — 없으면 세트 · 횟수 · 무게)
+   *   3. 나머지 운동은 작은 그림 한 줄(누르면 동작 보기)
+   *   4. 아래에 붙은 "운동 시작" — 화면에서 제일 눈에 띄는 것. 누르면 "오늘 몸 어때요?" 하나만 묻는다(openStartSheet)
+   *   5. 약속 시각이 지났으면 그 아래 조용히 "5분만 하기"
+   * 세트 · 무게 · 줄마다 ⋯ · 순서 바꾸기 · 편집 · 유산소 · 다른 날로 바꾸기는 "자세히 보기" 안에 있다(고른 쪽을 기억한다).
+   * 시간 · 혼자/PT는 지난번 그대로 — 바꾸는 길은 시작 창의 "시간 · 코치 바꾸기". 내 선수 카드는 기록 탭 · 끝낸 화면에 있다.
    */
   function renderPlanList() {
     var detail = Boolean(state.todayDetail);
@@ -6112,13 +6167,21 @@
     var doneSets = state.todaySets.length;
     // 이번 주에 하기로 한 날을 다 채운 날 — 쉬는 날이다. 더 하고 싶은 사람을 위해 목록은 그대로 둔다
     var restDay = todayRestDay();
-    // 다음 도전 한 줄 — 오늘 처방이 지난번보다 실제로 오를 때만(시작 전에만)
-    var challenge = !restDay && !state.started && doneSets === 0 && !state.sessionStartedAt ? todayChallengeText() : '';
-    screen.appendChild(el('div', { class: 'session-head today-head' }, [
-      el('h2', { class: 'today-title', text: restDay ? '오늘은 쉬는 날입니다' : '오늘은 ' + dayTitle(state.session.name) + '입니다' }),
-      el('p', { class: 'meta today-sub', text: restDay
-        ? '이번 주 ' + trainingDays().length + '번을 다 했습니다. 더 하셔도 됩니다'
-        : '운동 ' + state.lifts.length + '개 · 약 ' + estimate.totalMinutes + '분' }),
+    // 다음 도전 — 오늘 처방이 지난번보다 실제로 오를 때만(시작 전에만). 첫 운동 것이면 카드 안에, 아니면 제목 아래 한 줄
+    var beforeStart = !restDay && !state.started && doneSets === 0 && !state.sessionStartedAt;
+    var reordering = Boolean(state.reorderMode) && state.lifts.length > 1;
+    // 첫 운동(이어서 할 때는 다음 운동)은 큰 카드 — 아래 작은 그림 줄에는 다시 넣지 않는다(같은 이름이 두 번 나오지 않게)
+    var nextLift = reordering ? null : state.lifts.filter(function (lift) { return lift.sets.some(function (set) { return !set.done; }); })[0];
+    var firstChallenge = beforeStart && nextLift ? liftChallengeText(nextLift) : '';
+    var challenge = beforeStart && !firstChallenge ? todayChallengeText() : '';
+    screen.appendChild(el('div', { class: 'session-head today-head' }, restDay ? [
+      el('h2', { class: 'today-title', text: '오늘은 쉬는 날입니다' }),
+      el('p', { class: 'meta today-sub', text: '이번 주 ' + trainingDays().length + '번을 다 했습니다. 더 하셔도 됩니다' }),
+    ] : [
+      el('h2', { class: 'today-title' }, [
+        el('span', { class: 'today-day', text: '오늘은 ' + todayDayName(state.session.name) }),
+        el('span', { class: 'today-sub', text: ' · ' + state.lifts.length + '개 · 약 ' + estimate.totalMinutes + '분' }),
+      ]),
       challenge ? el('p', { class: 'challenge-line today-challenge', text: challenge }) : null,
     ]));
     if (restDay) {
@@ -6143,16 +6206,16 @@
     var painAsk = painAskCard();
     if (painAsk) screen.appendChild(painAsk);
 
-    var reordering = Boolean(state.reorderMode) && state.lifts.length > 1;
-    // 첫 운동(이어서 할 때는 다음 운동)은 목록 안 그 줄을 크게 — 위에 따로 카드를 두면 같은 이름이 두 번 나온다
-    var nextLift = reordering ? null : state.lifts.filter(function (lift) { return lift.sets.some(function (set) { return !set.done; }); })[0];
-
     if (!detail) {
-      screen.appendChild(el('div', { class: 'simple-list' }, state.lifts.map(function (lift) {
-        return simplePlanRow(lift, lift === nextLift ? (doneSets > 0 ? '다음 운동' : '첫 운동') : null);
-      })));
+      if (nextLift) screen.appendChild(simplePlanRow(nextLift, doneSets > 0 ? '다음 운동' : '첫 운동', firstChallenge));
+      var others = state.lifts.filter(function (lift) { return lift !== nextLift; });
+      if (others.length) {
+        screen.appendChild(el('div', { class: 'simple-list today-strip', role: 'list', 'aria-label': nextLift ? '그다음 운동' : '오늘 운동' }, others.map(function (lift) {
+          return simplePlanRow(lift, null);
+        })));
+      }
       if (!state.started && !everClosedWorkout()) {
-        screen.appendChild(el('p', { class: 'hint-line first-hint', text: '위에서부터 한 운동씩 합니다. 이름을 누르면 동작을 보여 드립니다.' }));
+        screen.appendChild(el('p', { class: 'hint-line first-hint', text: '첫 운동부터 차례로 합니다. 그림이나 이름을 누르면 동작을 보여 드립니다.' }));
       }
     }
 
@@ -6183,9 +6246,7 @@
       conditioningPlanNotes(false).forEach(function (node) { screen.appendChild(node); });
     }
 
-    // 내 선수 — 시작 전에만(운동 중에는 할 일만 보이게)
-    var player = !state.started && doneSets === 0 ? seasonCard() : null;
-    if (player) screen.appendChild(player);
+    // 내 선수 카드는 오늘 화면에서 뺐다 — 할 일이 먼저다. 기록 탭 · 끝낸 화면에 있다.
 
     screen.appendChild(el('button', {
       type: 'button', class: 'more-toggle today-more', 'aria-expanded': String(detail),
@@ -6214,14 +6275,9 @@
 
     var fresh = doneSets === 0 && !state.sessionStartedAt && !(state.ptRun && state.ptRun.paused);
     var adjusted = todayAdjustLine();
+    // 바꾼 것(몸 · 아픈 데 · 시간)이 있으면 그 한 줄(누르면 오늘 조정 — 고치기만). "오늘은 평소와 다릅니다"는 시작 창 안으로 옮겼다
     screen.appendChild(el('div', { class: 'start-dock' }, [
-      adjusted || (fresh ? el('button', {
-        type: 'button', class: 'today-diff',
-        onclick: function () { openTodayAdjust('start'); },
-      }, [
-        el('span', { text: '오늘은 평소와 다릅니다' }),
-        el('span', { class: 'today-diff-go', 'aria-hidden': 'true', text: '›' }),
-      ]) : null),
+      adjusted,
       el('button', {
         type: 'button', class: 'finish start-cta',
         // 시작해 두고 목록에 온 것(PT 멈춤 · 몸 풀기 중)도 "이어서 하기" — "운동 시작"이면 처음부터인 줄 안다
@@ -6231,10 +6287,10 @@
         onclick: function () {
           if (allDone && !finisherLeft) { openSummary(); return; }
           /*
-           * 한 번에 시작한다 — 몸 상태 · 아픈 데 · 시간 · 혼자/PT는 지난번 그대로.
-           * 맨 처음 한 번만 "오늘 운동 준비" 한 장을 보여 준다 — 이런 걸 바꿀 수 있다는 걸 알게.
+           * 새로 시작할 때는 "오늘 몸 어때요?" 하나만 묻고, 누르면 바로 시작한다(시간 · 혼자/PT는 지난번 그대로).
+           * 맨 처음 한 번은 그 창에 한 줄을 더 보인다. 이어서 하기는 묻지 않고 바로 잇는다.
            */
-          if (fresh && !state.startSheetSeen && !everClosedWorkout()) openTodayAdjust('first');
+          if (fresh) openStartSheet(!state.startSheetSeen && !everClosedWorkout() ? 'first' : 'start');
           else beginToday();
         },
       }),
@@ -6255,20 +6311,58 @@
     return /(운동|루틴)$/.test(base) ? base : base + ' 운동';
   }
 
-  /** 간단히 목록의 한 줄 — 작은 그림과 이름만. 누르면 동작 보기. 세트 · 무게 · ⋯은 자세히 안에. */
-  /** 간단히 목록 한 줄. lead('첫 운동' · '다음 운동')가 있으면 그 줄을 크게 — 그림을 키우고 이름 위에 한 줄. */
-  function simplePlanRow(lift, lead) {
+  /**
+   * "상체 A" → "상체", "푸시" → "미는 날" — 오늘 제목 한 줄("오늘은 하체 · 5개 · 약 50분")에 쓴다.
+   * 쉬운 날 이름(E.dayShortName)에서 순서 표시(① · A)와 끝의 "운동"을 뺀다 — 어느 상체인지는 자세히 안에 있다.
+   */
+  function todayDayName(name) {
+    var raw = String(name || '');
+    var plain = typeof E.dayShortName === 'function' ? E.dayShortName(raw) : raw;
+    var base = String(plain).replace(/\s*[①②③④⑤]$/, '').replace(/\s+[A-Z]$/, '').trim() || raw;
+    return base.replace(/\s*운동$/, '') || base;
+  }
+
+  /**
+   * 오늘 화면 한 칸. lead('첫 운동' · '다음 운동')가 있으면 큰 카드 — 큰 그림 · 이름 · 아래 한 줄
+   * (도전 "45kg 첫 도전!", 없으면 "3세트 · 8~12회 · 40kg"). 없으면 작은 그림 칸(그림 · 이름 작게, 한 줄에 여럿).
+   * 누르면 동작 보기. 세트 · 무게 · ⋯은 자세히 안에.
+   */
+  function simplePlanRow(lift, lead, challenge) {
     var done = lift.sets.filter(function (set) { return set.done; }).length;
     var name = el('span', { class: 'name' }, [el('span', { text: lift.exercise.name })]);
+    var line = !lead ? null : challenge
+      ? el('span', { class: 'challenge-line today-challenge first-challenge', text: challenge })
+      : el('span', { class: 'first-plan', text: firstPlanText(lift) });
     return el('button', {
-      type: 'button', class: 'plan-row simple-row' + (done > 0 && done === lift.sets.length ? ' is-done' : '') + (lead ? ' is-next' : ''),
-      'aria-label': (lead ? lead + ': ' : '') + lift.exercise.name + ' 동작 보기',
+      type: 'button', class: 'plan-row simple-row' + (done > 0 && done === lift.sets.length ? ' is-done' : '') + (lead ? ' is-next first-card' : ' strip-item'),
+      role: lead ? null : 'listitem',
+      'aria-label': (lead ? lead + ': ' : '') + lift.exercise.name + (challenge ? ' · ' + challenge : '') + ' 동작 보기',
       onclick: function () { openDemo(lift.exercise); },
     }, [
       liftThumb(lift.exercise, !lead),
-      lead ? el('span', { class: 'simple-lead' }, [el('span', { class: 'simple-lead-key', text: lead }), name]) : name,
+      lead ? el('span', { class: 'simple-lead' }, [el('span', { class: 'simple-lead-key', text: lead }), name, line]) : name,
       done > 0 ? el('span', { class: 'plan-done', text: done + '/' + lift.sets.length }) : null,
     ]);
+  }
+
+  /** 첫 운동 카드의 한 줄 — "3세트 · 8~12회 · 40kg"(맨몸이면 무게 대신 그 말). */
+  function firstPlanText(lift) {
+    var left = lift.sets.filter(function (set) { return !set.done; });
+    var set = left[0] || lift.sets[0];
+    if (!set) return '';
+    var range = set.targetReps || lift.repRange;
+    return left.length + '세트 · ' + (range ? repsText(range, lift.exercise) + ' · ' : '') + loadText(lift, set.weightKg);
+  }
+
+  /** 이 종목의 오늘 도전 — "45kg 첫 도전!" · "8회 → 9회 도전!". 오르는 것이 없으면 ''. */
+  function liftChallengeText(lift) {
+    if (!state.session || !state.session.exercises) return '';
+    var item = state.session.exercises.filter(function (one) { return one.exercise && one.exercise.id === lift.exercise.id; })[0];
+    if (!item) return '';
+    var challenge = E.nextChallenge(challengeCandidates([item], state.history), { drop: dropReason() });
+    if (!challenge) return '';
+    var text = challenge.text.indexOf(challenge.name) === 0 ? challenge.text.slice(challenge.name.length).trim() : challenge.text;
+    return text + '!';
   }
 
   /** 지난 운동 날에 적은 통증 — 오늘 아직 적지 않았을 때 물을 거리. 없으면 null. */
@@ -6536,7 +6630,7 @@
       type: 'button', class: 'extras-toggle', 'aria-expanded': String(extrasOpen),
       onclick: function () { state.extrasOpen = !extrasOpen; render(); },
     }, [
-      el('span', { text: '＋ 유산소 · 컨디셔닝 추가' }),
+      el('span', { text: '＋ 유산소 · 숨찬 운동 추가' }),
       el('span', { class: 'extras-caret', text: extrasOpen ? '접기' : '열기' }),
     ]));
     if (extrasOpen) {
@@ -6565,6 +6659,107 @@
       return (session.sets || []).some(function (set) { return !set.warmup && set.reps > 0; });
     });
   }
+
+  /* ── 첫 운동 날의 짧은 안내 셋 ─────────────────────
+   *
+   * 처음 운동하는 날(끝낸 운동이 아직 없는 날)에만, 하나씩 한 번: 무게 숫자 · 세트 완료 버튼 · 쉬는 화면.
+   * 화면 어디를 눌러도 닫힌다 — 말풍선은 누름을 가로채지 않아서, 누른 버튼은 그대로 눌린다.
+   * 가리키는 것의 위(자리가 없으면 아래)에 띄워 그것을 가리지 않는다. 본 것은 이 기기에 기억한다(서버로 안 간다).
+   * 혼자 · PT 둘 다 — 찾는 자리만 다르다.
+   */
+  var FIRST_HINT_KEY = 'volume-coach.firstHints';
+  var FIRST_HINTS = [
+    { id: 'weight', text: '숫자를 누르면 바로 바꿀 수 있어요', find: function () {
+      var solo = document.querySelector('#solo-stage .stage-in-weight');
+      return (solo && (solo.closest('.stage-tile') || solo)) || document.querySelector('#focus:not([hidden]) .pt-weight-input');
+    } },
+    { id: 'done', text: '다 했으면 여기를 누르세요', find: function () {
+      return document.querySelector('#solo-stage .stage-dock .now-done, #solo-stage .stage-dock .stage-ask') ||
+        document.querySelector('#focus:not([hidden]) .focus-go.focus-done');
+    } },
+    { id: 'rest', text: '쉬는 동안 다음 동작을 보여 드려요', find: function () {
+      var solo = document.querySelector('#solo-stage .stage-rest');
+      var pt = document.querySelector('#focus:not([hidden])[data-phase="rest"] #focus-rest-time');
+      return solo || (pt && (pt.closest('.focus-badge') || pt));
+    } },
+  ];
+  var firstHintSeen = null;
+  var firstHintNow = null;
+
+  function firstHintsRead() {
+    if (firstHintSeen) return firstHintSeen;
+    firstHintSeen = {};
+    try { firstHintSeen = JSON.parse(localStorage.getItem(FIRST_HINT_KEY) || '{}') || {}; } catch (err) { firstHintSeen = {}; }
+    return firstHintSeen;
+  }
+
+  function firstHintsSync() {
+    var box = document.getElementById('first-tip');
+    var want = null;
+    var target = null;
+    var due = state.started && !state.sessionClosed && !state.onboarding.active && !(modal && modal.open) && !everClosedWorkout();
+    if (due) {
+      var seen = firstHintsRead();
+      for (var i = 0; i < FIRST_HINTS.length && !want; i += 1) {
+        if (seen[FIRST_HINTS[i].id]) continue;
+        var found = FIRST_HINTS[i].find();
+        if (found && found.getClientRects().length) { want = FIRST_HINTS[i]; target = found; }
+      }
+    }
+    if (!want) {
+      if (box) box.remove();
+      firstHintNow = null;
+      return;
+    }
+    if (!box) {
+      box = el('div', { class: 'first-tip', id: 'first-tip', role: 'status' }, [
+        el('span', { class: 'first-tip-text' }),
+        el('span', { class: 'first-tip-close', text: '아무 곳이나 누르면 닫힙니다' }),
+      ]);
+      document.body.appendChild(box);
+    }
+    box.setAttribute('data-hint', want.id);
+    box.querySelector('.first-tip-text').textContent = want.text;
+    firstHintNow = { id: want.id, target: target };
+    placeFirstHint();
+  }
+
+  /** 가리키는 것의 위에(자리가 없으면 아래에) — 그것과 겹치지 않게. 가로는 가운데에 맞추되 화면 안으로. */
+  function placeFirstHint() {
+    var box = document.getElementById('first-tip');
+    if (!box || !firstHintNow) return;
+    var target = firstHintNow.target;
+    if (!target || !target.isConnected) { firstHintsSync(); return; }
+    var r = target.getBoundingClientRect();
+    var w = box.offsetWidth;
+    var h = box.offsetHeight;
+    var vw = document.documentElement.clientWidth || window.innerWidth;
+    var gap = 10;
+    var above = r.top - h - gap >= 8;
+    var top = above ? r.top - h - gap : r.bottom + gap;
+    var left = Math.max(12, Math.min(vw - w - 12, r.left + r.width / 2 - w / 2));
+    box.style.top = Math.round(top) + 'px';
+    box.style.left = Math.round(left) + 'px';
+    box.setAttribute('data-side', above ? 'above' : 'below');
+    box.style.setProperty('--tip-x', Math.round(Math.max(16, Math.min(w - 16, r.left + r.width / 2 - left))) + 'px');
+  }
+
+  /** 아무 곳이나 누르면 닫는다 — 누름은 막지 않는다. 본 것으로 기억하고, 잠시 뒤 다음 안내가 있으면 띄운다. */
+  function dismissFirstHint() {
+    if (!firstHintNow) return;
+    var seen = firstHintsRead();
+    seen[firstHintNow.id] = true;
+    try { localStorage.setItem(FIRST_HINT_KEY, JSON.stringify(seen)); } catch (err) { void err; }
+    firstHintNow = null;
+    var box = document.getElementById('first-tip');
+    if (box) box.remove();
+    setTimeout(firstHintsSync, 250);
+  }
+
+  document.addEventListener('pointerdown', dismissFirstHint, true);
+  document.addEventListener('keydown', dismissFirstHint, true);
+  window.addEventListener('resize', placeFirstHint);
+  document.addEventListener('scroll', placeFirstHint, true);
 
   /**
    * 헬스장 주소 등록 안내 — 첫 운동을 마친 날의 "오늘 운동을 마쳤습니다" 화면에서 한 번만.
@@ -6939,23 +7134,78 @@
     return E.challengeLine('오늘', challenge);
   }
 
-  /**
-   * (예전) 시작하기를 누르면 한 장 — 오늘 몸 · 아픈 데 · 시간 · 혼자/PT. 지금은 아래 openTodayAdjust.
-   *
-   * 다 골라진 채로 열린다. 평소 같은 날은 "시작"만 누르면 된다. 전에는 이 넷이 오늘
-   * 화면 목록 위아래에 줄로 붙어 있어서, 운동하러 와서 고를 것부터 보였다.
-   * editOnly면 시작하지 않고 고치기만 한다 (목록 위 "오늘" 줄에서 열 때).
-   */
   /*
-   * 오늘 조정 — 몸 상태 · 아픈 데 · 시간 · 혼자/PT 네 가지.
-   * 평소 같은 날은 열지 않는다("운동 시작" 한 번으로 지난번 그대로). 여는 길은 셋:
-   * 'first' 맨 처음 운동 시작 한 번(이런 걸 바꿀 수 있다는 걸 알게) · 'start' "오늘은 평소와 다릅니다 ›"
-   * (바꾸고 바로 시작) · 'edit' 바꾼 것을 보여 주는 "오늘 …" 줄(고치기만).
+   * 운동 시작 — 질문 하나 "오늘 몸 어때요?". 큰 버튼 셋(좋아요 · 보통 · 별로예요) 중 하나를 누르면 바로 시작한다.
+   * 시간 · 혼자/PT는 지난번 그대로 — 바꾸려면 아래 "시간 · 코치 바꾸기"(예전 오늘 조정 창, 'start').
+   * 아픈 데는 "별로예요"일 때만 이어서 묻는다(없어요 → 시작, 있어요 → 통증 창, 거기서 시작).
+   * 고른 몸 상태의 효과는 setDayFeel 그대로다(별로예요 → 종목마다 한 세트 덜 · 조금 가볍게, 보통은 다음 날의 기본).
+   * mode 'first' — 맨 처음 한 번: 고른 대로 맞춘다는 것과 바꾸는 곳을 한 줄 더 보인다.
+   * 전에는 질문 넷(몸 · 아픈 데 · 시간 · 혼자/PT)이 한 창에 다 있었다 — 처음 온 사람은 넷을 다 읽고 나서야 시작했다.
+   * 알림에서 한 번에 시작(quickStart)은 이 창을 거치지 않는다.
+   */
+  var START_FEELS = [
+    { id: 'good', face: '😀' },
+    { id: 'ok', face: '🙂' },
+    { id: 'low', face: '😮‍💨' },
+  ];
+
+  function openStartSheet(mode) {
+    if (mode === 'first') { state.startSheetSeen = true; persist(); }
+    var now = todayFeel() || 'good';
+    var go = function () { if (modal.open) modal.close(); beginToday(); };
+    var askPain = function () {
+      var sore = E.allows(state.consent, 'painGate') ? activePain() : [];
+      var low = E.DAY_FEELS.filter(function (item) { return item.id === 'low'; })[0];
+      openModal('아픈 데가 있나요?', null, [
+        el('p', { class: 'hint-line feel-low-note', text: low.hint }),
+        el('div', { class: 'feel-picks pain-picks' }, [
+          el('button', {
+            type: 'button', class: 'feel-pick pain-no', 'aria-pressed': String(sore.length === 0),
+            // 적어 둔 통증이 있으면 없어요는 그 점수를 내리는 창으로 — 말없이 지우지 않는다
+            onclick: function () { if (sore.length) openPainCheck('나은 곳은 0으로 내려 주세요.', go); else go(); },
+          }, [el('b', { text: '없어요' })]),
+          el('button', {
+            type: 'button', class: 'feel-pick pain-yes', 'aria-pressed': String(sore.length > 0),
+            onclick: function () { openPainCheck(null, go); },
+          }, [el('b', { text: sore.length ? sore.map(function (report) { return E.JOINT_LABELS_KO[report.joint] + ' ' + report.score; }).join(' · ') : '있어요' })]),
+        ]),
+      ]);
+    };
+    var pick = function (feel) {
+      if (feel !== now) setDayFeel(feel);
+      if (feel === 'low') askPain();
+      else go();
+    };
+    var budget = budgetMinutes();
+    var minutes = budget || sessionHead().estimate.totalMinutes;
+    openModal('오늘 몸 어때요?', null, [
+      el('div', { class: 'feel-picks' }, START_FEELS.map(function (item) {
+        var label = E.dayFeelLabel(item.id);
+        return el('button', {
+          type: 'button', class: 'feel-pick', 'data-feel': item.id, 'aria-pressed': String(now === item.id),
+          'aria-label': label + ' — 바로 시작',
+          onclick: function () { pick(item.id); },
+        }, [el('span', { class: 'feel-face', 'aria-hidden': 'true', text: item.face }), el('b', { text: label })]);
+      })),
+      mode === 'first' ? el('p', { class: 'hint-line start-first-note', text:
+        '누르면 바로 시작합니다. 고른 몸 상태에 맞춰 무게와 세트를 정합니다.' }) : null,
+      el('button', {
+        type: 'button', class: 'start-more', onclick: function () { openTodayAdjust('start'); },
+      }, [
+        el('span', { class: 'start-more-now', text: '약 ' + minutes + '분 · ' + (ptOn() ? 'PT 코치' : '혼자') }),
+        el('span', { class: 'start-more-go', text: '시간 · 코치 바꾸기 ›' }),
+      ]),
+    ]);
+  }
+
+  /*
+   * 오늘 조정 — 몸 상태 · 아픈 데 · 시간 · 혼자/PT 네 가지(예전 시작 창의 질문 넷 그대로).
+   * 여는 길은 둘: 'start' 시작 창의 "시간 · 코치 바꾸기"(평소와 다른 날 — 바꾸고 바로 시작) ·
+   * 'edit' 바꾼 것을 보여 주는 오늘 화면의 "오늘 …" 줄(고치기만).
    * 고른 것은 그 자리에서 오늘 목록에 반영된다 — 창을 닫아도 그대로다.
    */
   function openTodayAdjust(mode) {
     var editOnly = mode === 'edit';
-    if (mode === 'first') { state.startSheetSeen = true; persist(); }
     var draw = function () {
       var feel = todayFeel() || 'good';
       var picked = E.DAY_FEELS.filter(function (item) { return item.id === feel; })[0];
@@ -6966,6 +7216,8 @@
       var usual = state.usualMinutes || sessionHead().estimate.totalMinutes;
       var pt = ptOn();
       var body = [
+        // 시작 창에서 "시간 · 코치 바꾸기"로 온 길 — 평소와 다른 날
+        mode === 'start' ? el('p', { class: 'hint-line adjust-lead', text: '오늘은 평소와 다릅니다 — 바꾼 뒤 아래 버튼으로 시작합니다.' }) : null,
         el('div', { class: 'list-label', text: '오늘 몸은 어때요?' }),
         segmented(E.DAY_FEELS.map(function (item) {
           return { label: item.label, active: feel === item.id, onSelect: function () { setDayFeel(item.id); draw(); } };
@@ -7006,18 +7258,15 @@
           onclick: function () { openCoachStylePicker(draw); },
         }) : null,
         el('button', {
-          type: 'button', class: 'finish start-go', text: editOnly ? '확인' : mode === 'start' ? '이대로 시작' : '시작',
+          type: 'button', class: 'finish start-go', text: editOnly ? '확인' : '이대로 시작',
           onclick: function () {
             modal.close();
             if (editOnly) render();
             else beginToday();
           },
         }),
-        // 처음 한 번만 — 다음부터는 묻지 않고 지금 고른 대로 시작한다는 것과, 바꾸는 곳
-        mode === 'first' ? el('p', { class: 'hint-line start-first-note', text:
-          '다음부터는 묻지 않고 지금 고른 대로 바로 시작합니다. 평소와 다른 날에는 운동 시작 위의 "오늘은 평소와 다릅니다"를 누르세요.' }) : null,
       ];
-      openModal(mode === 'first' ? '오늘 운동 준비' : '오늘 조정', null, body);
+      openModal('오늘 조정', null, body);
     };
     draw();
   }
@@ -7025,7 +7274,7 @@
   /** 넉넉한 날 무엇을 했는지 — 더한 세트가 없으면 왜 없는지. */
   function longDayHint() {
     var fit = state.timeFit;
-    if (state.plan.phase === 'deload') return '이번 주는 덜어내는 주라 세트를 더하지 않습니다. 남는 시간은 천천히 쉬세요.';
+    if (state.plan.phase === 'deload') return '이번 주는 가볍게 하는 주라 세트를 더하지 않습니다. 남는 시간은 천천히 쉬세요.';
     if (todayFeel() === 'low') return '몸이 별로인 날이라 세트를 더하지 않습니다.';
     if (state.customRoutine) return '내 루틴은 정한 세트 그대로 합니다. 남는 시간은 천천히 쉬세요.';
     return fit && fit.notes[0] ? fit.notes.join(' ') : '이번 주 최대 세트를 넘지 않게, 큰 운동부터 세트를 더합니다.';
@@ -8579,7 +8828,7 @@
     try { streak = currentStreak(); } catch (err) { streak = null; }
     return E.sessionStartLines({
       style: state.coach.style,
-      sessionName: state.session ? state.session.name : '오늘 운동',
+      sessionName: state.session ? E.dayShortName(state.session.name) : '오늘 운동',
       lifts: state.lifts.length,
       minutes: estimate && estimate.totalMinutes ? estimate.totalMinutes : undefined,
       phase: state.plan.phase,
@@ -10587,7 +10836,7 @@
       if (finished && !moreOpen) {
         screen.appendChild(el('button', {
           type: 'button', class: 'link-btn more-after', text: '더 하고 싶습니다 ›', 'aria-expanded': 'false',
-          'aria-label': '더 하고 싶습니다 — 다른 운동 · 유산소 · 컨디셔닝 펼치기',
+          'aria-label': '더 하고 싶습니다 — 다른 운동 · 유산소 · 숨찬 운동 펼치기',
           onclick: function () { state.moreAfterOpen = true; render(); },
         }));
         return;
@@ -10777,9 +11026,11 @@
   /** 세트를 어디서 멈추는지 한 줄 — 범위는 그 종목 것, 버티기는 초로. */
   function stopLine(lift, range, set) {
     var label = E.countRangeLabel(lift.exercise, range);
-    if (isHold(lift.exercise)) return label + ' 중 자세가 무너지기 전에 멈추세요.';
+    if (isHold(lift.exercise)) return '자세가 무너지기 전에 멈추세요 (' + label + ')';
     var rir = set && typeof set.targetRir === 'number' ? set.targetRir : state.plan.targetRir;
-    return rir > 0 ? label + ' 중 힘이 조금 남을 때 멈추세요.' : label + ' 중 더 못 할 때까지 하세요.';
+    // "힘이 조금 남을 때"는 얼마나인지 몰랐다 — 몇 개 더 할 수 있을 때인지 말로. 범위는 괄호 안에
+    var left = ['', '한', '두', '세', '네'][Math.min(4, Math.max(0, Math.round(rir || 0)))];
+    return left ? left + ' 개쯤 더 할 수 있을 때 멈추세요 (' + label + ')' : '더 못 할 때까지 하세요 (' + label + ')';
   }
 
   /** 워밍업 한 줄이 첫 세트 무게의 얼마쯤인지 — 숫자(50%) 대신 말로. */
@@ -12043,7 +12294,13 @@
     return el('b', { class: 'focus-num' + (cls ? ' ' + cls : ''), id: id, 'data-mode': mode || null, text: text });
   }
 
+  /** PT 화면을 그리고, 첫 운동 날 안내 말풍선을 지금 화면에 맞춘다. */
   function renderFocus() {
+    renderFocusNow();
+    firstHintsSync();
+  }
+
+  function renderFocusNow() {
     if (!focusHost) return;
     var phase = focusPhase();
     // 숫자 칸을 치는 중이면 다시 그리지 않는다(자판이 닫히고 친 숫자가 사라진다) — 칸을 떠날 때 그린다
@@ -14473,7 +14730,7 @@
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '한계 테스트 — ' + plan.name }),
-        el('span', { class: 'meta', text: plan.testReps + '회 최대 · 지금 1회 최대 약 ' + plan.estimated1RM + 'kg' }),
+        el('span', { class: 'meta', text: plan.testReps + '회까지 · 지금 한 번에 들 힘 약 ' + plan.estimated1RM + 'kg' }),
       ]),
       body,
     ]));
@@ -14607,7 +14864,7 @@
 
   /* ── 오늘의 마무리 운동 ─────────────────────────────
      목표가 체력 기르기(크로스핏식)면 시간을 재는 마무리 운동을, 체지방 감량이면 숨이 덜 찬 유산소를
-     근력 운동 뒤에 붙인다. 무엇을 몇 분 하는지는 엔진이 주차 · 덜어내는 주에 맞춰 매번 다시 정한다. */
+     근력 운동 뒤에 붙인다. 무엇을 몇 분 하는지는 엔진이 주차 · 가볍게 하는 주에 맞춰 매번 다시 정한다. */
 
   /** 이번 주의 마무리 운동 계획. 붙는 것이 없으면(목표가 다르거나 내 루틴이면) null. */
   function weekConditioning() {
@@ -14920,7 +15177,7 @@
     pushLog('컨디셔닝', '<b>' + w.label + ' ' + w.durationMinutes + '분</b> — 몸풀기 ' +
       state.conditioning.warmup.minutes + '분 포함 총 ' + state.conditioning.totalMinutes +
       '분. 피로 ' + w.fatigueLoad + '세트분' +
-      (todayMuscles && todayMuscles.length ? ' · 오늘 근력 세션과 겹치는 부위를 피했습니다' : ''));
+      (todayMuscles && todayMuscles.length ? ' · 오늘 근력 운동과 겹치는 부위를 피했습니다' : ''));
     render();
   }
 
@@ -15213,7 +15470,7 @@
 
     screen.appendChild(el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '컨디셔닝 추가' }),
+        el('h3', { text: '숨찬 운동 추가' }),
         el('span', { class: 'meta', text: '근력 세트와 따로 셉니다' }),
       ]),
       body,
@@ -16565,8 +16822,11 @@
     return el('span', { class: cls || 'season-fig', 'aria-hidden': 'true' }, canvas ? [canvas] : []);
   }
 
-  /** 사다리 창의 큰 그림 — 창이 닫히면(disposeDemo) 같이 내린다. 오늘 화면의 작은 그림과 따로 돈다 */
-  function seasonSheetFigure(now) {
+  /**
+   * 창 안의 그림 — 사다리 창의 큰 그림, 운동 끝 창의 포즈(cls 'season-fig'). 창이 닫히면(disposeDemo) 같이 내린다.
+   * 화면(#screen)의 작은 그림(liveMotion)과 따로 돈다 — 창 뒤 화면이 다시 그려져도 내려가지 않는다.
+   */
+  function seasonSheetFigure(now, cls) {
     var canvas = el('canvas', { class: 'live-motion', 'aria-label': '내 선수' });
     var stage = now.career.stage;
     setTimeout(function () {
@@ -16578,11 +16838,17 @@
       if (state.demo && state.demo !== handle) state.demo.dispose();
       state.demo = handle;
     }, 0);
-    return el('span', { class: 'season-fig big', 'aria-hidden': 'true' }, [canvas]);
+    return el('span', { class: cls || 'season-fig big', 'aria-hidden': 'true' }, [canvas]);
   }
 
-  /** 오늘 화면의 "내 선수" 카드 — 무대 이름 · 걸음 · 다음 걸음까지 · 대회까지 며칠. 누르면 사다리 */
-  function seasonCard() {
+  /**
+   * "내 선수" 카드 — 무대 이름 · 걸음 · 다음 걸음까지 · 대회까지 며칠. 누르면 사다리.
+   * 기록 탭(seasonCard())과 운동 끝 창(seasonCard({ finish: line }))이 같이 쓴다. 어느 화면에 몇 번 불려도 된다 —
+   * 화면 쪽 그림은 liveMotion 하나를 같은 열쇠로 다시 붙이고, 창 안의 그림은 따로 띄운다.
+   * finish: 운동 끝 창 — 오늘 오른 점수 한 줄("+10점 · … Ⅱ까지 90점")을 크게, 선수는 포즈. 창 안이라 누르지 않는다
+   * (누르면 사다리 창이 요약 창을 덮어 "오늘 마치기"가 사라진다).
+   */
+  function seasonCard(opts) {
     var now = seasonNow(true);
     if (!now) return null;
     var career = now.career;
@@ -16591,6 +16857,26 @@
     var next = progress.toNext === null
       ? '이 무대 맨 위입니다'
       : E.SUB_STEP_LABELS[progress.subStep + 1] + '까지 ' + progress.toNext + '점';
+    var finish = opts && opts.finish !== undefined;
+    if (finish) {
+      return el('div', { class: 'season-card is-finish', role: 'group', 'aria-label': '내 선수: ' + label }, [
+        seasonSheetFigure(now, 'season-fig pose'),
+        el('span', { class: 'season-main' }, [
+          el('span', { class: 'season-kicker', text: '내 선수 · ' + E.TRACK_LABELS_KO[career.track] }),
+          opts.finish
+            ? el('p', { class: 'season-feedback', text: opts.finish })
+            : el('span', { class: 'season-stage', text: label }),
+          el('span', { class: 'season-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(progress.stepProgress * 100)) }, [
+            el('span', { class: 'season-bar-fill', style: 'width:' + Math.round(progress.stepProgress * 100) + '%' }),
+          ]),
+          el('span', { class: 'season-meta' }, [
+            // 한 줄에 다음 걸음까지가 이미 있으면 여기서는 대회까지 며칠만
+            el('span', { text: opts.finish ? '' : next }),
+            el('span', { class: 'season-days', text: daysToShowLine(progress.daysLeft) }),
+          ]),
+        ]),
+      ]);
+    }
     return el('button', {
       type: 'button', class: 'season-card', 'aria-label': '내 선수: ' + label + '. 자세히 보기',
       onclick: openSeasonSheet,
@@ -16647,13 +16933,13 @@
         ]),
       ]),
       el('ol', { class: 'ladder', 'aria-label': '무대 사다리' }, rungs),
-      el('p', { class: 'hint-line', text: '대회 당일(덜어내는 주의 마지막 날)에 약속을 80% 넘게 지켰으면 다음 무대로 올라갑니다. 내려가는 일은 없습니다.' }),
+      el('p', { class: 'hint-line', text: '대회 당일(가볍게 하는 주의 마지막 날)에 약속을 80% 넘게 지켰으면 다음 무대로 올라갑니다. 내려가는 일은 없습니다.' }),
       el('div', { class: 'season-rules' }, [
         el('h4', { text: '점수는 이렇게 쌓입니다' }),
         el('ul', {}, [
           el('li', { text: '약속한 운동을 할 때마다 쌓입니다. 한 주에 30점까지, 약속보다 더 해도 같습니다.' }),
           el('li', { text: '약속을 다 지킨 주는 20점을 더 받고, 연달아 지키면 최대 1.5배가 됩니다.' }),
-          el('li', { text: '아픈 주 · 쉼표 주 · 덜어내는 주는 점수를 깎지 않습니다.' }),
+          el('li', { text: '아픈 주 · 쉼표 주 · 가볍게 하는 주는 점수를 깎지 않습니다.' }),
         ]),
       ]),
       el('div', { class: 'season-unlocks' }, [
@@ -16901,7 +17187,7 @@
       today: state.todayDate,
       trainedDates: Object.keys(trained),
       todayDone: state.todaySets.some(function (set) { return !set.warmup && set.reps > 0; }),
-      templateNames: state.program.templates.map(function (template) { return template.name; }),
+      templateNames: state.program.templates.map(function (template) { return E.dayShortName(template.name); }),
       todayIndex: currentTemplateIndex(),
       plannedWeekdays: trainingDays(),
       target: (streak || currentStreak()).thisWeek.target,
@@ -17526,7 +17812,8 @@
     ]);
   }
 
-  function streakCard(streak) {
+  /** withStrip: 기록 탭 맨 위 — 이번 주 요일 칸 한 줄(한 날 ✓)을 카드 안에 같이 */
+  function streakCard(streak, withStrip) {
     var dots = E.weekDots(streak.thisWeek);
     var row = el('span', { class: 'streak-dots', 'aria-hidden': 'true' }, []);
     for (var i = 0; i < dots.done; i += 1) row.appendChild(el('i', { class: 'on' }));
@@ -17547,10 +17834,12 @@
           el('span', { text: '주 연속' }),
         ]),
         row,
+        // "2 / 4"는 무엇의 몇인지 몰랐다 — 약속한 횟수 중 몇 번
         el('span', { class: 'streak-count', text:
-          streak.thisWeek.days + ' / ' + streak.thisWeek.target +
-          (streak.thisWeek.deload ? ' · 덜어내는 주' : '') }),
+          streak.thisWeek.target + '번 중 ' + Math.min(streak.thisWeek.days, streak.thisWeek.target) + '번' +
+          (streak.thisWeek.deload ? ' · 가볍게 하는 주' : '') }),
       ]),
+      withStrip ? weekStrip() : null,
       el('p', { class: 'streak-msg', text: streak.message }),
       streak.best > streak.current
         ? el('p', { class: 'hint-line', text: '최고 ' + streak.best + '주 연속' })
@@ -18026,44 +18315,112 @@
     screen.appendChild(el('div', { class: 'session-head' }, [
       el('div', { class: 'title' }, [
         el('h2', { text: '기록' }),
-        el('span', { class: 'badge ' + (deload ? 'deload' : 'accum'), text: deload ? '덜어내는 주' : plan.weekInBlock + '주차' }),
+        el('span', { class: 'badge ' + (deload ? 'deload' : 'accum'), text: deload ? '가볍게 하는 주' : plan.weekInBlock + '주차' }),
       ]),
-      el('p', { class: 'meta', text: planLine(plan) }),
-      // 맨 위 상태 줄에 있던 "N주차 · N개 남기고 멈춤" 설명은 여기서 연다(운동 화면의 한 줄 안내도 같은 창)
-      el('button', {
-        type: 'button', class: 'status-help record-effort', text: leaveText(plan.targetRir) + ' — 뜻 보기 ›',
-        'aria-label': leaveText(plan.targetRir) + ' — 눌러서 뜻 보기',
-        onclick: openEffortHelp,
-      }),
     ]));
     /*
-     * 처음 두 주의 초보에게는 부위 열한 줄 막대(근성장 체크)를 맨 위에 펴 두지 않는다 — 첫 주는
-     * 일부러 낮게 시작해서 △가 줄지어 뜨고, 다 해낸 주가 모자란 주처럼 읽혔다. 한 줄로 말하고
-     * 막대는 "자세히" 안에.
+     * 처음 온 사람이 위에서부터 읽는 순서 — 이번 주 약속(● ● ○ ○ · 4번 중 2번 · 한 줄 요일 칸) → 내 선수 →
+     * 최근 운동 셋 → 늘어난 그래프(같은 종목을 두 번 하면). 알림 카드는 한 번에 하나만, 닫으면 그 카드는 다시 안 뜬다.
+     * 나머지(약속 시각 · 주간 리포트 · 친구 · 부위별 · 등급 · 일정 · 피로 · 다음 주 계획)는 아래 "자세히"에 접는다.
      */
-    var fold = foldGrowth();
-    if (fold) screen.appendChild(growthLine());
-    else screen.appendChild(growthCard());
-    weekProgressCards();
-    scheduleCard();
-    renderProgress();
+    screen.appendChild(streakCard(currentStreak(), true));
+    var nudge = recordNudge();
+    if (nudge) screen.appendChild(nudge);
+    // 내 선수 — 오늘 화면에서 옮겨 왔다(운동 끝 창과 같은 카드). 시즌이 꺼져 있으면 없다
+    var player = seasonCard();
+    if (player) screen.appendChild(player);
+    var days = historyCard(3);
+    if (days) screen.appendChild(days);
+    renderProgress('main');
 
     var open = Boolean(state.recordMore);
     screen.appendChild(el('button', {
       type: 'button', class: 'extras-toggle record-more', 'aria-expanded': String(open),
       onclick: function () { state.recordMore = !open; render(); },
     }, [
-      el('span', { text: '다음 주 계획 · 피로 · 부위별 자세히' }),
+      el('span', { text: '주간 리포트 · 부위별 · 다음 주 계획 자세히' }),
       el('span', { class: 'extras-caret', text: open ? '접기' : '열기' }),
     ]));
-    if (open) {
-      if (fold) {
-        screen.appendChild(growthCard());
-        screen.appendChild(tierCard(currentTier()));
-      }
-      volumeDetailCards();
-      weekDetailCards();
+    if (open) recordMoreCards();
+  }
+
+  /**
+   * 기록 탭 알림 카드 — 한 번에 하나만(리포트 → 받은 응원 → 약속 시각 정하기 순). 카드마다 ✕로 닫고,
+   * 닫은 카드는 기억해서(recordHidden) 다시 띄우지 않는다. 리포트는 주마다 새 카드다.
+   */
+  function recordNudge() {
+    var hidden = state.recordHidden || {};
+    var cheers = state.cheersIn || [];
+    var candidates = [
+      { key: 'report:' + state.monday, make: reportNudge },
+      { key: 'cheers:' + cheers.map(function (item) { return item.id || item.name; }).join(','), make: cheersBanner },
+      { key: 'promise', make: function () { return state.promise ? null : promiseCard(); } },
+    ];
+    for (var i = 0; i < candidates.length; i += 1) {
+      var item = candidates[i];
+      if (hidden[item.key]) continue;
+      var card = item.make();
+      if (!card) continue;
+      return el('div', { class: 'nudge-wrap', 'data-nudge': item.key.split(':')[0] }, [
+        card,
+        el('button', {
+          type: 'button', class: 'nudge-close', 'aria-label': '이 알림 닫기', text: '×',
+          onclick: (function (key) {
+            return function () {
+              state.recordHidden = Object.assign({}, state.recordHidden || {});
+              state.recordHidden[key] = true;
+              persist();
+              render();
+            };
+          })(item.key),
+        }),
+      ]);
     }
+    return null;
+  }
+
+  /** 기록 탭 "자세히" 안 — 이번 주 계획 줄 · 주간 리포트 · 약속 시각 · 친구 · 부위별 · 등급 · 일정 · 무게 그래프 둘 · 피로 · 다음 주. */
+  function recordMoreCards() {
+    var plan = state.plan;
+    screen.appendChild(el('div', { class: 'session-head record-plan' }, [
+      el('p', { class: 'meta', text: planLine(plan) }),
+      // 세트를 어디서 멈추는지 — 운동 화면의 한 줄 안내와 같은 창
+      el('button', {
+        type: 'button', class: 'status-help record-effort', text: leaveText(plan.targetRir) + ' — 뜻 보기 ›',
+        'aria-label': leaveText(plan.targetRir) + ' — 눌러서 뜻 보기',
+        onclick: openEffortHelp,
+      }),
+    ]));
+    var shownWeek = shownReport();
+    screen.appendChild(el('button', {
+      type: 'button', class: 'report-cta',
+      onclick: openWeeklyReport,
+    }, [
+      el('span', { class: 'plan-main' }, [
+        el('span', { class: 'name', text: shownWeek.label }),
+        el('span', { class: 'plan-sets', text: shownWeek.monday === state.monday &&
+          !weekSessions().some(function (item) { return (item.sets || []).length > 0; })
+          ? '이번 주는 아직 시작 전입니다'
+          : shownWeek.report.headline }),
+      ]),
+      el('span', { class: 'detail', text: '카톡으로 ›' }),
+    ]));
+    // 운동 가는 시각 — 정해 두지 않았으면 위 알림 카드가 권한다(닫았어도 여기서 정할 수 있다)
+    var promise = promiseCard();
+    if (promise) screen.appendChild(promise);
+    var friends = friendsCard();
+    if (friends) screen.appendChild(friends);
+    /*
+     * 처음 두 주의 초보에게는 부위 열한 줄 막대(근성장 체크)를 펴 두지 않는다 — 첫 주는 일부러 낮게
+     * 시작해서 △가 줄지어 뜨고, 다 해낸 주가 모자란 주처럼 읽혔다. 한 줄로 먼저 말하고 막대는 그 아래.
+     */
+    if (foldGrowth()) screen.appendChild(growthLine());
+    screen.appendChild(growthCard());
+    screen.appendChild(tierCard(currentTier()));
+    scheduleCard(false);
+    renderProgress('more');
+    volumeDetailCards();
+    weekDetailCards();
   }
 
   /** 처음 두 주 — 이 주 전 주(지난주)보다 앞선 운동 기록이 없다. */
@@ -18145,42 +18502,6 @@
         : '막대 = 한 주 계획, 세로 줄 = 한 주 최소 · 적정 세트. 첫 주는 낮게 시작해 주마다 늘립니다. ') +
         '보조로 쓴 근육은 일부만 셉니다.' }),
     ];
-  }
-
-  /** 기록 탭 위쪽 — 연속 · 약속 · 친구 · 등급 · 이번 주 리포트. 회원을 붙잡는 건 이것이다. */
-  function weekProgressCards() {
-    /*
-     * 한 주가 끝났을 때 손에 남는 것. 회원을 붙잡는 건 기능이 아니라
-     * 이것이고, 그래서 주간 탭 맨 위에 둔다.
-     */
-    screen.appendChild(streakCard(currentStreak()));
-    // 운동 가는 시각 · 친구 · 받은 응원 — 오늘 화면에서 옮겨 왔다
-    var promise = promiseCard();
-    if (promise) screen.appendChild(promise);
-    var cheers = cheersBanner();
-    if (cheers) screen.appendChild(cheers);
-    var friends = friendsCard();
-    if (friends) screen.appendChild(friends);
-    // 등급과 그 설명은 처음 두 주의 초보에게는 "자세히" 안에 — "아직 등급 없음"이 첫 주에 먼저 보일 까닭이 없다
-    if (!foldGrowth()) screen.appendChild(tierCard(currentTier()));
-    var nudge = reportNudge();
-    if (nudge) screen.appendChild(nudge);
-
-    var shownWeek = shownReport();
-    screen.appendChild(el('button', {
-      type: 'button', class: 'report-cta',
-      onclick: openWeeklyReport,
-    }, [
-      el('span', { class: 'plan-main' }, [
-        el('span', { class: 'name', text: shownWeek.label }),
-        el('span', { class: 'plan-sets', text: shownWeek.monday === state.monday &&
-          !weekSessions().some(function (item) { return (item.sets || []).length > 0; })
-          ? '이번 주는 아직 시작 전입니다'
-          : shownWeek.report.headline }),
-      ]),
-      el('span', { class: 'detail', text: '카톡으로 ›' }),
-    ]));
-
   }
 
   /** 기록 탭 "자세히" — 피로 신호 · 다음 주 처방 · 답 정확도 · 분배 · 구멍. 매일 볼 것은 아니다. */
@@ -18387,30 +18708,38 @@
 
   }
 
-  function scheduleCard() {
-    // 이번 주 일정
-    var schedule = E.buildSchedule({
-      templates: state.program.templates,
-      daysPerWeek: state.program.daysPerWeek,
-      level: state.lifter.level,
-      index: index,
-    });
-    /*
-     * 요일에 박힌 표가 아니라 이번 주 실제 칸이다. 오늘 화면의 "다음 운동"과
-     * 같은 규칙(이번 주에 몇 번 했나)으로 그려야 둘이 같은 말을 한다.
-     */
+  /**
+   * 이번 주 요일 칸 한 줄 — 한 날 ✓ · 오늘 · 남은 날. 기록 탭 맨 위 약속 카드 안에 있다.
+   * 요일에 박힌 표가 아니라 이번 주 실제 칸이다. 오늘 화면의 "다음 운동"과
+   * 같은 규칙(이번 주에 몇 번 했나)으로 그려야 둘이 같은 말을 한다.
+   */
+  function weekStrip() {
     var days = el('div', { class: 'week-strip' }, []);
     weekCells().forEach(function (cell) {
       var isToday = cell.date === state.todayDate;
       days.appendChild(el('div', { class: 'day ' + cell.kind + (isToday ? ' is-today' : '') +
         (cell.kind === 'planned' || cell.kind === 'today' ? ' on' : '') }, [
-        // 오늘 칸은 요일 자리에 "오늘" — 좁은 칸에 "오늘 · 상체 A"를 넣으면 세 줄이 된다
+        // 오늘 칸은 요일 자리에 "오늘" — 좁은 칸에 "오늘 · 상체 ①"을 넣으면 세 줄이 된다
         el('span', { class: 'day-label', text: isToday ? '오늘' : E.WEEKDAY_LABELS_KO[cell.weekday] }),
         el('span', { class: 'day-name', text: cell.kind === 'done' ? '✓ ' + cell.name : cell.name }),
       ]));
     });
+    return days;
+  }
 
-    var scheduleBody = el('div', { class: 'sheet-body' }, [days]);
+  /** 이번 주 일정 — 평소 배치 · 주의할 점. withStrip이면 요일 칸도(기록 탭은 맨 위 카드에 이미 있어 빼고 부른다). */
+  function scheduleCard(withStrip) {
+    // 이번 주 일정
+    var schedule = E.buildSchedule({
+      // 화면에 나가는 날 이름은 쉬운 말("상체 ①") — 프로그램 안의 이름은 그대로 둔다
+      templates: state.program.templates.map(function (template) {
+        return Object.assign({}, template, { name: E.dayShortName(template.name) });
+      }),
+      daysPerWeek: state.program.daysPerWeek,
+      level: state.lifter.level,
+      index: index,
+    });
+    var scheduleBody = el('div', { class: 'sheet-body' }, [withStrip === false ? null : weekStrip()]);
     schedule.notes.forEach(function (note, i) {
       // 위 칸은 이번 주 실제, 이 줄은 평소 배치 — 첫 주에는 둘이 다를 수 있다
       scheduleBody.appendChild(el('p', { class: 'hint-line', text: (i === 0 ? '평소 ' : '') + note }));
@@ -18467,7 +18796,8 @@
    * 나오는 그래프만 있으면, 첫 주에는 기록이 사라진 줄 안다. 한 번만 해도 보이는
    * 목록이 먼저다. 잘못 적힌 날(폰을 두고 간 날)은 여기서 지운다.
    */
-  function historyCard() {
+  /** limit: 처음에 보이는 날 수(기록 탭은 최근 셋). "더 보기"를 누르면 90일까지. */
+  function historyCard(limit) {
     var work = function (session) { return (session.sets || []).filter(function (set) { return !set.warmup; }); };
     var past = state.history
       .filter(function (session) { return work(session).length > 0 || (session.cardio && session.cardio.length); })
@@ -18476,7 +18806,7 @@
     var rows = (state.todaySets.length ? [{ date: state.todayDate, sets: state.todaySets, today: true }] : []).concat(past);
     if (rows.length === 0) return null;
 
-    var shown = rows.slice(0, state.historyMore ? 90 : 7);
+    var shown = rows.slice(0, state.historyMore ? 90 : (limit || 7));
     var body = el('div', { class: 'sheet-body tight history-list' }, []);
     shown.forEach(function (session) {
       var sets = work(session);
@@ -18502,8 +18832,8 @@
     }
     return el('div', { class: 'sheet' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '운동 기록' }),
-        el('span', { class: 'meta', text: rows.length + '일' }),
+        el('h3', { text: '최근 운동' }),
+        el('span', { class: 'meta', text: '모두 ' + rows.length + '일' }),
       ]),
       body,
     ]);
@@ -18573,8 +18903,12 @@
     ]);
   }
 
-  /** 기록 탭 아래쪽 — 운동한 날 · 무게 추이 · 개인 기록. */
-  function renderProgress() {
+  /**
+   * 기록 탭의 늘어난 그래프. part 'main'(기본) — 한 번에 들 힘 그래프 한 장(같은 종목을 두 번 해야 생긴다).
+   * part 'more'("자세히" 안) — 부위 한 주 세트 그래프 · 종목별 최고 기록.
+   */
+  function renderProgress(part) {
+    var main = part !== 'more';
     var calibration = state.session.rirCalibration;
     var options = rirOptions();
     var history = weekSessions().length > 0 ? state.history.concat(
@@ -18584,10 +18918,8 @@
     var lifts = E.liftProgress(history, index, options);
     var records = E.personalRecords(history, index, options);
 
-    var days = historyCard();
-    if (days) screen.appendChild(days);
-
     if (lifts.length === 0) {
+      if (!main) return;
       screen.appendChild(el('div', { class: 'notice' }, [
         el('div', { text: '같은 종목을 두 번 하면 무게가 어떻게 늘었는지 그래프로 보여 드립니다.' }),
       ]));
@@ -18621,7 +18953,7 @@
     });
 
     var trendClass = selected.trend === 'up' ? 'zone-text-ok' : selected.trend === 'down' ? 'zone-text-over' : 'zone-text-low';
-    screen.appendChild(el('div', { class: 'sheet' }, [
+    if (main) screen.appendChild(el('div', { class: 'sheet progress-card' }, [
       el('div', { class: 'sheet-head' }, [
         // "1회 최대"는 모르는 말 — 무게 · 횟수로 짐작한 "한 번에 들 수 있는 무게"
         el('h3', { text: '한 번에 들 힘 (짐작)' }),
@@ -18637,6 +18969,7 @@
           selected.name + ' · ' + selected.sessionCount + '회 기록 · 최고 ' + selected.best + 'kg' }),
       ]),
     ]));
+    if (main) return;
 
     // 주간 볼륨 추이 — 주동근 기준
     var muscle = E.primaryMuscle(index.get(selected.exerciseId));
@@ -18690,7 +19023,7 @@
     var y = function (v) { return pad.top + (H - pad.top - pad.bottom) * (1 - (v - min) / (max - min)); };
 
     var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img',
-      'aria-label': lift.name + ' 1회 최대 추정 추이' });
+      'aria-label': lift.name + ' 한 번에 들 힘 추이' });
 
     // 격자는 뒤로 물러나 있어야 한다
     [0, 0.5, 1].forEach(function (t) {
@@ -19893,8 +20226,18 @@
     openModal('나에게 맞추기', '끼니 예시', body);
   }
 
-  /** note: 왜 지금 묻는지 — 세트 중 "아픈 데 있어요"로 왔으면 방금 무엇을 뺐는지 먼저 말한다. */
-  function openPainCheck(note) {
+  /**
+   * note: 왜 지금 묻는지 — 세트 중 "아픈 데 있어요"로 왔으면 방금 무엇을 뺐는지 먼저 말한다.
+   * onStart: 시작 창("별로예요" → 아픈 데)에서 왔으면 맨 아래에 "이대로 시작"을 두고, 누르면 이것을 부른다.
+   */
+  function openPainCheck(note, onStart) {
+    var startAfter = typeof onStart === 'function' ? onStart : null;
+    var startRow = function () {
+      return startAfter ? el('button', {
+        type: 'button', class: 'finish start-go pain-start', text: '이대로 시작',
+        onclick: function () { startAfter(); },
+      }) : null;
+    };
     var body = [];
     if (typeof note === 'string' && note) body.push(el('p', { class: 'pain-note', text: note }));
     if (!E.allows(state.consent, 'painGate')) {
@@ -19905,8 +20248,10 @@
       ]));
       body.push(el('button', {
         type: 'button', class: 'finish', text: '통증 기록에 동의하기',
-        onclick: function () { grantConsent('painData'); openPainCheck(note); },
+        onclick: function () { grantConsent('painData'); openPainCheck(note, startAfter); },
       }));
+      // 동의하지 않아도 운동은 한다 — 통증 기록 없이 시작
+      if (startAfter) body.push(el('button', { type: 'button', class: 'finish quiet pain-start-skip', text: '동의 없이 시작', onclick: function () { startAfter(); } }));
       openModal('아픈 데 있나요?', '동의가 필요합니다', body);
       return;
     }
@@ -19948,6 +20293,7 @@
       });
     }
     drawVerdicts();
+    if (startAfter) body.push(startRow());
 
     openModal('아픈 데 있나요?', '0 없음 · 10 극심', body);
   }
@@ -19982,7 +20328,7 @@
     news.reasons.forEach(function (line) { body.push(el('p', { class: 'hint-line', text: line })); });
     if (news.routine) {
       body.push(el('p', { class: 'hint-line', text:
-        '내 루틴의 종목 · 세트는 그대로입니다. 단계에 따라 바뀌는 건 세트마다 남기는 개수와 덜어내는 주가 오는 간격입니다.' }));
+        '내 루틴의 종목 · 세트는 그대로입니다. 단계에 따라 바뀌는 건 세트마다 남기는 개수와 가볍게 하는 주가 오는 간격입니다.' }));
     }
     if (news.introduced) {
       body.push(el('p', { class: 'hint-line', text:
@@ -20013,7 +20359,7 @@
       // "1번째 블록 · 1 / 6주차" 대신 "6주 과정 중 1주차" — 블록은 현장 말이다
       var round = state.block.number > 1 ? state.block.number + '번째 ' : '';
       parts.push(status.stage === 'deload'
-        ? round + status.accumulationWeeks + '주 과정을 마치고 덜어내는 주'
+        ? round + status.accumulationWeeks + '주 과정을 마치고 가볍게 하는 주'
         : round + status.accumulationWeeks + '주 과정 중 ' + Math.min(status.weekInBlock, status.accumulationWeeks) + '주차');
       if (state.block.transition) parts.push(E.LEVEL_LABELS_KO[state.block.transition.to] + '로 옮기는 중');
     }
@@ -20227,7 +20573,7 @@
         };
       })));
       body.push(el('p', { class: 'hint-line plan-basics-preview', text: preview.name + ' — ' +
-        preview.templates.map(function (template) { return template.name; }).join(' · ') }));
+        preview.templates.map(function (template) { return E.dayShortName(template.name); }).join(' · ') }));
       if (preview.caution) body.push(el('p', { class: 'hint-line', text: preview.caution }));
 
       goalPersonaRows(draft.goals, function (picked) { draft.goals = picked; draw(); })
@@ -20338,7 +20684,7 @@
   /** 이번 주 머리줄 — 내 루틴은 세트를 늘리거나 줄이지 않으므로 처방 문구 대신 이것. */
   function planLine(plan) {
     if (!state.customRoutine) return truthfulSummary(plan);
-    if (plan.phase === 'deload') return '덜어내는 주입니다. 내 루틴 세트를 절반으로 줄이고 무게는 90%로 둡니다.';
+    if (plan.phase === 'deload') return '가볍게 하는 주입니다. 내 루틴 세트를 절반으로 줄이고 무게는 90%로 둡니다.';
     return plan.weekInBlock + '주차 — 내 루틴 그대로, 세트마다 ' + (plan.targetRir > 0 ? plan.targetRir + '개쯤 남기고 멈춥니다.' : '끝까지 합니다.');
   }
 
@@ -20433,7 +20779,7 @@
     var drawStart = function () {
       wrap.appendChild(el('p', { class: 'asset-note', text:
         '하던 루틴이 있으면 그대로 넣으세요. 종목 · 세트 · 반복은 정한 대로 하고, 무게와 횟수만 기록을 보고 앱이 올립니다. ' +
-        '몇 주에 한 번 오는 덜어내는 주에는 세트를 절반으로 줄입니다(쉬는 주가 아니라 가볍게 나오는 주입니다).' }));
+        '몇 주에 한 번 오는 가볍게 하는 주에는 세트를 절반으로 줄입니다(쉬는 주가 아니라 나와서 가볍게 합니다).' }));
       var days = state.program.daysPerWeek;
       var options = [];
       if (state.lastRoutine) {
@@ -21191,6 +21537,11 @@
               var backup = readBackupText(text);
               if (!backup) return;
               state.onboarding.restore = backup;
+              // 설문 답이 든 백업이면 설문을 건너뛰고 동의 장으로 — 동의하면 바로 이어 한다
+              if (backup.answers) {
+                var at = steps().map(function (item) { return item.id; }).indexOf('consent');
+                if (at >= 0) state.onboarding.step = at;
+              }
               render();
             });
           },
@@ -21205,7 +21556,8 @@
         : '설문 답을 읽을 수 없어 설문은 새로 합니다. 기록은 설문을 마치면 들어갑니다.' }),
       el('button', {
         type: 'button', class: 'ghost backup-cancel', text: '불러오기 취소',
-        onclick: function () { state.onboarding.restore = null; render(); },
+        // 설문을 건너뛰고 동의 장에 와 있었으면 첫 장으로 — 고르지 않은 설문으로 프로그램을 짜지 않게
+        onclick: function () { state.onboarding.restore = null; state.onboarding.step = 0; render(); },
       }),
     ]);
   }
@@ -23458,14 +23810,18 @@
 
   var ALL_STEPS = [
     { id: 'account', title: '시작', render: stepAccount },
-    { id: 'consent', title: '시작하기 전에 동의가 필요합니다', render: stepConsent },
     /*
-     * 처음 설정은 세 장(동의 · 세 가지 · 준비됐습니다)이다. 전에는 동의 · 나 · 헬스장 · 프로그램
-     * 넷이었고, 그 전에는 여덟 단계였다. 헬스장은 "잘 모르겠어요"(흔한 기구)로 시작하고 내 정보 ›
-     * 헬스장에서 고친다. 프로그램 전체와 부위별 막대는 내 정보 › 프로그램 · 기록 › 자세히에 있다.
+     * 값이 먼저, 동의는 필요할 때 — 목표(그림 카드 다섯) · 경력과 주 며칠 · 동의 · 체중(선택) · 준비됐습니다.
+     * 목표 · 경력 · 일수 · 성별은 건강 정보가 아니라 동의 전에 묻는다. 체중은 건강 정보라 동의 뒤에 묻고,
+     * 동의 전에는 저장소에 체중을 남기지 않는다(persist의 answersToStore).
+     * 전에는 동의가 첫 장이었고, 그 전에는 동의 · 나 · 헬스장 · 프로그램 넷, 더 전에는 여덟 단계였다.
+     * 헬스장은 "잘 모르겠어요"(흔한 기구)로 시작하고 내 정보 › 헬스장에서 고친다.
      * "준비됐습니다"는 단계 목록이 아니라 프로그램을 만든 뒤에 뜨는 한 장(renderReady)이다.
      */
-    { id: 'me', title: '세 가지만 알려 주세요', render: stepMe },
+    { id: 'goal', title: '운동 목표를 골라 주세요', render: stepGoal },
+    { id: 'me', title: '몇 가지만 알려 주세요', render: stepMe },
+    { id: 'consent', title: '시작하기 전에 동의가 필요합니다', render: stepConsent },
+    { id: 'weight', title: '체중을 알려 주세요', render: stepWeight },
   ];
 
   /**
@@ -23846,7 +24202,9 @@
     titles.forEach(function (name, i) {
       dots.appendChild(el('span', { class: 'step' + (i === at ? ' on' : i < at ? ' done' : ''), title: name }));
     });
-    screen.appendChild(el('div', { class: 'session-head onboarding-head' }, [el('h2', { text: title }), dots]));
+    // data-step — 어느 장인지(시험이 장 이름으로 넘긴다). 준비됐습니다는 'ready'
+    var id = at < steps().length ? steps()[at].id : 'ready';
+    screen.appendChild(el('div', { class: 'session-head onboarding-head', 'data-step': id }, [el('h2', { text: title }), dots]));
   }
 
   function renderOnboarding() {
@@ -23864,7 +24222,7 @@
      * 다시 설정하는 중이면 "그만두기"를 주 버튼 아래 글자 링크로 둔다.
      */
     var nav = el('div', { class: 'wizard-nav' + (state.onboarding.redo ? ' stack-nav' : '') }, []);
-    // 필수 동의 전에는 아무것도 묻지 않는다. 동의가 수집보다 먼저다.
+    // 건강 정보(체중)는 동의 뒤의 장에서만 묻는다. 동의가 그 수집보다 먼저다.
     var picked = onboardingPicked();
     var needs = step.id === 'me' && !picked.level ? '운동 경력 단계를 골라 주세요.'
       : step.id === 'me' && !picked.sex ? '성별을 골라 주세요 — 첫 무게를 정하는 데 씁니다.'
@@ -23898,7 +24256,7 @@
         type: 'button', class: 'primary',
         disabled: blocked ? '' : null,
         text: step.id === 'consent' ? (resuming ? '동의하고 이어 하기' : '필수 항목에 동의하고 시작합니다')
-          : step.id === 'me' ? '내 운동 만들기' : '다음',
+          : isLast ? '내 운동 만들기' : '다음',
         onclick: function () {
           if (blocked) return;
           if (step.id === 'consent') {
@@ -23994,7 +24352,7 @@
      */
 
     screen.appendChild(el('p', { class: 'hint-line consent-lead', text:
-      '체중과 운동 기록은 건강 정보라 따로 동의를 받습니다. 줄마다 내용을 펼쳐 읽을 수 있습니다.' }));
+      '체중 같은 건강 정보를 쓰려면 동의가 필요합니다. 줄마다 내용을 펼쳐 읽을 수 있습니다.' }));
 
     /*
      * 필수 셋은 한 줄씩 따로 — 이용약관 · 개인정보 · 건강정보(민감정보)가 각자 한 줄이고, 줄마다
@@ -24089,8 +24447,8 @@
       '동의는 내 정보에서 언제든 철회할 수 있고, 철회하면 그 기록을 바로 지웁니다.' +
       (devMode() ? ' 이 문구는 프로토타입용이며, 실제 출시 전에는 법률 검토가 필요합니다.' : '') }));
 
-    // 다시 설정할 때는 동의 단계를 안 거친다 — 이 문은 처음 설정에만 뜬다
-    screen.appendChild(restoreDoor());
+    // 백업을 불러 두었으면 무엇을 들이는지 여기서도 보인다(불러오는 문은 첫 장 — 목표 — 에 있다)
+    if (state.onboarding.restore) screen.appendChild(restoreDoor());
   }
 
   /** 동의 한 항목의 전문 — 수집 항목 · 이용 목적 · 보유 기간 · 거부하면. 문구는 consent.ts 그대로. */
@@ -24183,8 +24541,8 @@
   var TYPICAL_MONTHS = { beginner: 3, intermediate: 12, advanced: 36, expert: 72 };
 
   /*
-   * 세 가지만 알려 주세요 — 경력 · 성별 · 주 며칠. 체중(미리 채움)과 목표(근육 키우기)는 기본값이
-   * 있어서 안 건드려도 된다. 경력과 성별만 직접 골라야 넘어간다(첫 무게가 거기서 갈린다).
+   * 몇 가지만 알려 주세요 — 경력 · 주 며칠 · 성별(목표 장 다음, 동의 장 앞). 체중은 동의 뒤 장에서 묻는다.
+   * 경력과 성별만 직접 골라야 넘어간다(첫 무게가 거기서 갈린다).
    * 전문가 · 운동한 기간은 "자세히 보기 ›" 안에, 1 · 5 · 6 · 7일은 "더 보기" 안에 있다.
    */
   var LEVEL_CHIPS = [
@@ -24232,22 +24590,6 @@
       levelMore ? el('p', { class: 'hint-line', id: 'level-preview', text: levelPreview() }) : null,
     ]));
 
-    screen.appendChild(obQuestion('성별', [
-      segmented(['male', 'female'].map(function (sex) {
-        return {
-          label: sex === 'male' ? '남성' : '여성',
-          active: Boolean(picked.sex) && state.answers.sex === sex,
-          onSelect: function () {
-            state.answers.sex = sex;
-            picked.sex = true;
-            // 체중을 아직 안 고쳤으면 그 성별에 흔한 값에서 시작한다 — 78kg에서 시작하면 첫 무게가 무겁다
-            if (!picked.weight) state.answers.bodyweightKg = sex === 'female' ? 58 : 74;
-            render();
-          },
-        };
-      })),
-    ]));
-
     var days = state.answers.daysPerWeek;
     var daysMore = Boolean(ob.daysMore) || [2, 3, 4].indexOf(days) < 0;
     screen.appendChild(obQuestion('일주일에 며칠 운동하시겠습니까?', [
@@ -24262,7 +24604,77 @@
       ]),
     ]));
 
-    // 체중은 칸 이름이 곧 제목이다(선택) — 제목을 또 달면 "체중"이 두 번
+    // 성별 — 첫 무게가 여기서 갈린다(프로그램이 쓰는 값이라 묻는다)
+    screen.appendChild(obQuestion('성별', [
+      segmented(['male', 'female'].map(function (sex) {
+        return {
+          label: sex === 'male' ? '남성' : '여성',
+          active: Boolean(picked.sex) && state.answers.sex === sex,
+          onSelect: function () {
+            state.answers.sex = sex;
+            picked.sex = true;
+            // 체중을 아직 안 고쳤으면 그 성별에 흔한 값에서 시작한다 — 78kg에서 시작하면 첫 무게가 무겁다
+            if (!picked.weight) state.answers.bodyweightKg = sex === 'female' ? 58 : 74;
+            render();
+          },
+        };
+      })),
+      el('p', { class: 'hint-line', text: '첫 무게를 정하는 데만 씁니다.' }),
+    ]));
+  }
+
+  /*
+   * 목표 — 처음 설정 첫 장. 자주 고르는 다섯 가지를 그림 카드로(기존 GOAL_PERSONAS 그대로, 이름만 쉬운 말).
+   * 기본은 근육 키우기라 바로 "다음"을 눌러도 된다. 섞어 고르기는 내 정보 › 프로그램 › 운동 횟수 · 목표 바꾸기에.
+   * 쓰던 기록(백업 파일)이 있는 사람의 문도 이 장에 있다 — 설문 답이 든 백업이면 동의 장으로 건너뛴다.
+   */
+  var GOAL_CARDS = {
+    cut: { label: '살 빼기', art: 'treadmill', sub: '근력 운동에 걷기 · 자전거를 붙입니다' },
+    bulk: { label: '근육 키우기', art: 'dumbbells', sub: '부위마다 여러 세트로 키웁니다' },
+    strength: { label: '힘', art: 'barbell-set', sub: '무겁게 적게 하고, 길게 쉽니다' },
+    crossfit: { label: '체력', art: 'battle-rope', sub: '짧은 근력 운동 뒤에 시간 재는 운동' },
+    'strength-cut': { label: '근력+감량', art: 'kettlebells', sub: '무게는 지키고 가벼운 유산소를 붙입니다' },
+  };
+  var GOAL_CARD_ORDER = ['cut', 'bulk', 'strength', 'crossfit', 'strength-cut'];
+
+  function stepGoal() {
+    onboardingPicked();
+    var now = (state.answers.goals || []).slice().sort().join();
+    var art = window.FitEquipmentArt;
+    var personas = GOAL_CARD_ORDER.map(function (id) {
+      return GOAL_PERSONAS.filter(function (persona) { return persona.id === id; })[0];
+    }).filter(Boolean);
+    var matched = personas.some(function (persona) { return persona.goals.slice().sort().join() === now; });
+    screen.appendChild(el('div', { class: 'goal-cards', role: 'group', 'aria-label': '운동 목표' }, personas.map(function (persona) {
+      var card = GOAL_CARDS[persona.id];
+      var on = persona.goals.slice().sort().join() === now;
+      var pic = art && art.has(card.art) ? art.render(card.art, '') : null;
+      if (pic) pic.setAttribute('class', 'goal-card-art');
+      return el('button', {
+        type: 'button', class: 'goal-card goal-persona', 'data-persona': persona.id, 'aria-pressed': String(on),
+        onclick: function () { state.answers.goals = persona.goals.slice(); render(); },
+      }, [
+        el('span', { class: 'goal-card-pic', 'aria-hidden': 'true' }, pic ? [pic] : []),
+        el('span', { class: 'goal-card-text' }, [
+          el('b', { class: 'goal-card-name', text: card.label }),
+          el('span', { class: 'goal-card-sub', text: card.sub }),
+        ]),
+      ]);
+    })));
+    if (!matched) {
+      screen.appendChild(el('p', { class: 'hint-line', text: '지금 목표: ' +
+        (state.answers.goals || []).map(function (id) { return E.GOAL_LABELS_KO[id]; }).join(' · ') }));
+    }
+    screen.appendChild(el('p', { class: 'hint-line ob-later', text: '목표는 나중에 내 정보에서 바꿀 수 있습니다.' }));
+    // 다시 설정할 때는 기록이 이미 이 폰에 있다 — 불러오는 문은 처음 설정에만
+    if (!state.onboarding.redo) screen.appendChild(restoreDoor());
+  }
+
+  /*
+   * 체중 — 건강 정보라 동의 뒤의 장에서 묻는다. 선택이다: 성별에 흔한 값이 채워져 있어 그대로 둬도 된다.
+   * 다시 설정할 때는 지금 체중이 채워져 있다.
+   */
+  function stepWeight() {
     screen.appendChild(el('div', { class: 'ob-q ob-weight' }, [
       numberRow({
         name: '체중', value: state.answers.bodyweightKg, min: 30, max: 200,
@@ -24271,25 +24683,7 @@
         onInput: function (value) { state.answers.bodyweightKg = value; onboardingPicked().weight = true; },
       }),
     ]));
-
-    // 목표 — 자주 고르는 다섯 가지 중 하나. 섞어 고르기는 내 정보 › 프로그램 › 운동 횟수 · 목표 바꾸기에
-    var now = (state.answers.goals || []).slice().sort().join();
-    var matched = GOAL_PERSONAS.some(function (persona) { return persona.goals.slice().sort().join() === now; });
-    screen.appendChild(obQuestion('목표', [
-      el('div', { class: 'chip-row ob-goals' }, GOAL_PERSONAS.map(function (persona) {
-        return el('button', {
-          type: 'button', class: 'pick goal-persona', 'data-persona': persona.id,
-          'aria-pressed': String(persona.goals.slice().sort().join() === now),
-          text: persona.label.replace(/ \(.*\)$/, ''),
-          onclick: function () { state.answers.goals = persona.goals.slice(); render(); },
-        });
-      })),
-      matched ? null : el('p', { class: 'hint-line', text: '지금 목표: ' +
-        (state.answers.goals || []).map(function (id) { return E.GOAL_LABELS_KO[id]; }).join(' · ') }),
-    ]));
-
-    screen.appendChild(el('p', { class: 'hint-line ob-later', text:
-      '목표와 헬스장 기구는 나중에 내 정보에서 바꿀 수 있습니다.' }));
+    screen.appendChild(el('p', { class: 'hint-line ob-later', text: '모르면 그대로 두셔도 됩니다.' }));
   }
 
   /** 질문 하나 — 제목 한 줄과 고르는 칸. */
@@ -24684,7 +25078,7 @@
     ];
     templates.forEach(function (template) {
       body.push(el('div', { class: 'sheet program-day' }, [
-        el('div', { class: 'sheet-head' }, [el('h3', { text: template.name })]),
+        el('div', { class: 'sheet-head' }, [el('h3', { text: E.dayPlainName(template.name) })]),
         el('div', { class: 'sheet-body' }, template.slots.map(function (slot) {
           var exercise = index.get(slot.exerciseId);
           return el('div', { class: 'delta' }, [

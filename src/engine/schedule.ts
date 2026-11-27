@@ -72,7 +72,7 @@ export function buildSchedule(input: ScheduleInput): WeekSchedule {
       weekday,
       label: WEEKDAY_LABELS_KO[weekday]!,
       templateIndex,
-      templateName: templates[templateIndex]?.name ?? `세션 ${templateIndex + 1}`,
+      templateName: templates[templateIndex]?.name ?? `운동 ${templateIndex + 1}`,
       gapDays: weekday - previous,
     };
   });
