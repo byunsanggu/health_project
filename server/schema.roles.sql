@@ -52,7 +52,7 @@ grant select, insert, update, delete on
   public.profiles, public.friendships, public.week_summaries, public.cheers to app_user;
 grant execute on function
   public.set_my_profile(text),
-  public.put_week_summary(date, smallint, smallint, smallint),
+  public.put_week_summary(date, smallint, smallint, smallint, smallint),
   public.add_friend(text),
   public.remove_friend(uuid),
   public.send_cheer(uuid, text),
