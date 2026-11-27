@@ -35,7 +35,7 @@ export default async function ({ page, url, shot }) {
   await startWorkout(page);
   await openDetail(page);
   const head = (await page.locator('.effort-hint').textContent()).trim();
-  const range = head.match(/(\d+)~(\d+)초 중 자세가 무너지기 전에 멈추세요/);
+  const range = head.match(/자세가 무너지기 전에 멈추세요 \((\d+)~(\d+)초\)/);
   check(range, '목표가 초가 아닙니다: ' + head);
   const target = Number(range[2]);
   const units = await page.locator('.set-box.now .set-unit').allTextContents();
