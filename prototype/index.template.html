@@ -3030,6 +3030,33 @@ button.focus-progress:active { background: var(--surface-2); }
 /* 화면 아래 잠깐 뜨는 한 줄 (PT를 껐습니다 · 되돌리기) */
 .pt-toast { position: fixed; left: 16px; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 12px; background: var(--ink); color: var(--surface); font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, .2); }
 .pt-toast .undo-btn { min-height: 40px; }
+
+/* 5분만 하기 — 시작 버튼 아래의 조용한 둘째 길. 주 버튼보다 앞에 나서지 않는다 */
+.start-dock .five-min { display: flex; align-items: baseline; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin: 6px 0 0; padding: 0 8px; border: 0; background: none; color: var(--accent); font-size: 15px; }
+.five-min b { font-weight: 600; }
+.five-min span { color: var(--muted); font-size: 13px; }
+/* "5분 됐습니다. 계속할까요?" */
+.five-ask-q { margin: 2px 0 6px; }
+.five-ask-row { display: grid; gap: 8px; margin-top: 14px; }
+.five-ask-row .finish { min-height: 52px; margin: 0; }
+.done-card .done-five { font-size: 15px; margin: 0 0 10px; color: var(--ink); }
+/* 다음 도전 한 줄 — 작게, 한 줄 */
+.challenge-line { margin: 6px 0 0; font-size: 14px; font-weight: 600; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.done-card .done-challenge { margin: -6px 0 12px; }
+/* 알림에서 바로 시작 — 소리가 잠긴 폰에서 한 번 누르는 큰 시작 */
+.quick-gate { position: fixed; inset: 0; z-index: 85; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px)); background: var(--surface); color: var(--ink); text-align: center; }
+.quick-kicker { margin: 0; font-size: 13px; color: var(--muted); }
+.quick-title { margin: 0; font-size: 26px; font-weight: 600; }
+.quick-sub { margin: 0; font-size: 15px; color: var(--muted); }
+.quick-go { margin: 28px 0 6px; width: min(72vw, 260px); aspect-ratio: 1; border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 30px; font-weight: 600; box-shadow: 0 10px 30px rgba(69, 64, 201, .28); }
+.quick-go:active { transform: scale(.97); }
+.quick-note { margin: 0; font-size: 14px; color: var(--muted); }
+.quick-list { margin-top: 10px; min-height: 44px; padding: 0 8px; border: 0; background: none; color: var(--accent); font-size: 15px; text-decoration: underline; text-underline-offset: 3px; }
+/* ⋯ 메뉴의 켜고 끄는 줄 */
+.menu-switch { flex: none; position: relative; width: 44px; height: 26px; border-radius: 999px; background: var(--line); transition: background .15s; }
+.menu-switch i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: transform .15s; }
+.menu-switch.on { background: var(--accent); }
+.menu-switch.on i { transform: translateX(18px); }
 /* 설정 이름 — 설명보다 크고 진하게 */
 .list-label.setting-name { font-family: inherit; font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--ink); margin-top: 6px; }
 @media (max-height: 700px) {

@@ -39,6 +39,14 @@ grant execute on function
   public.delete_my_push_data()
   to app_user;
 
+-- 휴식 끝 알림(schema.push.sql의 rest_alarm). 넣는 것은 함수(service_role)만 한다 —
+-- 시험에서는 app_user가 잠깐 service_role이 되어(set role) 넣는다.
+grant select, insert, update, delete on public.rest_alarm to app_user, service_role;
+grant usage on schema public, auth to service_role;
+grant execute on function auth.uid() to service_role;
+grant execute on function public.cancel_rest_alarm(uuid) to app_user;
+grant service_role to app_user;
+
 -- 친구 쪽(schema.friends.sql).
 grant select, insert, update, delete on
   public.profiles, public.friendships, public.week_summaries, public.cheers to app_user;

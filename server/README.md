@@ -269,6 +269,83 @@ Supabase → Integrations → Cron
 
 문구에 "사라집니다 · 실패 · 놓쳤습니다" 같은 말은 쓰지 않습니다. 테스트가 막습니다.
 
+### ⑦-B 휴식 끝 알림 — 아이폰 잠금 화면 (`functions/rest-alarm`)
+
+**왜 필요한가** — 아이폰은 화면을 잠근 채 웹앱이 소리를 내려면 음악 앱처럼 틀어야 하고,
+그러면 **듣던 애플 뮤직 · 스포티파이가 멈춥니다.** 시스템 알림의 소리와 애플워치 진동은
+음악을 멈추지 않습니다. 그래서 아이폰에서 쉬는 중에 화면이 잠기면, 휴식이 끝나는 순간
+"휴식 끝 · 2세트 시작" 알림이 오게 했습니다. 웹앱은 알림을 스스로 예약하지 못해서 서버가
+그 순간에 푸시를 보냅니다. 안드로이드 · 컴퓨터는 원래 음악과 같이 나오므로 바뀌는 것이
+없습니다.
+
+**서버는 문장을 모릅니다** — 서버에 가는 것은 "몇 시에, 몇 번 알람"과 보낼 곳뿐입니다.
+`rest_alarm` 표에는 **주소 · 시각 · 아무 뜻 없는 알람 번호**만 있고, 푸시에 실리는 것도
+`{t:'rest', id}` 하나입니다. "벤치프레스 2세트" 같은 말은 화면이 꺼지기 직전에 앱이 **폰 안에**
+적어 두고, 푸시가 닿으면 폰이 그걸 읽어 띄웁니다. 종목 · 무게 · 세트는 서버를 지나가지 않습니다.
+
+**하실 것** — ⑦을 마치셨다면 새 비밀값은 없습니다.
+
+**1. 표 만들기** — ⑦에서 이미 돌리셨어도 **한 번 더** 돌립니다(`rest_alarm` 표가 새로 생겼습니다).
+여러 번 돌려도 안전합니다.
+
+```
+Supabase → SQL Editor → New query
+  server/schema.push.sql 전체 복사 → Run
+```
+
+**2. 함수 올리기**
+
+```
+Supabase → Edge Functions → Deploy a new function
+  이름: rest-alarm
+  파일: index.ts
+  내용: server/functions/rest-alarm/index.ts 전체
+  Verify JWT: 켜 둡니다 (로그인한 사람만 부릅니다)
+```
+
+비밀값은 send-nudges와 **같은 네 개를 같이 씁니다** — Edge Functions → Secrets는 함수끼리
+공유하므로 따로 넣을 것이 없습니다.
+
+```
+VAPID_PRIVATE_KEY · VAPID_PUBLIC_KEY · VAPID_SUBJECT · SERVICE_ROLE_KEY
+```
+
+> `SERVICE_ROLE_KEY`는 Settings → API의 **service_role(eyJ…로 시작)** 이어야 합니다. 이 함수는
+> 휴식이 길면 자기 자신을 다시 부르는데, 그때 Verify JWT를 이 열쇠로 통과합니다. 새 형식의
+> `sb_secret_…` 열쇠는 Verify JWT를 통과하지 못합니다. 앱 빌드에는 절대 넣지 마세요.
+
+Cron은 **걸지 않습니다.** 앱이 화면이 꺼지는 순간 직접 부릅니다.
+
+**3. 됐는지 보기** — 홈 화면에 설치한 아이폰 앱에서 내 정보 → 알림 → "화면이 잠겼을 때"가
+"알림으로 알려 주기"인지 보고, 세트를 하나 끝내 휴식을 띄운 뒤 화면을 잠급니다. 휴식이 끝날 때
+알림이 오고 음악은 계속 나와야 합니다. Edge Functions → rest-alarm → Logs에 호출이 보입니다.
+
+**어떻게 도는가**
+
+| | |
+|---|---|
+| 화면이 꺼짐 | 앱이 휴식 끝 시각과 새 알람 번호를 보냅니다. 함수가 표에 한 줄 넣고 바로 답합니다 |
+| 기다림 | 함수가 15초마다 줄이 그대로인지 봅니다. 앱이 지웠으면 그 자리에서 그만둡니다 |
+| 긴 휴식 | 한 번 불린 함수는 약 150초밖에 못 삽니다. 110초가 되면 자기 자신을 다시 부르고 끝납니다 — 15분 휴식이면 8번 이어집니다 |
+| 시각이 됨 | 줄을 지우면서 꺼내고, 꺼낸 쪽만 보냅니다 — 두 번 울리지 않습니다. 1초 일찍 쏩니다(폰까지 가는 시간) |
+| 화면으로 돌아옴 · 건너뜀 · 끝냄 | 앱이 `cancel_rest_alarm`으로 줄을 지웁니다 — 푸시가 안 나갑니다 |
+
+**막아 둔 것** — 남의 줄은 못 보고 못 지웁니다(RLS). 사람이 직접 줄을 넣거나 시각을 바꾸지
+못하고 함수만 넣습니다. 15분보다 먼 휴식은 받지 않습니다(표도 16분에서 막습니다). 한 사람이
+동시에 걸 수 있는 알람은 기기 셋까지입니다. 보낼 곳은 애플 · 구글 · 모질라 · 마이크로소프트
+푸시 서버 주소만 받습니다.
+
+**남는 한계**
+
+- 아이폰은 **홈 화면에 설치한 앱**에서만 알림이 옵니다(iOS 16.4+). 사파리 탭에서는 예전처럼
+  코치 목소리로 알리고, 그러면 음악이 멈출 수 있습니다.
+- 로그인과 알림 허용이 필요합니다. 없으면 앱이 조용히 예전 방식으로 갑니다.
+- 푸시는 몇 초 늦거나 이를 수 있습니다(보통 1~3초).
+- 화면으로 돌아온 바로 그 순간에 푸시가 이미 출발했으면 "휴식이 끝났습니다" 한 줄이 잠깐 뜰
+  수 있습니다. 아이폰은 받은 푸시마다 알림을 꼭 띄워야 해서(안 띄우면 구독을 끊습니다) 아예
+  없애지는 못합니다.
+- 신호가 없는 지하 헬스장에서는 예약 자체가 안 되므로 예전 방식(코치 목소리)으로 갑니다.
+
 ### ⑧ 친구 · 챌린지
 
 친구와 **서로 이번 주에 몇 번 나왔는지만** 봅니다.
@@ -703,6 +780,7 @@ Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor**
 | `src/engine/exclusions.ts` | 왜 빼는지를 묻고, 빠진 자리를 채우는 규칙 |
 | `src/engine/crowd.ts` | 집단 신호 — 몇 명부터, 몇 %부터 말할 것인가 |
 | `server/functions/gym-search/` | 헬스장 검색을 서버가 대신 물어보는 함수 |
+| `server/functions/rest-alarm/` | 아이폰 잠금 화면의 휴식 끝 알림 — 시각이 되면 푸시 (문장은 폰에만) |
 | `src/engine/sync.ts` | 올리고 받고 합치는 규칙 (서버가 뭔지 모릅니다) |
 | `src/engine/placeSearch.ts` | 검색어를 다듬고 결과를 줄 세우는 규칙 (제공자를 모릅니다) |
 | `src/engine/storage.ts` | 오프라인 저장과 아웃박스 (전부터 있었습니다) |
@@ -734,8 +812,10 @@ initdb -D /tmp/pgcheck -A trust -U postgres
 pg_ctl -D /tmp/pgcheck -o "-k /tmp -p 5433" start
 psql -h /tmp -p 5433 -U postgres -f server/schema.stub.sql   # auth.uid() 흉내
 psql -h /tmp -p 5433 -U postgres -f server/schema.sql
+for f in gyms push friends; do psql -h /tmp -p 5433 -U postgres -f server/schema.$f.sql; done
 psql -h /tmp -p 5433 -U postgres -f server/schema.roles.sql  # RLS 우회 안 하는 역할
 psql -h /tmp -p 5433 -U app_user -d postgres -f server/schema.test.sql
+psql -h /tmp -p 5433 -U app_user -d postgres -f server/schema.rest_alarm.test.sql  # 휴식 끝 알림
 ```
 
 `postgres` 역할은 **BYPASSRLS**라서 그대로 시험하면 정책이 늘 통과합니다 — 그러면 아무것도

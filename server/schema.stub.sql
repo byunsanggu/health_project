@@ -23,5 +23,9 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then
     create role authenticated nologin;
   end if;
+  -- 함수(Edge Function)가 쓰는 관리자 역할. 정책을 지나간다 — 휴식 알림을 넣는 쪽을 흉내 낸다.
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin bypassrls;
+  end if;
 end
 $$;

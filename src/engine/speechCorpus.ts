@@ -29,6 +29,7 @@ import { isTimed } from './exercises.ts';
 import { forSpeech } from './coach.ts';
 import { CARDIO } from './cardio.ts';
 import { seasonDayLine } from './season.ts';
+import { fiveMinuteAskLine } from './shortSession.ts';
 
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 const MOMENTS: MistakeMoment[] = ['flagged', 'heavy', 'first', 'lastSet'];
@@ -226,6 +227,8 @@ export function coachTexts(style: CoachStyle): string[] {
 
   // 시즌 대회 당일 — 오른 시즌 · 같은 무대에 다시 서는 시즌
   for (const outcome of ['promoted', 'again'] as const) say(seasonDayLine(style, outcome));
+  // 5분만 하기 — 5분이 차면 계속할지 묻는다
+  say(forSpeech(fiveMinuteAskLine(style)));
 
   say(APP_SAYINGS);
   return out;

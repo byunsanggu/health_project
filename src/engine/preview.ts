@@ -155,3 +155,91 @@ export function buildPreview(input: PreviewInput): NextPreview {
       : '종목은 그날 몸 상태를 보고 정합니다',
   };
 }
+
+/* ── 다음 도전 한 줄 ─────────────────────────────
+ *
+ * 끝낸 화면과 다음 운동 날 오늘 화면에 한 줄. "다음 화요일 · 스쿼트 62.5kg 첫 도전".
+ * 예고 카드(buildPreview)는 대표 종목 하나를 늘 보여 주지만, 이건 **실제로 오르는 것이
+ * 있을 때만** 뜬다. 같은 무게 · 같은 횟수인 날에 "도전"이라고 쓰면 그 말이 닳는다.
+ *
+ * 숫자는 엔진이 그날 처방한 그대로다(prescribeLoad의 증량 · "같은 무게로 9회를 노립니다").
+ * 이 줄은 이 폰 화면에만 쓴다 — 알림으로 보내지 않는다(무게는 건강 기록이다).
+ */
+
+export interface ChallengeCandidate {
+  name: string;
+  equipment: Equipment;
+  pattern: MovementPattern;
+  /** 그날 처방된 무게. 맨몸이면 null 또는 0 */
+  weightKg: number | null;
+  /** 그날 노리는 횟수(처방 범위의 아래쪽 — 같은 무게면 지난번보다 하나 더) */
+  targetReps: number;
+  /** 지난번 그 종목의 톱세트 무게. 처음이면 null */
+  previousKg: number | null;
+  /** 지난번 그 무게에서 가장 적게 한 횟수(엔진이 다음 목표를 정하는 기준). 모르면 null */
+  previousReps: number | null;
+  /** 지금까지 든 가장 무거운 본세트 무게. 모르면 null */
+  bestKg: number | null;
+}
+
+export type ChallengeKind = 'firstWeight' | 'weight' | 'reps';
+
+export interface Challenge {
+  kind: ChallengeKind;
+  name: string;
+  /** "스쿼트 62.5kg 첫 도전" · "벤치프레스 8회 → 9회 도전" */
+  text: string;
+}
+
+const KIND_RANK: Record<ChallengeKind, number> = { firstWeight: 0, weight: 1, reps: 2 };
+
+function challengeOf(item: ChallengeCandidate): Challenge | null {
+  const now = item.weightKg ?? 0;
+  const before = item.previousKg;
+  // 처음 하는 종목은 오르는 게 아니다 — 비교할 지난번이 없다
+  if (before == null) return null;
+  if (now > before + 1e-9) {
+    const first = item.bestKg == null || now > item.bestKg + 1e-9;
+    return {
+      kind: first ? 'firstWeight' : 'weight',
+      name: item.name,
+      text: `${item.name} ${weightLabel(now)} ${first ? '첫 도전' : '도전'}`,
+    };
+  }
+  if (Math.abs(now - before) < 1e-9 && item.previousReps != null && item.targetReps > item.previousReps) {
+    return {
+      kind: 'reps',
+      name: item.name,
+      text: `${item.name} ${item.previousReps}회 → ${item.targetReps}회 도전`,
+    };
+  }
+  return null;
+}
+
+/**
+ * 그날 가장 눈에 띄는 도전 하나. 없으면 null.
+ *
+ * 처음 드는 무게 > 지난번보다 무거운 무게 > 같은 무게로 하나 더. 같은 갈래면 그날을
+ * 대표하는 동작(복합 · 자유 중량) 쪽. 덜어내는 주 · 복귀 주에는 띄우지 않는다 —
+ * 일부러 내린 주에 "도전"을 말하면 앱이 한 입으로 두말한다.
+ */
+export function nextChallenge(
+  items: readonly ChallengeCandidate[],
+  options: { drop?: DropReason } = {},
+): Challenge | null {
+  if (options.drop) return null;
+  let best: { challenge: Challenge; rank: number } | null = null;
+  items.forEach((item) => {
+    const challenge = challengeOf(item);
+    if (!challenge) return;
+    const compound = COMPOUND.includes(item.pattern) ? 0 : 10;
+    const rank = KIND_RANK[challenge.kind] * 100 + compound + EQUIPMENT_RANK[item.equipment];
+    if (!best || rank < best.rank) best = { challenge, rank };
+  });
+  return best ? (best as { challenge: Challenge }).challenge : null;
+}
+
+/** 앞머리를 붙인 한 줄 — "다음 화요일 · 스쿼트 62.5kg 첫 도전" */
+export function challengeLine(when: string, challenge: Challenge | null): string {
+  return challenge ? `${when} · ${challenge.text}` : '';
+}

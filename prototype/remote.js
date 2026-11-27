@@ -747,6 +747,52 @@ var Remote = (function () {
     return rpc('cancel_nudge', {});
   }
 
+  /* ── 휴식 끝 알림 (아이폰 잠금 화면 · functions/rest-alarm) ──────
+
+     화면이 꺼지는 순간에 부른다 — 그 뒤로 페이지가 얼마나 더 돌지 모른다. 그래서 keepalive로
+     보내고(페이지가 멈춰도 요청은 간다), 토큰 갱신 같은 왕복을 그 자리에서 하지 않도록 휴식이 시작될
+     때 미리 갱신해 둔다(freshen). 서버에 가는 것은 시각 · 알람 번호 · 보낼 곳뿐이다. */
+
+  /** 토큰이 몇 분 안에 끝나는가 — 화면이 꺼지는 순간에는 갱신할 틈이 없다. */
+  function tokenExpiresSoon(withinMs) {
+    var token = read().accessToken;
+    if (!token) return true;
+    var claims = {};
+    try { claims = JSON.parse(atobSafe(token.split('.')[1] || '')) || {}; } catch (err) { void err; }
+    return !claims.exp || claims.exp * 1000 < Date.now() + (withinMs || 0);
+  }
+
+  /** 휴식이 시작될 때 — 곧 끝나는 토큰이면 미리 갱신해 둔다. */
+  function freshen() {
+    if (!signedIn() || !read().refreshToken || !tokenExpiresSoon(10 * 60 * 1000)) return Promise.resolve(true);
+    return refresh().then(function () { return true; }, function () { return false; });
+  }
+
+  function armRestAlarm(subscription, alarmId, sendAt) {
+    if (!signedIn() || !subscription) return Promise.resolve({ ok: false, status: 0 });
+    var state = read();
+    return fetch(baseUrl() + '/functions/v1/rest-alarm', {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        apikey: state.anonKey || '',
+        Authorization: 'Bearer ' + state.accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'arm', alarm_id: alarmId, send_at: sendAt, sub: subscription }),
+    }).then(function (response) {
+      return { ok: response.ok, status: response.status };
+    }, function () {
+      return { ok: false, status: 0 };
+    });
+  }
+
+  /** 화면으로 돌아왔거나 휴식을 건너뛰었다 — 그 알람을 지운다. 줄이 없으면 서버가 안 보낸다. */
+  function cancelRestAlarm(alarmId) {
+    if (!signedIn()) return Promise.resolve(null);
+    return rpc('cancel_rest_alarm', alarmId ? { alarm: alarmId } : {});
+  }
+
   /** 서버에서 내 기록을 지운다. 지우는 길이 없으면 개인정보를 받을 자격이 없다. */
   function deleteEverything() {
     return withAuth(function () {
@@ -837,6 +883,9 @@ var Remote = (function () {
     markCheersSeen: markCheersSeen,
     queueNudge: queueNudge,
     cancelNudge: cancelNudge,
+    freshen: freshen,
+    armRestAlarm: armRestAlarm,
+    cancelRestAlarm: cancelRestAlarm,
     deleteEverything: deleteEverything,
   };
 })();

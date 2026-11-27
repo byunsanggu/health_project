@@ -93,6 +93,8 @@
 
     navigator.serviceWorker.addEventListener('message', function (event) {
       var data = event.data || {};
+      // 알림(약속 · 다시 부르기)을 눌렀는데 앱이 이미 열려 있었다 — 곧장 오늘 운동으로
+      if (data.type === 'go:start') { quickStart(); return; }
       if (data.type !== 'rest:action') return;
       if (data.action === 'extend') extendRest(30);
       else stopRest();
@@ -130,20 +132,81 @@
    * 화면 꺼짐 방지.
    *
    * 휴식 중에 화면이 꺼지면 남은 시간을 볼 수 없다. 세트 사이에만 잡고
-   * 끝나면 바로 놓는다 — 계속 잡고 있으면 배터리를 먹는다.
+   * 끝나면 바로 놓는다 — 계속 잡고 있으면 배터리를 먹는다. PT는 "화면 켜 두기"를
+   * 골랐으면(아이폰 기본) 운동 내내 잡는다(ptKeepsScreen).
    */
   function acquireWakeLock() {
-    if (!navigator.wakeLock || pwa.wakeLock || document.visibilityState !== 'visible') return;
+    pwa.wakeWanted = true;
+    if (!navigator.wakeLock || pwa.wakeLock || pwa.wakePending || document.visibilityState !== 'visible') return;
+    // 받는 중에 또 부르면 두 개를 잡고 하나는 영영 못 놓는다 — 받는 동안은 다시 청하지 않는다
+    pwa.wakePending = true;
     navigator.wakeLock.request('screen').then(function (lock) {
+      pwa.wakePending = false;
+      // 받는 사이에 놓으라고 했으면 바로 놓는다
+      if (!pwa.wakeWanted) { lock.release().catch(function () {}); return; }
       pwa.wakeLock = lock;
-      lock.addEventListener('release', function () { pwa.wakeLock = null; });
-    }, function () { /* 배터리 절약 모드 등에서 거부된다 */ });
+      lock.addEventListener('release', function () { if (pwa.wakeLock === lock) pwa.wakeLock = null; });
+    }, function () { pwa.wakePending = false; /* 배터리 절약 모드 등에서 거부된다 */ });
   }
 
   function releaseWakeLock() {
+    pwa.wakeWanted = false;
     if (!pwa.wakeLock) return;
     pwa.wakeLock.release().catch(function () {});
     pwa.wakeLock = null;
+  }
+
+  /*
+   * PT 동안 화면 켜 두기 — 이 폰에만 저장한다(폰마다 맞는 값이 다르다).
+   *
+   * 아이폰은 옆 버튼으로 화면을 잠그면 웹 앱의 소리(Web Audio)가 멈춘다. 그때 코치 소리를 내려면
+   * <audio>를 틀어야 하는데, 그러면 아이폰이 듣던 음악(애플 뮤직 · 스포티파이)을 멈춘다 — 웹 앱이
+   * 넘을 수 없는 아이폰의 한계다. 그래서 아이폰은 PT 내내 화면을 켜 둔다(기본 켜짐). 저절로
+   * 잠기지 않으니 음악과 코치가 계속 같이 나온다. 안드로이드는 화면을 꺼도 같이 나와서 기본은 꺼짐
+   * (쉬는 시간에만 켜 둔다).
+   */
+  var KEEP_AWAKE_KEY = 'volume-coach.keepAwake';
+  /** 이만큼 넘게 멈춰 두면 화면을 놓는다 — 자리를 떴다. 배터리를 먹는다. */
+  var PT_PAUSE_RELEASE_MS = 10 * 60 * 1000;
+
+  function keepAwakeOn() {
+    try {
+      var saved = localStorage.getItem(KEEP_AWAKE_KEY);
+      if (saved === '1') return true;
+      if (saved === '0') return false;
+    } catch (err) { void err; }
+    return typeof RestSound !== 'undefined' && RestSound.backgroundMixes ? !RestSound.backgroundMixes() : isIOS();
+  }
+
+  function setKeepAwake(on) {
+    try { localStorage.setItem(KEEP_AWAKE_KEY, on ? '1' : '0'); } catch (err) { void err; }
+    applyPtScreen();
+  }
+
+  /** PT가 지금 화면을 켜 둘 때인가 — 켜 두기를 골랐고, 운동 중이고, 오래 멈춰 두지 않았다. */
+  function ptKeepsScreen() {
+    var pt = state.ptRun;
+    if (!(ptOn() && state.started && !state.sessionClosed && keepAwakeOn())) return false;
+    if (pt && pt.cooled) return false;
+    if (pt && pt.paused && pt.pausedAt && Date.now() - pt.pausedAt > PT_PAUSE_RELEASE_MS) return false;
+    return true;
+  }
+
+  function ptHoldScreen() {
+    if (ptKeepsScreen()) acquireWakeLock();
+  }
+
+  /** 지금 상태에 맞춘다 — 켜 둘 때면 잡고, 아니면(쉬는 중 · 주머니 모드가 아니면) 놓는다. */
+  function applyPtScreen() {
+    if (ptKeepsScreen()) { acquireWakeLock(); return; }
+    if (!state.rest && !pocketOn()) releaseWakeLock();
+  }
+
+  /** 1초마다 — PT를 10분 넘게 멈춰 두면 화면을 놓는다(쉬던 중이어도). 계속을 누르면 다시 잡는다. */
+  function ptScreenTick() {
+    var pt = state.ptRun;
+    if (!pwa.wakeLock || !pt || !pt.paused || !pt.pausedAt || pocketOn()) return;
+    if (Date.now() - pt.pausedAt > PT_PAUSE_RELEASE_MS) releaseWakeLock();
   }
 
   function notifyWorker(message) {
@@ -170,6 +233,85 @@
   function pageHidden() {
     return document.visibilityState === 'hidden';
   }
+
+  /*
+   * 아이폰 잠금 화면의 휴식 끝 — 소리 대신 알림으로(push.js FitRestPush · server/functions/rest-alarm).
+   *
+   * 아이폰은 화면을 잠근 채 휴식 끝 소리를 내려면 <audio>로 틀어야 하고, 그러면 듣던 애플 뮤직 · 스포티파이가
+   * 멈춘다. 시스템 알림의 소리와 애플워치 진동은 음악을 멈추지 않는다. 그래서 아이폰에서 쉬는 중에 화면이
+   * 꺼지면 서버에 "이 시각에 한 번"을 맡긴다(설정 "화면이 잠겼을 때"). 서버에는 시각과 알람 번호만 가고,
+   * "휴식 끝 · 2세트 시작" 같은 말은 폰 안에 적어 둔다. 안드로이드 · 컴퓨터는 화면을 꺼도 음악과 섞여
+   * 나오므로(RestSound.backgroundMixes) 그대로다. 걸 수 없거나 실패하면 조용히 예전 길(코치 목소리)로 간다.
+   */
+  function lockAlertMode() {
+    if (state.lockAlert === 'voice' || state.lockAlert === 'push') return state.lockAlert;
+    // 고른 적이 없으면 — 알림을 쓸 수 있는 판이면 알림이 기본(음악이 안 끊긴다)
+    return typeof FitRestPush !== 'undefined' && FitRestPush.configured() ? 'push' : 'voice';
+  }
+
+  /** 화면이 잠겨도 음악과 섞이지 못하는 폰(아이폰)인가 — "화면이 잠겼을 때" 설정은 이 폰에서만 보인다. */
+  function lockStopsMusic() {
+    return typeof RestSound !== 'undefined' && Boolean(RestSound.backgroundMixes) && !RestSound.backgroundMixes();
+  }
+
+  /** 지금 화면이 꺼지면 휴식 끝을 알림으로 거는가. */
+  function restPushMode() {
+    if (typeof FitRestPush === 'undefined' || !lockStopsMusic() || lockAlertMode() !== 'push') return false;
+    if (!restSoundOn() && state.restAlerts === false) return false;
+    return FitRestPush.ready();
+  }
+
+  /** 휴식이 시작될 때 — 구독을 확인하고 토큰을 미리 갱신해 둔다. 화면이 꺼지는 순간에는 틈이 없다. */
+  function primeRestPush() {
+    if (typeof FitRestPush === 'undefined' || !lockStopsMusic() || lockAlertMode() !== 'push') return;
+    FitRestPush.prime().catch(function () {});
+  }
+
+  /** 잠금 화면 · 손목에 뜰 말 — 폰 안에서만 만든다. PT는 화면의 다음 세트 한 줄을 따른다. */
+  function restAlarmText() {
+    var rest = state.rest;
+    var detail = '';
+    if (ptOn() && state.started) {
+      var ref = focusSetRef();
+      if (ref && ref.set) {
+        detail = ref.lift.exercise.name + ' ' + setNo(ref.lift, ref.setIndex) + '세트 · ' +
+          loadText(ref.lift, ref.set.weightKg) + ' × ' + repsText(ref.set.targetReps, ref.lift.exercise);
+      }
+    }
+    return E.restAlarmCopy({ next: rest.next, exerciseName: rest.exerciseName, detail: detail, pt: ptOn() && state.started });
+  }
+
+  /**
+   * 화면이 꺼진 동안의 휴식 끝 — 화면이 꺼질 때(또는 꺼진 채 휴식이 바뀔 때) 부른다.
+   * 아이폰에서 알림을 걸 수 있으면 알림으로(소리를 안 튼다 — 음악이 안 멈춘다), 아니면 예전처럼 소리로.
+   */
+  function hiddenRestAlert() {
+    var rest = state.rest;
+    if (!rest || rest.frozenLeft != null) return;
+    var seconds = restRemaining();
+    if (seconds <= 0) return;
+    if (!restPushMode()) {
+      if (restSoundOn()) RestSound.start(seconds, '다음 · ' + rest.next);
+      return;
+    }
+    // 2초 안에 끝나는 휴식은 알림이 더 늦다 — 음악을 멈추면서까지 소리를 틀지 않는다
+    if (seconds < 3) return;
+    var copy = restAlarmText();
+    FitRestPush.arm({ endsAt: rest.endsAt, title: copy.title, body: copy.body }).then(function (ok) {
+      if (ok) return;
+      // 못 걸었다(신호 없음 · 서버 오류 · 15분 넘는 휴식) — 아직 꺼진 채 같은 휴식이면 예전처럼 소리로
+      if (pageHidden() && state.rest === rest && rest.frozenLeft == null && restSoundOn() && restRemaining() > 0) {
+        RestSound.start(restRemaining(), '다음 · ' + rest.next);
+      }
+    });
+  }
+
+  /** 화면으로 돌아왔거나 휴식이 바뀌었다 — 걸어 둔 알림을 지운다. 걸려 있지 않으면 아무것도 안 한다. */
+  function cancelRestPush() {
+    if (typeof FitRestPush !== 'undefined' && FitRestPush.armed()) FitRestPush.cancel().catch(function () {});
+  }
+  // 앱을 연 뒤 한 번 — 구독이 있는지 알아 둔다(다시 열어 이어 하는 휴식에서도 화면이 꺼질 때 바로 걸 수 있게)
+  setTimeout(primeRestPush, 1500);
 
   /*
    * 첫 터치 때 재생기를 깨운다. 브라우저는 손으로 누른 순간에만 소리를 틀게
@@ -236,6 +378,8 @@
         // 먹은 것 — 이 폰에만 둔다(서버 설정 묶음에 안 싣는다. 하루 수십 줄이라 금방 커진다)
         foodLog: state.foodLog,
         promise: state.promise,
+        // 5분만 하기 — 오늘만(날짜가 붙어 있다). 이 폰에만 둔다
+        fiveMin: state.fiveMin,
         // 시즌 · 내 선수 — 운동 기록으로 계산한 것이라 이 폰에만(SHARED_SETTINGS에 넣지 않는다)
         season: state.season,
         /*
@@ -295,6 +439,7 @@
         nudgeOn: state.nudgeOn,
         restAlerts: state.restAlerts,
         restSound: state.restSound,
+        lockAlert: state.lockAlert,
         repRule: REP_RULE,
         repOverrides: state.repOverrides,
         topSet: state.topSet,
@@ -389,6 +534,7 @@
       state.dayBudget = settings.dayBudget || null;
       state.foodLog = E.normalizeFoodLog(settings.foodLog);
       state.promise = settings.promise || null;
+      state.fiveMin = settings.fiveMin && settings.fiveMin.date ? settings.fiveMin : null;
       // 예전 저장소에는 없다 — 빈 커리어로 시작한다(advanceSeason이 첫 시즌을 연다)
       state.season = settings.season ? E.normalizeCareer(settings.season) : null;
       state.comeback = settings.comeback || null;
@@ -412,6 +558,7 @@
       state.nudgeOn = Boolean(settings.nudgeOn);
       state.restAlerts = settings.restAlerts !== false;
       state.restSound = settings.restSound !== false;
+      state.lockAlert = settings.lockAlert === 'push' || settings.lockAlert === 'voice' ? settings.lockAlert : null;
       state.repOverrides = settings.repOverrides || {};
       state.topSet = Boolean(settings.topSet);
       state.repSuggestSkip = settings.repSuggestSkip || {};
@@ -796,6 +943,8 @@
     season: null,
     /* 복귀 — { startedOn, plan }. 다 끝나면 저절로 풀린다. */
     promise: null,
+    // 5분만 하기 — { date, activeMs, asked, ended('short'|'none'|null) }. 오늘 것만 쓴다(fiveMinToday)
+    fiveMin: null,
     comeback: null,
     comebackDeclined: null,
     timeFit: null,
@@ -851,6 +1000,8 @@
     // 휴식 끝 알림 — 처음 설문에서 정하고 내 정보에서 바꾼다
     restAlerts: true,
     restSound: true,
+    // 아이폰 잠금 화면의 휴식 끝 — 'push'(알림 · 음악 안 끊김) · 'voice'(코치 목소리). null이면 알림을 쓸 수 있을 때 알림
+    lockAlert: null,
     repOverrides: {},
     topSet: false,
     repSuggestSkip: {},
@@ -2347,8 +2498,9 @@
 
     // 화면은 켜두고, 알림은 워커에 맡긴다 — 주머니에 넣어도 손목까지 간다.
     acquireWakeLock();
-    // 폰을 잠가도 휴식 끝에 울린다 — 무음 + 알림음을 틀어 둔다
-    if (restSoundOn() && pageHidden()) RestSound.start(seconds, '다음 · ' + nextText);
+    // 폰을 잠가도 휴식 끝에 울린다 — 무음 + 알림음을 틀어 둔다(아이폰은 할 수 있으면 알림으로)
+    if (pageHidden()) hiddenRestAlert();
+    else primeRestPush();
     if (state.restAlerts !== false) notifyWorker({
       type: 'rest:start',
       endsAt: state.rest.endsAt,
@@ -2383,7 +2535,7 @@
     state.rest.endsAt += seconds * 1000;
     // 진행 막대가 100%를 넘지 않게 총량도 같이 줄인다.
     state.rest.total = Math.max(restRemaining(), state.rest.total + seconds);
-    if (restSoundOn() && pageHidden()) RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
+    if (pageHidden()) hiddenRestAlert();
     // 알림을 끈 사람에게는 늘린 휴식 알림도 보내지 않는다
     if (state.restAlerts !== false) notifyWorker({
       type: 'rest:start',
@@ -2441,6 +2593,8 @@
     tickStretch();
     pocketTick();
     focusTick();
+    ptScreenTick();
+    fiveMinTick();
   }
 
   // 화면 전체를 다시 그리지 않고 숫자만 바꾼다 — 1초마다 다시 그리면 못 쓴다.
@@ -2488,11 +2642,13 @@
   function stopRest(finished) {
     // 건너뛰거나 지운 휴식은 울리면 안 된다. 다 쉰 휴식은 지금 울리는 중이다.
     if (finished !== true && typeof RestSound !== 'undefined') RestSound.stop();
+    // 잠금 화면 알림도 — 화면이 꺼진 채 다 쉰 휴식이면 그 알림이 지금 울리는 중이라 둔다
+    if (finished !== true || !pageHidden()) cancelRestPush();
     if (state.restTicker) clearInterval(state.restTicker);
     state.restTicker = null;
     state.rest = null;
-    // PT 모드는 운동 내내 화면을 켜 둔다. 쉬는 시간만 켜 두면 세트 중에 말이 끊긴다.
-    if (!(ptOn() && state.started)) releaseWakeLock();
+    // PT 모드는 (화면 켜 두기를 골랐으면) 운동 내내 화면을 켜 둔다. 쉬는 시간만 켜 두면 세트 중에 말이 끊긴다.
+    if (!ptKeepsScreen() && !pocketOn()) releaseWakeLock();
     notifyWorker({ type: 'rest:stop' });
     renderRest();
     /*
@@ -2520,8 +2676,9 @@
          * 화면 밖에서는 말을 예약할 수 없다. 미리 만들어 둔 소리 파일(남은 세기 · 쉬는 시간 · 다음
          * 세트)이 있으면 그걸 틀고, 돌아오면 지난 시간만큼 기록을 맞춘다. 없으면 멈춰 둔다.
          */
-        var lock = !state.ptRun.paused && state.lockTrack && state.lockTrack.bytes && state.lockTrack.sig === lockSig()
-          ? state.lockTrack : null;
+        // 아이폰에서 휴식 끝을 알림으로 받기로 했으면(restPushMode) 소리 파일을 틀지 않는다 — <audio>가 음악을 멈춘다
+        var lock = !state.ptRun.paused && state.lockTrack && state.lockTrack.bytes && state.lockTrack.sig === lockSig() &&
+          !restPushMode() ? state.lockTrack : null;
         pausePt('background');
         if (lock && Date.now() - lock.plan.anchor < lock.plan.duration * 1000) {
           state.ptRun.lock = lock.plan;
@@ -2529,22 +2686,24 @@
         }
         render();
       }
-      // 코치 소리 파일을 틀지 않았으면, 쉬는 중일 때 휴식 끝 소리를 지금 튼다(화면이 꺼진 동안만)
-      if (state.rest && state.rest.frozenLeft == null && restSoundOn() && restRemaining() > 0 && !(state.ptRun && state.ptRun.lock)) {
-        RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
+      // 코치 소리 파일을 틀지 않았으면, 쉬는 중일 때 휴식 끝 소리를 지금 튼다(화면이 꺼진 동안만) — 아이폰은 할 수 있으면 알림으로
+      if (state.rest && state.rest.frozenLeft == null && restRemaining() > 0 && !(state.ptRun && state.ptRun.lock)) {
+        hiddenRestAlert();
       }
       return;
     }
+    // 화면이 켜졌다 — 잠금 화면 알림으로 걸어 둔 휴식 끝은 지운다(앱이 직접 알린다)
+    cancelRestPush();
     // 화면이 켜졌다 — 휴식 끝 소리는 끈다. 코치 소리 파일을 틀던 중이면 catchUpLock이 자리를 읽고 끈다
     if (typeof RestSound !== 'undefined' && !(ptOn() && state.started && state.ptRun && state.ptRun.lock)) RestSound.stop();
     if (ptOn() && state.started && state.ptRun && state.ptRun.lock) {
       catchUpLock();
-      acquireWakeLock();
+      ptHoldScreen();
       render();
       return;
     }
     if (ptOn() && state.started) {
-      acquireWakeLock();
+      ptHoldScreen();
       /*
        * 화면을 껐다 켜면 PT가 알아서 잇는다. 예전에는 "▶ 계속"을 눌러야
        * 했는데, 쉬는 동안 폰을 잠그는 건 흔한 일이라 세트마다 PT를 다시
@@ -5505,12 +5664,16 @@
       };
     });
 
-    return E.buildPreview({
+    var preview = E.buildPreview({
       sessionName: template.name,
       whenLabel: E.nextSlotShort(next) || null,
       exercises: exercises,
       drop: state.plan.phase === 'deload' ? 'deload' : (comeback ? 'comeback' : null),
     });
+    // 다음 도전 — 같은 처방(built)과 같은 기록(오늘까지)으로. 복귀 주 배율이 걸린 날은 띄우지 않는다
+    preview.challenge = factor < 1 ? null : E.nextChallenge(challengeCandidates(built.exercises, history),
+      { drop: state.plan.phase === 'deload' ? 'deload' : (comeback ? 'comeback' : null) });
+    return preview;
   }
 
   /**
@@ -5824,7 +5987,8 @@
 
   /** 시작 몸 풀기 길이 — 짧은 날은 2분, 평소는 5분. 시간 계산과 PT가 같은 값을 쓴다. */
   function mobilitySeconds() {
-    return shortBudget() ? E.SHORT_MOBILITY_SECONDS : E.MOBILITY_SECONDS;
+    // 5분만 하기도 짧게 — 5분짜리 몸 풀기로 5분을 다 쓰면 묻는 순간에 한 세트도 없다
+    return shortBudget() || fiveMinToday() ? E.SHORT_MOBILITY_SECONDS : E.MOBILITY_SECONDS;
   }
 
   /** short: 짧은 날 후보를 셀 때 — 그날은 몸 풀기가 2분이니 그 값으로 센다. */
@@ -5947,12 +6111,15 @@
     var estimate = sessionHead().estimate;
     var doneSets = state.todaySets.length;
     // 이번 주에 하기로 한 날을 다 채운 날 — 쉬는 날이다. 더 하고 싶은 사람을 위해 목록은 그대로 둔다
-    var restDay = LIVE && doneSets === 0 && !state.sessionStartedAt && weekSessionsDone() >= trainingDays().length;
+    var restDay = todayRestDay();
+    // 다음 도전 한 줄 — 오늘 처방이 지난번보다 실제로 오를 때만(시작 전에만)
+    var challenge = !restDay && !state.started && doneSets === 0 && !state.sessionStartedAt ? todayChallengeText() : '';
     screen.appendChild(el('div', { class: 'session-head today-head' }, [
       el('h2', { class: 'today-title', text: restDay ? '오늘은 쉬는 날입니다' : '오늘은 ' + dayTitle(state.session.name) + '입니다' }),
       el('p', { class: 'meta today-sub', text: restDay
         ? '이번 주 ' + trainingDays().length + '번을 다 했습니다. 더 하셔도 됩니다'
         : '운동 ' + state.lifts.length + '개 · 약 ' + estimate.totalMinutes + '분' }),
+      challenge ? el('p', { class: 'challenge-line today-challenge', text: challenge }) : null,
     ]));
     if (restDay) {
       var restNotes = conditioningPlanNotes(false);
@@ -6071,6 +6238,14 @@
           else beginToday();
         },
       }),
+      // 약속 시각이 지났는데 아직 시작 전 — 문턱을 5분까지 낮춘 둘째 길(주 버튼은 그대로)
+      fiveMinOffered(fresh) ? el('button', {
+        type: 'button', class: 'five-min', 'aria-label': '5분만 하기 — 5분 뒤 계속할지 묻습니다',
+        onclick: startFiveMinutes,
+      }, [
+        el('b', { text: '5분만 하기' }),
+        el('span', { text: '5분 뒤 계속할지 묻습니다' }),
+      ]) : null,
     ]));
   }
 
@@ -6108,11 +6283,17 @@
   }
 
   /** "지난번에 어깨가 아프다고 하셨습니다. 오늘은 어떻습니까?" — 오늘 답하기 전까지, 오늘 화면에 바로. */
-  function painAskCard() {
-    if (state.started || state.todaySets.length > 0 || activePain().length > 0) return null;
-    if (state.painAsk && state.painAsk.date === state.todayDate) return null;
+  /** 지난번 통증을 오늘 아직 안 물었는가 — 그러면 오늘 화면에서 먼저 묻는다(알림으로 열어도 바로 시작하지 않는다). */
+  function painAskDue() {
+    if (state.started || state.todaySets.length > 0 || activePain().length > 0) return false;
+    if (state.painAsk && state.painAsk.date === state.todayDate) return false;
     var last = lastPainReport();
-    if (!last || last.length === 0) return null;
+    return Boolean(last && last.length > 0);
+  }
+
+  function painAskCard() {
+    if (!painAskDue()) return null;
+    var last = lastPainReport();
     var where = last.map(function (p) { return E.JOINT_LABELS_KO[p.joint]; }).join(' · ');
     return el('div', { class: 'pain-ask' }, [
       el('p', { class: 'pain-ask-q', text: '지난번에 ' + withParticleJs(where, '이/가') + ' 아프다고 하셨습니다. 오늘은 어떻습니까?' }),
@@ -6466,7 +6647,7 @@
        */
       var opening = coachSay(coachStartLines(doneSets > 0));
       var run = ensurePtRun();
-      acquireWakeLock();
+      // 시계(started)보다 먼저 부르므로 started를 세운 뒤 아래에서 잡는다
       // 처음 시작이면 몸부터 푼다 — 시작 말이 끝난 뒤에
       if (doneSets === 0 && !run.prepped) startPrep(Math.ceil(spokenSeconds(opening || '')) * 1000 + 800);
     }
@@ -6477,12 +6658,285 @@
       return lift.sets.some(function (set) { return !set.done; });
     });
     state.liftCursor = next >= 0 ? next : 0;
-    if (resuming) {
-      acquireWakeLock();
-      resumePt();
-    }
+    if (resuming) resumePt();
+    // PT — 화면 켜 두기를 골랐으면 운동 내내 켜 둔다(아이폰 기본). 화면이 꺼지면 아이폰은 음악을 멈춘다
+    if (ptOn()) ptHoldScreen();
     persist();
     render();
+  }
+
+  /* ── 알림에서 한 번에 시작 ─────────────────────────
+   *
+   * 알림(약속 · 다시 부르기)이나 앱 아이콘의 "바로 운동 시작"으로 열리면 목록을 건너뛰고 곧장 오늘
+   * 운동으로 들어간다(quickStart.ts). 쉬는 날 · 마친 날 · 아픈 날은 오늘 화면을 그냥 연다.
+   * 아이폰은 누르기 전에는 소리를 열지 않는다 — 그때만 큰 "▶ 시작" 하나를 띄우고 그 누름으로 연다.
+   */
+  /** 이번 주에 하기로 한 날을 다 채운, 아직 시작 안 한 날 — 쉬는 날. */
+  function todayRestDay() {
+    return LIVE && state.todaySets.length === 0 && !state.sessionStartedAt && weekSessionsDone() >= trainingDays().length;
+  }
+
+  /** 코치 소리가 아직 잠겨 있는가(사람이 한 번도 안 눌렀다). 소리를 아예 못 내는 폰이면 잠긴 게 아니다. */
+  function audioLocked() {
+    if (!voiceReady()) return false;
+    var c = CoachVoice.context ? CoachVoice.context() : null;
+    return !c || c.state !== 'running';
+  }
+
+  function quickStart() {
+    if (wiping || state.onboarding.active || state.authOpen || loginRequired()) return;
+    if (modal.open) modal.close();
+    closeQuickGate();
+    state.tab = 'today';
+    var route = E.quickStartRoute({
+      hasPlan: Boolean(state.lifts && state.lifts.length > 0),
+      restDay: todayRestDay(),
+      closed: Boolean(state.sessionClosed),
+      pain: activePain().length > 0 || painAskDue(),
+      started: Boolean(state.started),
+      pt: ptOn(),
+    });
+    // 시험이 어느 길로 갔는지 본다
+    window.__quickRoute = route;
+    if (route === 'today') { render(); return; }
+    if (route === 'resume') { state.focusHidden = false; render(); return; }
+    if (E.needsTapToStart(route, audioLocked())) { render(); openQuickGate(); return; }
+    beginToday();
+  }
+
+  function closeQuickGate() {
+    var old = document.getElementById('quick-gate');
+    if (old) old.remove();
+  }
+
+  /** 소리가 잠긴 아이폰 — 화면 가득 "▶ 시작" 하나. 그 누름이 소리를 연다(CoachVoice · RestSound가 그 순간 깨어난다). */
+  function openQuickGate() {
+    closeQuickGate();
+    var first = state.lifts.filter(function (lift) { return lift.sets.some(function (set) { return !set.done; }); })[0];
+    var box = el('div', { class: 'quick-gate', id: 'quick-gate', role: 'dialog', 'aria-modal': 'true', 'aria-label': '바로 운동 시작' }, [
+      el('p', { class: 'quick-kicker', text: '오늘 운동' }),
+      el('h2', { class: 'quick-title', text: dayTitle(state.session.name) }),
+      first ? el('p', { class: 'quick-sub', text: '첫 운동 · ' + first.exercise.name }) : null,
+      el('button', {
+        type: 'button', class: 'quick-go', text: '▶ 시작', 'aria-label': '시작 — 코치가 바로 이끕니다',
+        onclick: function () {
+          closeQuickGate();
+          if (typeof CoachVoice !== 'undefined' && CoachVoice.unlock) CoachVoice.unlock();
+          beginToday();
+        },
+      }),
+      el('p', { class: 'quick-note', text: '누르면 코치가 바로 시작합니다.' }),
+      el('button', { type: 'button', class: 'link-btn quick-list', text: '목록 먼저 보기', onclick: function () { closeQuickGate(); render(); } }),
+    ]);
+    document.body.appendChild(box);
+  }
+
+  /* ── 5분만 해도 됩니다 ─────────────────────────────
+   *
+   * 약속 시각이 지났는데 아직 시작을 안 했으면 오늘 시작 자리에 "5분만 하기"가 하나 더 뜬다(주 버튼은 그대로).
+   * PT는 평소대로 시작하고(몸 풀기는 짧게), 움직인 지 5분이 지나면 다음 휴식에서 묻는다 — 세트 중에는 안 묻는다.
+   * 여기서 끝내면 한 만큼 남기고, 본 세트가 있으면 짧게 한 날(시즌 점수 절반)로 센다. 규칙은 shortSession.ts.
+   */
+  function fiveMinToday() {
+    var five = state.fiveMin;
+    return five && five.date === state.todayDate ? five : null;
+  }
+
+  /** 오늘 약속한 시각(분). 직접 정한 약속이 없거나 오늘이 약속한 요일이 아니면 null. */
+  function todayPromiseMinutes() {
+    if (!state.promise) return null;
+    var today = nowWeekday();
+    var slot = promiseSlots().filter(function (one) { return one.weekday === today; })[0];
+    return slot ? slot.minutes : null;
+  }
+
+  function fiveMinOffered(fresh) {
+    if (!fresh || fiveMinToday()) return false;
+    return E.offerFiveMinutes({
+      promisedMinutes: todayPromiseMinutes(),
+      nowMinutes: nowMinutes(),
+      started: !fresh,
+      closed: Boolean(state.sessionClosed),
+      restDay: todayRestDay(),
+    });
+  }
+
+  function startFiveMinutes() {
+    state.fiveMin = { date: state.todayDate, activeMs: 0, asked: false, ended: null };
+    pushLog('오늘', '<b>5분만</b> 하기로 했습니다. 5분 뒤 쉬는 시간에 계속할지 묻습니다.');
+    persist();
+    beginToday();
+  }
+
+  /** 지금이 물어도 되는 때인가 — 본 세트 뒤 쉬는 중만. 세는 중 · 몸 풀기 · 워밍업 · 스트레칭은 끊지 않는다. */
+  function fiveMinBoundary() {
+    var pt = state.ptRun;
+    if (state.counting || (pt && (pt.prep || pt.warm || pt.cool || pt.finisher))) return 'set';
+    return state.rest ? 'rest' : 'set';
+  }
+
+  var fiveMinLast = 0;
+
+  /** 1초마다 — 움직인 시간을 더하고, 5분이 찼고 쉬는 중이면 묻는다. */
+  function fiveMinTick() {
+    var now = Date.now();
+    var gap = fiveMinLast ? now - fiveMinLast : 0;
+    fiveMinLast = now;
+    var five = fiveMinToday();
+    if (!five || five.asked || five.ended || !state.started || state.sessionClosed) return;
+    var pt = ptOn() ? state.ptRun : null;
+    var running = !(pt && pt.paused) && !(state.rest && state.rest.frozenLeft != null) && !pageHidden();
+    five.activeMs = E.addActive(five.activeMs || 0, gap, running);
+    if (modal.open) return;
+    if (E.askToContinue({ activeSeconds: five.activeMs / 1000, asked: five.asked, boundary: fiveMinBoundary() })) askFiveMinutes();
+  }
+
+  /** "5분 됐습니다. 계속할까요?" — 쉬는 시계를 멈추고 묻는다(대답하는 동안 다음 세트가 저절로 시작되지 않게). */
+  function askFiveMinutes() {
+    var five = fiveMinToday();
+    if (!five) return;
+    five.asked = true;
+    if (ptOn() && state.ptRun && !state.ptRun.paused) pausePt(null);
+    else freezeRest();
+    persist();
+    render();
+    coachSay([E.fiveMinuteAskLine(state.coach.style || 'gentle')]);
+    var decided = false;
+    var keep = function () {
+      if (decided) return;
+      decided = true;
+      modal.close();
+      if (ptOn() && state.ptRun && state.ptRun.paused) resumePt();
+      else thawRest();
+      pushLog('오늘', '5분을 넘겨 <b>계속</b>합니다.');
+      render();
+    };
+    // ×로 닫으면 계속하는 것으로 — 멈춰 둔 휴식이 그대로 남지 않게
+    var onClose = function () {
+      modal.removeEventListener('close', onClose);
+      if (!decided) keep();
+    };
+    openModal('5분 됐습니다', null, [
+      el('p', { class: 'effort-big five-ask-q', text: '계속할까요?' }),
+      el('p', { class: 'hint-line', text: state.todaySets.some(function (set) { return !set.warmup && set.reps > 0; })
+        ? '여기서 끝내도 한 만큼은 남고, 짧게 한 날로 셉니다.'
+        : '여기서 끝내도 괜찮습니다. 오늘은 몸만 푼 날로 둡니다.' }),
+      el('div', { class: 'five-ask-row' }, [
+        el('button', { type: 'button', class: 'finish five-keep', text: '계속하기', onclick: keep }),
+        el('button', { type: 'button', class: 'finish quiet five-end', text: '여기서 끝내기', onclick: function () {
+          decided = true;
+          modal.close();
+          endFiveMinutes();
+        } }),
+      ]),
+    ]);
+    modal.addEventListener('close', onClose);
+  }
+
+  /** 여기서 끝내기 — 본 세트가 있으면 오늘을 닫고(짧게 한 날), 없으면 점수 없이 조용히 닫는다. */
+  function endFiveMinutes() {
+    var five = fiveMinToday();
+    if (!five) return;
+    var end = E.fiveMinuteEnd(state.todaySets);
+    five.ended = end;
+    stopSpeech();
+    if (end === 'short') {
+      pushLog('오늘', '5분만 하고 마쳤습니다 — 짧게 한 날로 셉니다.');
+      closeToday();
+      persist();
+      return;
+    }
+    if (ptOn() && state.ptRun) pausePt(null);
+    else stopCounting(false, true);
+    stopRest();
+    state.started = false;
+    state.ptRun = null;
+    state.sessionStartedAt = null;
+    state.sessionEndedAt = null;
+    if (mobilityActive()) state.mobility = null;
+    applyPtScreen();
+    persist();
+    render();
+    ptToast(E.fiveMinuteDoneLine('none', 0), null, null, 7000);
+  }
+
+  /** 5분만 하고 끝낸 날인가(본 세트가 있어 짧게 한 날로 세는 날). */
+  function fiveMinShortToday() {
+    var five = fiveMinToday();
+    return Boolean(five && five.ended === 'short');
+  }
+
+  /* ── 다음 도전 한 줄 ───────────────────────────────
+   *
+   * "다음 화요일 · 스쿼트 62.5kg 첫 도전". 엔진이 처방한 무게 · 횟수가 지난번보다 실제로 오를 때만
+   * (preview.ts nextChallenge). 이 폰 화면에만 — 알림에는 싣지 않는다(무게는 건강 기록이다).
+   */
+  /** 그 종목을 마지막으로 한 날의 톱세트 무게와, 그 무게에서 가장 적게 한 횟수. 없으면 null. */
+  function lastTopOf(history, exerciseId) {
+    for (var i = history.length - 1; i >= 0; i -= 1) {
+      var regular = (history[i].sets || []).filter(function (set) { return !set.top; });
+      var top = E.topWorkingSet(regular, exerciseId);
+      if (!top) continue;
+      var reps = regular.filter(function (set) {
+        return set.exerciseId === exerciseId && !set.warmup && set.reps > 0 && set.weightKg === top.weightKg;
+      }).map(function (set) { return set.reps; });
+      return { weightKg: top.weightKg, reps: Math.min.apply(null, reps) };
+    }
+    return null;
+  }
+
+  function bestWeightOf(history, exerciseId) {
+    var best = null;
+    history.forEach(function (session) {
+      (session.sets || []).forEach(function (set) {
+        if (set.exerciseId !== exerciseId || set.warmup || !(set.reps > 0)) return;
+        if (best === null || set.weightKg > best) best = set.weightKg;
+      });
+    });
+    return best;
+  }
+
+  /** 처방된 종목들 → 도전 후보. 버티는 종목(초) · 파운드로 보는 종목은 뺀다(한 줄이 kg · 회로 말한다). */
+  function challengeCandidates(exercises, history) {
+    return exercises.filter(function (item) {
+      return item.sets && item.sets.length > 0 && !isHold(item.exercise) && !inPounds(item.exercise.id);
+    }).map(function (item) {
+      var plain = item.sets.filter(function (set) { return !set.top; })[0] || item.sets[0];
+      var last = lastTopOf(history, item.exercise.id);
+      return {
+        name: item.exercise.name,
+        equipment: item.exercise.equipment,
+        pattern: item.exercise.pattern,
+        weightKg: plain.weightKg,
+        targetReps: plain.targetReps ? plain.targetReps.min : 0,
+        previousKg: last ? last.weightKg : null,
+        previousReps: last ? last.reps : null,
+        bestKg: bestWeightOf(history, item.exercise.id),
+      };
+    });
+  }
+
+  function dropReason() {
+    return state.plan && state.plan.phase === 'deload' ? 'deload' : activeComeback() ? 'comeback' : null;
+  }
+
+  /** 끝낸 화면 — "다음 화요일 · 스쿼트 62.5kg 첫 도전". 없으면 ''. */
+  function nextChallengeText() {
+    var preview = nextPreview();
+    if (!preview || !preview.challenge) return '';
+    var when = '다음 운동';
+    if (state.promise) {
+      var promised = promiseAfterToday();
+      if (promised) when = '다음 ' + '일월화수목금토'.charAt(new Date(E.addDays(state.todayDate, promised.daysAhead) + 'T12:00:00').getDay()) + '요일';
+    }
+    return E.challengeLine(when, preview.challenge);
+  }
+
+  /** 다음 운동 날의 오늘 화면 — "오늘 · 스쿼트 62.5kg 첫 도전". 없으면 ''. */
+  function todayChallengeText() {
+    if (!state.session || !state.session.exercises) return '';
+    var challenge = E.nextChallenge(challengeCandidates(state.session.exercises, state.history), { drop: dropReason() });
+    return E.challengeLine('오늘', challenge);
   }
 
   /**
@@ -7696,6 +8150,8 @@
   function exitPocket() {
     var box = document.getElementById('pocket');
     if (box) box.remove();
+    // 주머니 모드가 잡았던 화면 — PT가 켜 둘 때가 아니고 쉬는 중도 아니면 놓는다
+    if (box) applyPtScreen();
   }
 
   /** 1초마다 — 까만 화면의 시계 · 지금 상태 */
@@ -7707,7 +8163,12 @@
     if (status) status.textContent = pocketStatus();
   }
 
-  /** 화면을 꺼도 음악과 같이 못 듣는 폰(아이폰)에서 처음 PT를 할 때 한 번 — 주머니 모드를 알려 준다. */
+  /**
+   * 화면을 꺼도 음악과 같이 못 듣는 폰(아이폰)에서 처음 PT를 할 때 한 번 — 왜 화면을 켜 두는지와 주머니 모드.
+   * 탓하지 않고 어려운 말 없이: 옆 버튼으로 잠그면 아이폰이 음악을 멈춘다 · 켜 두거나 까만 화면이면 둘 다 나온다.
+   */
+  var POCKET_HINT = '아이폰은 옆 버튼으로 화면을 잠그면 음악이 멈춥니다. 화면을 켜 둔 채 두거나 주머니 모드(까만 화면)로 두면 음악과 코치 소리가 같이 나옵니다.';
+
   function maybeOfferPocket() {
     if (typeof RestSound === 'undefined' || !RestSound.backgroundMixes || RestSound.backgroundMixes()) return;
     try {
@@ -7715,7 +8176,7 @@
       localStorage.setItem('volume-coach.pocketOffered', '1');
     } catch (err) { return; }
     setTimeout(function () {
-      ptToast('아이폰은 화면을 잠그면 음악이 멈출 수 있습니다. 주머니 모드를 쓰면 음악과 코치 소리가 같이 나옵니다.', '주머니 모드', enterPocket, 12000);
+      ptToast(POCKET_HINT, '주머니 모드', enterPocket, 12000);
     }, 800);
   }
 
@@ -7989,7 +8450,7 @@
       if (next >= 0) state.liftCursor = next;
       if (state.rest && state.rest.exerciseId === lift.exercise.id) {
         state.rest.next = next >= 0 ? state.lifts[next].exercise.name : '마무리';
-        if (restSoundOn() && pageHidden()) RestSound.start(restRemaining(), '다음 · ' + state.rest.next);
+        if (pageHidden()) hiddenRestAlert();
       }
     }
     persist();
@@ -8475,7 +8936,7 @@
     box.appendChild(el('div', { class: 'list-label setting-name', text: '음악과 같이 듣기' }));
     box.appendChild(el('p', { class: 'hint-line music-note', text: typeof RestSound !== 'undefined' && RestSound.backgroundMixes && RestSound.backgroundMixes()
       ? '듣던 음악과 코치 목소리가 같이 나옵니다 — 화면을 꺼도 그렇습니다.'
-      : '아이폰은 PT 화면의 "주머니 모드"를 쓰면 음악과 코치 목소리가 같이 나옵니다(화면을 켜 둔 채 까맣게). 화면을 완전히 잠그면 아이폰이 음악을 멈출 수 있습니다.' }));
+      : '아이폰은 옆 버튼으로 화면을 잠그면 음악이 멈춥니다 — 웹 앱이 바꿀 수 없는 아이폰의 규칙입니다. 그래서 PT 동안은 화면을 켜 둡니다(PT 화면 ⋯ › 화면 켜 두기). 화면이 켜져 있으면 음악과 코치 목소리가 같이 나옵니다(코치가 말할 때 음악이 잠깐 작아질 수 있습니다). 주머니에 넣을 때는 ⋯ › 주머니 모드(까만 화면)를 쓰세요.' }));
     return box;
   }
 
@@ -8528,10 +8989,14 @@
         el('b', { text: '화면 꺼도 휴식 끝 소리' }),
         el('span', { class: 'hint-line', text: typeof RestSound !== 'undefined' && RestSound.backgroundMixes && RestSound.backgroundMixes()
           ? '화면을 꺼 두면 휴식이 끝날 때 띵 하고 울립니다. 듣던 음악은 멈추지 않고 같이 나옵니다(PT 코치 소리도).'
-          : '아이폰은 화면을 완전히 잠그면 이 소리를 내느라 음악이 멈출 수 있습니다. 음악과 같이 들으려면 PT 화면의 "주머니 모드"를 쓰세요 — 화면을 켜 둔 채 까맣게 둡니다.' }),
+          : !asking && lockAlertMode() === 'push' && !restPushBlocker()
+            ? '화면이 켜져 있으면 띵 하고 울립니다. 화면을 잠그면 아래 "화면이 잠겼을 때"대로 알림이 옵니다 — 음악이 안 끊깁니다.'
+            : '아이폰은 화면을 완전히 잠그면 이 소리를 내느라 음악이 멈출 수 있습니다. 음악과 같이 들으려면 PT 화면의 "주머니 모드"를 쓰세요 — 화면을 켜 둔 채 까맣게 둡니다.' }),
       ]),
       el('span', { class: 'count-tempo', text: soundOn ? '켜짐' : '꺼짐' }),
     ]));
+    // 아이폰만 — 화면이 잠겼을 때 휴식 끝을 알림으로 받을지(음악이 안 끊긴다), 예전처럼 코치 목소리로 받을지
+    if (!asking && lockStopsMusic()) box.appendChild(lockAlertControls(onChange));
     var why = nudgeAvailability();
     /*
      * 이 판에서 아예 못 쓰는 것(부르기 알림을 보낼 곳이 없는 판)은 줄을 숨긴다. 눌러도 안 되는
@@ -8546,6 +9011,82 @@
       el('span', {}, [el('b', { text: '운동 빠진 주에 한 번 불러 주기' }), el('span', { class: 'hint-line', text: why || '아프다고 적은 날은 부르지 않습니다' })]),
       el('span', { class: 'count-tempo', text: state.nudgeOn ? '켜짐' : '꺼짐' }),
     ]));
+    return box;
+  }
+
+  /** 잠금 화면 알림을 지금 못 쓰는 까닭. enable이면 "알림 켜기" 한 번으로 풀린다. 쓸 수 있으면 null. */
+  function restPushBlocker() {
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !state.standalone) {
+      return { text: '아이폰은 홈 화면에 추가한 앱에서만 알림이 옵니다 — 사파리 공유 단추 → 홈 화면에 추가.' };
+    }
+    if (typeof FitPush === 'undefined' || typeof FitRestPush === 'undefined' || !FitPush.configured() || !Remote.configured()) {
+      return { text: '이 버전에서는 아직 알림을 쓸 수 없습니다.' };
+    }
+    if (!Remote.signedIn()) return { text: '로그인하면 쓸 수 있습니다.' };
+    if (FitPush.permission() === 'denied') return { text: '알림이 막혀 있습니다. 아이폰 설정 → 알림 → 볼륨 코치에서 허용해 주세요.' };
+    if (!FitRestPush.subscribed() || FitPush.permission() !== 'granted') return { text: '알림을 켜야 옵니다.', enable: true };
+    return null;
+  }
+
+  /**
+   * 아이폰 — 화면이 잠겼을 때 휴식 끝을 무엇으로 알릴지.
+   *
+   * 알림: 서버가 그 시각에 푸시를 보낸다. 알림 소리와 애플워치 진동은 듣던 음악을 멈추지 않는다.
+   * 코치 목소리: 예전 그대로 — 휴식 끝 소리(PT는 코치 소리 파일)를 <audio>로 틀고, 그동안 음악이 멈출 수 있다.
+   * 알림을 고르고도 아직 못 쓰면(설치 · 로그인 · 허용) 그 까닭과 "알림 켜기"를 보이고, 그동안은 코치 목소리로 간다.
+   */
+  function lockAlertControls(onChange) {
+    var box = el('div', { class: 'lock-alert-controls' }, []);
+    var mode = lockAlertMode();
+    // 구독이 있는지는 기다려야 안다 — 처음 그릴 때 한 번 읽고 다시 그린다
+    if (typeof FitRestPush !== 'undefined' && !FitRestPush.checked()) FitRestPush.refresh().then(function () { onChange(); });
+    var choose = function (next) {
+      state.lockAlert = next;
+      persist();
+      if (next === 'push') primeRestPush();
+      else cancelRestPush();
+      onChange();
+    };
+    box.appendChild(el('div', { class: 'list-label setting-name', text: '화면이 잠겼을 때' }));
+    [
+      ['push', '알림으로 알려 주기', '음악 안 끊김 — 휴식이 끝나면 잠금 화면 · 애플워치에 알림'],
+      ['voice', '코치 목소리', '음악이 멈출 수 있음 — 화면을 잠그면 아이폰이 듣던 음악을 멈춥니다'],
+    ].forEach(function (option) {
+      var on = mode === option[0];
+      box.appendChild(el('button', {
+        type: 'button', class: 'nudge-row lock-alert-row', 'aria-pressed': String(on), 'data-lock-alert': option[0],
+        onclick: function () { choose(option[0]); },
+      }, [
+        el('span', {}, [el('b', { text: option[1] }), el('span', { class: 'hint-line', text: option[2] })]),
+        el('span', { class: 'count-tempo', text: on ? '✓' : '' }),
+      ]));
+    });
+    if (mode !== 'push') return box;
+    var blocker = restPushBlocker();
+    if (!blocker) {
+      box.appendChild(el('p', { class: 'hint-line', text: '알림은 서버가 휴식이 끝나는 시각에 보냅니다. 서버에는 시각만 가고, 종목 · 무게는 이 폰에만 있습니다.' }));
+      return box;
+    }
+    box.appendChild(el('p', { class: 'hint-line lock-alert-why', text: blocker.text + ' 그동안은 코치 목소리로 알립니다.' }));
+    if (blocker.enable) {
+      box.appendChild(el('button', {
+        type: 'button', class: 'nudge-row lock-alert-enable',
+        // 권한은 누른 그 순간에만 물을 수 있다
+        onclick: function () {
+          FitPush.enable().then(function (result) {
+            if (!result.ok) {
+              pushLog('알림', result.reason === 'denied'
+                ? '알림이 거절됐습니다. 아이폰 설정 → 알림에서 허용하시면 켤 수 있습니다.'
+                : '알림을 켜지 못했습니다.');
+            }
+            return FitRestPush.refresh();
+          }).then(function () { onChange(); }, function () { onChange(); });
+        },
+      }, [
+        el('span', {}, [el('b', { text: '알림 켜기' }), el('span', { class: 'hint-line', text: '아이폰은 홈 화면에 추가한 앱에서만 켜집니다.' })]),
+        el('span', { class: 'count-tempo', text: '켜기' }),
+      ]));
+    }
     return box;
   }
 
@@ -10451,7 +10992,7 @@
     var run = ensurePtRun();
     // 이미 운동 중이면 몸 풀기는 건너뛴다 — 이미 몸이 풀렸다
     run.prepped = true;
-    acquireWakeLock();
+    ptHoldScreen();
     pushLog('운동 방식', 'PT를 켰습니다. 오늘 남은 운동을 끝까지 이끕니다.');
     persist();
     if (run.paused) {
@@ -11153,6 +11694,7 @@
     });
     pt.paused = false;
     pt.pausedWhy = null;
+    pt.pausedAt = null;
     pt.resume = null;
     if (here) {
       if (state.rest) stopRest();
@@ -11188,6 +11730,8 @@
     if (!pt || pt.paused) return;
     pt.paused = true;
     pt.pausedWhy = why || null;
+    // 10분 넘게 멈춰 두면 화면을 놓는다(ptScreenTick)
+    pt.pausedAt = Date.now();
     if (pt.startTimer) { clearTimeout(pt.startTimer); pt.startTimer = null; }
     // 어디까지 했는지 적어 둔다 — 돌아오면 거기서부터.
     pt.resume = null;
@@ -11229,6 +11773,7 @@
   }
 
   function clearPausedView(pt) {
+    pt.pausedAt = null;
     pt.pausedPhase = null;
     pt.pausedCount = null;
     pt.pausedWarm = null;
@@ -11244,6 +11789,8 @@
     pt.resume = null;
     clearPausedView(pt);
     thawRest();
+    if (state.rest) acquireWakeLock();
+    ptHoldScreen();
     state.autoCountedFor = null;
   }
 
@@ -11255,6 +11802,7 @@
     if (state.restTicker) clearInterval(state.restTicker);
     state.restTicker = null;
     if (typeof RestSound !== 'undefined') RestSound.stop();
+    cancelRestPush();
     notifyWorker({ type: 'rest:stop' });
   }
 
@@ -11275,6 +11823,9 @@
     pt.pausedWhy = null;
     clearPausedView(pt);
     thawRest();
+    // 오래 멈춰 두어 놓았던 화면을 다시 잡는다
+    if (state.rest) acquireWakeLock();
+    ptHoldScreen();
     state.autoCountedFor = null;
     var at = pt.resume;
     pt.resume = null;
@@ -11875,6 +12426,13 @@
       add('빠르기 · ' + rateLabel(rateFor(lift.exercise)), '코치가 말하고 세는 빠르기 — 이 운동에만 저장합니다', function () { openPtRate(lift.exercise); });
     }
     add('주머니 모드', '화면을 켜 둔 채 까맣게 — 음악과 코치 소리가 같이 나옵니다', function () { modal.close(); enterPocket(); });
+    // 화면 켜 두기 — 이 폰에만 저장. 아이폰은 기본 켜짐(옆 버튼으로 잠그면 음악이 멈춘다)
+    var awake = keepAwakeOn();
+    options.push({
+      label: '화면 켜 두기 (음악 안 끊김)', toggle: awake, cls: 'keep-awake-row',
+      hint: awake ? '켜짐 — PT 동안 화면이 저절로 꺼지지 않습니다' : '꺼짐 — 쉬는 시간에만 화면을 켜 둡니다',
+      run: function () { setKeepAwake(!awake); openFocusMenu(o); },
+    });
     if (o.finish) add('세트 완료', o.finish.hint, function () { modal.close(); o.finish.run(); });
     if (o.sets) {
       add('세트 고치기', '한 세트 더 · 덜, 무게 · 개수를 고칩니다', function () { modal.close(); openPtSets(o.sets.liftIndex, o.sets.pick); });
@@ -11890,12 +12448,17 @@
 
     openModal(o.title, '운동한 시간 ' + elapsedText(), [
       el('div', { class: 'summary-list stage-menu focus-menu-list' }, options.map(function (option) {
-        return el('button', { type: 'button', class: 'menu-row', disabled: option.run ? null : '', onclick: option.run }, [
+        var toggle = typeof option.toggle === 'boolean';
+        return el('button', {
+          type: 'button', class: 'menu-row' + (option.cls ? ' ' + option.cls : ''), disabled: option.run ? null : '', onclick: option.run,
+          'aria-pressed': toggle ? String(option.toggle) : null,
+        }, [
           el('span', { class: 'plan-main' }, [
             el('span', { class: 'name', text: option.label }),
             el('span', { class: 'plan-sets', text: option.hint }),
           ]),
-          el('span', { class: 'detail', text: option.run ? '›' : '' }),
+          toggle ? el('span', { class: 'menu-switch' + (option.toggle ? ' on' : ''), 'aria-hidden': 'true' }, [el('i')])
+            : el('span', { class: 'detail', text: option.run ? '›' : '' }),
         ]);
       })),
     ]);
@@ -12015,6 +12578,8 @@
     if (state.ptEditTalk) { clearTimeout(state.ptEditTalk.timer); state.ptEditTalk = null; }
     state.lockTrack = null;
     if (typeof RestSound !== 'undefined' && !(state.ptRun && state.ptRun.lock)) RestSound.stop();
+    // 잠금 화면 알림으로 걸어 둔 지난 단계의 휴식 끝도 지운다
+    cancelRestPush();
   }
 
   /**
@@ -13603,11 +14168,17 @@
      * 연속 · 친구 · 주간 카드는 기록 탭에 있다. 끝난 날에 카드가 여럿이면 할 일이 남은 것처럼 읽힌다.
      */
     var next = nextWorkoutLine();
+    var teaser = nextChallengeText();
+    var five = fiveMinShortToday();
     var coolMovesNow = !ptOn() && state.todaySets.length > 0 && !soloCoolActive() && !soloCoolDone() ? coolMoves() : [];
     screen.appendChild(el('div', { class: 'sheet done-card' }, [
       el('div', { class: 'sheet-body' }, [
-        el('h2', { class: 'done-title', text: '오늘 운동을 마쳤습니다.' }),
+        el('h2', { class: 'done-title', text: five ? '오늘도 나왔습니다.' : '오늘 운동을 마쳤습니다.' }),
+        // 5분만 하고 끝낸 날 — 실패가 아니라 짧게 한 날
+        five ? el('p', { class: 'done-five', text: E.fiveMinuteDoneLine('short', state.todaySets.filter(function (set) { return !set.warmup && set.reps > 0; }).length) }) : null,
         next ? el('p', { class: 'done-next', text: next }) : null,
+        // 다음 도전 — 실제로 오르는 것이 있을 때만
+        teaser ? el('p', { class: 'challenge-line done-challenge', text: teaser }) : null,
         // 한 시간 — 오늘을 닫은 시각에서 멈춘다(나중에 봐도 같은 분)
         state.sessionStartedAt ? el('p', { class: 'hint-line done-time', text:
           Math.max(1, Math.round(elapsedSeconds() / 60)) + '분 동안 ' + state.todaySets.length + '세트를 했습니다.' }) : null,
@@ -13639,6 +14210,8 @@
             // 잘못 눌렀을 수 있다. 되돌아가는 길을 막지 않는다.
             state.sessionClosed = false;
             state.sessionEndedAt = null;
+            // 5분만 하고 끝냈다가 이어서 하면 짧게 한 날이 아니다 — 다시 마칠 때 평소대로 센다
+            if (fiveMinToday()) state.fiveMin.ended = null;
             state.started = true;
             if (ptOn() && state.ptRun && state.ptRun.paused) resumePt();
             render();
@@ -13704,6 +14277,7 @@
           state.ptRun = null;
           // 시계도 되돌린다 — 다음에 시작할 때 오늘 그만둔 시간까지 운동 시간에 들어가면 안 된다.
           state.sessionStartedAt = null;
+          applyPtScreen();
           persist();
           modal.close();
           render();
@@ -15949,7 +16523,8 @@
 
   /** 오늘 줄여서(15분 · 25분) 한 날인가 — 세트를 했을 때만 */
   function shortToday(career) {
-    var short = Boolean(state.shortDay && state.shortDay.date === state.todayDate && state.todaySets.length > 0);
+    // 5분만 하고 여기서 끝낸 날도(본 세트가 있을 때) 짧게 한 날 — 시즌 점수 절반
+    var short = Boolean(((state.shortDay && state.shortDay.date === state.todayDate) || fiveMinShortToday()) && state.todaySets.length > 0);
     return E.markShortDate(career, state.todayDate, short);
   }
 
@@ -24138,6 +24713,14 @@
   // 코치 목소리를 쓰는 사람이면 이 폰에 받아 둔다 (처음 한 번, 약 9MB)
   if (ptOn() || state.voiceOn) fetchCoachVoice();
   render();
+  /*
+   * 알림이나 앱 아이콘의 "바로 운동 시작"으로 열렸다(?go=start). 주소에서 지우고(새로 고쳐도 또 시작하지 않게)
+   * 곧장 오늘 운동으로 — 쉬는 날 · 마친 날 · 아픈 날은 오늘 화면 그대로(quickStart).
+   */
+  if (E.wantsQuickStart(location.search)) {
+    try { history.replaceState(history.state, '', location.pathname + location.search.replace(/([?&])go=start(&|$)/, '$1').replace(/[?&]$/, '') + location.hash); } catch (err) { void err; }
+    setTimeout(quickStart, 0);
+  }
   /*
    * 며칠 만에 연 사람의 예약은 오래된 판단으로 들어 있다. 화면을 다 그린
    * 뒤에 한 번 다시 올린다 — 첫 화면이 늦어지면 안 되므로 뒤로 미룬다.

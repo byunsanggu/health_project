@@ -107,3 +107,64 @@ test('종목을 모르면 아는 척하지 않는다', () => {
   assert.equal(preview.lift, null);
   assert.doesNotMatch(preview.detail, /kg/);
 });
+
+/* ── 다음 도전 한 줄 ── */
+import { challengeLine, nextChallenge, type ChallengeCandidate } from '../preview.ts';
+
+function cand(over: Partial<ChallengeCandidate> = {}): ChallengeCandidate {
+  return {
+    name: '스쿼트', equipment: 'barbell', pattern: 'squat',
+    weightKg: 60, targetReps: 8, previousKg: 60, previousReps: 8, bestKg: 60,
+    ...over,
+  };
+}
+
+test('도전 — 처음 드는 무게는 "첫 도전"', () => {
+  const got = nextChallenge([cand({ weightKg: 62.5, bestKg: 60 })]);
+  assert.equal(got?.text, '스쿼트 62.5kg 첫 도전');
+  assert.equal(challengeLine('다음 화요일', got), '다음 화요일 · 스쿼트 62.5kg 첫 도전');
+});
+
+test('도전 — 전에 들어 본 무게로 다시 올리면 "첫"을 붙이지 않는다', () => {
+  const got = nextChallenge([cand({ weightKg: 62.5, previousKg: 60, bestKg: 65 })]);
+  assert.equal(got?.text, '스쿼트 62.5kg 도전');
+});
+
+test('도전 — 같은 무게로 하나 더', () => {
+  const got = nextChallenge([cand({ name: '벤치프레스', pattern: 'horizontalPush', targetReps: 9, previousReps: 8 })]);
+  assert.equal(got?.text, '벤치프레스 8회 → 9회 도전');
+});
+
+test('도전 — 오르는 게 없으면 아무것도 띄우지 않는다(지어내지 않는다)', () => {
+  assert.equal(nextChallenge([cand()]), null);
+  // 처음 하는 종목은 비교할 지난번이 없다
+  assert.equal(nextChallenge([cand({ previousKg: null, previousReps: null, bestKg: null })]), null);
+  // 내린 날
+  assert.equal(nextChallenge([cand({ weightKg: 55 })]), null);
+  // 지난 횟수를 모르면 횟수 도전도 없다
+  assert.equal(nextChallenge([cand({ targetReps: 9, previousReps: null })]), null);
+  assert.equal(challengeLine('다음 운동', null), '');
+});
+
+test('도전 — 덜어내는 주 · 복귀 주에는 띄우지 않는다', () => {
+  const up = [cand({ weightKg: 62.5 })];
+  assert.equal(nextChallenge(up, { drop: 'deload' }), null);
+  assert.equal(nextChallenge(up, { drop: 'comeback' }), null);
+});
+
+test('도전 — 첫 무게가 무게 · 횟수보다, 복합 바벨이 고립보다 앞이다', () => {
+  const curl = cand({ name: '바벨 컬', pattern: 'isolation', weightKg: 32.5, previousKg: 30, bestKg: 30 });
+  const bench = cand({ name: '벤치프레스', pattern: 'horizontalPush', targetReps: 9, previousReps: 8 });
+  const squat = cand({ weightKg: 62.5, previousKg: 60, bestKg: 70 });
+  const press = cand({ name: '레그프레스', equipment: 'machine', weightKg: 150, previousKg: 140, bestKg: 140 });
+  assert.equal(nextChallenge([bench, squat, curl])?.name, '바벨 컬');
+  assert.equal(nextChallenge([bench, squat])?.name, '스쿼트');
+  assert.equal(nextChallenge([press, curl])?.name, '레그프레스');
+});
+
+test('도전 — 맨몸은 횟수로만', () => {
+  const pull = cand({ name: '풀업', equipment: 'bodyweight', pattern: 'verticalPull', weightKg: 0, previousKg: 0, bestKg: 0, targetReps: 7, previousReps: 6 });
+  assert.equal(nextChallenge([pull])?.text, '풀업 6회 → 7회 도전');
+  assert.equal(nextChallenge([cand({ name: '푸시업', equipment: 'bodyweight', weightKg: null, previousKg: 0, bestKg: 0, targetReps: 12, previousReps: 11 })])?.text,
+    '푸시업 11회 → 12회 도전');
+});

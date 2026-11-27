@@ -29,16 +29,60 @@ var RestSound = (function () {
    * 'auto'(예전 그대로)로 돌린다. 없는 브라우저에서는 조용히 넘어간다.
    */
   function session(type) {
-    try { if (navigator.audioSession) navigator.audioSession.type = type; } catch (err) { void err; }
+    try { if (navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type; } catch (err) { void err; }
   }
   session('transient');
+
+  function hiddenNow() {
+    return document.visibilityState === 'hidden';
+  }
+
+  /** 소리 나는 <audio>가 지금 돌고 있는가(깨우기용 무음 재생은 빼고). */
+  function loud() {
+    return Boolean(audio && url && !audio.muted && !audio.paused && !audio.ended);
+  }
+
+  /** <audio>를 그 자리에서 멈춘다 — 화면이 켜진 채 소리 나는 <audio>가 돌면 아이폰이 듣던 음악을 멈춘다. */
+  function silence() {
+    if (!audio) return;
+    try { audio.pause(); } catch (err) { void err; }
+    audio.removeAttribute('src');
+    try { audio.load(); } catch (err) { void err; }
+    release();
+  }
+
+  /**
+   * 화면이 켜진 채 소리를 내기 직전(코치 목소리 · 띵)에 부른다. 화면이 켜져 있으면 <audio>를 멈추고
+   * 소리 성격을 'transient'로 되돌린다 — 화면이 꺼진 동안 'auto'로 돌려 둔 채 남아 있으면 그 상태로
+   * 나는 Web Audio 소리가 아이폰의 음악을 멈출 수 있다. 화면이 꺼져 있으면(잠금 소리 파일이 도는 중) 건드리지 않는다.
+   */
+  function ambient() {
+    if (hiddenNow()) return;
+    if (loud()) silence();
+    session('transient');
+  }
+
+  /*
+   * 화면이 다시 켜지면 'transient'로. 소리 파일이 아직 돌고 있으면 앱이 그 자리를 읽고(catchUpLock) 멈출 때까지
+   * 한 틈 기다린다 — 그 뒤에도 돌고 있으면 여기서 멈춘다. <audio>는 화면이 꺼진 동안에만 돈다.
+   */
+  document.addEventListener('visibilitychange', function () {
+    if (hiddenNow()) return;
+    if (!loud()) session('transient');
+    setTimeout(function () {
+      if (hiddenNow()) return;
+      if (loud()) silence();
+      session('transient');
+    }, 0);
+  });
 
   function player() {
     if (!audio) {
       audio = new Audio();
       audio.preload = 'auto';
       audio.setAttribute('playsinline', '');
-      audio.addEventListener('ended', release);
+      // 다 나온 소리 파일 — 성격도 같이 되돌린다(전에는 'auto'로 남아 돌아온 뒤의 코치 목소리가 음악을 멈출 수 있었다)
+      audio.addEventListener('ended', function () { release(); session('transient'); });
     }
     return audio;
   }
@@ -54,6 +98,8 @@ var RestSound = (function () {
   }
 
   function load(bytes) {
+    // <audio>는 화면이 꺼진 동안에만 — 화면이 켜진 채 틀면 아이폰이 듣던 음악을 멈춘다
+    if (!hiddenNow()) return;
     var el = player();
     el.muted = false;
     session('auto');
@@ -70,6 +116,7 @@ var RestSound = (function () {
     woke = true;
     var el = player();
     el.muted = true;
+    session('transient');
     release();
     url = URL.createObjectURL(new Blob([window.FitEngine.restAlarmWav(0.05, false)], { type: 'audio/wav' }));
     el.src = url;
@@ -84,6 +131,7 @@ var RestSound = (function () {
   /** 화면이 켜진 채 휴식이 끝났을 때 — Web Audio로 띵-띵. 듣던 음악을 멈추지 않는다. */
   function chime() {
     if (!ctx) return;
+    ambient();
     try {
       var now = ctx.currentTime + 0.02;
       [[0, 880], [0.28, 1175]].forEach(function (tone) {
@@ -115,6 +163,7 @@ var RestSound = (function () {
   /** 휴식을 건너뛰거나 지웠을 때 — 울리지 않게 멈춘다. */
   function stop() {
     stopWeb();
+    session('transient');
     if (!audio) return;
     audio.pause();
     audio.removeAttribute('src');
@@ -133,6 +182,8 @@ var RestSound = (function () {
    * 가리키는 시각(ms) — 만든 뒤 지난 만큼 건너뛰고 튼다.
    */
   function audioTrack(bytes, anchor, label) {
+    // <audio>는 화면이 꺼진 동안에만 — 화면이 켜진 채 틀면 아이폰이 듣던 음악을 멈춘다
+    if (!hiddenNow()) return;
     var el = player();
     el.muted = false;
     session('auto');
@@ -324,6 +375,6 @@ var RestSound = (function () {
 
   return {
     wake: wake, start: start, stop: stop, playTrack: playTrack, position: position, chime: chime, active: active,
-    backgroundMixes: backgroundMixes, backgroundState: backgroundState,
+    backgroundMixes: backgroundMixes, backgroundState: backgroundState, ambient: ambient,
   };
 })();

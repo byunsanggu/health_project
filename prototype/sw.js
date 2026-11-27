@@ -9,7 +9,7 @@
  * 넣는 게 정상이다. 화면이 꺼지면 페이지의 타이머는 throttle되거나 멈추지만,
  * 서비스 워커의 알림은 시계까지 간다.
  */
-const VERSION = 'volume-coach-v4';
+const VERSION = 'volume-coach-v5';
 /*
  * 운동 · 기구 3D 썸네일(thumbs/, tools/thumbs가 굽는다). 설치할 때 한꺼번에 받지 않는다 —
  * 수백 장이라 설치가 느려진다. 화면에 처음 뜰 때 받아 담아 두고, 그 뒤로는 캐시에서 준다(오프라인에서도 뜬다).
@@ -36,7 +36,8 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       // 코치 목소리 캐시(coach-voice-*)는 앱이 관리한다 — 워커가 바뀌어도 지우지 않는다(다시 받으려면 9MB)
-      .then((keys) => Promise.all(keys.filter((key) => key !== VERSION && key !== THUMBS && !key.startsWith('coach-voice')).map((key) => caches.delete(key))))
+      // 잠금 화면 휴식 알림의 문장(rest-alarm-*)도 앱이 적는다 — 지우면 푸시가 와도 기본 문장만 뜬다
+      .then((keys) => Promise.all(keys.filter((key) => key !== VERSION && key !== THUMBS && !key.startsWith('coach-voice') && !key.startsWith('rest-alarm')).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });
@@ -148,8 +149,62 @@ function scheduleRest(payload) {
   return new Promise((resolve) => {
     restTimer = setTimeout(() => {
       restTimer = null;
-      showRestDone(payload).then(resolve, resolve);
+      // 같은 휴식 끝을 서버 푸시(잠금 화면 알림)가 맡았으면 여기서는 띄우지 않는다 — 두 번 울린다
+      readRestAlarm().then((record) => {
+        const pushed = record && record.state === 'armed' && Math.abs((record.sendAt || 0) - payload.endsAt) < 5000;
+        return pushed ? null : showRestDone(payload);
+      }).then(resolve, resolve);
     }, delay);
+  });
+}
+
+/* ── 잠금 화면 휴식 알림 (아이폰 · functions/rest-alarm) ──────
+ *
+ * 아이폰은 화면을 잠근 채 웹앱이 소리를 내면 듣던 음악이 멈춘다. 그래서 잠긴 동안의 휴식 끝은
+ * 서버가 그 시각에 푸시로 보낸다. 푸시에는 {t:'rest', id}뿐이다 — 문장은 앱이 화면이 꺼지기 직전에
+ * 이 폰의 Cache Storage에 적어 둔 것(push.js FitRestPush)을 여기서 읽는다. 없으면 기본 문장.
+ *
+ * 아이폰은 받은 푸시마다 알림을 꼭 띄워야 한다(안 띄우면 구독을 끊는다). 그래서 이미 취소한 알람
+ * (화면으로 돌아온 바로 그 순간에 출발한 푸시)이라도 조용한 한 줄을 띄우고 곧 닫는다.
+ */
+const REST_ALARM_TAG = 'rest-alarm';
+const REST_ALARM_CACHE = 'rest-alarm-v1';
+const REST_ALARM_KEY = self.location.origin + '/__rest-alarm__/next';
+
+function readRestAlarm() {
+  return caches.open(REST_ALARM_CACHE)
+    .then((cache) => cache.match(REST_ALARM_KEY))
+    .then((hit) => (hit ? hit.json() : null))
+    .catch(() => null);
+}
+
+function showRestAlarm(id) {
+  return Promise.all([
+    readRestAlarm(),
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).catch(() => []),
+  ]).then(([record, clients]) => {
+    const mine = Boolean(record && record.id === id);
+    // 취소했거나 앱을 보고 있다 — 앱이 이미 휴식을 알고 있다. 띄우되 조용히, 곧 닫는다
+    const stale = (mine && record.state === 'cancelled') || clients.some((client) => client.visibilityState === 'visible');
+    const fresh = mine && !stale && record.title;
+    const title = fresh ? record.title : '휴식 끝';
+    const body = stale ? '휴식이 끝났습니다' : fresh ? (record.body || '다음 세트를 시작하세요') : '다음 세트를 시작하세요';
+    return self.registration.showNotification(title, {
+      body,
+      tag: REST_ALARM_TAG,
+      renotify: !stale,
+      icon: './icon.svg',
+      badge: './icon.svg',
+      vibrate: stale ? [] : [220, 120, 220],
+      silent: stale,
+      data: { kind: 'rest-alarm', id },
+    }).then(() => {
+      if (!stale) return null;
+      return new Promise((resolve) => setTimeout(resolve, 4000))
+        .then(() => self.registration.getNotifications({ tag: REST_ALARM_TAG }))
+        .then((list) => list.forEach((item) => item.close()))
+        .catch(() => {});
+    });
   });
 }
 
@@ -159,11 +214,11 @@ self.addEventListener('message', (event) => {
     event.waitUntil(scheduleRest(data));
   } else if (data.type === 'rest:stop') {
     clearRestTimer();
-    event.waitUntil(
-      self.registration.getNotifications({ tag: REST_TAG })
+    // 잠금 화면에 떠 있던 휴식 끝 알림도 같이 걷는다 — 앱으로 돌아왔다
+    event.waitUntil(Promise.all([REST_TAG, REST_ALARM_TAG].map((tag) =>
+      self.registration.getNotifications({ tag })
         .then((list) => list.forEach((item) => item.close()))
-        .catch(() => {}),
-    );
+        .catch(() => {}))));
   } else if (data.type === 'ping') {
     event.source && event.source.postMessage({ type: 'pong', version: VERSION });
   }
@@ -205,7 +260,8 @@ self.addEventListener('push', (event) => {
   } catch (err) {
     payload = { body: event.data ? event.data.text() : '' };
   }
-  event.waitUntil(payload.kind === 'rest-done' ? showRestDone(payload) : showNudge(payload));
+  event.waitUntil(payload.t === 'rest' ? showRestAlarm(String(payload.id || ''))
+    : payload.kind === 'rest-done' ? showRestDone(payload) : showNudge(payload));
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -214,22 +270,29 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   /*
-   * 다시 부르기는 앱을 열어주기만 한다. 휴식 동작을 같이 보내면, 며칠 전에
-   * 끝난 세션의 "다음 세트"가 그 자리에서 눌린다.
+   * 다시 부르기(약속 · 운동 알림)는 곧장 오늘 운동으로 연다 — 알림을 누른 것이 "하겠다"는 뜻이다.
+   * 앱이 쉬는 날 · 마친 날 · 아픈 날인지 보고 아니면 바로 시작한다(app.js quickStart, ?go=start).
+   * 휴식 동작은 같이 보내지 않는다 — 며칠 전에 끝난 세션의 "다음 세트"가 그 자리에서 눌린다.
+   * 알림 내용에는 운동 숫자를 싣지 않는다. 열면 이 폰이 이 폰의 기록으로 정한다.
    */
   const nudge = kind === 'nudge';
+  /*
+   * 잠금 화면 휴식 알림(rest-alarm)은 앱을 열어 주기만 한다. 휴식은 이미 끝났고, 열리면 앱이 그
+   * 시각과 대조해 다음 세트로 간다(PT는 이어서 센다). "다음 세트"를 대신 눌러 주지 않는다.
+   */
+  const restAlarm = kind === 'rest-alarm';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
         if ('focus' in client) {
-          if (!nudge) client.postMessage({ type: 'rest:action', action: action || 'next' });
+          if (!restAlarm) client.postMessage(nudge ? { type: 'go:start' } : { type: 'rest:action', action: action || 'next' });
           return client.focus();
         }
       }
       // 앱이 닫혀 있으면 열어준다.
       return self.clients.openWindow(
-        nudge ? './index.html' : './index.html?rest=' + encodeURIComponent(action || 'next'));
+        nudge ? './index.html?go=start' : restAlarm ? './index.html' : './index.html?rest=' + encodeURIComponent(action || 'next'));
     }),
   );
 });

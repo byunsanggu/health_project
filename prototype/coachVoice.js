@@ -205,6 +205,8 @@
         if (mine !== generation) return;
         var c = audio();
         if (!c) return;
+        // 소리 내기 직전 — 화면이 켜져 있으면 소리 성격을 'transient'로(음악을 멈추지 않게) · 남은 <audio>는 멈춘다
+        if (window.RestSound && window.RestSound.ambient) window.RestSound.ambient();
         var at = Math.max(c.currentTime + 0.05, queueEnd);
         var k = 0;
         ids.forEach(function (sentence, si) {

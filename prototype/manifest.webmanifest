@@ -19,6 +19,7 @@
     { "src": "./icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
+    { "name": "바로 운동 시작", "short_name": "바로 시작", "url": "./index.html?go=start", "icons": [{ "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }] },
     { "name": "오늘 훈련", "short_name": "오늘", "url": "./index.html?tab=today" },
     { "name": "주간 볼륨", "short_name": "볼륨", "url": "./index.html?tab=volume" }
   ]
