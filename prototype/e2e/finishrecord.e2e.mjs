@@ -1,5 +1,5 @@
 // 운동 끝 창 · 기록 탭 — 처음 온 사람이 한눈에.
-//   끝 창: 맨 위 "🎉 오늘 운동 끝!"(세트 · 분) → "지난번보다" 한 줄 → 내 선수(포즈) · 오늘 오른 점수 → 다음 도전 → 채운 버튼 하나(오늘 마치기).
+//   끝 창: 맨 위 "오늘 운동 끝!"(세트 · 분) → "지난번보다" 한 줄 → 내 선수(포즈) · 오늘 오른 점수 → 다음 도전 → 채운 버튼 하나(오늘 마치기).
 //   숫자 셋 · 쓴 부위 그림 · 지난번과 비교 표 · 다음 주 계획은 "자세히" 안에.
 //   기록 탭: 이번 주 약속(● ○ · "4번 중 2번" · 요일 칸 한 줄) → 알림 카드 하나 → 내 선수 → 최근 운동 셋 → 늘어난 그래프 → 자세히.
 //   알림 카드는 닫으면 다시 안 뜬다(다시 켜도). 화면 글에 해부학 말 · "상체 A" 같은 이름이 없다.
@@ -76,7 +76,7 @@ export default async function ({ page, url, shot }) {
   await dialog.locator('.summary-hero').waitFor();
 
   // 1) 칭찬 먼저 — 큰 한 줄과 세트 수
-  check((await dialog.locator('.summary-hero-title').textContent()).trim() === '🎉 오늘 운동 끝!', '끝 창 큰 줄: ' + await dialog.locator('.summary-hero-title').textContent());
+  check((await dialog.locator('.summary-hero-title').textContent()).trim() === '오늘 운동 끝!', '끝 창 큰 줄: ' + await dialog.locator('.summary-hero-title').textContent());
   check(/^\d+세트/.test((await dialog.locator('.summary-hero-meta').textContent()).trim()), '세트 수가 없습니다');
   check(await dialog.locator('.summary-left').count() === 0, '다 했는데 "아직 남았어요"가 뜹니다');
   // 제목은 쉬운 날 이름

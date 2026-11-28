@@ -14,7 +14,7 @@ export default async function ({ page, url, shot }) {
   await page.waitForSelector('.onboarding-head[data-step="goal"]');
   check(await page.locator('.steps.dots .step').count() === 5, '단계 막대가 ' + await page.locator('.steps.dots .step').count() + '개입니다');
   const names = (await page.locator('.goal-card .goal-card-name').allTextContents()).map((t) => t.trim());
-  check(names.join(',') === '살 빼기,근육 키우기,힘,체력,근력+감량', '목표 카드: ' + names.join(','));
+  check(names.join(',') === '다이어트,근육 키우기,힘,체력,근력+감량', '목표 카드: ' + names.join(','));
   check(await page.locator('.goal-card svg').count() === 5, '목표 카드에 그림이 없습니다');
   check(await page.locator('.goal-card[aria-pressed="true"]').getAttribute('data-persona') === 'bulk', '기본 목표가 근육 키우기가 아닙니다');
   check(await page.locator('.backup-pick', { hasText: '쓰던 기록이 있습니다' }).count() === 1, '첫 장에 쓰던 기록 불러오기가 없습니다');

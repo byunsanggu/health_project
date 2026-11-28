@@ -3582,14 +3582,14 @@
 
     /*
      * 칭찬이 먼저다 — 처음 온 사람이 끝나고 볼 것은 "해냈다" 한 줄과 나아진 것 하나다. 순서:
-     *   🎉 오늘 운동 끝! (세트 · 분) → 지난번보다 한 줄 → 내 선수(포즈) · 오늘 오른 점수 → 다음 도전 → 마치기.
+     *   오늘 운동 끝! (세트 · 분) → 지난번보다 한 줄 → 내 선수(포즈) · 오늘 오른 점수 → 다음 도전 → 마치기.
      * 숫자 셋 · 오늘 쓴 부위 그림 · 지난번과 비교 표 · 신기록 · 다음 주 계획 · 주마다 세트는 "자세히" 안에.
      */
     var details = [];
     var five = fiveMinShortToday();
     var minutes = summary.durationMinutes || 0;
     body.push(el('div', { class: 'summary-hero' }, [
-      el('p', { class: 'summary-hero-title', text: early ? '여기까지 잘했습니다' : five ? '🎉 오늘도 나왔습니다!' : '🎉 오늘 운동 끝!' }),
+      el('p', { class: 'summary-hero-title', text: early ? '여기까지 잘했습니다' : five ? '오늘도 나왔습니다!' : '오늘 운동 끝!' }),
       el('p', { class: 'summary-hero-meta' }, [
         el('b', { text: summary.setsCompleted + '세트' }),
         minutes ? el('span', { text: ' · ' + minutes + '분' }) : null,
@@ -7137,9 +7137,9 @@
    * 알림에서 한 번에 시작(quickStart)은 이 창을 거치지 않는다.
    */
   var START_FEELS = [
-    { id: 'good', face: '😀' },
-    { id: 'ok', face: '🙂' },
-    { id: 'low', face: '😮‍💨' },
+    { id: 'good' },
+    { id: 'ok' },
+    { id: 'low' },
   ];
 
   function openStartSheet(mode) {
@@ -7178,7 +7178,7 @@
           type: 'button', class: 'feel-pick', 'data-feel': item.id, 'aria-pressed': String(now === item.id),
           'aria-label': label + ' — 바로 시작',
           onclick: function () { pick(item.id); },
-        }, [el('span', { class: 'feel-face', 'aria-hidden': 'true', text: item.face }), el('b', { text: label })]);
+        }, [el('b', { text: label })]);
       })),
       mode === 'first' ? el('p', { class: 'hint-line start-first-note', text:
         '누르면 바로 시작합니다. 고른 몸 상태에 맞춰 무게와 세트를 정합니다.' }) : null,
@@ -20526,7 +20526,7 @@
    * 아래의 목표 칸은 그대로 있어서 직접 섞어 고를 수도 있다.
    */
   var GOAL_PERSONAS = [
-    { id: 'cut', goals: ['fatLoss'], label: '체지방 감량',
+    { id: 'cut', goals: ['fatLoss'], label: '다이어트',
       plan: '근력 운동은 무게를 그대로 지키고, 운동 뒤에 걷기 · 자전거를 10~20분, 쉬는 날에는 걷기를 넣습니다.' },
     { id: 'strength', goals: ['strength'], label: '근력',
       plan: '바벨 큰 운동을 4~6회로 무겁게 하고 3분씩 쉽니다. 종목과 세트는 적게 잡습니다.' },
@@ -24637,7 +24637,7 @@
    * 쓰던 기록(백업 파일)이 있는 사람의 문도 이 장에 있다 — 설문 답이 든 백업이면 동의 장으로 건너뛴다.
    */
   var GOAL_CARDS = {
-    cut: { label: '살 빼기', art: 'treadmill', sub: '근력 운동에 걷기 · 자전거를 붙입니다' },
+    cut: { label: '다이어트', art: 'treadmill', sub: '근력 운동에 걷기 · 자전거를 붙입니다' },
     bulk: { label: '근육 키우기', art: 'dumbbells', sub: '부위마다 여러 세트로 키웁니다' },
     strength: { label: '힘', art: 'barbell-set', sub: '무겁게 적게 하고, 길게 쉽니다' },
     crossfit: { label: '체력', art: 'battle-rope', sub: '짧은 근력 운동 뒤에 시간 재는 운동' },

@@ -21,7 +21,8 @@ export const GOAL_LABELS_KO: Record<TrainingGoal, string> = {
   // '근비대'는 처음 온 사람이 모르는 말이다. 하는 일로 부른다(' · '는 목표 사이 구분이라 이름 안에 쓰지 않는다)
   hypertrophy: '근육 키우기',
   strength: '근력',
-  fatLoss: '체지방 감량',
+  // '체지방 감량'보다 사람들이 실제로 쓰는 말 — 하는 일은 힌트에 쓴다
+  fatLoss: '다이어트',
   // '컨디셔닝 · 와드'는 해 본 사람만 아는 말이다 — 무엇이 좋아지는지로 부르고, 아는 이름은 괄호에
   conditioning: '체력 기르기 (크로스핏식)',
   general: '건강 유지',
