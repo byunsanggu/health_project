@@ -1,5 +1,6 @@
 import { calibrateLandmarks, landmarksFor, MUSCLE_GROUPS, MUSCLE_LABELS_KO, type LandmarkOverride } from './muscles.ts';
 import { oneRepMax } from './repmax.ts';
+import { isAssisted } from './exercises.ts';
 import { aggregateVolume, groupByWeek, type VolumeOptions } from './volume.ts';
 import type { Exercise, LandmarksByMuscle, MuscleGroup, SessionLog, TrainingLevel } from './types.ts';
 
@@ -90,7 +91,8 @@ export function weeklyPerformance(
     const best = new Map<string, number>();
     for (const session of sessions) {
       for (const set of session.sets) {
-        if (set.warmup || set.reps <= 0 || set.weightKg <= 0) continue;
+        // 도와주는 기계(어시스트 풀업)의 숫자는 도움이라 클수록 쉽다 — 힘 추정에서 뺀다
+        if (set.warmup || set.reps <= 0 || set.weightKg <= 0 || isAssisted(set.exerciseId)) continue;
         const value = oneRepMax({ ...set, rir: clamp(set.rir + offset, 0, 5) });
         const previous = best.get(set.exerciseId);
         if (previous === undefined || value > previous) best.set(set.exerciseId, value);

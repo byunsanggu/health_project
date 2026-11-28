@@ -1,4 +1,4 @@
-import { isTimed } from './exercises.ts';
+import { isAssisted, isTimed } from './exercises.ts';
 import { oneRepMax, repsForIntensity } from './repmax.ts';
 import { addDays, weekStart } from './volume.ts';
 import type { Exercise, SessionLog, SetLog } from './types.ts';
@@ -76,7 +76,8 @@ export function calibrateRir(
   for (const session of inWindow) {
     for (const set of session.sets) {
       // 버티는 종목(플랭크)은 "몇 개 더"가 아니라 초 — 정확도 판정에서 뺀다
-      if (set.warmup || set.reps <= 0 || isTimed(set.exerciseId)) continue;
+      // 도와주는 기계(어시스트 풀업)는 숫자가 클수록 쉬워 무게 · 반복 관계가 거꾸로다 — 판정에서 뺀다
+      if (set.warmup || set.reps <= 0 || isTimed(set.exerciseId) || isAssisted(set.exerciseId)) continue;
       const bucket = byExercise.get(set.exerciseId);
       if (bucket) bucket.push(set);
       else byExercise.set(set.exerciseId, [set]);

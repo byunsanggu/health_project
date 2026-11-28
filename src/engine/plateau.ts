@@ -1,4 +1,4 @@
-import { CONDITIONING_ONLY, isTimed, isUnloaded } from './exercises.ts';
+import { CONDITIONING_ONLY, isAssisted, isTimed, isUnloaded } from './exercises.ts';
 import { withParticle } from './korean.ts';
 import { floorToIncrement, type RepRange } from './load.ts';
 import { TECHNICAL_LIFTS } from './onboarding.ts';
@@ -96,10 +96,16 @@ export const RESET_FACTOR = 0.9;
 
 interface Exposure {
   date: string;
+  /** 기록한 숫자 그대로(도와주는 기계는 도움) — 문장에 쓴다 */
   weightKg: number;
+  /** 비교에 쓰는 무게 — 보통은 weightKg, 도와주는 기계는 보통 체중(70kg) − 도움(도움이 적을수록 크다) */
+  load: number;
   reps: number;
   score: number;
 }
+
+/** 도와주는 기계의 비교용 체중 — 같은 사람끼리 빼는 값이라 차이만 맞으면 된다. */
+const NOMINAL_BODYWEIGHT_KG = 70;
 
 function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
@@ -111,11 +117,14 @@ function exposures(history: readonly SessionLog[], exerciseId: string, today: st
   for (const session of history) {
     if (session.date >= today || session.date < from) continue;
     for (const set of session.sets) {
-      if (set.exerciseId !== exerciseId || set.warmup || set.top || set.reps <= 0 || set.weightKg <= 0) continue;
+      const assisted = isAssisted(set.exerciseId);
+      if (set.exerciseId !== exerciseId || set.warmup || set.top || set.reps <= 0) continue;
+      if (assisted ? set.weightKg < 0 : set.weightKg <= 0) continue;
+      const load = assisted ? Math.max(1, NOMINAL_BODYWEIGHT_KG - set.weightKg) : set.weightKg;
       const now = byDate.get(session.date);
-      if (!now || set.weightKg > now.weightKg || (set.weightKg === now.weightKg && set.reps > now.reps)) {
+      if (!now || load > now.load || (load === now.load && set.reps > now.reps)) {
         // 무게 × 횟수로만 — 남긴 개수(RIR)는 주차마다 목표가 줄어드니 섞으면 늘어도 준 것처럼 보인다
-        byDate.set(session.date, { date: session.date, weightKg: set.weightKg, reps: set.reps, score: set.weightKg * (1 + set.reps / 30) });
+        byDate.set(session.date, { date: session.date, weightKg: set.weightKg, load, reps: set.reps, score: load * (1 + set.reps / 30) });
       }
     }
   }
@@ -129,7 +138,7 @@ function stall(list: readonly Exposure[]): { best: Exposure; flat: Exposure[] } 
   let flat: Exposure[] = [];
   let lighter: Exposure[] = [];
   for (const item of list.slice(1)) {
-    if (item.weightKg < best.weightKg * LIGHTER - 1e-9) {
+    if (item.load < best.load * LIGHTER - 1e-9) {
       lighter.push(item);
       // 세 번 넘게 가볍게 했으면 그 무게가 지금 무게다 — 거기서 다시 센다
       if (lighter.length >= 3) {
@@ -141,7 +150,7 @@ function stall(list: readonly Exposure[]): { best: Exposure; flat: Exposure[] } 
     }
     lighter = [];
     // 무게가 올랐거나 같은 무게 언저리에서 더 했으면 늘어난 것
-    if (item.weightKg > best.weightKg + 1e-9 || item.score > best.score * 1.001) {
+    if (item.load > best.load + 1e-9 || item.score > best.score * 1.001) {
       best = item;
       flat = [];
       continue;
@@ -253,7 +262,7 @@ export function findPlateaus(input: PlateauInput): Plateau[] {
       sessions: found.flat.length,
       weeks,
       lastDate: last.date,
-      headline: `${exercise.name} — ${weeks}주째 ${best.weightKg}kg × ${best.reps}회에서 늘지 않았습니다.`,
+      headline: `${exercise.name} — ${weeks}주째 ${isAssisted(exercise) ? '도움 ' : ''}${best.weightKg}kg × ${best.reps}회에서 늘지 않았습니다.`,
       fix,
     });
   }
@@ -283,6 +292,17 @@ function fixFor(
       repRange: next,
       action: `${repText(next)}로 바꾸기`,
       text: `반복 범위를 ${repText(range)}에서 ${repText(next)}로 바꿉니다. 같은 종목도 횟수를 바꾸면 다시 늘기 시작합니다.`,
+    };
+  }
+  if (isAssisted(exercise)) {
+    // 도와주는 기계 — 도움을 한 칸 늘려(쉽게) 다시 줄여 간다
+    const step = exercise.increment > 0 ? exercise.increment : 5;
+    const more = Math.round((best.weightKg + step) * 10) / 10;
+    return {
+      kind: 'reset',
+      factor: RESET_FACTOR,
+      action: '도움 한 칸 늘려 다시 쌓기',
+      text: `다음 번에 도움을 ${more}kg으로 한 칸 늘려 시작하고, 횟수를 채우면 다시 줄여 갑니다. 쉽게 몇 번 하면 지난 기록을 넘는 경우가 많습니다.`,
     };
   }
   const target = best.weightKg * RESET_FACTOR;

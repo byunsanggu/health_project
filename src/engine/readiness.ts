@@ -1,4 +1,4 @@
-import { isTimed } from './exercises.ts';
+import { isAssisted, isTimed } from './exercises.ts';
 import { estimate1RM } from './load.ts';
 import { aggregateVolume, addDays, sessionsInWeek, weekStart } from './volume.ts';
 import { MUSCLE_GROUPS, MUSCLE_LABELS_KO } from './muscles.ts';
@@ -197,7 +197,8 @@ export function bestE1rmByExercise(sessions: readonly SessionLog[]): Map<string,
   for (const session of sessions) {
     for (const set of session.sets) {
       // 버티는 종목(플랭크)의 reps는 초라 1회 최대로 바꿀 수 없다
-      if (set.warmup || set.reps <= 0 || isTimed(set.exerciseId)) continue;
+      // 도와주는 기계(어시스트 풀업)의 숫자는 도움이라 클수록 쉽다 — 힘 추정에서 뺀다(도움을 줄인 주가 "기록이 떨어졌다"로 읽혔다)
+      if (set.warmup || set.reps <= 0 || isTimed(set.exerciseId) || isAssisted(set.exerciseId)) continue;
       const value = estimate1RM(set);
       const previous = best.get(set.exerciseId);
       if (previous === undefined || value > previous) best.set(set.exerciseId, value);

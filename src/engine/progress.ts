@@ -1,4 +1,5 @@
 import { oneRepMax } from './repmax.ts';
+import { isAssisted } from './exercises.ts';
 import { MUSCLE_LABELS_KO } from './muscles.ts';
 import { aggregateVolume, groupByWeek, type VolumeOptions } from './volume.ts';
 import type { Exercise, MuscleGroup, SessionLog, SetLog } from './types.ts';
@@ -48,7 +49,8 @@ export function liftProgress(
   for (const session of history) {
     if (options.from && session.date < options.from) continue;
     for (const set of session.sets) {
-      if (set.warmup || set.reps <= 0 || set.weightKg <= 0) continue;
+      // 도와주는 기계(어시스트 풀업)의 숫자는 도움이라 클수록 쉽다 — 힘 추정에서 뺀다
+      if (set.warmup || set.reps <= 0 || set.weightKg <= 0 || isAssisted(set.exerciseId)) continue;
       const value = oneRepMax({ ...set, rir: clamp(set.rir + offset, 0, 5) });
 
       let byDate = byExercise.get(set.exerciseId);
@@ -155,7 +157,8 @@ export function personalRecords(
   for (const session of history) {
     if (session.date > latestDate) latestDate = session.date;
     for (const set of session.sets) {
-      if (set.warmup || set.reps <= 0 || set.weightKg <= 0) continue;
+      // 도와주는 기계(어시스트 풀업)의 숫자는 도움이라 클수록 쉽다 — 힘 추정에서 뺀다
+      if (set.warmup || set.reps <= 0 || set.weightKg <= 0 || isAssisted(set.exerciseId)) continue;
       const value = oneRepMax({ ...set, rir: clamp(set.rir + offset, 0, 5) });
       const current = best.get(set.exerciseId);
       if (!current || value > current.value) {

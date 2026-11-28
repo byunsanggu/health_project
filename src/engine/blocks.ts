@@ -1,7 +1,7 @@
 import { estimate1RM } from './load.ts';
 import { LEVEL_LABELS_KO, levelFromStrength, levelProfile } from './levels.ts';
 import type { ProgramOptions, TrainingProgram } from './onboarding.ts';
-import { exerciseById } from './exercises.ts';
+import { exerciseById, isAssisted } from './exercises.ts';
 import { addDays, weekStart } from './volume.ts';
 import type { SessionLog, TrainingLevel } from './types.ts';
 
@@ -197,7 +197,8 @@ function progressIn(sessions: readonly SessionLog[], from: string, to: string): 
     if (session.date < from || session.date >= to) continue;
     const bucket = session.date < middle ? early : late;
     for (const set of session.sets) {
-      if (set.warmup || set.reps <= 0 || set.weightKg <= 0) continue;
+      // 도와주는 기계(어시스트 풀업)의 숫자는 도움이라 클수록 쉽다 — 힘 추정에서 뺀다
+      if (set.warmup || set.reps <= 0 || set.weightKg <= 0 || isAssisted(set.exerciseId)) continue;
       const value = estimate1RM(set);
       if (value > (bucket.get(set.exerciseId) ?? 0)) bucket.set(set.exerciseId, value);
     }

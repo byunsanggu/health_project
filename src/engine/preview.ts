@@ -18,6 +18,8 @@ export interface PreviewExercise {
   name: string;
   equipment: Equipment;
   pattern: MovementPattern;
+  /** 도와주는 기계(어시스트 풀업) — 숫자가 도움이라 작을수록 어렵다 */
+  assisted?: boolean;
   /** 그날 처방될 무게. 맨몸이면 null */
   weightKg: number | null;
   sets: number;
@@ -124,11 +126,22 @@ export function liftDetail(
 
   if (lift.weightKg == null) return `${lift.name} ${volume}`;
 
-  const head = `${lift.name} ${weightLabel(lift.weightKg)}`;
+  const head = `${lift.name} ${lift.assisted ? '도움 ' : ''}${weightLabel(lift.weightKg)}`;
 
   if (lift.previousKg == null) return `${head} — ${volume}, 첫 기록을 남깁니다`;
 
   const delta = Math.round((lift.weightKg - lift.previousKg) * 10) / 10;
+  if (lift.assisted) {
+    // 도움을 줄이면 어려워진다 — "올립니다/내립니다" 대신 도움을 줄이고 늘린다고 말한다
+    if (delta < 0) return `${head} — 지난번보다 도움을 ${weightLabel(-delta)} 줄입니다`;
+    if (delta > 0) {
+      const more = weightLabel(delta);
+      if (options.drop === 'deload') return `${head} — 이번 주는 가볍게 하는 주라 도움을 ${more} 늘립니다`;
+      if (options.drop === 'comeback') return `${head} — 복귀 주라 도움을 ${more} 늘려서 갑니다`;
+      return `${head} — 지난번보다 도움을 ${more} 늘려서 갑니다`;
+    }
+    return `${head} — 지난번과 같은 도움으로 ${volume}`;
+  }
   if (delta > 0) return `${head} — 지난번보다 ${weightLabel(delta)} 올립니다`;
   if (delta < 0) {
     const down = weightLabel(-delta);
@@ -170,6 +183,8 @@ export interface ChallengeCandidate {
   name: string;
   equipment: Equipment;
   pattern: MovementPattern;
+  /** 도와주는 기계 — 도움이 줄면(숫자가 작아지면) 도전이다. bestKg는 가장 적었던 도움 */
+  assisted?: boolean;
   /** 그날 처방된 무게. 맨몸이면 null 또는 0 */
   weightKg: number | null;
   /** 그날 노리는 횟수(처방 범위의 아래쪽 — 같은 무게면 지난번보다 하나 더) */
@@ -198,12 +213,14 @@ function challengeOf(item: ChallengeCandidate): Challenge | null {
   const before = item.previousKg;
   // 처음 하는 종목은 오르는 게 아니다 — 비교할 지난번이 없다
   if (before == null) return null;
-  if (now > before + 1e-9) {
-    const first = item.bestKg == null || now > item.bestKg + 1e-9;
+  // 도와주는 기계는 도움이 줄어드는 쪽이 오르는 쪽이다(도움 25kg 첫 도전)
+  const harder = item.assisted ? now < before - 1e-9 : now > before + 1e-9;
+  if (harder) {
+    const first = item.bestKg == null || (item.assisted ? now < item.bestKg - 1e-9 : now > item.bestKg + 1e-9);
     return {
       kind: first ? 'firstWeight' : 'weight',
       name: item.name,
-      text: `${item.name} ${weightLabel(now)} ${first ? '첫 도전' : '도전'}`,
+      text: `${item.name} ${item.assisted ? '도움 ' : ''}${weightLabel(now)} ${first ? '첫 도전' : '도전'}`,
     };
   }
   if (Math.abs(now - before) < 1e-9 && item.previousReps != null && item.targetReps > item.previousReps) {

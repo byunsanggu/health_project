@@ -1,7 +1,7 @@
-import { isTimed, isUnloaded } from './exercises.ts';
+import { isAssisted, isTimed, isUnloaded } from './exercises.ts';
 import { prescribeHold } from './hold.ts';
 import type { Exercise, SetLog } from './types.ts';
-import { loadableWeights, type LoadingSpec } from './gym.ts';
+import { loadableWeights, nearestLoadable, type LoadingSpec } from './gym.ts';
 
 export interface RepRange {
   min: number;
@@ -53,6 +53,15 @@ export function roundToIncrement(weightKg: number, increment: number): number {
 export function topWorkingSet(sets: readonly SetLog[], exerciseId: string): SetLog | undefined {
   const working = sets.filter((set) => set.exerciseId === exerciseId && !set.warmup && set.reps > 0);
   if (working.length === 0) return undefined;
+
+  // 도와주는 기계(어시스트 풀업)는 도움이 가장 적은 세트가 가장 잘한 세트다
+  if (isAssisted(exerciseId)) {
+    return working.reduce((best, set) => {
+      if (set.weightKg < best.weightKg) return set;
+      if (set.weightKg === best.weightKg && set.reps > best.reps) return set;
+      return best;
+    });
+  }
 
   return working.reduce((best, set) => {
     if (set.weightKg > best.weightKg) return set;
@@ -120,6 +129,8 @@ export function prescribeLoad(
 ): LoadPrescription {
   // 버티는 종목(플랭크)은 무게가 아니라 버틴 초로 진행한다
   if (isTimed(exercise)) return prescribeHold(exercise, lastSession, rule);
+  // 도와주는 기계(어시스트 풀업)는 숫자가 도움이다 — 잘되면 도움을 줄인다
+  if (isAssisted(exercise)) return prescribeAssist(exercise, lastSession, rule);
   const base = {
     exerciseId: exercise.id,
     targetReps: rule.repRange,
@@ -353,6 +364,7 @@ export function adjustWithinSession(
 ): WithinSessionAdjustment {
   // 버티는 종목은 세트 사이에 바꿀 무게가 없다 — 처방(초)대로 다음 세트
   if (isTimed(exercise)) return { weightKg: lastSet.weightKg, deltaKg: 0, reason: '' };
+  if (isAssisted(exercise)) return adjustAssist(exercise, lastSet, rule);
   const step = stepFor(exercise, lastSet.weightKg);
   const observedRir = correctRir(lastSet.rir, rule.rirOffset);
   const surplus = observedRir - rule.targetRir;
@@ -416,7 +428,7 @@ export function restateAdjustment(
    * 코치가 본 이유(여유가 넉넉했다 · 목표 횟수를 못 채웠다)는 두고, 무게 대신 횟수로 맞춘다고 말한다.
    */
   if (actual === 0) {
-    const why = adjustment.reason.replace(/\s*다음 세트 [\d.]+kg (올립|낮춥)니다\.?\s*$/, '').trim();
+    const why = adjustment.reason.replace(/\s*다음 세트 (도움을 )?[\d.]+kg (올립|낮춥|줄입|늘립)니다\.?\s*$/, '').trim();
     const weights = spec ? loadableWeights(spec) : [];
     const edge = adjustment.deltaKg > 0
       ? weights.length > 0 && toKg >= weights[weights.length - 1]! - 1e-9
@@ -438,6 +450,127 @@ export function restateAdjustment(
     reason = reason.replace(/[\d.]+kg 낮춥니다\.?$/, `${-actual}kg 낮춥니다${note}`);
   }
   return { weightKg: toKg, deltaKg: actual, reason };
+}
+
+/* ── 도와주는 기계 — 숫자가 작을수록 어렵다 ──────────────────── */
+
+/** 도움을 줄이고 늘리는 한 칸 — 스택 한 칸(보통 5kg). */
+function assistStep(exercise: Exercise): number {
+  return exercise.increment > 0 ? exercise.increment : 5;
+}
+
+/**
+ * 어시스트 풀업 · 딥스의 이중 진행. 순서는 보통 종목과 같고 방향만 거꾸로다 — 위 끝을 다 채우고 여유도 있으면
+ * 도움을 한 칸 줄이고(어려워진다), 아래 끝에 못 미치면 한 칸 늘린다. 도움이 가장 적은 칸(한 칸 이하)에서 위 끝을
+ * 채우면 맨몸 풀업으로 넘어갈 때라고 말한다. change는 "어려워지는 쪽"이 increase다(올린다 = 실력이 오른다).
+ */
+function prescribeAssist(exercise: Exercise, lastSession: readonly SetLog[] | undefined, rule: LoadRule): LoadPrescription {
+  const base = { exerciseId: exercise.id, targetReps: rule.repRange, targetRir: rule.targetRir };
+  const attempts = (lastSession ?? []).filter((set) => !set.top && set.exerciseId === exercise.id && !set.warmup && set.reps > 0);
+  if (attempts.length === 0) {
+    return {
+      ...base,
+      weightKg: null,
+      change: 'start',
+      deltaKg: 0,
+      reason: `첫 수행입니다. ${rule.repRange.min}~${rule.repRange.max}회를 하고도 ${rule.targetRir}개쯤 남는 도움으로 시작하세요. 도움 숫자가 작을수록 어렵습니다.`,
+    };
+  }
+  const step = assistStep(exercise);
+  // 가장 잘한 세트 = 도움이 가장 적었던 세트(같으면 많이 한 세트)
+  const assist = Math.min(...attempts.map((set) => set.weightKg));
+  const atBest = attempts.filter((set) => set.weightKg === assist);
+  const fewest = Math.min(...atBest.map((set) => set.reps));
+  const most = Math.max(...attempts.map((set) => set.reps));
+  const tightest = atBest.reduce((worst, set) => (set.rir < worst.rir ? set : worst), atBest[0]!);
+  const observed = correctRir(tightest.rir, rule.rirOffset);
+  const surplus = observed - rule.targetRir;
+  const reachedTop = fewest >= rule.repRange.max;
+  const sets = atBest.length > 1 ? `${atBest.length}세트 모두 ` : '';
+
+  if ((reachedTop && surplus >= 0) || (!reachedTop && surplus >= 2)) {
+    if (assist <= step) {
+      return {
+        ...base,
+        weightKg: assist,
+        change: 'hold',
+        deltaKg: 0,
+        reason: `도움이 가장 적은 칸에서 ${rule.repRange.max}회를 채웠습니다. 이제 맨몸 풀업을 몇 개 해 보세요 — 되는 만큼이 다음 목표입니다.`,
+      };
+    }
+    const less = Math.max(0, round1(assist - step));
+    return {
+      ...base,
+      weightKg: less,
+      change: 'increase',
+      deltaKg: round1(less - assist),
+      reason: reachedTop
+        ? `${sets}${rule.repRange.max}회를 채우고 여유도 ${describeRir(tightest.rir, observed)} 남았습니다. 도움을 ${round1(assist - less)}kg 줄입니다 — 숫자가 작을수록 어렵습니다.`
+        : `여유 ${describeRir(tightest.rir, observed)}로 목표(${rule.targetRir}개)보다 쉬웠습니다. 도움을 ${round1(assist - less)}kg 줄입니다.`,
+    };
+  }
+  if (reachedTop) {
+    return {
+      ...base,
+      weightKg: assist,
+      change: 'hold',
+      deltaKg: 0,
+      reason: `목표 반복은 채웠지만 여유가 ${describeRir(tightest.rir, observed)}뿐인 세트가 있었습니다. 같은 도움으로 여유가 ${rule.targetRir}개 남을 때까지 합니다.`,
+    };
+  }
+  if (most < rule.repRange.min) {
+    const more = round1(assist + step);
+    return {
+      ...base,
+      weightKg: more,
+      change: 'decrease',
+      deltaKg: round1(more - assist),
+      reason: `${most}회로 목표 하단(${rule.repRange.min}회)에 못 미쳤습니다. 도움을 ${step}kg 늘려 반복 수부터 채웁니다.`,
+    };
+  }
+  const aim = Math.min(fewest + 1, rule.repRange.max);
+  return {
+    ...base,
+    weightKg: assist,
+    targetReps: { min: aim, max: rule.repRange.max },
+    change: 'hold',
+    deltaKg: 0,
+    reason: `같은 도움으로 ${aim}회를 노립니다.`,
+  };
+}
+
+/**
+ * 쉽게 만든 무게 — 가볍게 하는 날 · 쉬다 돌아온 주 · 멈춘 종목 내려 다시 쌓기에 쓴다. 보통은 factor배로 내리고
+ * (그 기구 칸에 아래로), 도와주는 기계는 도움을 그만큼 늘린다(0.9 → 도움 ×1.1, 칸에 위로). 도움이 0이었으면 한 칸.
+ */
+export function easierLoad(exercise: Exercise, kg: number, factor: number, loading?: LoadingSpec | null): number {
+  if (factor >= 1) return kg;
+  if (isAssisted(exercise)) {
+    const step = assistStep(exercise);
+    const target = kg > 0 ? kg * (2 - factor) : step;
+    if (loading && loading.kind === 'stack') return nearestLoadable(target, loading, 'up');
+    return round1(Math.ceil(target / step - 1e-9) * step);
+  }
+  if (kg <= 0) return kg;
+  if (loading) return nearestLoadable(kg * factor, loading, 'down');
+  return exercise.increment > 0 ? floorToIncrement(kg * factor, exercise.increment) : round1(kg * factor);
+}
+
+/** 세트 사이 — 넉넉하면 다음 세트 도움을 줄이고, 끝까지 가서 못 채우면 늘린다. deltaKg는 도움의 변화(줄이면 −). */
+function adjustAssist(exercise: Exercise, lastSet: SetLog, rule: LoadRule): WithinSessionAdjustment {
+  const step = assistStep(exercise);
+  const observed = correctRir(lastSet.rir, rule.rirOffset);
+  const surplus = observed - rule.targetRir;
+  const light = surplus >= 2 || (observed >= 5 && surplus >= 1);
+  if (light && lastSet.reps >= rule.repRange.min && lastSet.weightKg > step) {
+    const less = round1(lastSet.weightKg - step);
+    return { weightKg: less, deltaKg: round1(less - lastSet.weightKg), reason: `여유 ${describeRir(lastSet.rir, observed)}로 넉넉합니다. 다음 세트 도움을 ${step}kg 줄입니다.` };
+  }
+  if (observed <= 0 && lastSet.reps < rule.repRange.min) {
+    const more = round1(lastSet.weightKg + step);
+    return { weightKg: more, deltaKg: round1(more - lastSet.weightKg), reason: `끝까지 해도 목표 반복을 못 채웠습니다. 다음 세트 도움을 ${step}kg 늘립니다.` };
+  }
+  return { weightKg: lastSet.weightKg, deltaKg: 0, reason: '도움을 그대로 둡니다.' };
 }
 
 function correctRir(reported: number, offset = 0): number {

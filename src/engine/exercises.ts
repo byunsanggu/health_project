@@ -1040,6 +1040,29 @@ export const HEAVY_PULLS: ReadonlySet<string> = new Set(['conventional-deadlift'
 /** 무거운 데드리프트에 남길 최소 여유(RIR) */
 export const HEAVY_PULL_MIN_RIR = 2;
 
+/**
+ * 도와주는 기계 — 숫자가 무게가 아니라 "도움"이다(어시스트 풀업 · 딥스). 스택 숫자가 클수록 기계가 몸을 더 들어 줘서
+ * 쉬워진다. 그래서 진행은 거꾸로 — 잘되면 도움을 줄이고, 안 되면 늘린다. 기록의 weightKg에는 고른 도움(스택 숫자)이
+ * 그대로 들어간다. 힘(추정 1RM)을 잴 때는 체중 − 도움을 쓰고, 체중을 모르면 뺀다(liftedKg).
+ */
+export const ASSISTED: ReadonlySet<string> = new Set(['assisted-pull-up', 'assisted-dip']);
+
+/** 도와주는 기계 종목인가 — 숫자가 작을수록 어렵다. 종목 대신 id를 줘도 된다. */
+export function isAssisted(exercise: Pick<Exercise, 'id'> | string | null | undefined): boolean {
+  if (!exercise) return false;
+  return ASSISTED.has(typeof exercise === 'string' ? exercise : exercise.id);
+}
+
+/**
+ * 그 세트에서 실제로 든 무게 — 힘을 잴 때 쓴다. 보통은 적은 무게 그대로, 도와주는 기계는 체중 − 도움.
+ * 도와주는 기계인데 체중을 모르면 null — 힘 추정 · 기록 비교에서 뺀다(도움 30kg을 "30kg 들었다"로 세면 거꾸로다).
+ */
+export function liftedKg(set: { exerciseId: string; weightKg: number }, bodyweightKg?: number | null): number | null {
+  if (!isAssisted(set.exerciseId)) return set.weightKg;
+  if (!bodyweightKg || bodyweightKg <= 0) return null;
+  return Math.max(0, bodyweightKg - Math.max(0, set.weightKg));
+}
+
 const BY_ID = new Map(EXERCISES.map((exercise) => [exercise.id, exercise]));
 
 export function exerciseById(id: string): Exercise | undefined {

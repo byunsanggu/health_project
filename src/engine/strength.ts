@@ -1,4 +1,5 @@
 import { estimate1RM } from './load.ts';
+import { isAssisted } from './exercises.ts';
 import { workingWeight } from './repmax.ts';
 import { nearestLoadable, type LoadingSpec } from './gym.ts';
 import { LEVEL_LABELS_KO } from './levels.ts';
@@ -217,6 +218,32 @@ export function suggestStartingLoad(input: StartingLoadInput): StartingLoad {
   const target1RM = anchor1RM * mapping.factor;
   const working = workingWeightFor(target1RM, input.repRange.max, input.targetRir);
 
+  /*
+   * 도와주는 기계(어시스트 풀업) — 숫자는 기계가 들어 주는 몫이다. 당길 수 있는 무게(랫풀다운으로 짐작)만큼만 내가 들고
+   * 나머지(체중 − 그 무게)를 기계가 든다. 처음에는 넉넉하게(당길 무게를 90%로 잡고 칸은 위로) — 도움이 많으면 쉽고
+   * 안전하고, 첫 세트를 보고 줄이면 된다. 계수(0.6)를 곱해 무게처럼 쓰면 힘이 셀수록 도움이 커지는 거꾸로가 됐다.
+   */
+  if (isAssisted(input.exercise)) {
+    const bodyweight = input.profile?.bodyweightKg;
+    if (!bodyweight) {
+      return {
+        ...base, weightKg: null, method: 'unknown', confidence: 'low',
+        rationale: '체중을 몰라 도움을 짐작할 수 없습니다. 넉넉한 도움으로 한 세트 해 보고, 숫자를 눌러 고치세요. 숫자가 작을수록 어렵습니다.',
+      };
+    }
+    const pull = workingWeightFor(anchor1RM * PULLDOWN_FACTOR, input.repRange.max, input.targetRir) * 0.9;
+    const wanted = Math.min(bodyweight * MAX_ASSIST_SHARE, Math.max(0, bodyweight - pull));
+    const assist = input.loading ? nearestLoadable(wanted, input.loading, 'up') : round(wanted, 2.5);
+    return {
+      ...base,
+      weightKg: assist,
+      method: fromHistory ? 'related-lift' : 'bodyweight-ratio',
+      confidence: 'low',
+      rationale: `체중 ${bodyweight}kg에서 당길 수 있을 만큼을 빼고 기계가 도와줄 몫(도움 ${assist}kg)을 짐작했습니다. ` +
+        '숫자가 작을수록 어렵습니다 — 쉬우면 도움을 줄이세요.',
+    };
+  }
+
   // 첫 수행은 보수적으로. 가벼우면 세트 중에 올리면 되지만 무거우면 다칠 수 있다.
   const conservative = working * 0.9;
   const weightKg = input.loading
@@ -238,6 +265,11 @@ export function suggestStartingLoad(input: StartingLoadInput): StartingLoad {
   };
 }
 
+/** 어시스트 풀업의 당기는 힘은 랫풀다운과 같은 계수로 본다(로우 1RM 기준). */
+const PULLDOWN_FACTOR = 0.9;
+/** 처음 도움은 체중의 이만큼을 넘지 않는다 — 그보다 많이 들어 주면 발판에 서 있는 것과 같다. */
+const MAX_ASSIST_SHARE = 0.75;
+
 /** 이 계수보다 작은 종목(고립)의 기록은 큰 종목 시작 무게를 체중 기준보다 높이는 데 쓰지 않는다. */
 const SMALL_ANCHOR_FACTOR = 0.3;
 
@@ -251,7 +283,8 @@ function anchorFromHistory(
 
   for (const session of history) {
     for (const set of session.sets) {
-      if (set.warmup || set.reps <= 0) continue;
+      // 도와주는 기계의 숫자는 든 무게가 아니다 — 힘 짐작의 근거로 쓰지 않는다
+      if (set.warmup || set.reps <= 0 || isAssisted(set.exerciseId)) continue;
       const mapping = ANCHOR_FACTORS[set.exerciseId];
       if (!mapping || mapping.anchor !== anchor) continue;
 

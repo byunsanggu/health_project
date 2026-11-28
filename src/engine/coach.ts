@@ -14,6 +14,7 @@
  * 세 말투 모두 **존댓말**이다. 빡세다는 건 반말이 아니라 각오다.
  * "더 할 수 있어요. 오늘이 마지막인 것처럼."
  */
+import { isAssisted } from './exercises.ts';
 import { weightHistoryFor, type HistoryScope } from './gymWeight.ts';
 import { weightLabelIn } from './units.ts';
 import { HOLD_MIDDLE, HOLD_NEXT, HOLD_RESOLVE, holdWords } from './hold.ts';
@@ -197,8 +198,11 @@ export function lastTimeFor(
       (set) => set.exerciseId === exercise.id && !set.warmup && set.reps > 0,
     );
     if (working.length === 0) continue;
+    // 도와주는 기계(어시스트 풀업)는 도움이 가장 적은 세트가 가장 잘한 세트다
+    const assisted = isAssisted(exercise);
     const top = working.reduce((best, set) =>
-      set.weightKg > best.weightKg || (set.weightKg === best.weightKg && set.reps > best.reps) ? set : best);
+      (assisted ? set.weightKg < best.weightKg : set.weightKg > best.weightKg) ||
+      (set.weightKg === best.weightKg && set.reps > best.reps) ? set : best);
     return {
       date: session.date,
       daysAgo: Math.max(0, dayDiff(session.date, today)),

@@ -1,5 +1,5 @@
 import { blockStatus, TECHNICAL_ORDER, type TrainingBlock } from './blocks.ts';
-import { exerciseById, isTimed } from './exercises.ts';
+import { exerciseById, isAssisted, isTimed } from './exercises.ts';
 import { planGoals, type TrainingGoal } from './goals.ts';
 import { withParticle } from './korean.ts';
 import { LEVEL_LABELS_KO } from './levels.ts';
@@ -128,8 +128,12 @@ function gainsIn(input: RoadmapInput): string[] {
     for (const session of input.history) {
       if (session.date < input.block.startedOn || session.date >= input.today) continue;
       for (const set of session.sets) {
-        if (set.exerciseId !== id || set.warmup || set.top || set.reps <= 0 || set.weightKg <= 0) continue;
-        const item = { date: session.date, weightKg: set.weightKg, reps: set.reps, score: set.weightKg * (1 + set.reps / 30) };
+        if (set.exerciseId !== id || set.warmup || set.top || set.reps <= 0) continue;
+        // 도와주는 기계(어시스트 풀업)는 도움이 적을수록 잘한 것 — 보통 체중(70kg) − 도움으로 잰다
+        const assisted = isAssisted(id);
+        if (assisted ? set.weightKg < 0 : set.weightKg <= 0) continue;
+        const load = assisted ? Math.max(1, 70 - set.weightKg) : set.weightKg;
+        const item = { date: session.date, weightKg: set.weightKg, reps: set.reps, score: load * (1 + set.reps / 30) };
         if (!first || item.date < first.date || (item.date === first.date && item.score > first.score)) first = item;
         if (!best || item.score > best.score) best = item;
       }
@@ -137,8 +141,9 @@ function gainsIn(input: RoadmapInput): string[] {
     if (!first || !best || best.date === first.date) continue;
     const ratio = best.score / first.score;
     if (ratio < 1.01) continue;
+    const unit = isAssisted(id) ? '도움 ' : '';
     lines.push({
-      text: `${exercise.name} ${first.weightKg}kg × ${first.reps}회 → ${best.weightKg}kg × ${best.reps}회`,
+      text: `${exercise.name} ${unit}${first.weightKg}kg × ${first.reps}회 → ${unit}${best.weightKg}kg × ${best.reps}회`,
       ratio,
     });
   }

@@ -1,7 +1,7 @@
 import { prescribeLoad, roundToIncrement, type LoadRule, type RepRange } from './load.ts';
 import { JOINT_LABELS_KO, findSubstitutes, screenExercise, type PainRuling } from './pain.ts';
 import { planWeekSets } from './weekSets.ts';
-import { HEAVY_PULLS, HEAVY_PULL_MIN_RIR, isTimed } from './exercises.ts';
+import { HEAVY_PULLS, HEAVY_PULL_MIN_RIR, isAssisted, isTimed } from './exercises.ts';
 import { holdRange, holdRangeFrom } from './hold.ts';
 import { addDays, sessionsInWeek } from './volume.ts';
 import { MUSCLE_GROUPS } from './muscles.ts';
@@ -365,7 +365,24 @@ export function buildSession(input: BuildSessionInput): PlannedSession {
     let painHold = false;
     let increaseNote: string | null = null;
 
-    if (prescription.weightKg === null) {
+    if (isAssisted(exercise)) {
+      /*
+       * 도와주는 기계 — 숫자가 도움이다. 가볍게 하는 주 · 아픈 날(배율 < 1)에는 도움을 늘리고(90% → 도움 ×1.1),
+       * 어려워질 때(increase)는 칸을 아래로, 쉬워질 때는 위로 맞춘다. 보통 종목처럼 곱하면 가볍게 하는 주에 더 어려워졌다.
+       */
+      const easier = (kg: number) => (multiplier < 1 ? kg * (2 - multiplier) : kg);
+      if (prescription.weightKg === null) {
+        startingLoad = suggestStartingLoad({
+          exercise, repRange, targetRir: input.plan.targetRir, profile: input.lifter,
+          history: input.history, index: input.index, loading,
+        });
+        weightKg = startingLoad.weightKg === null ? null : snapAssist(easier(startingLoad.weightKg), exercise, loading, 'up');
+      } else {
+        const direction: SnapDirection = multiplier < 1 || prescription.change === 'decrease' ? 'up'
+          : prescription.change === 'increase' ? 'down' : 'nearest';
+        weightKg = snapAssist(easier(prescription.weightKg), exercise, loading, direction);
+      }
+    } else if (prescription.weightKg === null) {
       // 첫 수행. 관련 종목 기록이나 체중 기준선에서 출발점을 제안한다.
       startingLoad = suggestStartingLoad({
         exercise,
@@ -595,6 +612,13 @@ function snapLoad(
   const direction: SnapDirection =
     multiplier < 1 || change === 'decrease' ? 'down' : change === 'increase' ? 'up' : 'nearest';
   return nearestLoadable(targetKg, loading, direction);
+}
+
+/** 도움(어시스트) 숫자를 그 기계 칸에 맞춘다. 0(도움 없이) 밑으로는 안 내린다. */
+function snapAssist(targetKg: number, exercise: Exercise, loading: LoadingSpec | null, direction: SnapDirection): number {
+  const kg = Math.max(0, targetKg);
+  if (!loading || loading.kind !== 'stack') return Math.max(0, roundToIncrement(kg, exercise.increment));
+  return nearestLoadable(kg, loading, direction);
 }
 
 function buildNote(

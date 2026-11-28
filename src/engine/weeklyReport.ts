@@ -1,4 +1,4 @@
-import { isTimed } from './exercises.ts';
+import { isAssisted, isTimed } from './exercises.ts';
 import { MUSCLE_LABELS_KO } from './muscles.ts';
 import { withParticle } from './korean.ts';
 import { volumeReport } from './volume.ts';
@@ -151,11 +151,13 @@ function workingSets(session: SessionLog) {
  * 종목을 "새 기록"이라고 부르면 그건 기록이 아니라 처음 한 것이다.
  */
 function findGains(input: WeeklyReportInput): ReportGain[] {
+  // 도와주는 기계(어시스트 풀업)는 도움이 적을수록 잘한 것이다 — 숫자를 거꾸로 비교한다
+  const heavier = (exerciseId: string, a: number, b: number) => (isAssisted(exerciseId) ? a < b : a > b);
   const best = new Map<string, { weightKg: number; reps: number }>();
   for (const session of input.sessions) {
     for (const set of workingSets(session)) {
       const prev = best.get(set.exerciseId);
-      if (!prev || set.weightKg > prev.weightKg
+      if (!prev || heavier(set.exerciseId, set.weightKg, prev.weightKg)
         || (set.weightKg === prev.weightKg && set.reps > prev.reps)) {
         best.set(set.exerciseId, { weightKg: set.weightKg, reps: set.reps });
       }
@@ -167,7 +169,7 @@ function findGains(input: WeeklyReportInput): ReportGain[] {
     if (session.date >= input.from) continue;
     for (const set of workingSets(session)) {
       const prev = before.get(set.exerciseId);
-      if (!prev || set.weightKg > prev.weightKg
+      if (!prev || heavier(set.exerciseId, set.weightKg, prev.weightKg)
         || (set.weightKg === prev.weightKg && set.reps > prev.reps)) {
         before.set(set.exerciseId, { weightKg: set.weightKg, reps: set.reps });
       }
@@ -181,10 +183,10 @@ function findGains(input: WeeklyReportInput): ReportGain[] {
     const exercise = input.index.get(exerciseId);
     if (!exercise) continue;
 
-    if (now.weightKg > then.weightKg) {
+    if (heavier(exerciseId, now.weightKg, then.weightKg)) {
       gains.push({
         name: exercise.name,
-        detail: `+${round(now.weightKg - then.weightKg)}kg`,
+        detail: isAssisted(exerciseId) ? `도움 ${round(then.weightKg - now.weightKg)}kg 줄임` : `+${round(now.weightKg - then.weightKg)}kg`,
         up: true,
       });
     } else if (now.weightKg === then.weightKg && now.reps > then.reps) {
@@ -195,7 +197,8 @@ function findGains(input: WeeklyReportInput): ReportGain[] {
       gains.push({
         name: exercise.name,
         // 버티는 종목(플랭크)의 reps는 초 — "같은 무게 10회 더"가 아니라 "10초 더 버팀"
-        detail: isTimed(exercise) ? `${now.reps - then.reps}초 더 버팀` : `같은 무게 ${now.reps - then.reps}회 더`,
+        detail: isTimed(exercise) ? `${now.reps - then.reps}초 더 버팀`
+          : `${isAssisted(exerciseId) ? '같은 도움' : '같은 무게'} ${now.reps - then.reps}회 더`,
         up: true,
       });
     }
@@ -285,7 +288,8 @@ export function buildWeeklyReport(input: WeeklyReportInput): WeeklyReport {
   );
 
   const sets = sessions.flatMap(workingSets);
-  const tonnage = sets.reduce((sum, set) => sum + set.weightKg * set.reps, 0);
+  // 도와주는 기계(어시스트 풀업)의 숫자는 도움이라 들어 올린 총무게에 넣지 않는다
+  const tonnage = sets.reduce((sum, set) => sum + (isAssisted(set.exerciseId) ? 0 : set.weightKg * set.reps), 0);
 
   /*
    * 유산소는 세션 안에 들어 있다. 따로 받지 않는다 — 인자가 하나 더

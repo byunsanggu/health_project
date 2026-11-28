@@ -795,6 +795,15 @@
   }
 
   /**
+   * 도와주는 기계(어시스트 풀업)의 숫자 앞말 — "도움 30kg". 스택 숫자는 기계가 들어 주는 몫이라 클수록 쉽다.
+   * 숫자만 쓰면 "30kg을 든다"로 읽혀, 도움을 늘리는 게 무게를 올리는 줄 안다.
+   */
+  function assistWord(exercise) {
+    return exercise && E.isAssisted(exercise) ? '도움 ' : '';
+  }
+  var ASSIST_HINT = '도움 무게입니다 — 숫자가 작을수록 어렵습니다.';
+
+  /**
    * 버티는 종목(플랭크 · 사이드 플랭크)인가 — 세트 기록의 횟수 칸이 초다. 세트 칸 · 목록 · 요약 · 기록 · PT
    * 화면이 "30회"가 아니라 "30초"로 쓰고, 혼자 할 때는 세트 줄에 버티기 시작 버튼이 붙는다.
    */
@@ -1823,6 +1832,8 @@
           return Object.assign({}, item, {
             sets: item.sets.slice(0, keep).map(function (set) {
               if (set.weightKg == null || factor >= 1) return set;
+              // 도와주는 기계(어시스트 풀업)는 도움을 늘려서 쉽게 — 숫자를 줄이면 오히려 어려워진다
+              if (E.isAssisted(item.exercise)) return Object.assign({}, set, { weightKg: E.easierLoad(item.exercise, set.weightKg, factor, item.loading) });
               /*
                * 끼울 수 있는 무게로 내린다. 87.3kg이라고 적어 두면 그걸
                * 맞추려다 사람이 시간을 버린다. 아래쪽으로 맞춘다 —
@@ -1847,8 +1858,12 @@
         exercises: built.exercises.map(function (item) {
           if (!plateauResetFor(item.exercise.id)) return item;
           return Object.assign({}, item, {
-            note: '몇 주째 늘지 않아 이번에는 10% 가볍게 하고, 여기서 다시 올립니다.',
+            note: E.isAssisted(item.exercise)
+              ? '몇 주째 늘지 않아 이번에는 도움을 한 칸 늘리고, 여기서 다시 줄여 갑니다.'
+              : '몇 주째 늘지 않아 이번에는 10% 가볍게 하고, 여기서 다시 올립니다.',
             sets: item.sets.map(function (set) {
+              // 도와주는 기계(어시스트 풀업)는 도움을 늘려서 쉽게 — 도움 0(맨몸)이었어도 한 칸
+              if (set.weightKg != null && E.isAssisted(item.exercise)) return Object.assign({}, set, { weightKg: E.easierLoad(item.exercise, set.weightKg, E.RESET_FACTOR, item.loading) });
               if (set.weightKg == null || set.weightKg <= 0) return set;
               var kg = set.weightKg * E.RESET_FACTOR;
               var scaled = item.loading
@@ -1865,6 +1880,8 @@
     if (todayFeel() === 'low') {
       built = Object.assign({}, built, {
         exercises: E.lightenForLowDay(built.exercises, function (kg, item) {
+          // 도와주는 기계는 도움을 늘려서 쉽게(받은 kg은 이미 줄인 값이라 되돌려서 늘린다)
+          if (E.isAssisted(item.exercise)) return E.easierLoad(item.exercise, kg / E.LOW_FEEL_LOAD, E.LOW_FEEL_LOAD, item.loading);
           return item.loading
             ? E.nearestLoadable(kg, item.loading, 'down')
             // 아래로 맞춘다 — 반올림하면 20kg이 도로 20kg이 된다
@@ -3698,6 +3715,8 @@
       history: state.history,
       index: index,
       rirOffset: rirOptions().rirOffset || 0,
+      // 어시스트 풀업의 든 무게(체중 − 도움)를 잴 때
+      bodyweightKg: (state.lifter && state.lifter.bodyweightKg) || undefined,
     });
 
     // 오늘 한 종목이 모두 처음이면 비교할 게 없다 — "이 종목은 오늘이 처음입니다 · 처음"을 줄마다 세우지 않고 한 줄로
@@ -5596,7 +5615,7 @@
     // 맨몸 종목에 붙은 무게는 더한 무게다. "풀업 2.5kg"이라고 쓰면 2.5kg을 든다는 말이 된다.
     var bodyweight = lift.exercise && lift.exercise.equipment === 'bodyweight';
     var load = first.weightKg > 0 && !(lift.exercise && lift.exercise.equipment === 'band')
-      ? (bodyweight ? '맨몸 +' : '') + first.weightKg + 'kg' : unloadedWord(lift.exercise);
+      ? (bodyweight ? '맨몸 +' : '') + assistWord(lift.exercise) + first.weightKg + 'kg' : unloadedWord(lift.exercise);
     return sets + '세트 · ' + load + ' · ' + reps;
   }
 
@@ -5898,7 +5917,9 @@
     var exercises = built.exercises.map(function (item) {
       var top = item.sets[0] || null;
       var weight = top && top.weightKg != null ? top.weightKg : null;
-      if (weight != null && factor < 1) {
+      if (weight != null && factor < 1 && E.isAssisted(item.exercise)) {
+        weight = E.easierLoad(item.exercise, weight, factor, item.loading);
+      } else if (weight != null && factor < 1) {
         weight = item.loading
           ? E.nearestLoadable(weight * factor, item.loading, 'down')
           : E.roundToIncrement(weight * factor, item.exercise.increment);
@@ -5907,6 +5928,7 @@
         name: item.exercise.name,
         equipment: item.exercise.equipment,
         pattern: item.exercise.pattern,
+        assisted: E.isAssisted(item.exercise),
         weightKg: weight,
         sets: item.sets.length,
         repMin: top ? top.targetReps.min : 8,
@@ -7278,10 +7300,12 @@
 
   function bestWeightOf(history, exerciseId) {
     var best = null;
+    // 도와주는 기계(어시스트 풀업)는 가장 적었던 도움이 가장 잘한 것
+    var assisted = E.isAssisted(exerciseId);
     history.forEach(function (session) {
       (session.sets || []).forEach(function (set) {
         if (set.exerciseId !== exerciseId || set.warmup || !(set.reps > 0)) return;
-        if (best === null || set.weightKg > best) best = set.weightKg;
+        if (best === null || (assisted ? set.weightKg < best : set.weightKg > best)) best = set.weightKg;
       });
     });
     return best;
@@ -7298,6 +7322,7 @@
         name: item.exercise.name,
         equipment: item.exercise.equipment,
         pattern: item.exercise.pattern,
+        assisted: E.isAssisted(item.exercise),
         weightKg: plain.weightKg,
         targetReps: plain.targetReps ? plain.targetReps.min : 0,
         previousKg: last ? last.weightKg : null,
@@ -8921,7 +8946,8 @@
       feel: feel || 'right',
       lastOfLift: remaining === 0,
       nextWeightKg: next ? next.weightKg : undefined,
-      deltaKg: next && next.adjustment ? next.adjustment.deltaKg : 0,
+      // 도와주는 기계(어시스트 풀업)는 "올린다 · 내린다"가 거꾸로 들린다 — 말은 그대로로 하고, 화면에 "도움 −5kg"으로 보인다
+      deltaKg: next && next.adjustment && !E.isAssisted(lift.exercise) ? next.adjustment.deltaKg : 0,
       pounds: inPounds(lift.exercise.id),
       stopReason: stopEarly ? decision.reason : null,
       growth: E.growthAt(state.history, lift.exercise, state.todayDate, weight, reps, coachScope(lift)),
@@ -8953,7 +8979,8 @@
    * 기준선이라 말하지 않는다.
    */
   function firstTimeWeight(lift, setIndex, weight) {
-    if (!(weight > 0)) return false;
+    // 도와주는 기계(어시스트 풀업)의 큰 숫자는 더 쉬운 것이다 — "처음 드는 무게"로 칭찬하지 않는다
+    if (!(weight > 0) || E.isAssisted(lift.exercise)) return false;
     var best = E.bestWeightBefore(state.history, lift.exercise, state.todayDate, coachScope(lift));
     if (best === null || weight <= best) return false;
     return !lift.sets.some(function (item, at) {
@@ -9049,14 +9076,18 @@
       var done = lift.sets.filter(function (set) { return set.done; });
       if (done.length === 0) return;
       liftsDone += 1;
+      // 도와주는 기계(어시스트 풀업)는 도움이 줄어든 것이 는 것이다
+      var assisted = E.isAssisted(lift.exercise);
+      var harder = function (a, b) { return assisted ? a < b : a > b; };
       var top = done.reduce(function (best, set) {
-        return set.weightKg > best.weightKg || (set.weightKg === best.weightKg && set.reps > best.reps) ? set : best;
+        return harder(set.weightKg, best.weightKg) || (set.weightKg === best.weightKg && set.reps > best.reps) ? set : best;
       });
       var last = E.lastTimeFor(state.history, lift.exercise, state.todayDate, coachScope(lift));
-      if (last && (top.weightKg > last.weightKg || (top.weightKg === last.weightKg && top.reps > last.reps))) grew += 1;
+      if (last && (harder(top.weightKg, last.weightKg) || (top.weightKg === last.weightKg && top.reps > last.reps))) grew += 1;
     });
     var volume = state.todaySets.reduce(function (sum, set) {
-      return sum + (set.warmup ? 0 : set.weightKg * set.reps);
+      // 어시스트 풀업의 숫자는 도움이라 든 무게에 넣지 않는다
+      return sum + (set.warmup || E.isAssisted(set.exerciseId) ? 0 : set.weightKg * set.reps);
     }, 0);
     return E.wrapUpLines({
       style: state.coach.style,
@@ -10632,7 +10663,7 @@
           : stageTile({
               id: 'stage-in-weight', key: wKey, cls: 'stage-in stage-in-weight', mode: 'decimal',
               value: kgShown(lift, set.weightKg), unit: kgUnit(lift) + (pairOfDumbbells(lift.exercise) ? '씩' : ''),
-              label: (cursor + 1) + '세트 무게',
+              label: (cursor + 1) + (E.isAssisted(lift.exercise) ? '세트 도움' : '세트 무게'),
               onStep: function (dir) { ptStepWeight(liftIndex, cursor, dir); },
               onCommit: function (raw) { stageCommitWeight(liftIndex, cursor, raw, wKey); },
             }),
@@ -10649,9 +10680,10 @@
       }
       var plates = set.weightKg > 0 && lift.loading ? E.platePlan(set.weightKg, lift.loading) : null;
       if (plates) stage.appendChild(el('p', { class: 'stage-sub plates', text: E.describePlates(plates) }));
+      if (E.isAssisted(lift.exercise)) stage.appendChild(el('p', { class: 'stage-sub assist-hint', text: ASSIST_HINT }));
       if (set.adjustment) {
         stage.appendChild(el('p', { class: 'stage-sub', text: set.adjustment.deltaKg === 0 ? set.adjustment.reason
-          : (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg — ' + set.adjustment.reason }));
+          : assistWord(lift.exercise) + (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg — ' + set.adjustment.reason }));
       }
       // 혼자 하는 버티기 — 누르면 3초 준비 뒤 목표 초부터 줄여 가고, 멈춘 자리가 칸에 들어간다
       if (hold) {
@@ -11055,7 +11087,7 @@
     var each = pairOfDumbbells(lift.exercise) ? '씩' : '';
     var unit = (pounds ? 'lb' : 'kg') + each;
     var load = function (kg, reps) {
-      return (kg > 0 ? E.weightLabelIn(kg, pounds) + each : unloadedWord(lift.exercise)) + ' × ' + reps + countUnit(lift.exercise);
+      return (kg > 0 ? assistWord(lift.exercise) + E.weightLabelIn(kg, pounds) + each : unloadedWord(lift.exercise)) + ' × ' + reps + countUnit(lift.exercise);
     };
     /*
      * 세트마다 한 줄 — "1세트 [35]kg × [10]회 ✓ / 2세트 지금 / 3세트 [35]kg × [10]회".
@@ -11110,6 +11142,7 @@
       var cells = [el('span', { class: 'set-no', text: label })];
       var fields = [];
       if (set.weightKg > 0 || !E.isUnloaded(lift.exercise)) {
+        if (E.isAssisted(lift.exercise)) fields.push(el('span', { class: 'set-unit assist-word', text: '도움', title: ASSIST_HINT }));
         fields.push(el('input', {
           type: 'number', class: 'set-in set-in-weight', inputmode: 'decimal', min: '0', step: 'any',
           value: String(pounds ? E.kgToLb(set.weightKg) : set.weightKg),
@@ -11273,7 +11306,7 @@
     }
     updateDecision(lift);
     pushLog('기록 고침', '<b>' + lift.exercise.name + '</b> ' + (setIndex + 1) + '세트 — ' +
-      (set.weightKg > 0 ? set.weightKg + 'kg' : unloadedWord(lift.exercise)) + ' × ' + set.reps + countUnit(lift.exercise));
+      (set.weightKg > 0 ? assistWord(lift.exercise) + set.weightKg + 'kg' : unloadedWord(lift.exercise)) + ' × ' + set.reps + countUnit(lift.exercise));
     persist();
     render();
   }
@@ -12399,7 +12432,7 @@
   }
 
   function loadText(lift, weightKg) {
-    return weightKg > 0 ? E.weightLabelIn(weightKg, inPounds(lift.exercise.id)) : unloadedWord(lift.exercise);
+    return weightKg > 0 ? assistWord(lift.exercise) + E.weightLabelIn(weightKg, inPounds(lift.exercise.id)) : unloadedWord(lift.exercise);
   }
 
   /** "6–10회" — 종목을 주면 버티는 종목은 "20~30초" */
@@ -14169,7 +14202,7 @@
     if (set.adjustment) {
       body.push(el('div', { class: 'set-result' }, [
         el('em', { text: set.adjustment.deltaKg === 0 ? set.adjustment.reason
-          : (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg — ' + set.adjustment.reason }),
+          : assistWord(lift.exercise) + (set.adjustment.deltaKg > 0 ? '+' : '') + set.adjustment.deltaKg + 'kg — ' + set.adjustment.reason }),
       ]));
     }
 
@@ -19069,7 +19102,7 @@
       var rows = el('div', { class: 'history-sets' }, group.sets.map(function (set, i) {
         return el('div', { class: 'history-set' }, [
           el('span', { class: 'set-no', text: String(i + 1) }),
-          el('span', { text: (set.weightKg > 0 ? E.weightLabelIn(set.weightKg, inPounds(group.id)) : unloadedWord(exercise)) + ' × ' + set.reps + countUnit(exercise) }),
+          el('span', { text: (set.weightKg > 0 ? assistWord(exercise) + E.weightLabelIn(set.weightKg, inPounds(group.id)) : unloadedWord(exercise)) + ' × ' + set.reps + countUnit(exercise) }),
           // 버틴 초에는 "몇 개 남김"이 없다
           el('span', { class: 'history-rir', text: isHold(exercise) ? '' : leftText(set.rir) }),
         ]);

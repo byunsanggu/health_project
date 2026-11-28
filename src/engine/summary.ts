@@ -1,4 +1,4 @@
-import { isTimed } from './exercises.ts';
+import { isAssisted, isTimed } from './exercises.ts';
 import { withParticle } from './korean.ts';
 import { MUSCLE_LABELS_KO, zoneLabelKo, zoneOf } from './muscles.ts';
 import { oneRepMax } from './repmax.ts';
@@ -124,7 +124,8 @@ export function summarizeSession(input: SummaryInput): SessionSummary {
 
   const totalReps = working.reduce((sum, set) => sum + (isTimed(set.exerciseId) ? 0 : set.reps), 0);
   const holdSeconds = working.reduce((sum, set) => sum + (isTimed(set.exerciseId) ? set.reps : 0), 0);
-  const tonnageKg = Math.round(working.reduce((sum, set) => sum + set.weightKg * set.reps, 0));
+  // 도와주는 기계(어시스트 풀업)의 숫자는 든 무게가 아니라 도움이다 — 들어 올린 총무게에 넣지 않는다
+  const tonnageKg = Math.round(working.reduce((sum, set) => sum + (isAssisted(set.exerciseId) ? 0 : set.weightKg * set.reps), 0));
 
   return {
     date: input.date,
@@ -240,7 +241,8 @@ function buildNotes(byMuscle: readonly MuscleSummary[], setsCompleted: number): 
 export function bestEffort(sets: readonly SetLog[], rirOffset = 0): { set: SetLog; value: number } | null {
   let best: { set: SetLog; value: number } | null = null;
   for (const set of sets) {
-    if (set.warmup || set.reps <= 0 || set.weightKg <= 0) continue;
+    // 도와주는 기계(어시스트 풀업)의 숫자는 도움이라 클수록 쉽다 — 힘 추정에서 뺀다
+    if (set.warmup || set.reps <= 0 || set.weightKg <= 0 || isAssisted(set.exerciseId)) continue;
     const value = oneRepMax({ ...set, rir: Math.min(5, Math.max(0, set.rir + rirOffset)) });
     if (!best || value > best.value) best = { set, value: Math.round(value * 10) / 10 };
   }

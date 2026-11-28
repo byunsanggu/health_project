@@ -1,5 +1,6 @@
 import { oneRepMax } from './repmax.ts';
 import { withParticle } from './korean.ts';
+import { isAssisted, liftedKg } from './exercises.ts';
 import type { Exercise, SessionLog, SetLog } from './types.ts';
 
 /**
@@ -73,17 +74,36 @@ function round1(value: number): number {
 }
 
 /** 그 세션에서 이 종목의 최고 수행. 뒤 세트는 피로가 섞여 능력이 아니다. */
+/**
+ * 도와주는 기계(어시스트 풀업)는 체중 − 도움을 든 무게로 잰다 — 도움 30kg → 25kg이 "늘었다"가 되게. 체중을 모르면
+ * 보통 체중(70kg)으로 친다. 같은 날 · 같은 사람끼리 빼는 값이라 차이(도움을 줄인 만큼)는 체중과 거의 상관없다.
+ */
+const NOMINAL_BODYWEIGHT_KG = 70;
+
+/** 비교에 넣는 세트인가 — 무게를 실은 세트, 도와주는 기계는 도움 0(맨몸)까지. */
+function counted(set: SetLog): boolean {
+  return !set.warmup && set.reps > 0 && (set.weightKg > 0 || (isAssisted(set.exerciseId) && set.weightKg >= 0));
+}
+
+/** 세트의 무게 칸 — "60kg", 도와주는 기계는 "도움 25kg". */
+export function setWeightText(set: Pick<SetLog, 'exerciseId' | 'weightKg'>): string {
+  return isAssisted(set.exerciseId) ? `도움 ${set.weightKg}kg` : `${set.weightKg}kg`;
+}
+
 function bestOf(
   session: SessionLog,
   exerciseId: string,
   rirOffset: number,
+  bodyweightKg?: number,
 ): { value: number; set: SetLog } | undefined {
   let best: { value: number; set: SetLog } | undefined;
   for (const set of session.sets) {
     if (set.exerciseId !== exerciseId) continue;
-    if (set.warmup || set.reps <= 0 || set.weightKg <= 0) continue;
+    if (!counted(set)) continue;
     const rir = Math.min(5, Math.max(0, set.rir + rirOffset));
-    const value = oneRepMax({ ...set, rir });
+    const lifted = liftedKg(set, bodyweightKg ?? NOMINAL_BODYWEIGHT_KG) ?? set.weightKg;
+    if (lifted <= 0) continue;
+    const value = oneRepMax({ ...set, weightKg: lifted, rir });
     if (!best || value > best.value) best = { value: round1(value), set };
   }
   return best;
@@ -98,6 +118,8 @@ export interface CompareInput {
   index: ReadonlyMap<string, Exercise>;
   /** RIR 신고 편향 보정 */
   rirOffset?: number;
+  /** 체중 — 도와주는 기계(어시스트 풀업)의 든 무게(체중 − 도움)를 잴 때 쓴다 */
+  bodyweightKg?: number;
 }
 
 /**
@@ -116,20 +138,20 @@ export function compareToPast(input: CompareInput): LiftComparison[] {
     .sort((a, b) => (a.date < b.date ? 1 : -1));  // 최근부터
 
   const doneToday = [...new Set(input.todaySets
-    .filter((set) => !set.warmup && set.reps > 0 && set.weightKg > 0)
+    .filter(counted)
     .map((set) => set.exerciseId))];
 
   const out: LiftComparison[] = [];
 
   for (const exerciseId of doneToday) {
-    const today = bestOf(todaySession, exerciseId, offset);
+    const today = bestOf(todaySession, exerciseId, offset, input.bodyweightKg);
     if (!today) continue;
 
     let previous: EffortPoint | undefined;
     let monthAgo: EffortPoint | undefined;
 
     for (const session of past) {
-      const best = bestOf(session, exerciseId, offset);
+      const best = bestOf(session, exerciseId, offset, input.bodyweightKg);
       if (!best) continue;
       const daysAgo = daysBetween(session.date, input.today);
       if (!Number.isFinite(daysAgo)) continue;
@@ -193,8 +215,11 @@ export function describeComparison(row: LiftComparison, span: 'previous' | 'mont
   }
 
   const when = `${point.daysAgo}일 전`;
-  const was = `${point.set.weightKg}kg × ${point.set.reps}회`;
+  const was = `${setWeightText(point.set)} × ${point.set.reps}회`;
   const now = row.today.set;
+  // 도와주는 기계는 "같은 도움으로"
+  const same = isAssisted(row.exerciseId) ? '같은 도움' : '같은 무게';
+  const sameWith = withParticle(same, '으로/로');
 
   /*
    * 무게가 같으면 환산을 꺼낼 이유가 없다. "1회 더 했다"가 사실 그대로이고
@@ -202,11 +227,11 @@ export function describeComparison(row: LiftComparison, span: 'previous' | 'mont
    */
   if (now.weightKg === point.set.weightKg) {
     const repDelta = now.reps - point.set.reps;
-    if (repDelta > 0) return `${when} ${was} → 같은 무게로 ${repDelta}회 더`;
-    if (repDelta < 0) return `${when} ${was} → 같은 무게로 ${-repDelta}회 적게`;
+    if (repDelta > 0) return `${when} ${was} → ${sameWith} ${repDelta}회 더`;
+    if (repDelta < 0) return `${when} ${was} → ${sameWith} ${-repDelta}회 적게`;
     const rirDelta = Math.max(0, point.set.rir) - Math.max(0, now.rir);
-    if (rirDelta > 0) return `${when} ${was} → 같은 무게·반복인데 더 힘들었습니다`;
-    if (rirDelta < 0) return `${when} ${was} → 같은 무게·반복이 더 쉬워졌습니다`;
+    if (rirDelta > 0) return `${when} ${was} → ${same}·반복인데 더 힘들었습니다`;
+    if (rirDelta < 0) return `${when} ${was} → ${same}·반복이 더 쉬워졌습니다`;
     return `${when} ${was} → 그대로입니다`;
   }
 
@@ -300,9 +325,14 @@ export function bestImprovement(rows: readonly LiftComparison[]): Improvement | 
     const now = row.today.set;
     const direction = directionOf(row.deltaPrevious);
     let text = '';
-    if (now.weightKg > was.weightKg && direction !== 'down') text = `${was.weightKg}kg → ${now.weightKg}kg`;
-    else if (now.weightKg === was.weightKg && now.reps > was.reps) {
-      text = now.weightKg > 0 ? `같은 무게로 ${now.reps - was.reps}회 더` : `${now.reps - was.reps}회 더`;
+    const assisted = isAssisted(row.exerciseId);
+    // 도와주는 기계는 도움이 줄어든 것이 나아진 것이다(도움 30kg → 25kg)
+    const harder = assisted ? now.weightKg < was.weightKg : now.weightKg > was.weightKg;
+    if (harder && direction !== 'down') {
+      text = assisted ? `도움 ${was.weightKg}kg → ${now.weightKg}kg` : `${was.weightKg}kg → ${now.weightKg}kg`;
+    } else if (now.weightKg === was.weightKg && now.reps > was.reps) {
+      text = assisted ? `같은 도움으로 ${now.reps - was.reps}회 더`
+        : now.weightKg > 0 ? `같은 무게로 ${now.reps - was.reps}회 더` : `${now.reps - was.reps}회 더`;
     } else if (direction === 'up' && row.reliable) text = `힘이 약 ${round1(row.deltaPrevious)}kg 늘었습니다`;
     if (!text) continue;
     if (!best || row.deltaPrevious > (best.row.deltaPrevious ?? 0)) best = { row, text };
@@ -317,7 +347,7 @@ export function monthLine(row: LiftComparison): string {
   if (!row.reliable) {
     const repDelta = row.today.set.reps - row.monthAgo.set.reps;
     if (row.today.set.weightKg === row.monthAgo.set.weightKg && repDelta !== 0) {
-      return `${withParticle(row.name, '은/는')} 한 달 전과 같은 무게로 ${Math.abs(repDelta)}회 ` +
+      return `${withParticle(row.name, '은/는')} 한 달 전과 ${isAssisted(row.exerciseId) ? '같은 도움으로' : '같은 무게로'} ${Math.abs(repDelta)}회 ` +
         (repDelta > 0 ? '더 합니다.' : '적게 했습니다.');
     }
     return '';
