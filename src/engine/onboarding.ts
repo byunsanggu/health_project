@@ -1158,6 +1158,19 @@ export function buildProgram(
        * 메인 자리는 지난 블록 메인을 그대로 — 다른 날 보조에서 빠진 워킹 런지가 점수가 높다고 전신 C의 메인(스텝업)을
        * 가져가면, 블록마다 기록이 끊긴다. 이번 블록에 새로 배우는 바벨 종목(초보에서 올라오는 중)만 메인을 바꾼다.
        */
+      /*
+       * 큰 운동 보조 자리(로우 · 힌지 …)에 한 근육 운동이 왔으면 그 자리 동작의 큰 운동을 다시 쓴다 — 이번 주에 이미 쓴 종목이라도.
+       * 덤벨만 있는 집에서 등 보조 자리에
+       * 덤벨 로우 둘을 다 써서 슈퍼맨(허리 운동)이 들어갔고, 미는 운동이 당기는 운동의 거의 두 배가 됐다(11세트 : 6세트).
+       */
+      // 그 부위를 조금만 쓰는 한 근육 운동일 때만(슈퍼맨의 등 0.5) — 브릿지(엉덩이 주동근)처럼 그 부위를 제대로 쓰면 그대로 둔다
+      const smallPick = first !== undefined && (first.pattern === 'isolation' || first.pattern === 'core') &&
+        (first.contribution[slot.muscle] ?? 0) < 0.75;
+      if (slot.role === 'accessory' && slot.patterns && smallPick && !slot.patterns.includes('isolation')) {
+        const patterns = slot.patterns;
+        const same = pickExercise(slot, pool.filter((item) => patterns.includes(item.pattern)), new Set([...today, ...reserved]), context);
+        if (same) return same;
+      }
       if (slot.role === 'primary' && first) {
         const before = previousMainInSlot(slot, today);
         const learning = introduced?.includes(first.id) && !previousIds.has(first.id);

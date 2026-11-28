@@ -173,13 +173,13 @@ describe('TRX · 랜드마인 · 스미스 기구', () => {
   it('스미스로 하는 종목은 전부 스미스 바 무게로 계산하고, 벤치가 없으면 벤치 종목은 열리지 않는다', () => {
     const gym = gymFromCatalog({ equipmentIds: ['smith-machine', 'bench-flat'], measurements: { 'smith-machine': { barKg: 7 } } });
     for (const id of ['smith-hip-thrust', 'smith-split-squat', 'smith-squat', 'smith-bench-press']) {
-      const spec = gym.overrides[id];
+      const spec = gym.overrides?.[id];
       assert.ok(spec && spec !== 'unavailable' && spec.kind === 'barbell' && spec.barKg === 7, `${id}: ${JSON.stringify(spec)}`);
     }
     const noBench = gymFromCatalog({ equipmentIds: ['smith-machine'] });
-    assert.equal(noBench.overrides['smith-hip-thrust'], 'unavailable', '벤치 없이는 힙 쓰러스트가 안 된다');
-    assert.equal(noBench.overrides['smith-bench-press'], 'unavailable', '벤치 없이는 스미스 벤치프레스가 안 된다');
-    assert.notEqual(noBench.overrides['smith-split-squat'], 'unavailable');
+    assert.equal(noBench.overrides?.['smith-hip-thrust'], 'unavailable', '벤치 없이는 힙 쓰러스트가 안 된다');
+    assert.equal(noBench.overrides?.['smith-bench-press'], 'unavailable', '벤치 없이는 스미스 벤치프레스가 안 된다');
+    assert.notEqual(noBench.overrides?.['smith-split-squat'], 'unavailable');
   });
 
   it('붙여넣은 목록에서 흔히 쓰는 말을 알아본다', () => {

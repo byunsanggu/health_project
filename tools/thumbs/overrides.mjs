@@ -19,6 +19,8 @@ export const EX = {
   'dumbbell-calf-raise': { view: [-60, 12] },
   'machine-crunch': { view: [50, 12] },
   'pike-push-up': { t: 0.2, view: [95, 10] },
+  // 뒤에서 찍혀 무릎 위 패드가 등에 가렸다 — 앞옆에서
+  'seated-calf-raise': { view: [58, 16] },
   // 높은 기둥 때문에 몸이 작던 것 — 몸 쪽으로 당긴다
   'lat-pulldown': { zoom: 1.25 },
   'neutral-grip-pulldown': { zoom: 1.25 },

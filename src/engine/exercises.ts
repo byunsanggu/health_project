@@ -1000,7 +1000,7 @@ export const EXERCISES: readonly Exercise[] = [
   {
     id: 'trx-chest-press', name: 'TRX 체스트 프레스', nameEn: 'TRX Chest Press',
     equipment: 'bodyweight', pattern: 'horizontalPush', increment: 0,
-    contribution: { chest: 0.8, triceps: 0.5, frontDelt: 0.45, abs: 0.3 },
+    contribution: { chest: 0.75, triceps: 0.5, frontDelt: 0.45, abs: 0.3 },
     jointStress: { shoulder: 0.5, elbow: 0.3, wrist: 0.25 },
   },
   {
