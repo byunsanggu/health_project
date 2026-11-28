@@ -30,6 +30,8 @@ import { forSpeech } from './coach.ts';
 import { CARDIO } from './cardio.ts';
 import { seasonDayLine } from './season.ts';
 import { fiveMinuteAskLine } from './shortSession.ts';
+import { CIRCUIT_MOVE_IDS, circuitNextLine, circuitSpeechSamples } from './circuit.ts';
+import { exerciseById } from './exercises.ts';
 
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 const MOMENTS: MistakeMoment[] = ['flagged', 'heavy', 'first', 'lastSet'];
@@ -229,6 +231,17 @@ export function coachTexts(style: CoachStyle): string[] {
   for (const outcome of ['promoted', 'again'] as const) say(seasonDayLine(style, outcome));
   // 5분만 하기 — 5분이 차면 계속할지 묻는다
   say(forSpeech(fiveMinuteAskLine(style)));
+  // 서킷 운동 — 본 운동 소개(방식 · 분) · 30초 남음 · 마지막 · 끝 · 한 바퀴, 다음 동작(이름 · 회 · 초).
+  // 시작 · 절반 · 1분 남음 · 10초는 마무리 운동 말을, 몸 풀기 · 스트레칭은 PT 말을 그대로 쓴다
+  say(circuitSpeechSamples(style));
+  for (const id of CIRCUIT_MOVE_IDS) {
+    const exercise = exerciseById(id);
+    if (!exercise) continue;
+    for (const amount of [8, 12, 20, 30, 45]) {
+      say(circuitNextLine(style, { name: exercise.name, amount, unit: 'reps' }));
+      say(circuitNextLine(style, { name: exercise.name, amount, unit: 'seconds' }));
+    }
+  }
 
   say(APP_SAYINGS);
   return out;

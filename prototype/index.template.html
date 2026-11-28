@@ -3102,6 +3102,65 @@ button.focus-progress:active { background: var(--surface-2); }
 .start-dock .five-min { display: flex; align-items: baseline; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin: 6px 0 0; padding: 0 8px; border: 0; background: none; color: var(--accent); font-size: 15px; }
 .five-min b { font-weight: 600; }
 .five-min span { color: var(--muted); font-size: 13px; }
+/*
+ * 서킷 운동 — 오늘 화면의 한 장(무엇을 · 어떻게 · 몇 분)과 시계 화면(#focus 틀 그대로: 큰 시계 · 큰 그림 · 강도 세 칸 · 다음).
+ * 360×640에서도 스크롤 없이 — 남는 높이는 그림이 쓰고 모자라면 그림이 줄어든다.
+ */
+/* 서킷 링크 — "5분만 하기"와 같은 모양의 조용한 둘째 길(오늘은 서킷으로 하기 · 원래 운동으로 돌아가기) */
+.start-dock .circuit-link { display: flex; align-items: baseline; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin: 6px 0 0; padding: 0 8px; border: 0; background: none; color: var(--accent); font-size: 15px; }
+.start-dock .five-min + .circuit-link { margin-top: 0; }
+.circuit-link b { font-weight: 600; }
+.circuit-link span { color: var(--muted); font-size: 13px; }
+.circuit-card .sheet-body { display: grid; gap: 8px; }
+.circuit-card .sheet-body > * { margin: 0; }
+.circuit-format { font-size: 13px; font-weight: 700; color: var(--accent); text-align: right; }
+.circuit-card .sheet-head { gap: 10px; }
+.circuit-moves { display: grid; gap: 6px; }
+.circuit-move { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 48px; padding: 2px 0; }
+.circuit-move .lift-thumb { width: 44px; height: 44px; }
+.circuit-move-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.circuit-move-amount { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.circuit-done-line { font-size: 16px; }
+.circuit-done-line b { color: var(--accent); }
+.circuit-card .circuit-turn { justify-self: start; display: inline-flex; align-items: center; min-height: 44px; padding: 0 2px; border: 0; background: none; color: var(--accent); font-size: 15px; text-decoration: underline; text-underline-offset: 3px; }
+.circuit-top { grid-template-columns: auto minmax(0, 1fr) auto; }
+.circuit-top-name { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.circuit-top-format { font-size: 13px; font-weight: 600; color: var(--muted); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.circuit-clock-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.circuit-clock-cap { font-size: 13px; font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.circuit-clock { flex: none; font-family: var(--mono); font-size: 56px; font-size: clamp(40px, 14cqw, 64px); font-weight: 700; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+.circuit-clock.small { font-size: clamp(20px, 6cqw, 28px); font-family: inherit; }
+.circuit-amount { align-items: baseline; }
+.circuit-amount-num { font-size: 22px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.circuit-scale { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.circuit-scale-btn { display: grid; justify-items: center; gap: 1px; min-height: 40px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; }
+.circuit-scale-btn b { font-weight: 700; }
+.circuit-scale-btn span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+.circuit-scale-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.circuit-scale-btn[aria-pressed="true"] span { color: var(--accent-ink); }
+.circuit-scale-list { display: grid; gap: 12px; margin: 4px 0 12px; }
+.circuit-scale-row { display: grid; gap: 6px; }
+.circuit-scale-name { font-size: 15px; }
+.circuit-scale.compact .circuit-scale-btn { min-height: 52px; }
+.circuit-reps { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.circuit-reps-label { flex: 1 1 auto; min-width: 0; }
+.circuit-reps .nudge { min-width: 44px; min-height: 40px; }
+.circuit-reps-num { min-width: 28px; text-align: center; font-family: var(--mono); font-size: 18px; color: var(--ink); }
+.circuit-dock .focus-pause.wide { flex: 1 1 auto; width: auto; font-size: 17px; }
+.history-tag { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; line-height: 18px; }
+.circuit-history-score { margin: 2px 0; font-size: 16px; font-weight: 700; color: var(--accent); }
+.ob-circuit-style { margin-top: 12px; }
+.ob-circuit-style .list-label, .circuit-style-row .list-label { margin: 0 0 6px; }
+.circuit-style .segmented { width: 100%; }
+.circuit-style-hint { margin: 6px 0 0; }
+.circuit-style-row { margin-top: 6px; }
+.circuit-result-score { font-size: 1.15em; }
+.summary-foot.single { grid-template-columns: 1fr; }
+.circuit-auto-hint { font-size: 14px; }
+@media (max-height: 700px) {
+  .circuit-clock { font-size: clamp(34px, 11cqw, 52px); }
+  .circuit-scale-btn { min-height: 38px; }
+}
 /* "5분 됐습니다. 계속할까요?" */
 .five-ask-q { margin: 2px 0 6px; }
 .five-ask-row { display: grid; gap: 8px; margin-top: 14px; }

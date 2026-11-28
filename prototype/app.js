@@ -436,6 +436,13 @@
         soloCool: state.soloCool,
         // 오늘의 마무리 운동을 했는지 · 건너뛰었는지 — 오늘만(날짜가 붙어 있다)
         finisher: state.finisher,
+        // 서킷 운동 — 오늘치(날짜가 붙어 있다)와 소리 끄기. 운동 기록이라 이 폰에만(SHARED_SETTINGS에 넣지 않는다)
+        circuitSwap: state.circuitSwap,
+        circuitStrength: state.circuitStrength,
+        circuitTurn: state.circuitTurn,
+        circuitToday: circuitTodayList(),
+        circuitRun: state.circuitRun,
+        circuitQuiet: state.circuitQuiet,
         mistakeFlags: state.mistakeFlags,
         askEffort: state.askEffort,
         diet: state.diet,
@@ -702,6 +709,13 @@
       state.firstTipsHidden = Boolean(settings.firstTipsHidden);
       state.soloCool = settings.soloCool || null;
       state.finisher = settings.finisher || null;
+      // 서킷 — 날짜가 지난 것은 쓰는 자리에서 걸러진다(오늘 것만 본다). 하던 서킷은 시작할 때 다시 맞춘다(resumeCircuitAfterLoad)
+      state.circuitSwap = settings.circuitSwap && settings.circuitSwap.date ? settings.circuitSwap : null;
+      state.circuitStrength = settings.circuitStrength && settings.circuitStrength.date ? settings.circuitStrength : null;
+      state.circuitTurn = settings.circuitTurn && settings.circuitTurn.date ? settings.circuitTurn : null;
+      state.circuitToday = Array.isArray(settings.circuitToday) ? settings.circuitToday.filter(E.isCircuitResult) : [];
+      state.circuitRun = settings.circuitRun && settings.circuitRun.session ? settings.circuitRun : null;
+      state.circuitQuiet = Boolean(settings.circuitQuiet);
       state.mistakeFlags = settings.mistakeFlags || {};
       /*
        * 예전 inputMode는 읽지 않는다. 그때는 남은 힘을 꼭 물었고(기본이 묻기),
@@ -726,6 +740,14 @@
         if (storedToday) {
           todaySets = (storedToday.sets || []).slice();
           if (state.cardioToday.length === 0 && storedToday.cardio) state.cardioToday = storedToday.cardio.slice();
+        }
+      }
+      // 오늘 마친 서킷도 저장소의 오늘 세션이 원본이다 — 설정 묶음에 안 남았으면(다른 기기 · 예전 저장) 거기서
+      if (LIVE) {
+        var storedCircuit = (saved.sessions || []).filter(function (item) { return !item.deleted && item.date === todayISO(); })[0];
+        var mineToday = state.circuitToday.filter(function (item) { return item.date === todayISO(); });
+        if (storedCircuit && Array.isArray(storedCircuit.circuit) && mineToday.length === 0) {
+          state.circuitToday = storedCircuit.circuit.filter(E.isCircuitResult);
         }
       }
       if (todaySets.length > 0) reviveTodaySets(todaySets);
@@ -854,12 +876,12 @@
     return trainingDays().length - 1;
   }
 
-  /** 이번 주 오늘 전까지 운동한 날 수. */
+  /** 이번 주 오늘 전까지 운동한 날 수. 서킷으로 한 날도 센다 — 그날 하려던 부위를 서킷으로 썼다. */
   function weekSessionsDone() {
     if (!LIVE) return todayIndex();
     var done = {};
     state.history.forEach(function (item) {
-      if (item.date >= state.monday && item.date < state.todayDate && (item.sets || []).length > 0) done[item.date] = true;
+      if (item.date >= state.monday && item.date < state.todayDate && ((item.sets || []).length > 0 || (item.circuit || []).length > 0)) done[item.date] = true;
     });
     return Object.keys(done).length;
   }
@@ -871,6 +893,8 @@
    * 아니라 화 · 목 · 토에 오는 사람도 A → B → C로 간다.
    */
   function scheduledTemplateIndex() {
+    // 서킷 위주 — 근력 날이 한 주 1~2번뿐이라 주마다 같은 날만 하지 않게, 지금까지 한 근력 날 수로 돈다
+    if (LIVE && circuitFocusOn()) return circuitStrengthIndex();
     return weekSessionsDone() % state.program.templates.length;
   }
 
@@ -1113,6 +1137,19 @@
     /* 와드 기록. 같은 구성끼리만 비교한다 — 다른 와드를 비교하면 거짓말이다. */
     wodResults: [],
     wodDraft: null,
+    /*
+     * 서킷 운동(엔진 circuit.ts) — 오늘만(날짜가 붙어 있다): 오늘 운동 대신 서킷으로(circuitSwap) · 서킷 위주인데
+     * 오늘은 근력으로(circuitStrength) · 다른 방식으로 바꾼 횟수(circuitTurn) · 오늘 마친 서킷(circuitToday) ·
+     * 하고 있는 서킷(circuitRun). 소리 끄기(circuitQuiet)는 이 폰 설정. 만든 구성 · 소리 파일은 저장하지 않는다.
+     */
+    circuitSwap: null,
+    circuitStrength: null,
+    circuitTurn: null,
+    circuitToday: [],
+    circuitRun: null,
+    circuitQuiet: false,
+    circuitBuilt: null,
+    circuitTrack: null,
     gymQuery: '',
     /*
      * 실제 헬스장 검색 결과. null은 "아직 안 찾아봤다"이고 빈 배열은
@@ -3224,6 +3261,7 @@
     if (modal.open) return 'modal';
     if (state.onboarding.active) return state.onboarding.step > 0 && !state.onboarding.redo ? 'wizard' : null;
     if (state.authOpen) return null;
+    if (circuitShown()) return 'circuit';
     if (state.started && ptOn() && state.focusHidden) return 'detail';
     if (state.started) return 'workout';
     if (state.tab !== 'today') return 'tab';
@@ -3259,6 +3297,7 @@
     if (layer === 'modal') modal.close(); // 닫히면 그리기 → 남은 층이 있으면 가드를 다시 쌓는다
     else if (layer === 'wizard') { state.onboarding.step -= 1; render(); }
     else if (layer === 'detail') { state.focusHidden = false; render(); }
+    else if (layer === 'circuit') circuitBack();
     else if (layer === 'workout') leaveToList();
     else if (layer === 'tab') { state.tab = 'today'; render(); }
     else syncBackGuard();
@@ -5137,8 +5176,9 @@
   }
 
   function recordTodaySession() {
-    // 유산소만 한 날도 운동한 날이다.
-    if (state.todaySets.length === 0 && state.cardioToday.length === 0) return;
+    // 유산소만 한 날도, 서킷만 한 날도 운동한 날이다.
+    var circuits = circuitTodayList();
+    if (state.todaySets.length === 0 && state.cardioToday.length === 0 && circuits.length === 0) return;
     var existing = storage.load().sessions.filter(function (item) {
       return item.date === state.todayDate;
     })[0];
@@ -5153,6 +5193,8 @@
        */
       cardio: state.cardioToday.slice(),
       wod: state.wodResults.filter(function (item) { return item.date === state.todayDate; }),
+      // 서킷도 같은 기록에 — 한 주 약속 · 시즌이 운동한 날로 센다(근육 키우는 세트로는 세지 않는다)
+      circuit: circuits.slice(),
     });
   }
 
@@ -6563,6 +6605,8 @@
         el('b', { text: '5분만 하기' }),
         el('span', { text: '5분 뒤 계속할지 묻습니다' }),
       ]) : null,
+      // 헬스장 세트가 지루한 날 — 같은 부위를 시계 보며 도는 서킷으로(되돌릴 수 있다). 시작 전에만
+      fresh && !restDay && !state.started ? circuitSwapLink() : null,
     ]));
   }
 
@@ -12570,6 +12614,8 @@
 
   function renderFocusNow() {
     if (!focusHost) return;
+    // 서킷 운동 화면도 같은 자리(#focus)에 같은 틀로 — 하는 동안은 그것 하나만
+    if (circuitShown()) { renderCircuitScreen(); return; }
     var phase = focusPhase();
     // 숫자 칸을 치는 중이면 다시 그리지 않는다(자판이 닫히고 친 숫자가 사라진다) — 칸을 떠날 때 그린다
     if (phase && ptNumEditing()) { state.focusRenderPending = true; return; }
@@ -14676,6 +14722,8 @@
     if (ptOn() && state.started && state.ptRun && state.ptRun.finisher && finisherPending()) return renderFinisherScreen();
     // 혼자 하는 마무리 스트레칭도 그 화면 하나만 — 하루를 닫기 전이든 뒤든
     if (!ptOn() && soloCoolActive()) return renderSoloCoolStage();
+    // 서킷 날 — 오늘 운동 대신 서킷을 골랐거나, 서킷 위주의 서킷 날(근력 운동을 시작하기 전)
+    if (!state.sessionClosed && circuitDayToday()) return renderCircuitDay();
     if (state.sessionClosed) renderClosedToday();
     else if (state.started) renderActiveLift();
     else renderPlanList();
@@ -15137,6 +15185,8 @@
   /** 이번 주의 마무리 운동 계획. 붙는 것이 없으면(목표가 다르거나 내 루틴이면) null. */
   function weekConditioning() {
     if (!state.program || !state.answers || !state.lifter || state.customRoutine) return null;
+    // 서킷 위주 — 서킷 날이 숨찬 운동이다. 짧은 근력 날에는 마무리 운동을 붙이지 않는다
+    if (circuitFocusOn()) return null;
     var gym = currentGymEntry();
     var plan = E.weeklyConditioningPlan({
       goals: state.answers.goals || [],
@@ -15447,6 +15497,1202 @@
       '분. 피로 ' + w.fatigueLoad + '세트분' +
       (todayMuscles && todayMuscles.length ? ' · 오늘 근력 운동과 겹치는 부위를 피했습니다' : ''));
     render();
+  }
+
+  /* ── 서킷 운동 ─────────────────────────────────────
+     헬스장 세트가 지루한 사람을 위한, 시계를 보며 도는 하루 운동(엔진 circuit.ts).
+     들어오는 길은 둘 — 오늘 › "오늘은 서킷으로 하기"(그날 운동 대신 · 되돌릴 수 있다), 체력 기르기를 "서킷 위주"로
+     고른 사람의 서킷 날. 몸 풀기 → 본 운동(시계) → 몸통 마무리(시간이 남으면) → 스트레칭 → 결과.
+     화면은 PT 집중 화면과 같은 틀(#focus · 큰 그림 · 아래 채운 버튼 하나). 기록은 그날 세션(storage)의 circuit 칸 —
+     한 주 약속 · 시즌이 운동한 날로 센다. 근육 키우는 세트로는 세지 않는다. 이 폰 안에서만 계산한다. */
+
+  /** 체력 기르기를 "서킷 위주"로 골랐는가 — 내 루틴이면 쓰지 않는다. */
+  function circuitFocusOn() {
+    var answers = state.answers;
+    return Boolean(answers && state.program && !state.customRoutine && (answers.goals || []).indexOf('conditioning') >= 0 &&
+      E.circuitStyleOf(answers.circuitStyle) === 'circuit');
+  }
+
+  /** 시작한 주부터 몇째 주인가(0부터) — 기본 서킷이 4주마다 돌아오고, 초보의 처음 두 주를 가린다. */
+  function circuitWeekIndex() {
+    var first = state.startedOn || (state.history[0] && state.history[0].date) || state.todayDate || todayISO();
+    var monday = state.monday || mondayOf(state.todayDate || todayISO());
+    return Math.max(0, Math.round((Date.parse(monday + 'T00:00:00Z') - Date.parse(mondayOf(first) + 'T00:00:00Z')) / (7 * 86400000)));
+  }
+
+  /** 서킷 위주 — 근력 날은 지금까지 근력 운동을 한 날 수로 A → B → C를 돈다(서킷 날은 세지 않는다). */
+  function circuitStrengthIndex() {
+    var days = {};
+    state.history.forEach(function (item) {
+      if (item.date < state.todayDate && (item.sets || []).some(function (set) { return !set.warmup && set.reps > 0; })) days[item.date] = true;
+    });
+    return Object.keys(days).length % state.program.templates.length;
+  }
+
+  /** 서킷 위주 — 이번 주 몇 번째 운동인지로 오늘이 서킷 날인지 근력 날인지. 이번 주 약속을 다 채웠으면 null */
+  function circuitPlanDay() {
+    if (!circuitFocusOn() || !state.lifter) return null;
+    var plan = E.circuitWeekPlan({
+      daysPerWeek: trainingDays().length, level: state.lifter.level, weekIndex: circuitWeekIndex(), style: 'circuit',
+    });
+    return plan.days[weekSessionsDone()] || null;
+  }
+
+  function circuitTodayList() {
+    // 오늘 날짜를 아직 모르면(처음 여는 중) 걸러 내지 않는다 — 저장할 때 오늘 것을 잃지 않게
+    if (!state.todayDate) return (state.circuitToday || []).slice();
+    return (state.circuitToday || []).filter(function (item) { return item && item.date === state.todayDate; });
+  }
+
+  /**
+   * 오늘이 서킷 날인가 — 'swap'(오늘 운동 대신 고름) · 'plan'(서킷 위주의 서킷 날). 근력 운동을 시작했으면 아니다.
+   * 근력 날로 바꿨으면(state.circuitStrength) 서킷 위주라도 근력 화면.
+   */
+  function circuitDayToday() {
+    if (!state.program || !state.lifter || state.onboarding.active) return null;
+    if (state.started || state.todaySets.length > 0 || state.sessionStartedAt) return null;
+    var today = state.todayDate;
+    if (state.circuitSwap && state.circuitSwap.date === today) return { kind: 'swap' };
+    if (state.circuitStrength && state.circuitStrength.date === today) return null;
+    var day = circuitPlanDay();
+    if (day && day.kind === 'circuit') return { kind: 'plan', day: day };
+    // 서킷 위주에서 서킷을 마친 날 — 이번 주를 채웠어도 오늘은 서킷 날 화면(결과 보기)
+    if (circuitFocusOn() && circuitTodayList().length > 0) return { kind: 'plan', day: { kind: 'circuit', focus: 'full' } };
+    return null;
+  }
+
+  /** 오늘 근력 운동이 쓰려던 부위 — 많이 쓰는 부위부터(세트 × 기여도). 서킷이 같은 곳을 쓰게 한다. */
+  function todayFocusMuscles() {
+    var weight = {};
+    state.lifts.forEach(function (lift) {
+      var share = lift.exercise.contribution || {};
+      Object.keys(share).forEach(function (muscle) {
+        if (share[muscle] >= 0.5) weight[muscle] = (weight[muscle] || 0) + share[muscle] * lift.sets.length;
+      });
+    });
+    return Object.keys(weight).sort(function (a, b) { return weight[b] - weight[a]; });
+  }
+
+  /** 오늘 근력 운동 길이 — 서킷도 그만큼(15~50분) */
+  function swapMinutes() {
+    var minutes = 40;
+    try { minutes = sessionHead().estimate.totalMinutes; } catch (err) { void err; }
+    return clamp(Math.round(minutes || 40), 15, 50);
+  }
+
+  /** 오늘의 서킷 — 기구 · 아픈 곳 · 단계 · 시간으로 만든다. 같은 날 같은 조건이면 같은 구성. 시작했으면 그 구성 그대로 */
+  function circuitSessionToday() {
+    var run = state.circuitRun;
+    if (run && run.date === state.todayDate && run.session) return run.session;
+    var day = circuitDayToday();
+    if (!day) return null;
+    var gym = currentGymEntry();
+    var pain = activePain();
+    var turn = state.circuitTurn && state.circuitTurn.date === state.todayDate ? state.circuitTurn.turn : 0;
+    var plan = day.kind === 'plan' ? day.day : null;
+    var minutes = day.kind === 'swap' ? swapMinutes() : (state.timeBudget || E.DEFAULT_CIRCUIT_MINUTES[state.lifter.level]);
+    var key = [state.todayDate, day.kind, turn, plan ? [plan.benchmark, plan.format, plan.shape, plan.focus].join(',') : '',
+      gym ? gym.id + ':' + gym.equipmentIds.length : '', pain.map(function (p) { return p.joint + p.score; }).join(','),
+      state.lifter.level, minutes, day.kind === 'swap' ? todayFocusMuscles().slice(0, 4).join(',') : ''].join('|');
+    if (state.circuitBuilt && state.circuitBuilt.key === key) return state.circuitBuilt.session;
+    var input = {
+      level: state.lifter.level, date: state.todayDate,
+      equipmentIds: gym ? gym.equipmentIds : undefined, pain: pain,
+      minutes: minutes, weekIndex: circuitWeekIndex(), seed: dateSeed(state.todayDate || todayISO()),
+    };
+    var session;
+    if (day.kind === 'swap') {
+      session = E.swapCircuit(Object.assign(input, { focusMuscles: todayFocusMuscles().slice(0, 6), turn: turn }));
+    } else if (plan.benchmark && !turn) {
+      session = E.buildCircuit(Object.assign(input, { benchmark: plan.benchmark }));
+    } else if (turn) {
+      session = E.swapCircuit(Object.assign(input, { focus: plan.focus || 'full', turn: turn }));
+    } else {
+      session = E.buildCircuit(Object.assign(input, { format: plan.format, shape: plan.shape, focus: plan.focus || 'full' }));
+    }
+    state.circuitBuilt = { key: key, session: session };
+    return session;
+  }
+
+  /** 지난 서킷 기록 전부(이 폰) — 지난 세션들의 circuit 칸과 오늘 것 */
+  function circuitHistory() {
+    var out = [];
+    state.history.forEach(function (session) {
+      (session.circuit || []).forEach(function (item) { if (E.isCircuitResult(item)) out.push(item); });
+    });
+    return out.concat(circuitTodayList());
+  }
+
+  /** "시간 안에 최대한 12분" — 사다리 · 긴 목록이면 그 이름 */
+  function circuitMoveRow(move, extraNote) {
+    var exercise = index.get(move.exerciseId);
+    return el('div', { class: 'circuit-move' }, [
+      exercise ? liftThumb(exercise, true) : null,
+      el('span', { class: 'circuit-move-name', text: move.name }),
+      el('span', { class: 'circuit-move-amount', text: move.display + (move.note ? ' · ' + move.note : '') + (extraNote || '') }),
+    ]);
+  }
+
+  /** 오늘 › "오늘은 서킷으로 하기" — 시작 버튼 아래 조용한 둘째 길 */
+  function circuitSwapLink() {
+    if (!state.program || !state.lifter) return null;
+    return el('button', {
+      type: 'button', class: 'circuit-link circuit-swap-link', 'aria-label': '오늘은 서킷으로 하기 — 같은 부위를 시계 보며 돕니다. 되돌릴 수 있습니다',
+      onclick: function () {
+        state.circuitSwap = { date: state.todayDate };
+        state.circuitStrength = null;
+        state.circuitTurn = null;
+        persist();
+        pushLog('서킷', '오늘은 근력 운동 대신 서킷으로 합니다.');
+        render();
+        screen.scrollTop = 0;
+      },
+    }, [
+      el('b', { text: '오늘은 서킷으로 하기' }),
+      el('span', { text: '같은 부위 · 시계 보며 돌기' }),
+    ]);
+  }
+
+  /** 서킷 날의 오늘 화면 — 무엇을 어떻게 하는지 한 장, 아래 "서킷 시작", 그 밑에 되돌리는 글자 링크. */
+  function renderCircuitDay() {
+    var day = circuitDayToday();
+    var session = circuitSessionToday();
+    if (!day || !session) { renderPlanList(); return; }
+    var main = session.main;
+    var done = circuitTodayList();
+    var last = done[done.length - 1];
+    var running = state.circuitRun && state.circuitRun.date === state.todayDate && state.circuitRun.phase !== 'done';
+    screen.appendChild(el('div', { class: 'session-head today-head circuit-head' }, [
+      el('h2', { class: 'today-title' }, [
+        el('span', { class: 'today-day', text: '오늘은 서킷 운동' }),
+        el('span', { class: 'today-sub', text: ' · 약 ' + session.totalMinutes + '분' }),
+      ]),
+    ]));
+    renderWarnings();
+
+    var body = [];
+    if (last) {
+      body.push(el('p', { class: 'circuit-done-line' }, [
+        el('span', { class: 'finisher-line-key', text: '오늘 완료' }),
+        el('b', { text: E.circuitResultText(last) }),
+      ]));
+    }
+    body.push(el('p', { class: 'hint-line circuit-how', text: main.how }));
+    var count = main.format === 'emom' ? '1분씩 차례로' : main.format === 'intervals' ? main.workSeconds + '초씩 차례로' : main.shape === 'chipper' ? '위에서부터 한 번에' : '한 바퀴';
+    body.push(el('div', { class: 'list-label', text: count }));
+    body.push(el('div', { class: 'circuit-moves' }, main.movements.map(function (item) { return circuitMoveRow(item.scales.base); })));
+    body.push(el('p', { class: 'hint-line circuit-flow', text:
+      '몸 풀기 ' + session.warmupMinutes + '분 → 본 운동 ' + main.minutes + '분' +
+      (session.extra ? ' → ' + session.extra.title + ' ' + session.extra.minutes + '분' : '') +
+      ' → 스트레칭 ' + session.cooldownMinutes + '분' }));
+    if (session.benchmark) {
+      var past = E.benchmarkHistory(circuitHistory().filter(function (item) { return item.signature === session.signature; }), session.benchmark)
+        .filter(function (item) { return item.date < state.todayDate; })[0];
+      body.push(el('p', { class: 'hint-line circuit-bench-note', text: past
+        ? '4주마다 같은 구성으로 돌아오는 서킷입니다. 지난번(' + dateText(past.date) + ') ' + E.circuitResultText(past) + '.'
+        : '4주마다 같은 구성으로 돌아오는 서킷입니다. 다음에 오늘과 견줘 드립니다.' }));
+    }
+    body.push(el('p', { class: 'hint-line circuit-scale-note', text: '동작이 힘들거나 쉬우면 운동 중에 쉽게 · 어렵게를 한 번 눌러 바꿉니다.' }));
+    session.notes.slice(1).forEach(function (note) { body.push(el('p', { class: 'hint-line', text: note })); });
+    if (!running && !last) {
+      body.push(el('button', {
+        type: 'button', class: 'link-btn circuit-turn', text: '다른 방식으로 바꾸기',
+        onclick: function () {
+          var turn = state.circuitTurn && state.circuitTurn.date === state.todayDate ? state.circuitTurn.turn : 0;
+          state.circuitTurn = { date: state.todayDate, turn: turn + 1 };
+          persist();
+          render();
+        },
+      }));
+    }
+
+    screen.appendChild(el('div', { class: 'sheet circuit-card' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: session.name }),
+        el('span', { class: 'circuit-format', text: main.title }),
+      ]),
+      el('div', { class: 'sheet-body' }, body),
+    ]));
+
+    var undo = day.kind === 'swap'
+      ? el('button', {
+        type: 'button', class: 'circuit-link circuit-undo',
+        onclick: function () {
+          state.circuitSwap = null;
+          state.circuitTurn = null;
+          persist();
+          pushLog('서킷', '원래 운동으로 돌아갔습니다.');
+          render();
+        },
+      }, [el('b', { text: '원래 운동으로 돌아가기' }), el('span', { text: todayDayName(state.session.name) })])
+      : el('button', {
+        type: 'button', class: 'circuit-link circuit-undo',
+        onclick: function () {
+          state.circuitStrength = { date: state.todayDate };
+          persist();
+          render();
+        },
+      }, [el('b', { text: '오늘은 근력 운동으로 하기' }), el('span', { text: todayDayName(state.session.name) })]);
+
+    screen.appendChild(el('div', { class: 'start-dock' }, [
+      el('button', {
+        type: 'button', class: 'finish start-cta circuit-start',
+        text: last ? '오늘 서킷 완료 · 결과 보기' : running ? '이어서 하기 · 서킷' : '서킷 시작',
+        onclick: function () {
+          if (last && !running) { openCircuitResult(last); return; }
+          if (running) { state.circuitRun.hidden = false; render(); return; }
+          startCircuit();
+        },
+      }),
+      last || running ? null : undo,
+    ]));
+  }
+
+  /* ── 서킷 진행 ───────────────────────────────── */
+
+  var circuitTimer = null;
+
+  function circuitQuiet() {
+    return Boolean(state.circuitQuiet);
+  }
+
+  /** 서킷에서 하는 말 — 화면 자막과 코치 목소리. 소리를 끄면 자막만 */
+  function circuitSay(text) {
+    if (!text) return;
+    state.coachLine = text;
+    var subtitle = document.getElementById('focus-say');
+    if (subtitle) subtitle.textContent = text;
+    if (circuitQuiet() || !voiceReady()) return;
+    useCoachVoice();
+    CoachVoice.speak(E.forSpeech(text));
+  }
+
+  /** 삑 — 바뀌기 3 · 2 · 1초 전(짧게), 시작 · 끝(길게). 음악을 멈추지 않는 Web Audio */
+  function circuitBeep(high) {
+    if (circuitQuiet()) return;
+    var count = Number(focusHost.getAttribute('data-beeps') || 0) + 1;
+    focusHost.setAttribute('data-beeps', String(count));
+    if (typeof RestSound !== 'undefined' && RestSound.beep) RestSound.beep(Boolean(high));
+  }
+
+  /** 화면 켜 두기 — PT와 같은 설정(아이폰 기본 켜짐). 끄면 화면이 꺼져도 미리 만든 소리가 이어진다 */
+  function circuitHoldScreen() {
+    var run = state.circuitRun;
+    if (run && run.phase !== 'done' && !run.paused && keepAwakeOn()) acquireWakeLock();
+    else if (!state.rest && !pocketOn()) releaseWakeLock();
+  }
+
+  /** 본 운동 · 몸통 마무리를 시계 하나로 — 몸통 마무리는 "하고 쉬기"로 돈다 */
+  function circuitPiece(run) {
+    if (run.phase === 'extra' && run.session.extra) {
+      var extra = run.session.extra;
+      return {
+        format: 'intervals', shape: 'rounds', minutes: extra.minutes,
+        workSeconds: extra.workSeconds, restSeconds: extra.restSeconds,
+        movements: extra.moves.map(function (move) { return { slot: 'core', scales: { easy: move, base: move, hard: move } }; }),
+        title: extra.title, how: '',
+      };
+    }
+    return run.session.main;
+  }
+
+  function circuitElapsed(run) {
+    var now = run.paused ? run.pausedAt : Date.now();
+    return Math.max(0, (now - run.pieceStartedAt) / 1000);
+  }
+
+  /** 지금 동작의 강도 · 분량(사다리면 이번 바퀴 분량) */
+  function circuitMove(run, piece, index) {
+    var item = piece.movements[index];
+    if (!item) return null;
+    var key = item.scales.base.exerciseId;
+    var move = item.scales[(run.scales && run.scales[key]) || 'base'] || item.scales.base;
+    return E.moveForRound(piece, move, run.rounds || 0);
+  }
+
+  function startCircuit() {
+    var session = circuitSessionToday();
+    if (!session) return;
+    if (typeof RestSound !== 'undefined' && RestSound.wake) RestSound.wake();
+    if (voiceReady()) { if (CoachVoice.unlock) CoachVoice.unlock(); fetchCoachVoice(); }
+    var now = Date.now();
+    state.circuitRun = {
+      date: state.todayDate, session: session, phase: session.warmup.length ? 'warm' : 'ready',
+      stepIndex: 0, stepStartedAt: now, switched: false, readyEndsAt: null, pieceStartedAt: null,
+      paused: false, pausedAt: null, rounds: 0, extraReps: 0, moveIndex: 0, cueAt: 0, lastSegment: -1,
+      scales: {}, result: null, startedAt: now,
+    };
+    state.coachLine = '';
+    focusHost.setAttribute('data-beeps', '0');
+    pushLog('서킷', '<b>' + session.name + '</b> 시작 — ' + session.main.title);
+    if (state.circuitRun.phase === 'warm') circuitSayStep();
+    else circuitReady();
+    circuitRunTimer();
+    persist();
+    render();
+  }
+
+  function circuitRunTimer() {
+    if (circuitTimer) clearInterval(circuitTimer);
+    circuitTimer = setInterval(circuitTick, 250);
+    circuitHoldScreen();
+  }
+
+  function circuitStopTimer() {
+    if (circuitTimer) clearInterval(circuitTimer);
+    circuitTimer = null;
+  }
+
+  function circuitSteps(run) {
+    return run.phase === 'warm' ? run.session.warmup : run.phase === 'cool' ? run.session.cooldown : [];
+  }
+
+  /** 몸 풀기 · 스트레칭 한 동작의 말 — PT와 같은 말 */
+  function circuitSayStep() {
+    var run = state.circuitRun;
+    var steps = circuitSteps(run);
+    var step = steps[run.stepIndex];
+    if (!step) return;
+    var style = state.coach.style;
+    if (run.phase === 'warm') circuitSay(E.mobilityLine(style, step, run.stepIndex, steps.length, run.session.warmupMinutes));
+    else circuitSay(E.cooldownLine(style, step, run.stepIndex, steps.length));
+  }
+
+  /** 다음 몸 풀기 · 스트레칭 동작으로. quiet면 말없이(화면이 꺼져 있다 돌아와 밀린 것을 따라잡을 때) */
+  function circuitNextStep(quiet) {
+    var run = state.circuitRun;
+    var steps = circuitSteps(run);
+    run.stepIndex += 1;
+    run.switched = false;
+    run.stepStartedAt = quiet && steps[run.stepIndex - 1] ? run.stepStartedAt + steps[run.stepIndex - 1].seconds * 1000 : Date.now();
+    if (run.stepIndex >= steps.length) {
+      if (run.phase === 'warm') {
+        if (!quiet) circuitSay(E.mobilityDoneLine(state.coach.style));
+        circuitReady(quiet);
+      } else circuitDone();
+      return;
+    }
+    if (!quiet) circuitSayStep();
+  }
+
+  /** 본 운동 앞 10초 — 무엇을 하는지 소개하고 3 · 2 · 1 삑 */
+  function circuitReady(quiet) {
+    var run = state.circuitRun;
+    run.phase = 'ready';
+    run.readyEndsAt = Date.now() + 10000;
+    run.readyBeeped = 4;
+    var main = run.session.main;
+    if (!quiet) setTimeout(function () {
+      if (state.circuitRun === run && run.phase === 'ready' && !run.paused) circuitSay(E.circuitIntroLine(state.coach.style, main.format, main.minutes));
+    }, 1600);
+    persist();
+  }
+
+  /** 본 운동(또는 몸통 마무리)을 지금부터 */
+  function circuitBeginPiece(phase) {
+    var run = state.circuitRun;
+    run.phase = phase;
+    run.pieceStartedAt = Date.now();
+    run.cueAt = 0;
+    run.lastSegment = -1;
+    run.moveIndex = 0;
+    if (phase === 'main') { run.rounds = 0; run.extraReps = 0; }
+    stopSpeech();
+    circuitBeep(true);
+    var piece = circuitPiece(run);
+    var cues = E.circuitCues(piece);
+    // 첫 신호(시작)는 여기서 — 몸통 마무리는 첫 동작 이름으로
+    run.cueAt = 1;
+    if (phase === 'main') circuitSay(E.finisherCueLine(state.coach.style, 'start'));
+    else circuitSay(E.circuitNextLine(state.coach.style, circuitMove(run, piece, 0)));
+    void cues;
+    state.circuitTrack = null;
+    persist();
+    render();
+  }
+
+  function circuitTick() {
+    var run = state.circuitRun;
+    if (!run || run.phase === 'done') { circuitStopTimer(); return; }
+    if (run.paused) return;
+    var now = Date.now();
+    if (run.phase === 'warm' || run.phase === 'cool') {
+      var steps = circuitSteps(run);
+      var step = steps[run.stepIndex];
+      if (!step) { circuitNextStep(); render(); return; }
+      var left = step.seconds - (now - run.stepStartedAt) / 1000;
+      // 화면이 꺼져 있다 돌아왔으면 밀린 동작은 말없이 넘긴다
+      if (left < -2) { circuitNextStep(true); render(); return; }
+      if (run.phase === 'cool' && step.sides && !run.switched && left <= step.seconds / 2) {
+        run.switched = true;
+        circuitSay(E.cooldownSwitchLine(state.coach.style));
+        render();
+        return;
+      }
+      if (left <= 0) { circuitNextStep(); render(); return; }
+      var stepNode = document.getElementById('circuit-step-left');
+      if (stepNode) stepNode.textContent = prepClock(Math.ceil(left));
+      return;
+    }
+    if (run.phase === 'ready') {
+      var wait = (run.readyEndsAt - now) / 1000;
+      var whole = Math.ceil(wait);
+      if (whole <= 3 && whole >= 1 && whole < run.readyBeeped) { run.readyBeeped = whole; circuitBeep(false); }
+      if (wait <= 0) { circuitBeginPiece('main'); return; }
+      var readyNode = document.getElementById('circuit-badge-num');
+      if (readyNode) readyNode.textContent = String(Math.max(0, whole));
+      return;
+    }
+    // 숨 고르는 동안 — 남은 초만(다음으로는 타이머가 넘긴다)
+    if (run.phase === 'breath') {
+      var breathNode = document.getElementById('circuit-badge-num');
+      if (breathNode && run.breathEndsAt) breathNode.textContent = String(Math.max(0, Math.ceil((run.breathEndsAt - now) / 1000)));
+      return;
+    }
+    // 본 운동 · 몸통 마무리
+    var piece = circuitPiece(run);
+    var elapsed = circuitElapsed(run);
+    var clock = E.circuitClock(piece, elapsed);
+    var cues = E.circuitCues(piece);
+    var spoken = null;
+    var redraw = false;
+    while (run.cueAt < cues.length && cues[run.cueAt].at <= elapsed) {
+      var cue = cues[run.cueAt];
+      run.cueAt += 1;
+      var fresh = elapsed - cue.at < 2;
+      if (cue.kind === 'beep') { if (fresh) circuitBeep(false); continue; }
+      if (cue.kind === 'next' || cue.kind === 'rest' || cue.kind === 'go') {
+        redraw = true;
+        if (cue.kind === 'go' && fresh) circuitBeep(true);
+        var move = circuitMove(run, piece, cue.movementIndex || 0);
+        spoken = cue.kind === 'go' ? '시작' : move ? E.circuitNextLine(state.coach.style, move) : null;
+        continue;
+      }
+      if (cue.kind === 'done') continue;
+      var style = state.coach.style;
+      if (cue.kind === 'half' || cue.kind === 'oneMinute' || cue.kind === 'last10') spoken = E.finisherCueLine(style, cue.kind);
+      else if (cue.kind === 'thirtySec' || cue.kind === 'last') spoken = E.circuitCueLine(style, cue.kind);
+      if (!fresh) spoken = null;
+    }
+    if (spoken) circuitSay(spoken);
+    if (clock.over) {
+      if (piece.format === 'forTime') circuitEndMain({ seconds: clock.total, capped: true });
+      else if (run.phase === 'extra') circuitEndExtra();
+      else circuitEndMain({ completed: true });
+      return;
+    }
+    var repsNow = piece.format === 'amrap' && run.phase === 'main' && clock.left <= 120;
+    if (repsNow !== Boolean(run.repsShown)) { run.repsShown = repsNow; redraw = true; }
+    if (clock.segment !== run.lastSegment || (piece.format === 'intervals' && clock.working !== run.lastWorking)) {
+      var changed = run.lastSegment >= 0;
+      run.lastSegment = clock.segment;
+      run.lastWorking = clock.working;
+      if (changed) redraw = true;
+    }
+    if (redraw) { render(); return; }
+    circuitTickNumbers(run, piece, clock);
+  }
+
+  /** 숫자만 바꾼다 — 매번 다 그리면 버튼이 눌리다 만다 */
+  function circuitTickNumbers(run, piece, clock) {
+    var main = document.getElementById('circuit-clock');
+    if (main) main.textContent = circuitClockText(piece, clock);
+    var badge = document.getElementById('circuit-badge-num');
+    if (badge && (piece.format === 'emom' || piece.format === 'intervals')) badge.textContent = String(Math.ceil(clock.segmentLeft));
+  }
+
+  function circuitClockText(piece, clock) {
+    return piece.format === 'forTime' ? clockDigits(clock.elapsed) : clockDigits(clock.left);
+  }
+
+  /** 본 운동이 끝났다 — 기록을 바로 남기고(나머지를 건너뛰어도 약속은 지킨 날), 몸통 마무리 · 스트레칭으로 */
+  function circuitEndMain(score) {
+    var run = state.circuitRun;
+    // 본 운동 기록은 한 번만
+    if (!run || run.result || run.phase !== 'main') return;
+    var main = run.session.main;
+    var elapsed = Math.min(E.circuitSeconds(main), circuitElapsed(run));
+    var full = Object.assign({ rounds: run.rounds, extraReps: run.extraReps }, score || {});
+    if (main.format === 'forTime' && full.seconds === undefined) full.seconds = Math.round(elapsed);
+    if (full.stopped) {
+      full.stoppedAtSecond = Math.round(elapsed);
+      full.completed = false;
+    }
+    var result = E.recordCircuit(run.session, full, run.scales, 'circuit-' + state.todayDate + '-' + Date.now().toString(36));
+    run.result = result;
+    saveCircuitResult(result);
+    if (!full.stopped) {
+      circuitBeep(true);
+      circuitSay(E.circuitCueLine(state.coach.style, 'done'));
+    }
+    if (full.stopped) { circuitDone(); return; }
+    if (run.session.extra) {
+      // 숨 고를 틈 — 몸통 마무리는 20초 뒤에
+      run.phase = 'breath';
+      run.breathEndsAt = Date.now() + 20000;
+      setTimeout(function () { if (state.circuitRun === run && run.phase === 'breath' && !run.paused) circuitBeginPiece('extra'); }, 20000);
+      persist();
+      render();
+      return;
+    }
+    setTimeout(function () { if (state.circuitRun === run && run.phase !== 'done') circuitStartCool(); }, 4000);
+    run.phase = 'breath';
+    run.breathEndsAt = Date.now() + 4000;
+    persist();
+    render();
+  }
+
+  function circuitEndExtra() {
+    circuitStartCool();
+  }
+
+  function circuitStartCool() {
+    var run = state.circuitRun;
+    if (!run.session.cooldown.length) { circuitDone(); return; }
+    run.phase = 'cool';
+    run.stepIndex = 0;
+    run.stepStartedAt = Date.now();
+    run.switched = false;
+    circuitSayStep();
+    persist();
+    render();
+  }
+
+  /** 다 끝났다 — 결과 화면 */
+  function circuitDone() {
+    var run = state.circuitRun;
+    run.phase = 'done';
+    circuitStopTimer();
+    stopSpeech();
+    releaseWakeLock();
+    persist();
+    render();
+    if (run.result) openCircuitResult(run.result);
+  }
+
+  /** 기록을 남긴다 — 오늘 세션(storage)의 circuit 칸. 한 주 약속 · 시즌이 운동한 날로 센다 */
+  function saveCircuitResult(result) {
+    state.circuitToday = circuitTodayList().concat([result]);
+    recordTodaySession();
+    persist();
+    advanceSeason();
+    pushLog('서킷', '<b>' + result.name + '</b> ' + E.circuitResultText(result) + ' — 기록했습니다.');
+  }
+
+  function circuitPause() {
+    var run = state.circuitRun;
+    if (!run || run.paused) return;
+    run.paused = true;
+    run.pausedAt = Date.now();
+    stopSpeech();
+    circuitHoldScreen();
+    persist();
+    render();
+  }
+
+  function circuitResume() {
+    var run = state.circuitRun;
+    if (!run || !run.paused) return;
+    var gap = Date.now() - run.pausedAt;
+    run.paused = false;
+    run.pausedAt = null;
+    if (run.pieceStartedAt) run.pieceStartedAt += gap;
+    if (run.stepStartedAt) run.stepStartedAt += gap;
+    if (run.readyEndsAt) run.readyEndsAt += gap;
+    if (run.phase === 'breath') {
+      // 숨 고르던 중에 멈췄으면 바로 다음으로
+      if (run.session.extra) circuitBeginPiece('extra');
+      else circuitStartCool();
+      return;
+    }
+    circuitSay(E.resumeLine(state.coach.style));
+    circuitHoldScreen();
+    persist();
+    render();
+  }
+
+  /** AMRAP · 빨리 끝내기 — 한 바퀴를 마쳤다 */
+  function circuitRound() {
+    var run = state.circuitRun;
+    var main = run.session.main;
+    run.rounds += 1;
+    run.extraReps = 0;
+    run.moveIndex = 0;
+    if (main.format === 'forTime' && run.rounds >= (main.rounds || 1)) {
+      circuitEndMain({ seconds: Math.round(circuitElapsed(run)), capped: false });
+      return;
+    }
+    circuitSay(E.circuitCueLine(state.coach.style, 'round'));
+    persist();
+    render();
+  }
+
+  /** 다음 동작 › — 바퀴의 마지막 동작이면 한 바퀴를 마친 것 */
+  function circuitNextMove() {
+    var run = state.circuitRun;
+    var piece = circuitPiece(run);
+    if (run.moveIndex + 1 >= piece.movements.length) { circuitRound(); return; }
+    run.moveIndex += 1;
+    circuitSay(E.circuitNextLine(state.coach.style, circuitMove(run, piece, run.moveIndex)));
+    persist();
+    render();
+  }
+
+  function circuitSetScale(key, scale) {
+    var run = state.circuitRun;
+    if (!run) return;
+    run.scales = Object.assign({}, run.scales);
+    run.scales[key] = scale;
+    state.circuitTrack = null;
+    persist();
+    render();
+  }
+
+  /** ⋯ › 그만하기 — 본 운동 중이면 여기까지 기록하고, 아니면 기록 없이 오늘 화면으로 */
+  function circuitStopAsk() {
+    var run = state.circuitRun;
+    if (!run) return;
+    var inMain = run.phase === 'main';
+    var recorded = Boolean(run.result);
+    var wasPaused = run.paused;
+    if (!wasPaused) circuitPause();
+    openModal('그만하기', run.session.name, [
+      el('p', { class: 'asset-note', text: inMain
+        ? '여기까지 한 것을 기록하고 끝냅니다. 한 주 약속에는 운동한 날로 셉니다.'
+        : recorded ? '본 운동은 기록했습니다. 남은 것을 건너뛰고 결과를 봅니다.'
+          : '아직 본 운동 전입니다. 기록 없이 오늘 화면으로 돌아갑니다.' }),
+      el('div', { class: 'chip-row' }, [
+        el('button', { type: 'button', class: 'finish', text: '계속하기', onclick: function () {
+          modal.close();
+          if (!wasPaused) circuitResume();
+        } }),
+        el('button', { type: 'button', class: 'finish quiet circuit-stop', text: '그만하기', onclick: function () {
+          modal.close();
+          if (inMain) { run.paused = false; circuitEndMain({ stopped: true }); return; }
+          if (recorded) { circuitDone(); return; }
+          circuitStopTimer();
+          stopSpeech();
+          state.circuitRun = null;
+          releaseWakeLock();
+          persist();
+          render();
+        } }),
+      ]),
+    ]);
+  }
+
+  /** 뒤로가기 — 멈추고 그만할지 묻는다 */
+  function circuitBack() {
+    circuitStopAsk();
+  }
+
+  /** ⋯ — 강도 · 소리 · 화면 켜 두기 · 그만하기 */
+  function openCircuitMenu() {
+    var run = state.circuitRun;
+    if (!run) return;
+    var options = [];
+    var main = run.session.main;
+    if (run.phase === 'main' || run.phase === 'ready' || run.phase === 'warm' || run.phase === 'breath') {
+      options.push({ label: '강도 바꾸기', hint: '동작마다 쉽게 · 기본 · 어렵게', cls: 'circuit-menu-scale', run: function () { openCircuitScales(); } });
+    }
+    options.push({
+      label: '소리', toggle: !circuitQuiet(), cls: 'circuit-menu-sound',
+      hint: circuitQuiet() ? '꺼짐 — 삑 소리와 코치 말 없이 화면만' : '켜짐 — 바뀌기 전 삑 소리와 코치 말',
+      run: function () { state.circuitQuiet = !circuitQuiet(); if (state.circuitQuiet) stopSpeech(); persist(); openCircuitMenu(); },
+    });
+    var awake = keepAwakeOn();
+    options.push({
+      label: '화면 켜 두기 (음악 안 끊김)', toggle: awake, cls: 'keep-awake-row',
+      hint: awake ? '켜짐 — 서킷 동안 화면이 저절로 꺼지지 않습니다' : '꺼짐 — 화면이 꺼져도 미리 만든 소리로 이어 갑니다',
+      run: function () { setKeepAwake(!awake); circuitHoldScreen(); openCircuitMenu(); },
+    });
+    options.push({ label: '그만하기', hint: run.phase === 'main' ? '여기까지 기록하고 끝냅니다' : '오늘 화면으로 돌아갑니다', cls: 'circuit-menu-stop', run: function () { modal.close(); circuitStopAsk(); } });
+    openModal(run.session.name, main.title, [
+      el('div', { class: 'summary-list stage-menu focus-menu-list' }, options.map(function (option) {
+        var toggle = typeof option.toggle === 'boolean';
+        return el('button', {
+          type: 'button', class: 'menu-row' + (option.cls ? ' ' + option.cls : ''), onclick: option.run,
+          'aria-pressed': toggle ? String(option.toggle) : null,
+        }, [
+          el('span', { class: 'plan-main' }, [
+            el('span', { class: 'name', text: option.label }),
+            el('span', { class: 'plan-sets', text: option.hint }),
+          ]),
+          toggle ? el('span', { class: 'menu-switch' + (option.toggle ? ' on' : ''), 'aria-hidden': 'true' }, [el('i')])
+            : el('span', { class: 'detail', text: '›' }),
+        ]);
+      })),
+    ]);
+  }
+
+  /** 쉽게 · 기본 · 어렵게 세 칸 — 누르면 바로 바뀐다 */
+  function circuitScaleChips(run, item, compact) {
+    var key = item.scales.base.exerciseId;
+    var now = (run.scales && run.scales[key]) || 'base';
+    return el('div', { class: 'circuit-scale' + (compact ? ' compact' : ''), role: 'group', 'aria-label': item.scales.base.name + ' 강도' },
+      E.CIRCUIT_SCALES.map(function (scale) {
+        var move = item.scales[scale];
+        return el('button', {
+          type: 'button', class: 'circuit-scale-btn', 'aria-pressed': String(now === scale), 'data-scale': scale,
+          'aria-label': E.SCALE_LABELS_KO[scale] + ' — ' + move.name + ' ' + move.display,
+          onclick: function () { if (now !== scale) circuitSetScale(key, scale); else if (modal.open && compact === 'menu') render(); },
+        }, [
+          el('b', { text: E.SCALE_LABELS_KO[scale] }),
+          compact === 'menu' ? el('span', { text: (move.exerciseId !== item.scales.base.exerciseId ? move.name + ' ' : '') + move.display }) : null,
+        ]);
+      }));
+  }
+
+  /** ⋯ › 강도 바꾸기 — 동작마다 한 줄 */
+  function openCircuitScales() {
+    var run = state.circuitRun;
+    if (!run) return;
+    var draw = function () {
+      var main = run.session.main;
+      openModal('강도 바꾸기', '누르면 바로 바뀝니다', [
+        el('p', { class: 'hint-line', text: '자세가 무너지면 "쉽게", 너무 쉬우면 "어렵게". 바꾼 강도는 기록에 같이 남습니다.' }),
+        el('div', { class: 'circuit-scale-list' }, main.movements.map(function (item) {
+          var key = item.scales.base.exerciseId;
+          var chips = circuitScaleChips(run, item, 'menu');
+          chips.addEventListener('click', function () { setTimeout(draw, 0); });
+          return el('div', { class: 'circuit-scale-row', 'data-move': key }, [
+            el('b', { class: 'circuit-scale-name', text: item.scales.base.name }),
+            chips,
+          ]);
+        })),
+        el('button', { type: 'button', class: 'finish', text: '닫기', onclick: function () { modal.close(); } }),
+      ]);
+    };
+    draw();
+  }
+
+  /** 못 채운 바퀴의 횟수 − 0 + — 본 운동이 끝난 뒤면 남긴 기록도 같이 고친다 */
+  function circuitRepsRow(run, label) {
+    var change = function (delta) {
+      run.extraReps = Math.max(0, (run.extraReps || 0) + delta);
+      if (run.result && run.result.format === 'amrap') {
+        run.result = Object.assign({}, run.result, { extraReps: run.extraReps });
+        state.circuitToday = circuitTodayList().map(function (item) { return item.id === run.result.id ? run.result : item; });
+        recordTodaySession();
+      }
+      persist();
+      render();
+    };
+    return el('div', { class: 'circuit-reps' }, [
+      el('span', { class: 'circuit-reps-label', text: label }),
+      el('button', { type: 'button', class: 'nudge circuit-reps-less', text: '−', 'aria-label': '횟수 줄이기', onclick: function () { change(-1); } }),
+      el('b', { class: 'circuit-reps-num', text: String(run.extraReps || 0) }),
+      el('button', { type: 'button', class: 'nudge circuit-reps-more', text: '+', 'aria-label': '횟수 늘리기', onclick: function () { change(1); } }),
+    ]);
+  }
+
+  /** 지금 서킷 화면을 띄울 때인가 */
+  function circuitShown() {
+    var run = state.circuitRun;
+    return Boolean(run && run.phase !== 'done' && run.date === state.todayDate && state.tab === 'today' && !run.hidden &&
+      !state.onboarding.active && !state.authOpen);
+  }
+
+  /** 서킷 화면 — PT 집중 화면과 같은 틀. 위 한 줄 · 큰 시계 · 큰 그림(숫자 배지) · 이름 · 분량 · 강도 · 다음 · 아래 버튼 */
+  function renderCircuitScreen() {
+    var run = state.circuitRun;
+    var session = run.session;
+    focusHost.hidden = false;
+    screen.hidden = true;
+    tabbar.hidden = true;
+    var restHost = document.getElementById('rest-host');
+    if (restHost) restHost.hidden = true;
+    focusHost.textContent = '';
+    focusHost.setAttribute('data-paused', run.paused ? '1' : '0');
+    focusHost.setAttribute('data-phase', 'circuit-' + run.phase);
+    state.motionWanted = null;
+    var paused = run.paused;
+    var piece = circuitPiece(run);
+    var view = { kicker: '', name: '', line: null, pic: null, zoom: null, badge: null, clock: null, chips: null, next: '', extraRow: null, go: null, skip: null };
+    var resume = { text: '▶ 계속', cls: 'pt-pause pt-resume circuit-resume', run: circuitResume };
+    var badgeNum = function (text, cls) { return el('b', { class: 'focus-num' + (cls ? ' ' + cls : ''), id: 'circuit-badge-num', text: text }); };
+
+    if (run.phase === 'warm' || run.phase === 'cool') {
+      var steps = circuitSteps(run);
+      var step = steps[run.stepIndex] || steps[steps.length - 1];
+      var left = paused ? step.seconds - (run.pausedAt - run.stepStartedAt) / 1000 : step.seconds - (Date.now() - run.stepStartedAt) / 1000;
+      left = Math.max(0, Math.ceil(Math.min(step.seconds, left)));
+      view.kicker = (run.phase === 'warm' ? '몸 풀기 ' : '스트레칭 ') + (run.stepIndex + 1) + ' / ' + steps.length;
+      view.name = step.name;
+      view.pic = focusStretchPic(step, left);
+      view.badge = focusBadge(el('b', { class: 'focus-num', id: 'circuit-step-left', text: prepClock(left) }), paused ? '멈춤' : left >= 60 ? '' : '초', paused);
+      view.line = el('div', { class: 'focus-what cue' }, [el('span', { text: step.cue + (step.sides ? ' · 반쯤에서 반대쪽' : '') })]);
+      var nextStep = steps[run.stepIndex + 1];
+      view.next = nextStep ? '다음 · ' + nextStep.name : run.phase === 'warm' ? '다음 · 본 운동 ' + session.main.title : '다음 · 결과 보기';
+      view.go = paused ? resume : {
+        text: nextStep ? '다음 동작' : run.phase === 'warm' ? '본 운동으로' : '끝내기', cls: 'circuit-step-next',
+        run: function () { stopSpeech(); circuitNextStep(); render(); },
+      };
+      if (run.phase === 'warm') {
+        view.skip = { main: '건너뛰기', sub: '본 운동', aria: '몸 풀기 건너뛰고 본 운동으로', run: function () {
+          stopSpeech();
+          if (paused) { run.paused = false; run.pausedAt = null; }
+          circuitReady();
+          render();
+        } };
+      } else {
+        view.skip = { main: '결과 보기', sub: '스트레칭 건너뛰기', aria: '스트레칭 건너뛰고 결과 보기', run: function () { run.paused = false; circuitDone(); } };
+      }
+    } else if (run.phase === 'ready') {
+      var wait = paused ? (run.readyEndsAt - run.pausedAt) / 1000 : (run.readyEndsAt - Date.now()) / 1000;
+      var first = circuitMove(run, session.main, 0);
+      var firstItem = session.main.movements[0];
+      view.kicker = '곧 시작';
+      view.name = first ? first.name : session.main.title;
+      view.zoom = first ? index.get(first.exerciseId) : null;
+      view.pic = view.zoom ? focusPic(view.zoom, true, 'set-motion') : null;
+      view.badge = focusBadge(badgeNum(String(Math.max(0, Math.ceil(wait)))), paused ? '멈춤' : '준비', paused, true);
+      view.clock = { text: session.main.title, cap: '본 운동' };
+      view.line = el('div', { class: 'focus-what cue' }, [el('span', { text: session.main.how })]);
+      if (firstItem) view.chips = circuitScaleChips(run, firstItem);
+      view.next = first ? '첫 동작 · ' + first.name + ' ' + first.display : '';
+      view.go = paused ? resume : { text: '바로 시작', cls: 'focus-go-now circuit-go-now', run: function () { circuitBeginPiece('main'); } };
+    } else if (run.phase === 'breath') {
+      // 본 운동 끝 — 결과 한 줄, 다음에 할 것의 그림, 숨 고르는 초
+      var breathLeft = Math.max(0, Math.ceil(((paused ? run.pausedAt : Date.now()) - run.breathEndsAt) / -1000));
+      var after = session.extra ? index.get(session.extra.moves[0].exerciseId) : null;
+      var coolFirst = !session.extra ? session.cooldown[0] : null;
+      view.kicker = '본 운동 끝';
+      view.name = run.result ? E.circuitResultText(run.result) : '';
+      view.pic = after ? focusPic(after, false, '') : coolFirst ? focusStretchPic(coolFirst, coolFirst.seconds) : null;
+      view.badge = focusBadge(badgeNum(String(breathLeft)), paused ? '멈춤' : '숨 고르기', paused);
+      view.line = el('div', { class: 'focus-what cue' }, [el('span', { text: session.extra
+        ? '숨을 고르고 ' + withParticleJs(session.extra.title, '으로/로') + ' 갑니다 · ' + session.extra.minutes + '분'
+        : '숨을 고르고 스트레칭으로 갑니다.' })]);
+      if (session.main.format === 'amrap' && run.result) view.extraRow = circuitRepsRow(run, '마지막 바퀴에서 더 한 횟수');
+      view.go = { text: session.extra ? session.extra.title + ' 시작' : '스트레칭 시작', cls: 'circuit-after-go', run: function () {
+        run.paused = false;
+        if (session.extra) circuitBeginPiece('extra'); else circuitStartCool();
+      } };
+      view.skip = { main: '결과 보기', sub: '나머지 건너뛰기', aria: '나머지 건너뛰고 결과 보기', run: function () { circuitDone(); } };
+    } else {
+      // 본 운동 · 몸통 마무리
+      var elapsed = circuitElapsed(run);
+      var clock = E.circuitClock(piece, elapsed);
+      var format = piece.format;
+      var index0 = format === 'emom' || format === 'intervals' ? clock.movementIndex : run.moveIndex;
+      var move = circuitMove(run, piece, index0);
+      var item = piece.movements[index0];
+      var nextIndex = (index0 + 1) % piece.movements.length;
+      var nextMove = circuitMove(run, piece, nextIndex);
+      var resting = format === 'intervals' && !clock.working;
+      view.kicker = run.phase === 'extra' ? piece.title : resting ? '쉬고 다음' : (index0 + 1) + ' / ' + piece.movements.length;
+      view.name = move ? move.name : '';
+      view.zoom = move ? index.get(move.exerciseId) : null;
+      view.pic = view.zoom ? focusPic(view.zoom, !paused && !resting, 'set-motion') : null;
+      view.clock = {
+        text: circuitClockText(piece, clock),
+        cap: format === 'forTime' ? '지난 시간 · 제한 ' + clockDigits(piece.minutes * 60) : '남은 시간',
+      };
+      if (format === 'amrap') view.badge = focusBadge(badgeNum(String(run.rounds)), paused ? '멈춤' : '바퀴', paused, true);
+      else if (format === 'forTime') view.badge = focusBadge(badgeNum(Math.min(run.rounds + 1, piece.rounds || 1) + '/' + (piece.rounds || 1), 'wide'), paused ? '멈춤' : '바퀴', paused, true);
+      else if (format === 'emom') view.badge = focusBadge(badgeNum(String(Math.ceil(clock.segmentLeft))), paused ? '멈춤' : '이번 1분', paused, true);
+      else view.badge = focusBadge(badgeNum(String(Math.ceil(clock.segmentLeft))), paused ? '멈춤' : resting ? '쉬기' : '운동', paused, true);
+      view.line = move ? el('div', { class: 'focus-what circuit-amount' }, [
+        el('b', { class: 'circuit-amount-num', text: move.display }),
+        move.note ? el('span', { class: 'focus-what-tail', text: move.note }) : null,
+      ]) : null;
+      if (item && run.phase === 'main') view.chips = circuitScaleChips(run, item);
+      view.next = piece.movements.length > 1 && nextMove ? '다음 · ' + nextMove.name + ' ' + nextMove.display : '';
+      // 못 채운 바퀴의 횟수 — 끝나기 2분 전부터(그 전에는 +1 바퀴 하나면 된다). 끝난 뒤 숨 고르는 화면에서도 고친다
+      if (format === 'amrap' && run.phase === 'main' && (clock.left <= 120 || run.extraReps > 0)) {
+        view.extraRow = circuitRepsRow(run, '끝날 때 못 채운 바퀴에서 한 횟수');
+      }
+      // 저절로 넘어가는 방식 — 무엇을 하면 되는지 한마디
+      if (format === 'emom' && view.line) view.line.appendChild(el('span', { class: 'focus-what-tail circuit-auto-hint', text: '· 하고 남는 시간은 쉽니다' }));
+      if (format === 'intervals' && view.line && !resting) view.line.appendChild(el('span', { class: 'focus-what-tail circuit-auto-hint', text: '· 쉬지 말고 계속' }));
+      if (format === 'intervals' && view.line && resting) view.line.appendChild(el('span', { class: 'focus-what-tail circuit-auto-hint', text: '· 쉬면서 다음 동작 준비' }));
+      if (paused) view.go = resume;
+      else if (run.phase === 'main' && format === 'amrap') view.go = { text: '+1 바퀴', cls: 'circuit-round', run: circuitRound };
+      else if (run.phase === 'main' && format === 'forTime') view.go = { text: '끝', cls: 'circuit-finish', aria: '끝 — 지금 시간으로 기록합니다', run: function () {
+        circuitEndMain({ seconds: Math.round(circuitElapsed(run)), capped: false });
+      } };
+      else view.go = null;
+      if (!paused && run.phase === 'main' && (format === 'amrap' || format === 'forTime') && piece.movements.length > 1) {
+        view.skip = { main: '다음 동작 ›', sub: nextIndex === 0 ? '한 바퀴 끝' : nextMove.name, aria: '다음 동작으로', run: circuitNextMove };
+      }
+      if (run.phase === 'extra') view.skip = { main: '건너뛰기', sub: '스트레칭', aria: '몸통 마무리 건너뛰고 스트레칭으로', run: function () { run.paused = false; circuitStartCool(); } };
+    }
+
+    // 1. 위 한 줄 — 이름 · 지금 어디 · ⋯
+    focusHost.appendChild(el('div', { class: 'stage-top focus-top circuit-top' }, [
+      el('span', { class: 'circuit-top-name', text: session.name }),
+      el('span', { class: 'circuit-top-format', text: run.phase === 'warm' ? '몸 풀기' : run.phase === 'cool' ? '스트레칭' : run.phase === 'extra' ? piece.title : session.main.title }),
+      el('button', {
+        type: 'button', class: 'demo-open lift-more stage-more focus-menu circuit-menu', text: '⋯',
+        'aria-label': '더 보기 — 강도 · 소리 · 화면 켜 두기 · 그만하기', onclick: openCircuitMenu,
+      }),
+    ]));
+    var trouble = !circuitQuiet() ? voiceTrouble() : '';
+    if (trouble) focusHost.appendChild(el('p', { class: 'focus-trouble', role: 'status', text: trouble }));
+
+    // 2. 큰 시계(본 운동)
+    if (view.clock) {
+      focusHost.appendChild(el('div', { class: 'circuit-clock-row' }, [
+        el('span', { class: 'circuit-clock-cap', text: view.clock.cap }),
+        el('b', { class: 'circuit-clock' + (view.clock.text.length > 8 ? ' small' : ''), id: 'circuit-clock', 'aria-live': 'off', text: view.clock.text }),
+      ]));
+    }
+
+    // 3. 큰 그림 + 숫자 배지
+    focusHost.appendChild(el('div', { class: 'focus-stage' }, [
+      el('div', { class: 'focus-hero' }, [
+        view.pic,
+        view.zoom ? el('button', {
+          type: 'button', class: 'focus-zoom', text: '⤢', 'aria-label': view.zoom.name + ' 크게 보기',
+          title: '크게 보기', onclick: function () { openDemo(view.zoom); },
+        }) : null,
+        view.badge,
+      ]),
+    ]));
+
+    // 4. 이름 · 분량 · 강도
+    focusHost.appendChild(el('div', { class: 'focus-head' }, [
+      el('h2', { class: 'focus-name' }, [
+        view.kicker ? el('span', { class: 'focus-pos', text: view.kicker }) : null,
+        el('span', { class: 'focus-name-text', text: view.name }),
+      ]),
+      view.line,
+    ]));
+    if (view.chips) focusHost.appendChild(view.chips);
+    if (view.next) focusHost.appendChild(el('p', { class: 'focus-next circuit-next', text: view.next }));
+    if (view.extraRow) focusHost.appendChild(view.extraRow);
+    if (paused) focusHost.appendChild(el('p', { class: 'focus-note circuit-paused', role: 'status', text: '멈췄습니다. 계속을 누르면 이 자리에서 잇습니다.' }));
+    else focusHost.appendChild(el('p', { class: 'focus-say', id: 'focus-say', text: state.coachLine || '' }));
+
+    // 5. 아래 줄 — [Ⅱ] [채운 버튼] [다음 ›]
+    var go = view.go;
+    var skip = view.skip;
+    var autoOnly = !go && !paused;
+    focusHost.appendChild(el('div', { class: 'focus-dock circuit-dock' }, [
+      paused ? null : el('button', {
+        type: 'button', class: 'focus-pause pt-pause circuit-pause' + (autoOnly ? ' wide' : ''), text: autoOnly ? 'Ⅱ 일시정지' : 'Ⅱ',
+        'aria-label': '일시정지', title: '일시정지', onclick: circuitPause,
+      }),
+      go ? el('button', { type: 'button', class: 'focus-go' + (go.cls ? ' ' + go.cls : ''), text: go.text, 'aria-label': go.aria || null, onclick: go.run }) : null,
+      skip ? el('button', {
+        type: 'button', class: 'focus-skip circuit-skip', 'aria-label': skip.aria, title: skip.aria, onclick: skip.run,
+      }, [
+        el('span', { class: 'focus-skip-main', text: skip.main }),
+        skip.sub ? el('span', { class: 'focus-skip-sub', text: skip.sub }) : null,
+      ]) : null,
+    ]));
+    settleLiveMotion();
+    pauseLiveMotion(paused);
+    prepareCircuitTrack();
+  }
+
+  /* ── 서킷 결과 ─────────────────────────────── */
+
+  /** 결과 — 운동 끝 화면과 같은 틀: 끝! · 결과 숫자 → 지난번보다 → 내 선수 · 오른 점수 → 다음 운동 → 자세히 */
+  function openCircuitResult(result) {
+    var history = circuitHistory().filter(function (item) { return item.id !== result.id; });
+    var comparison = E.compareCircuit(result, history);
+    var run = state.circuitRun && state.circuitRun.result && state.circuitRun.result.id === result.id ? state.circuitRun : null;
+    var minutes = run ? Math.max(1, Math.round((Date.now() - run.startedAt) / 60000)) : 0;
+    var body = [];
+    body.push(el('div', { class: 'summary-hero circuit-result-hero' }, [
+      el('p', { class: 'summary-hero-title', text: result.stoppedAtSecond !== undefined && result.completed !== true ? '여기까지 잘했습니다' : '오늘 서킷 끝!' }),
+      el('p', { class: 'summary-hero-meta' }, [
+        el('b', { class: 'circuit-result-score', text: E.circuitResultText(result) }),
+        el('span', { text: ' · ' + (E.CIRCUIT_FORMAT_NAMES_KO[result.format] || '') + ' ' + result.minutes + '분' + (minutes ? ' · 운동 ' + minutes + '분' : '') }),
+      ]),
+    ]));
+    if (comparison.previous) {
+      body.push(el('p', { class: 'summary-better circuit-better' }, [
+        el('span', { class: 'summary-better-kicker', text: '지난번보다' }),
+        el('b', { text: comparison.trend === 'better' ? '나아졌습니다' : comparison.trend === 'same' ? '같습니다' : '조금 못했습니다' }),
+        el('span', { text: ' ' + E.circuitResultText(comparison.previous) + ' → ' + E.circuitResultText(result) + (comparison.scaleChanged ? ' (강도가 달랐습니다)' : '') }),
+      ]));
+    } else if (comparison.text) {
+      body.push(el('p', { class: 'hint-line circuit-first', text: comparison.text }));
+    }
+    var seasonLine = seasonFeedback();
+    var player = seasonCard({ finish: seasonLine || '' });
+    if (player) body.push(player);
+    else if (seasonLine) body.push(el('p', { class: 'season-feedback', text: seasonLine }));
+    var teaser = circuitNextTeaser();
+    if (teaser) body.push(el('p', { class: 'challenge-line summary-challenge circuit-teaser', text: teaser }));
+    var details = [
+      el('div', { class: 'list-label', text: '한 동작' }),
+      el('ul', { class: 'cue-list' }, result.moves.map(function (line, at) {
+        var scale = Object.keys(result.scales)[at];
+        var tag = scale && result.scales[scale] !== 'base' ? ' (' + E.SCALE_LABELS_KO[result.scales[scale]] + ')' : '';
+        return el('li', {}, [el('span', { text: line + tag })]);
+      })),
+      el('p', { class: 'asset-note', text: '서킷은 근육 키우는 세트 수에는 들어가지 않고 피로에만 더합니다. 한 주 약속에는 운동한 날로 셉니다.' }),
+    ];
+    body.push(el('details', { class: 'summary-more' }, [el('summary', { text: '자세히 보기 — 한 동작 · 강도' })].concat(details)));
+    body.push(el('div', { class: 'summary-foot single' }, [
+      el('button', { type: 'button', class: 'finish circuit-result-close', text: '닫기', onclick: function () { modal.close(); render(); } }),
+    ]));
+    openModal(result.name, dateText(result.date), body);
+  }
+
+  /** 다음 운동 한 줄 — 서킷 위주면 다음이 서킷인지 근력인지, 아니면 다음 근력 운동 */
+  function circuitNextTeaser() {
+    if (circuitFocusOn() && state.lifter) {
+      var plan = E.circuitWeekPlan({ daysPerWeek: trainingDays().length, level: state.lifter.level, weekIndex: circuitWeekIndex(), style: 'circuit' });
+      var next = plan.days[weekSessionsDone() + 1];
+      if (!next) return '이번 주 약속을 다 채웠습니다. 다음 주에 다시 만나요.';
+      if (next.kind === 'strength') return '다음 운동은 짧은 근력 운동입니다. 힘을 지키는 날입니다.';
+      return next.benchmark ? '다음 운동은 ' + E.benchmarkName(next.benchmark) + '입니다.' : '다음 운동은 서킷 · ' + E.CIRCUIT_FORMAT_NAMES_KO[next.format] + '입니다.';
+    }
+    return nextWorkoutLine();
+  }
+
+  /** 기록 › 자세히 — 기본 서킷마다 지난 기록(최근 것부터) */
+  function circuitBenchCard() {
+    var all = circuitHistory();
+    var numbers = [1, 2, 3].filter(function (number) { return E.benchmarkHistory(all, number).length > 0; });
+    var recent = all.filter(function (item) { return !item.benchmark; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; }).slice(0, 3);
+    if (numbers.length === 0 && recent.length === 0) return null;
+    var body = [];
+    numbers.forEach(function (number) {
+      var list = E.benchmarkHistory(all, number);
+      body.push(el('div', { class: 'list-label', text: E.benchmarkName(number) + ' · ' + (E.CIRCUIT_FORMAT_NAMES_KO[list[0].format] || '') + ' ' + list[0].minutes + '분' }));
+      body.push(el('div', { class: 'summary-list circuit-bench-list' }, list.slice(0, 6).map(function (item, at) {
+        var better = list[at + 1] ? E.compareCircuit(item, [list[at + 1]]).trend : null;
+        return el('div', { class: 'record' }, [
+          el('span', { text: dateText(item.date) }),
+          better === 'better' ? el('span', { class: 'pr', text: '늘었음' }) : null,
+          el('span', { class: 'detail', text: E.circuitResultText(item) }),
+        ]);
+      })));
+    });
+    if (numbers.length === 0) body.push(el('p', { class: 'hint-line', text: '기본 서킷 1 · 2 · 3은 서킷 위주로 하면 4주마다 같은 구성으로 돌아옵니다. 그때부터 여기서 늘어난 것을 봅니다.' }));
+    if (recent.length) {
+      body.push(el('div', { class: 'list-label', text: '최근 서킷' }));
+      body.push(el('div', { class: 'summary-list' }, recent.map(function (item) {
+        return el('div', { class: 'record' }, [
+          el('span', { text: dateText(item.date) }),
+          el('span', { class: 'detail', text: (E.CIRCUIT_FORMAT_NAMES_KO[item.format] || '') + ' ' + item.minutes + '분 · ' + E.circuitResultText(item) }),
+        ]);
+      })));
+    }
+    return el('div', { class: 'sheet circuit-bench-card' }, [
+      el('div', { class: 'sheet-head' }, [el('h3', { text: '서킷 기록' })]),
+      el('div', { class: 'sheet-body' }, body),
+    ]);
+  }
+
+  /* ── 체력 기르기 방식 ─────────────────────────── */
+
+  /** 근력 + 짧은 서킷 · 서킷 위주 두 칸. onPick(style) */
+  function circuitStyleChoice(current, onPick) {
+    var now = E.circuitStyleOf(current);
+    return el('div', { class: 'circuit-style', role: 'group', 'aria-label': '체력 기르기 방식' }, [
+      segmented(E.CIRCUIT_STYLES.map(function (style) {
+        return { label: E.CIRCUIT_STYLE_LABELS_KO[style], active: now === style, onSelect: function () { onPick(style); } };
+      })),
+      el('p', { class: 'hint-line circuit-style-hint', text: E.CIRCUIT_STYLE_HINTS_KO[now] }),
+    ]);
+  }
+
+  /** 내 정보 › 프로그램 — 체력 기르기를 골랐을 때만 */
+  function circuitStyleRow() {
+    var answers = state.answers;
+    if (!answers || (answers.goals || []).indexOf('conditioning') < 0) return null;
+    return el('div', { class: 'circuit-style-row' }, [
+      el('div', { class: 'list-label', text: '체력 기르기 방식' }),
+      circuitStyleChoice(answers.circuitStyle, function (style) {
+        if (state.started && !state.sessionClosed) return;
+        state.answers = Object.assign({}, state.answers, { circuitStyle: style });
+        state.circuitStrength = null;
+        state.circuitBuilt = null;
+        state.finisherBuilt = null;
+        pushLog('프로그램', '체력 기르기 방식 — <b>' + E.CIRCUIT_STYLE_LABELS_KO[style] + '</b>');
+        rebuildSession();
+        persist();
+        render();
+      }),
+    ]);
+  }
+
+  /* ── 화면이 꺼져도 서킷 소리 ──────────────────────
+     PT와 같은 길 — 앞으로 8분 동안의 삑 · 말을 소리 파일 하나로 미리 만들어 두고, 화면이 꺼지는 순간 튼다.
+     시계는 시작한 시각만 들고 있어서 돌아오면 그 자리가 그대로 맞다. 아이폰에서 알림으로 받기로 했으면(restPushMode)
+     소리 파일을 틀지 않는다 — <audio>가 듣던 음악을 멈춘다. 아이폰은 기본으로 화면을 켜 둔다(keepAwakeOn). */
+
+  function circuitTrackSig() {
+    var run = state.circuitRun;
+    if (!run || run.paused || (run.phase !== 'main' && run.phase !== 'extra')) return null;
+    // 사다리만 바퀴마다 말할 분량이 바뀐다 — 다른 방식은 +1 바퀴를 눌러도 소리 파일을 다시 만들지 않는다
+    var ladder = circuitPiece(run).shape === 'ladder' ? run.rounds : '';
+    return [run.phase, run.pieceStartedAt, JSON.stringify(run.scales || {}), ladder, currentRate(), circuitQuiet()].join('|');
+  }
+
+  function circuitTrackPlan() {
+    var run = state.circuitRun;
+    var piece = circuitPiece(run);
+    var anchor = run.pieceStartedAt;
+    var from = (Date.now() - anchor) / 1000;
+    var style = state.coach.style;
+    var events = [];
+    E.circuitCues(piece).forEach(function (cue) {
+      if (cue.at < from || cue.at > from + LOCK_MAX_SECONDS) return;
+      var at = cue.at - from;
+      if (cue.kind === 'beep') { events.push({ at: at, chime: true }); return; }
+      var move = cue.movementIndex !== undefined ? circuitMove(run, piece, cue.movementIndex) : null;
+      var text = cue.kind === 'next' || cue.kind === 'rest' ? (move ? E.circuitNextLine(style, move) : '')
+        : cue.kind === 'go' ? '시작'
+          : cue.kind === 'half' || cue.kind === 'oneMinute' || cue.kind === 'last10' ? E.finisherCueLine(style, cue.kind)
+            : cue.kind === 'thirtySec' || cue.kind === 'last' || cue.kind === 'done' ? E.circuitCueLine(style, cue.kind) : '';
+      if (cue.kind === 'done') events.push({ at: at, chime: true });
+      if (text) events.push({ at: at, text: E.forSpeech(text) });
+    });
+    if (!events.length) return null;
+    var duration = Math.min(LOCK_MAX_SECONDS, E.circuitSeconds(piece) - from) + 3;
+    return { anchor: Date.now(), events: events, duration: Math.max(5, duration) };
+  }
+
+  function prepareCircuitTrack() {
+    var sig = circuitTrackSig();
+    if (!sig || circuitQuiet() || typeof RestSound === 'undefined' || !voiceReady()) { state.circuitTrack = null; return; }
+    // 같은 자리면 그대로 — 소리 파일이 2분도 안 남았을 때만 다음 8분을 새로 만든다
+    var track = state.circuitTrack;
+    if (track && track.sig === sig && Date.now() - track.plan.anchor < Math.max(30, track.plan.duration - 120) * 1000) return;
+    var plan = circuitTrackPlan();
+    if (!plan) { state.circuitTrack = null; return; }
+    var job = { sig: sig, plan: plan, bytes: null };
+    state.circuitTrack = job;
+    useCoachVoice();
+    CoachVoice.renderTrack(plan.events, plan.duration).then(function (bytes) {
+      if (state.circuitTrack === job) job.bytes = bytes;
+    }).catch(function () { /* 못 만들면 화면이 켜질 때 따라잡는다 */ });
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    var run = state.circuitRun;
+    if (!run || run.phase === 'done') return;
+    if (document.visibilityState !== 'visible') {
+      var track = state.circuitTrack;
+      if (!run.paused && track && track.bytes && track.sig === circuitTrackSig() && !restPushMode() &&
+        Date.now() - track.plan.anchor < track.plan.duration * 1000) {
+        RestSound.playTrack(track.bytes, track.plan.anchor, run.session.name);
+      }
+      return;
+    }
+    // 돌아왔다 — 시계는 시작한 시각으로 다시 맞춘다. 화면 켜 두기면 다시 잡는다
+    circuitHoldScreen();
+    if (!run.paused) circuitTick();
+    render();
+  });
+
+  /** 다시 켰을 때 — 하던 서킷이 오늘 것이면 시계를 다시 돌린다 */
+  function resumeCircuitAfterLoad() {
+    var run = state.circuitRun;
+    if (!run) return;
+    if (run.date !== state.todayDate || !run.session || !run.session.main) { state.circuitRun = null; return; }
+    if (run.phase === 'done') return;
+    // 앱을 껐다 켰으면 멈춘 채로 — 사람이 "계속"을 누를 때 잇는다
+    if (!run.paused) { run.paused = true; run.pausedAt = Date.now(); }
+    circuitRunTimer();
   }
 
   /* ── 유산소 ────────────────────────────────────── */
@@ -17021,7 +18267,9 @@
 
   function seasonSessions(withToday) {
     var sessions = state.history.slice();
-    if (withToday && state.todaySets.length > 0) sessions = sessions.concat([{ date: state.todayDate, sets: state.todaySets }]);
+    // 서킷만 한 날도 운동한 날(엔진 hasWorkout)
+    var circuits = circuitTodayList();
+    if (withToday && (state.todaySets.length > 0 || circuits.length > 0)) sessions = sessions.concat([{ date: state.todayDate, sets: state.todaySets, circuit: circuits }]);
     return sessions;
   }
 
@@ -17444,8 +18692,9 @@
 
   function currentStreak() {
     var sessions = state.history.slice();
-    if (state.todaySets.length > 0) {
-      sessions = sessions.concat([{ date: state.todayDate, sets: state.todaySets }]);
+    var circuits = circuitTodayList();
+    if (state.todaySets.length > 0 || circuits.length > 0) {
+      sessions = sessions.concat([{ date: state.todayDate, sets: state.todaySets, circuit: circuits }]);
     }
     return E.buildStreak({
       sessions: sessions,
@@ -17462,20 +18711,25 @@
   /** 이번 주 칸 — 한 날 · 오늘 · 남은 날을 실제 순서로 (E.weekView). */
   function weekCells(streak) {
     var trained = {};
+    var circuitDays = {};
     state.history.forEach(function (item) {
-      if (item.date >= state.monday && item.date < state.todayDate &&
-        (item.sets || []).some(function (set) { return !set.warmup && set.reps > 0; })) trained[item.date] = true;
+      if (item.date >= state.monday && item.date < state.todayDate && E.hasWorkout(item)) trained[item.date] = true;
+      if ((item.circuit || []).length && !(item.sets || []).some(function (set) { return !set.warmup && set.reps > 0; })) circuitDays[item.date] = true;
     });
+    if (circuitTodayList().length && !state.todaySets.length) circuitDays[state.todayDate] = true;
+    // 서킷만 한 날은 칸 이름도 "서킷" — 그날 하려던 근력 운동 이름이 붙으면 한 줄 안 것처럼 읽힌다
     return E.weekView({
       monday: state.monday,
       today: state.todayDate,
       trainedDates: Object.keys(trained),
-      todayDone: state.todaySets.some(function (set) { return !set.warmup && set.reps > 0; }),
+      todayDone: state.todaySets.some(function (set) { return !set.warmup && set.reps > 0; }) || circuitTodayList().length > 0,
       templateNames: state.program.templates.map(function (template) { return E.dayShortName(template.name); }),
       todayIndex: currentTemplateIndex(),
       plannedWeekdays: trainingDays(),
       target: (streak || currentStreak()).thisWeek.target,
       startDate: state.startedOn || undefined,
+    }).map(function (cell) {
+      return circuitDays[cell.date] && cell.kind === 'done' ? Object.assign({}, cell, { name: '서킷' }) : cell;
     });
   }
 
@@ -18708,6 +19962,9 @@
     screen.appendChild(tierCard(currentTier()));
     scheduleCard(false);
     renderProgress('more');
+    // 서킷 기록 — 기본 서킷마다 지난 기록(4주마다 같은 구성), 최근 서킷
+    var circuitCard = circuitBenchCard();
+    if (circuitCard) screen.appendChild(circuitCard);
     volumeDetailCards();
     weekDetailCards();
   }
@@ -19088,11 +20345,14 @@
   /** limit: 처음에 보이는 날 수(기록 탭은 최근 셋). "더 보기"를 누르면 90일까지. */
   function historyCard(limit) {
     var work = function (session) { return (session.sets || []).filter(function (set) { return !set.warmup; }); };
+    var circuitsOf = function (session) { return (session.circuit || []).filter(E.isCircuitResult); };
     var past = state.history
-      .filter(function (session) { return work(session).length > 0 || (session.cardio && session.cardio.length); })
+      .filter(function (session) { return work(session).length > 0 || (session.cardio && session.cardio.length) || circuitsOf(session).length; })
       .slice()
       .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
-    var rows = (state.todaySets.length ? [{ date: state.todayDate, sets: state.todaySets, today: true }] : []).concat(past);
+    var circuitsToday = circuitTodayList();
+    var rows = (state.todaySets.length || circuitsToday.length
+      ? [{ date: state.todayDate, sets: state.todaySets, circuit: circuitsToday, today: true }] : []).concat(past);
     if (rows.length === 0) return null;
 
     var shown = rows.slice(0, state.historyMore ? 90 : (limit || 7));
@@ -19101,15 +20361,23 @@
       var sets = work(session);
       var names = sessionNames(sets);
       var lifted = sets.reduce(function (sum, set) { return sum + (set.weightKg || 0) * (set.reps || 0); }, 0);
+      // 서킷을 한 날 — "서킷" 딱지와 결과 한 줄(세트가 같이 있으면 세트 수도)
+      var circuits = circuitsOf(session);
+      var lastCircuit = circuits[circuits.length - 1];
       body.appendChild(el('button', {
-        type: 'button', class: 'history-row',
+        type: 'button', class: 'history-row' + (lastCircuit ? ' history-circuit' : ''),
         onclick: function () { openHistoryDay(session); },
       }, [
         el('span', { class: 'history-date', text: dayLabel(session.date) + (session.today ? ' · 오늘' : '') }),
-        el('span', { class: 'history-what', text: names.length
+        el('span', { class: 'history-what' }, lastCircuit && !names.length ? [
+          el('span', { class: 'history-tag', text: '서킷' }),
+          document.createTextNode(lastCircuit.name),
+        ] : [document.createTextNode(names.length
           ? names.slice(0, 2).join(' · ') + (names.length > 2 ? ' 외 ' + (names.length - 2) + '개' : '')
-          : '유산소' }),
-        el('span', { class: 'history-meta', text: sets.length + '세트' + (lifted > 0 ? ' · ' + tonnageText(lifted) : '') }),
+          : '유산소')]),
+        el('span', { class: 'history-meta', text: lastCircuit && !sets.length
+          ? E.circuitResultText(lastCircuit)
+          : sets.length + '세트' + (lifted > 0 ? ' · ' + tonnageText(lifted) : '') + (lastCircuit ? ' · 서킷' : '') }),
         el('span', { class: 'detail', 'aria-hidden': 'true', text: '›' }),
       ]));
     });
@@ -19156,15 +20424,25 @@
     (session.cardio || []).forEach(function (entry) {
       body.push(el('p', { class: 'hint-line', text: '유산소 · ' + (entry.label || entry.kind || '') + (entry.minutes ? ' ' + entry.minutes + '분' : '') }));
     });
+    // 서킷 — 이름 · 방식 · 결과, 한 동작(바꾼 강도 표시)
+    (session.circuit || []).filter(E.isCircuitResult).forEach(function (result) {
+      body.push(el('div', { class: 'history-lift history-circuit-day' }, [
+        el('b', { text: result.name + ' · ' + (E.CIRCUIT_FORMAT_NAMES_KO[result.format] || '') + ' ' + result.minutes + '분' }),
+        el('p', { class: 'circuit-history-score', text: E.circuitResultText(result) }),
+        el('p', { class: 'hint-line', text: (result.moves || []).join(' · ') }),
+      ]));
+    });
+    var workSets = (session.sets || []).filter(function (set) { return !set.warmup; }).length;
     if (session.today) {
-      body.push(el('p', { class: 'hint-line', text: '오늘 기록은 오늘 화면의 "완료 › 보기"에서 고칩니다.' }));
+      // 서킷만 한 날은 고칠 세트가 없다
+      if (workSets > 0) body.push(el('p', { class: 'hint-line', text: '오늘 기록은 오늘 화면의 "완료 › 보기"에서 고칩니다.' }));
     } else if (session.id) {
       body.push(el('button', {
         type: 'button', class: 'finish quiet history-delete', text: '이 날 기록 지우기',
         onclick: function () { confirmDeleteDay(session); },
       }));
     }
-    openModal(dayLabel(session.date), (session.sets || []).filter(function (set) { return !set.warmup; }).length + '세트', body);
+    openModal(dayLabel(session.date), workSets === 0 && (session.circuit || []).length ? '서킷' : workSets + '세트', body);
   }
 
   function confirmDeleteDay(session) {
@@ -20943,6 +22221,9 @@
       ]));
       body.push(el('p', { class: 'hint-line', text:
         '하던 루틴이 있으면 그대로 넣을 수 있습니다. 종목 · 세트는 정한 대로 두고 무게만 앱이 올립니다.' }));
+      // 체력 기르기 방식 — 근력 + 짧은 서킷 · 서킷 위주(체력 기르기를 골랐을 때만)
+      var circuitStyle = circuitStyleRow();
+      if (circuitStyle) body.push(circuitStyle);
       // 마무리 운동 · 운동 뒤 유산소 · 쉬는 날 걷기 — 이번 주 기준
       conditioningPlanNotes(true).forEach(function (node) { body.push(node); });
     }
@@ -22069,8 +23350,8 @@
       프로그램: state.program,
       헬스장: { 목록: state.gymBook, 직접등록: state.myDirectory },
       운동기록: state.history.concat(
-        state.todaySets.length > 0
-          ? [{ date: state.todayDate, sets: state.todaySets, gymId: activeGymId() }]
+        state.todaySets.length > 0 || circuitTodayList().length > 0
+          ? [{ date: state.todayDate, sets: state.todaySets, gymId: activeGymId(), circuit: circuitTodayList() }]
           : [],
       ),
       체크인: state.checkIns,
@@ -25499,6 +26780,13 @@
       screen.appendChild(el('p', { class: 'hint-line', text: '지금 목표: ' +
         (state.answers.goals || []).map(function (id) { return E.GOAL_LABELS_KO[id]; }).join(' · ') }));
     }
+    // 체력을 골랐으면 그 카드 바로 아래 — 근력 + 짧은 서킷(기본) · 서킷 위주. 장을 늘리지 않는다
+    if (now === 'conditioning') {
+      screen.appendChild(el('div', { class: 'ob-circuit-style' }, [
+        el('h3', { class: 'ob-q-title', text: '체력은 어떻게 기를까요?' }),
+        circuitStyleChoice(state.answers.circuitStyle, function (style) { state.answers.circuitStyle = style; render(); }),
+      ]));
+    }
     screen.appendChild(el('p', { class: 'hint-line ob-later', text: '목표는 나중에 내 정보에서 바꿀 수 있습니다.' }));
     // 다시 설정할 때는 기록이 이미 이 폰에 있다 — 불러오는 문은 처음 설정에만
     if (!state.onboarding.redo) screen.appendChild(restoreDoor());
@@ -26004,6 +27292,8 @@
   // 3D 근육 그림 장을 먼저 읽기 시작한다 — 첫 화면을 그리는 동안 끝나 있게
   body3dReady();
   if (!restore()) loadScenario('normal', true);
+  // 하던 서킷이 오늘 것이면 멈춘 채로 다시 띄운다(어제 것이면 치운다)
+  resumeCircuitAfterLoad();
   // 카카오·구글에서 돌아왔으면 여기서 거둔다. 주소에 실려 온 토큰도 같이 지운다.
   finishOAuth();
   markStandalone();

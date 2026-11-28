@@ -154,6 +154,12 @@ export interface SessionLog extends Syncable {
 
   /** 그날 한 와드 점수. 위와 같은 이유로 여기 담는다. */
   wod?: unknown[];
+
+  /**
+   * 그날 마친 서킷(circuit.ts의 CircuitResult). 근육 키우는 세트로는 세지 않지만 운동한 날이다 —
+   * 한 주 약속 · 시즌 점수는 이것도 센다(streak.ts의 hasWorkout).
+   */
+  circuit?: unknown[];
 }
 
 /**

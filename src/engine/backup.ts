@@ -2,6 +2,7 @@ import { EXERCISES } from './exercises.ts';
 import { normalizeFoodLog, type FoodEntry } from './foodLog.ts';
 import { TRAINING_STYLES } from './styles.ts';
 import { isRoutineShape } from './routine.ts';
+import { isCircuitResult } from './circuit.ts';
 import type { ConsentId } from './consent.ts';
 import type { GymBook, GymEntry } from './gyms.ts';
 import type { OnboardingAnswers, TrainingProgram } from './onboarding.ts';
@@ -126,13 +127,16 @@ function readSession(raw: unknown, dropped: Backup['dropped']): SessionLog | nul
   }
   const cardio = readCardio(raw.cardio);
   const wod = Array.isArray(raw.wod) ? raw.wod.filter(isPlain) : [];
+  // 서킷 기록 — 모양이 맞는 것만(날짜가 그날인 것)
+  const circuit = Array.isArray(raw.circuit) ? raw.circuit.filter((item) => isCircuitResult(item) && item.date === raw.date) : [];
   // 남은 것이 없으면 운동한 날이 아니다
-  if (sets.length === 0 && cardio.length === 0 && wod.length === 0) return null;
+  if (sets.length === 0 && cardio.length === 0 && wod.length === 0 && circuit.length === 0) return null;
   const session: SessionLog = { date: raw.date, sets };
   if (isText(raw.id, 120)) session.id = raw.id;
   if (isText(raw.gymId, 120)) session.gymId = raw.gymId;
   if (cardio.length > 0) session.cardio = cardio;
   if (wod.length > 0) session.wod = wod;
+  if (circuit.length > 0) session.circuit = circuit;
   return session;
 }
 
@@ -184,6 +188,7 @@ function readAnswers(raw: unknown): OnboardingAnswers | null {
   if (['auto', 'heavy', 'moderate', 'light', 'mixed'].includes(raw.repStyle as string)) {
     answers.repStyle = raw.repStyle as OnboardingAnswers['repStyle'];
   }
+  if (raw.circuitStyle === 'circuit' || raw.circuitStyle === 'mixed') answers.circuitStyle = raw.circuitStyle;
   if (isTexts(raw.priorities)) answers.priorities = raw.priorities.slice(0, 2) as OnboardingAnswers['priorities'];
   if (isPlain(raw.mainLifts) && Object.values(raw.mainLifts).every((id) => typeof id === 'string' && EXERCISE_IDS.has(id))) {
     answers.mainLifts = { ...(raw.mainLifts as OnboardingAnswers['mainLifts']) };

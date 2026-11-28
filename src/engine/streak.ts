@@ -16,6 +16,15 @@ import type { SessionLog } from './types.ts';
  * 그리고 "7주 연속"은 "37일 연속"보다 말하기 좋다.
  */
 
+/**
+ * 운동한 날인가 — 본세트가 하나라도 있거나, 서킷을 마쳤으면. 서킷은 근육 키우는 세트로 세지 않지만
+ * 약속을 지킨 날이다. 한 주 약속 · 시즌 점수가 같은 기준을 쓴다.
+ */
+export function hasWorkout(session: Pick<SessionLog, 'sets' | 'circuit'>): boolean {
+  return (session.sets ?? []).some((set) => !set.warmup && set.reps > 0) ||
+    (Array.isArray(session.circuit) && session.circuit.length > 0);
+}
+
 export interface WeekResult {
   /** 그 주의 월요일 (YYYY-MM-DD) */
   weekStart: string;
@@ -110,7 +119,7 @@ function weekOf(input: StreakInput, weekStart: string, startDate?: string): Week
   const days = new Set(
     input.sessions
       .filter((session) => session.date >= weekStart && session.date <= weekEnd)
-      .filter((session) => session.sets.some((set) => !set.warmup && set.reps > 0))
+      .filter(hasWorkout)
       .map((session) => session.date),
   ).size;
 
@@ -143,7 +152,7 @@ export function buildStreak(input: StreakInput): StreakState {
    * 깔기 전 주에 쉼표를 써 버리면, 정작 필요할 때 쉼표가 없다.
    */
   const firstDay = input.sessions
-    .filter((session) => session.sets.some((set) => !set.warmup && set.reps > 0))
+    .filter(hasWorkout)
     .map((session) => session.date)
     .sort()[0];
   // 시작한 날 — 가입한 날을 알면 그날, 모르면 첫 운동 날

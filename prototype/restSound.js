@@ -149,6 +149,29 @@ var RestSound = (function () {
     } catch (err) { void err; }
   }
 
+  /**
+   * 삑 한 번 — 서킷 시계가 바뀌기 3 · 2 · 1초 전(짧고 낮게), 시작 · 끝(길고 높게). 띵처럼 Web Audio라
+   * 듣던 음악을 멈추지 않는다. 화면이 켜져 있을 때만 쓴다(꺼진 동안은 미리 만든 소리 파일이 낸다).
+   */
+  function beep(high) {
+    if (!ctx) return;
+    ambient();
+    try {
+      var now = ctx.currentTime + 0.01;
+      var length = high ? 0.42 : 0.14;
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.frequency.value = high ? 1320 : 880;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.28, now + 0.01);
+      gain.gain.linearRampToValueAtTime(0, now + length);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + length + 0.03);
+    } catch (err) { void err; }
+  }
+
   /** (<audio> 대신 길) seconds 뒤에 울린다. 잠금 화면에는 무엇을 쉬는 중인지 띄운다. */
   function audioStart(seconds, label) {
     if (!window.FitEngine) return;
@@ -374,7 +397,7 @@ var RestSound = (function () {
   }
 
   return {
-    wake: wake, start: start, stop: stop, playTrack: playTrack, position: position, chime: chime, active: active,
+    wake: wake, start: start, stop: stop, playTrack: playTrack, position: position, chime: chime, beep: beep, active: active,
     backgroundMixes: backgroundMixes, backgroundState: backgroundState, ambient: ambient,
   };
 })();

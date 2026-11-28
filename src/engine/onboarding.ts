@@ -57,6 +57,11 @@ export interface OnboardingAnswers {
   mainLifts?: Partial<Record<MainLiftPattern, string>>;
   /** 평소 반복 스타일. 없거나 'auto'면 목표에 맞춘다 */
   repStyle?: RepStyle;
+  /**
+   * 체력 기르기의 방식(circuit.ts) — 'mixed'(기본, 근력 운동 뒤 짧은 서킷) · 'circuit'(대부분의 날을 서킷으로,
+   * 한 주 1~2번 짧은 근력 운동). 프로그램(근력 날의 종목)은 같고, 어느 날을 서킷으로 할지만 바뀐다.
+   */
+  circuitStyle?: 'mixed' | 'circuit';
 }
 
 /**

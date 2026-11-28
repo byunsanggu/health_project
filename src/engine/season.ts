@@ -18,7 +18,7 @@
  *
  * 이름은 전부 지어낸 일반 이름이다. 실제 대회 · 단체 이름이나 게임 등급 이름은 쓰지 않는다.
  */
-import { buildStreak, type WeekResult } from './streak.ts';
+import { buildStreak, hasWorkout, type WeekResult } from './streak.ts';
 import { levelProfile } from './levels.ts';
 import { planGoals, type TrainingGoal } from './goals.ts';
 import { planComeback } from './comeback.ts';
@@ -204,8 +204,9 @@ export interface SeasonProgress {
   daysLeft: number;
 }
 
+/** 운동한 날 — 서킷만 한 날도 센다(약속 계산과 같은 기준) */
 function isWorkingSession(session: SessionLog): boolean {
-  return session.sets.some((set) => !set.warmup && set.reps > 0);
+  return hasWorkout(session);
 }
 
 function streakFor(input: {
