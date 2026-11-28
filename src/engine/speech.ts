@@ -213,6 +213,7 @@ export function coachVoiceId(style: string, voice?: string | null): string {
  */
 export function synthText(piece: string): string {
   return piece
+    .replace(/TRX/g, '티알엑스')
     .replace(/PT/g, '피티')
     .replace(/W-Y/g, '더블유 와이')
     .replace(/\bkg\b/g, '킬로')

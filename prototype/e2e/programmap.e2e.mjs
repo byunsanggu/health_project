@@ -98,4 +98,18 @@ export default async function ({ page, url, shot }) {
   check(await page.locator(`.plateau-card[data-exercise="${stalledId}"]`).count() === 0, '기록 탭에 처방한 종목이 또 나옵니다');
   const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).settings.plateauFixes, KEY);
   check(saved && saved[stalledId] && saved[stalledId].kind === 'reset', '처방이 저장되지 않았습니다: ' + JSON.stringify(saved));
+
+  // 처음 하는 사람 — 6주 쌓고 한 주 가볍게(7칸), 첫 주는 자세를 익히는 주. 360px에서도 칸이 넘치지 않는다
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(url);
+  await onboard(page, { level: '초보', days: 3 });
+  await page.setViewportSize({ width: 360, height: 640 });
+  await openRecordMore(page);
+  const fresh = page.locator('.sheet.roadmap');
+  check(await fresh.locator('.roadmap-week').count() === 7, '초보는 6주 + 가볍게 하는 주 1 = 7칸이어야 합니다');
+  check(/^1주차 — 자세를 익히는 주/.test(await fresh.locator('.roadmap-now').textContent()), '초보 첫 주가 자세를 익히는 주가 아닙니다');
+  check(await page.locator('.plateau-card').count() === 0, '기록이 없는데 늘지 않는 종목이 나옵니다');
+  await fresh.scrollIntoViewIfNeeded();
+  check(!(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)), '360px에서 가로로 넘칩니다(초보 7칸)');
+  await shot('5-beginner-360');
 }

@@ -43,7 +43,7 @@ def clip_id(text: str) -> str:
 
 # 읽힐 글 — src/engine/speech.ts의 synthText와 같게 (영어 글자는 한국어 소리로)
 def synth_text(piece: str) -> str:
-    return piece.replace('PT', '피티').replace('W-Y', '더블유 와이').replace('·', ',')
+    return piece.replace('TRX', '티알엑스').replace('PT', '피티').replace('W-Y', '더블유 와이').replace('·', ',')
 
 
 # 거칠게: 저음 · 중음을 세우고, 살짝 찌그러뜨리고(배음), 세게 눌러 외치는 듯이
