@@ -122,6 +122,10 @@ export const ANCHOR_FACTORS: Record<string, AnchorFactor> = {
   'dumbbell-floor-press': { anchor: 'bench', factor: 0.32, perHand: true },
   'standing-dumbbell-press': { anchor: 'overheadPress', factor: 0.36, perHand: true },
   'dumbbell-overhead-extension': { anchor: 'bench', factor: 0.25 },
+  // 6차 — 스미스는 바 무게가 가벼운 만큼 바벨판보다 조금 낮게, 풀오버는 덤벨 하나(두 손)
+  'smith-hip-thrust': { anchor: 'deadlift', factor: 0.85 },
+  'smith-split-squat': { anchor: 'squat', factor: 0.38 },
+  'dumbbell-pullover': { anchor: 'bench', factor: 0.22 },
 };
 
 /**

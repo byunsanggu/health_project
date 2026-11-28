@@ -15,7 +15,7 @@ const VERSION = 'volume-coach-v5';
  * 수백 장이라 설치가 느려진다. 화면에 처음 뜰 때 받아 담아 두고, 그 뒤로는 캐시에서 준다(오프라인에서도 뜬다).
  * 앱 화면 캐시(VERSION)와 따로 둬서 앱이 새로 올라가도 다시 받지 않는다. 그림을 다시 구우면 이 이름을 올린다.
  */
-const THUMBS = 'exercise-thumbs-v3';
+const THUMBS = 'exercise-thumbs-v4';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 /*
  * 입체 시연이 쓰는 three.js — 앱과 같은 주소에 둔다(예전엔 CDN). 버전이 박혀 바뀌지 않으므로

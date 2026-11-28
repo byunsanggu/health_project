@@ -7,7 +7,7 @@ import {
   recentFoods, rescaleEntry, searchFoods, totalsFor, type FoodEntry,
 } from '../foodLog.ts';
 
-const ALCOHOL = new Set(['beer', 'soju', 'makgeolli', 'wine', 'highball']);
+const ALCOHOL = new Set(['beer', 'soju', 'makgeolli', 'wine', 'highball', 'somaek']);
 
 describe('음식표', () => {
   it('칼로리가 탄단지와 맞는다 (단백질·탄수 4, 지방 9kcal/g — 술 빼고 ±20%)', () => {

@@ -30,10 +30,14 @@ export default async function ({ page, url, shot }) {
   check(await entries.count() === 3, `적힌 줄 ${await entries.count()}개`);
   const kcal = Number((await page.locator('.food-kcal').textContent()).replace(/,/g, ''));
   check(kcal > 600 && kcal < 760, '오늘 칼로리 ' + kcal);
+  // 탄단지 막대는 처음 하는 사람에게 소음이다 — "자세히" 뒤에 있다
+  check(await page.locator('.macro-bar').count() === 0, '탄단지 막대가 자세히 밖에 있습니다');
+  await page.locator('.food-more-toggle').click();
   check(await page.locator('.macro-bar i').count() === 3, '탄단지 막대가 세 칸이 아닙니다');
   check(await page.inputValue('#food-text') === '', '적은 뒤에도 글이 남아 있습니다');
   await page.locator('.macro-bar i.protein').hover();
   check(/단백질 \d+%/.test(await page.locator('.food-log .chart-tip').textContent()), '막대 말풍선이 안 뜹니다');
+  await page.locator('.food-more-toggle').click();
 
   // 자주 먹는 것 — 한 번 누르면 들어간다
   await page.locator('.food-again', { hasText: '계란 2개' }).click();

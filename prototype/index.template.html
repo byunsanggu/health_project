@@ -1179,6 +1179,8 @@ input[type="search"] {
 .equip-zoom-open:hover { border-color: var(--accent); color: var(--accent); }
 .equip-tile .name { font-size: 13px; font-weight: 600; line-height: 1.35; word-break: keep-all; }
 .equip-tile .aka { font-size: 11px; line-height: 1.35; color: var(--muted); word-break: keep-all; }
+/* 무엇을 하는 기구인지 한 줄 — 별명보다 진하게 (이름 다음으로 읽는 줄) */
+.equip-tile .what { font-size: 11.5px; line-height: 1.35; color: var(--ink); opacity: .82; word-break: keep-all; }
 /* 기구 크게 보기 — 모달 위에도 얹힌다 */
 .equip-zoom {
   position: fixed; inset: 0; z-index: 60;
@@ -1195,6 +1197,7 @@ input[type="search"] {
 .equip-zoom-art .equip-art { width: min(100%, 300px); height: auto; aspect-ratio: 4 / 3; color: var(--ink); }
 .equip-zoom-name { font-size: 18px; font-weight: 700; }
 .equip-zoom-aka { font-size: 12.5px; color: var(--muted); line-height: 1.5; word-break: keep-all; }
+.equip-zoom-what { font-size: 14px; font-weight: 600; color: var(--accent); line-height: 1.4; word-break: keep-all; }
 .equip-zoom-card .list-label { margin-top: 6px; }
 .equip-zoom-text { margin: 0; font-size: 14px; line-height: 1.6; word-break: keep-all; }
 .equip-zoom-text.tell { color: var(--muted); }
@@ -1259,6 +1262,31 @@ input[type="search"] {
 .rep-custom .text-input { width: 80px; text-align: center; }
 .rep-style { display: grid; gap: 6px; }
 .rep-suggest .chip-row { margin-top: 8px; }
+/* 늘지 않는 종목 — 처방 하나와 그대로 두기 */
+.plateau-card { border-left-color: var(--accent); }
+.plateau-head { font-weight: 600; font-size: 13.5px; }
+.plateau-card .chip-row { margin-top: 8px; }
+/* 내 프로그램 — 과정 이름 · 주마다 칸 · 이번 주 · 다음 */
+.roadmap.compact { display: grid; gap: 7px; padding: 10px 11px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--surface-2); }
+.roadmap .sheet-body { gap: 8px; }
+.roadmap-title { margin: 0; font-weight: 600; font-size: 14px; }
+.roadmap-bar { display: flex; gap: 3px; min-width: 0; }
+.roadmap-week { flex: 1 1 0; min-width: 0; display: grid; gap: 3px; justify-items: center; }
+.roadmap-week b {
+  display: block; width: 100%; height: 22px; line-height: 22px; text-align: center; border-radius: 5px;
+  font: 600 11px/22px var(--mono); color: var(--muted);
+  background: var(--surface); border: 1px solid var(--line);
+}
+.roadmap-week.done b { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
+.roadmap-week.current b { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.roadmap-week.deload b { border-style: dashed; }
+.roadmap-week.deload.current b { border-style: solid; }
+.roadmap-week i {
+  font-style: normal; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.roadmap-week.current i { color: var(--ink); font-weight: 600; }
+.roadmap-now { color: var(--ink); font-size: 12.5px; }
+.roadmap-gain { color: var(--zone-ok); }
 .top-set-row { margin-top: 10px; }
 .gym-link-nudge {
   display: flex; align-items: center; gap: 8px;
@@ -3199,6 +3227,31 @@ button.focus-progress:active { background: var(--surface-2); }
 .food-custom-macros { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .food-field { display: grid; gap: 4px; font-size: 11.5px; color: var(--muted); }
 .food-field .text-input { padding: 9px 10px; }
+/* 오늘 목표 — 칼로리 막대(먹물색) · 단백질 막대(단백질색). 넘어도 빨간색을 쓰지 않는다 */
+.food-goals { gap: 10px; }
+.food-goals .food-total { flex-wrap: wrap; }
+.food-day-kind { margin-left: auto; align-self: center; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.food-kcal-meter .protein-meter-track { height: 10px; border-radius: 5px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-soft); }
+.food-kcal-meter .protein-meter-track i { border-radius: 5px; background: var(--ink); }
+.food-kcal-left { margin-left: auto; }
+.macro-meter.carbs .protein-meter-track { background: var(--surface-2); }
+.macro-meter.carbs .protein-meter-track i { background: var(--macro-carbs); }
+.macro-meter.fat .protein-meter-track { background: var(--surface-2); }
+.macro-meter.fat .protein-meter-track i { background: var(--macro-fat); }
+.food-more { display: grid; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.food-more .macro-meter .protein-meter-track { background: var(--surface); }
+.food-why { margin: 0; }
+.food-more-toggle { font-size: 12.5px; }
+.food-day-tip { margin: 0; }
+.food-input-title { font-size: 13px; font-weight: 650; }
+.food-copy-day { border-style: solid; border-color: var(--line); color: var(--ink); }
+.food-week-title { font-size: 13px; font-weight: 650; }
+.food-advice { margin: 2px 0 0; }
+/* 끼니 예시 — 끼니마다 칼로리 · 단백질 두 줄, 바꿔 먹기 */
+.meal-row .meal-kcal { display: grid; justify-items: end; gap: 0; line-height: 1.35; }
+.meal-row .meal-kcal span:first-child { color: var(--ink); }
+.meal-swaps { display: grid; gap: 4px; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.meal-swap { margin: 0; font-size: 13px; line-height: 1.5; }
 /* 방금 적은 세트 되돌리기 — 휴식 막대 위 5초 */
 .undo-strip { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; background: var(--ink); color: var(--surface); font-size: 13px; }
 .undo-btn { border: 0; background: none; padding: 4px 2px; color: var(--surface); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }

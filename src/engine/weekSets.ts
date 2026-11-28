@@ -318,12 +318,21 @@ export function withStyleVolume<T extends SessionTemplate>(templates: readonly T
     if (template.fixed) return template;
     const slots = template.slots.map((slot) => ({ ...slot, sets: styleSets(slot.sets, style, slot.role) }));
     const total = slots.reduce((sum, slot) => sum + slot.sets, 0);
+    /*
+     * 세트를 줄이는 과정(근력 · 한계 돌파 · 컨디셔닝)은 주마다 늘리는 폭도 천천히(+1, 최대 +3). 근력 과정은 세트가 아니라
+     * 무게로 올라가는 과정이고, 쉬는 시간이 1.5배라 보통 폭(+2, 최대 +6)으로 늘리면 주 2 · 3회 하루가 4주차에 90분을 넘겼다.
+     */
+    const own = template.growthCap;
+    const growthCap = multiplier < 1
+      ? Math.min(own === undefined || !Number.isFinite(own) ? SESSION_GROWTH_MAX_GENTLE : own, SESSION_GROWTH_MAX_GENTLE)
+      : own;
     return {
       ...template,
       slots,
       setCap: template.setCap === undefined ? undefined
         : multiplier < 1 ? Math.min(template.setCap, Math.max(total, Math.round(template.setCap * multiplier)))
         : Math.round(template.setCap * multiplier),
+      ...(growthCap === undefined ? {} : { growthCap }),
     };
   });
 }

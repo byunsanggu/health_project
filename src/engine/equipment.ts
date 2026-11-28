@@ -150,6 +150,8 @@ export const EQUIPMENT_CATALOG: readonly EquipmentItem[] = [
   { id: 'resistance-bands', name: '밴드 (고무 밴드)', category: 'bodyweight' },
   { id: 'medicine-ball', name: '메디신볼 · 슬램볼', category: 'freeweight' },
   { id: 'battle-rope', name: '배틀 로프', category: 'bodyweight' },
+  // PT 스튜디오 · 회사 헬스장의 단골 — 철봉이나 천장에 매단 띠 두 가닥. 몸을 기울여 체중으로 한다
+  { id: 'suspension-trainer', name: 'TRX (매달린 띠)', category: 'bodyweight' },
   /*
    * 폼롤러는 종목을 열지 않는다. 그래도 목록에 둔다 — 헬스장 기구를
    * 전부 적는 사람에게 "폼롤러는 어디 켜요?"가 남으면 목록이 틀린 것이다.
@@ -351,6 +353,12 @@ export const EXERCISE_REQUIREMENTS: Record<string, readonly string[]> = {
   'step-back-burpee': ['floor'],
   'squat-jump': ['floor'],
   'bear-crawl': ['floor'],
+  // 6차
+  'trx-row': ['suspension-trainer'],
+  'trx-chest-press': ['suspension-trainer'],
+  'smith-hip-thrust': ['smith-machine', 'bench-flat'],
+  'smith-split-squat': ['smith-machine'],
+  'dumbbell-pullover': ['dumbbells', 'bench-flat'],
 };
 
 /**
@@ -366,6 +374,11 @@ export const SUBSTITUTES: Readonly<Record<string, Readonly<Record<string, readon
   'seated-cable-row': { 'seated-row-machine': ['cable-station'] },
   'goblet-squat': { dumbbells: ['kettlebells'] },
   'step-up': { 'bench-flat': ['plyo-box'] },
+  /*
+   * 국내 헬스장의 T바 로우는 대부분 랜드마인(바벨 한쪽 끝을 꽂는 받침)에 바벨을 꽂고 V 손잡이를 걸어서 한다.
+   * 전용 T바 기계가 없어도 랜드마인이 있으면 같은 종목이다. 시연도 바닥 축에 꽂힌 봉으로 그린다.
+   */
+  't-bar-row': { 't-bar-row-machine': ['landmine'] },
 };
 
 function substitutesFor(needId: string, exerciseId?: string): readonly string[] {
@@ -563,8 +576,11 @@ export function gymFromCatalog(selection: GymSelection): GymProfile {
   }
   if (selected.has('smith-machine')) {
     const smithBar = value('smith-machine', 'barKg') ?? 15;
-    for (const exerciseId of ['smith-bench-press', 'smith-squat', 'smith-incline-press', 'smith-shoulder-press']) {
-      overrides[exerciseId] = { kind: 'barbell', barKg: smithBar, plates };
+    // 스미스로 하는 종목 전부 — 목록을 따로 적어 두면 새 스미스 종목(힙 쓰러스트 · 스플릿 스쿼트)이 20kg 바로 계산된다
+    for (const [exerciseId, needs] of Object.entries(EXERCISE_REQUIREMENTS)) {
+      if (needs.includes('smith-machine') && overrides[exerciseId] !== 'unavailable') {
+        overrides[exerciseId] = { kind: 'barbell', barKg: smithBar, plates };
+      }
     }
   }
   if (selected.has('pendulum-squat-machine')) {
@@ -717,7 +733,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉아서 양팔을 안으로 모으는 기계입니다. 나비처럼 생겼습니다',
   },
   'chest-supported-row-machine': {
-    aka: ['가슴 대고 당기는 기계', '시티드 로우 머신', '레버 로우', '아이소 로우', '레버 로우 머신', '아이소 래터럴 로우'],
+    aka: ['가슴 대고 당기는 기계', '시티드 로우 머신', '레버 로우', '아이소 로우', '레버 로우 머신', '아이소 래터럴 로우', '로우 로우', '로우로우 머신'],
     look: '가슴을 받침대에 대고 엎드려 당기는 기계입니다',
   },
   'leg-press-machine': {
@@ -761,11 +777,11 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '한쪽이 바닥에 고정된 바에 원판을 끼우고 당기는 기구입니다',
   },
   'assisted-pull-up-machine': {
-    aka: ['어시스트 풀업', '보조 턱걸이 기계', '그래비트론', '어시스트 머신', '어시스트 딥스'],
+    aka: ['어시스트 풀업', '보조 턱걸이 기계', '그래비트론', '어시스트 머신', '어시스트 딥스', '어시스트 풀업 딥스', '어시스트 딥스 풀업', '친딥 어시스트'],
     look: '무릎이나 발을 얹는 발판이 올라와 턱걸이를 도와주는 기계입니다',
   },
   'lateral-raise-machine': {
-    aka: ['레터럴레이즈 머신', '옆으로 드는 기계'],
+    aka: ['레터럴레이즈 머신', '옆으로 드는 기계', '사이드 레터럴 머신', '사레레 머신', '사이드 레이즈 머신'],
     look: '앉아서 팔꿈치로 패드를 밀어 옆으로 올리는 기계입니다',
   },
   'hip-thrust-machine': {
@@ -829,7 +845,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉아서 무릎 안쪽 패드를 안으로 모으는 기계입니다',
   },
   'glute-kickback-machine': {
-    aka: ['글루트 킥백', '힙 킥백', '킥백 머신', '힙 익스텐션 머신'],
+    aka: ['글루트 킥백', '힙 킥백', '킥백 머신', '힙 익스텐션 머신', '멀티힙', '멀티 힙'],
     look: '엎드리거나 서서 한 다리로 발판을 뒤로 차는 기계입니다',
   },
   'pendulum-squat-machine': {
@@ -868,6 +884,10 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     aka: ['배틀로프', '배틀 로프', '굵은 밧줄'],
     look: '바닥에 고정된 굵은 밧줄입니다. 양손으로 흔듭니다',
   },
+  'suspension-trainer': {
+    aka: ['TRX', '티알엑스', '서스펜션', '서스펜션 트레이너', '서스펜션 스트랩', '매달린 줄', '스트랩'],
+    look: '철봉이나 천장에 매단 띠 두 가닥 끝에 손잡이가 달려 있습니다. 몸을 기울여 체중으로 운동합니다',
+  },
   'foam-roller': {
     aka: ['폼 롤러', '마사지 롤러'],
     look: '원통 모양 스펀지입니다. 몸을 굴려 근육을 풉니다',
@@ -877,7 +897,8 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '벨트가 돌아가는 위를 걷거나 뛰는 기계입니다',
   },
   'stationary-bike': {
-    aka: ['사이클', '실내 사이클', '실내자전거', '스핀 바이크', '스피닝', '자전거', '리컴번트'],
+    // 에어바이크(어썰트바이크)는 팔 손잡이도 같이 움직이지만, 앱에서 쓰는 자리(몸 풀기 · 유산소)는 실내 자전거와 같다
+    aka: ['사이클', '실내 사이클', '실내자전거', '스핀 바이크', '스피닝', '자전거', '리컴번트', '에어바이크', '에어 바이크', '어썰트바이크', '어썰트 바이크'],
     look: '바퀴 없이 페달만 밟는 자전거입니다',
   },
   'rowing-machine': {
@@ -885,7 +906,7 @@ export const EQUIPMENT_GUIDE: Record<string, EquipmentGuide> = {
     look: '앉아서 손잡이 줄을 당기며 레일 위로 미끄러지는 기계입니다',
   },
   'stair-climber': {
-    aka: ['천국의계단', '스텝밀', '스텝 밀', '계단 머신', '스테퍼'],
+    aka: ['천국의계단', '스텝밀', '스텝 밀', '계단 머신', '스테퍼', '스텝퍼'],
     look: '끝없이 올라오는 계단을 오르는 기계입니다',
   },
   'elliptical-machine': {
@@ -903,6 +924,145 @@ export function equipmentGuide(id: string): EquipmentGuide | undefined {
 }
 
 /**
+ * 그림 칸에 이름 바로 아래 붙는 한 줄 — "무엇을 하는 기구인지 · 어디 운동인지".
+ *
+ * 이름(레그 익스텐션 · 펙덱)은 처음 온 사람에게 외국어다. 생김새(look)는 한 문장이라 칸에 다 안 들어간다.
+ * 그래서 칸에는 움직임과 부위만 짧게 — "앉아서 무릎 펴기 · 앞허벅지". 전문 용어 없이, 열여섯 자 안팎.
+ */
+export const EQUIPMENT_SHORT: Readonly<Record<string, string>> = {
+  floor: '맨몸 운동 · 스트레칭',
+  'barbell-set': '긴 봉에 원판을 끼워 들기',
+  'ez-bar': '굽은 짧은 봉 · 팔 운동',
+  dumbbells: '한 손에 드는 아령',
+  'power-rack': '바벨을 걸어 두는 철장',
+  'bench-flat': '누워서 미는 평평한 의자',
+  'bench-incline': '등받이를 세우는 의자',
+  'pull-up-bar': '매달려서 턱걸이 · 등',
+  landmine: '바벨 한쪽 끝을 바닥에 꽂기',
+  'back-extension-bench': '엎드려 상체 펴기 · 허리',
+  'cable-station': '줄 당기기 · 높이 바꾸기',
+  'lat-pulldown-machine': '위에서 당겨 내리기 · 등',
+  'seated-row-machine': '앉아서 당기기 · 등',
+  'chest-press-machine': '앉아서 앞으로 밀기 · 가슴',
+  'shoulder-press-machine': '앉아서 위로 밀기 · 어깨',
+  'pec-deck-machine': '양팔을 앞으로 모으기 · 가슴',
+  'chest-supported-row-machine': '가슴 대고 당기기 · 등',
+  'leg-press-machine': '발판을 다리로 밀기 · 허벅지',
+  'hack-squat-machine': '어깨로 받치고 앉기 · 허벅지',
+  'leg-extension-machine': '앉아서 무릎 펴기 · 앞허벅지',
+  'leg-curl-machine': '무릎 접기 · 뒤허벅지',
+  'calf-raise-machine': '서서 뒤꿈치 들기 · 종아리',
+  'seated-calf-machine': '앉아서 뒤꿈치 들기 · 종아리',
+  'dip-station': '평행봉 · 가슴 · 팔 뒤쪽',
+  'preacher-bench': '팔을 얹고 굽히기 · 팔 앞쪽',
+  'ab-wheel': '바퀴 굴리기 · 복근',
+  't-bar-row-machine': '숙여서 당기기 · 등',
+  'assisted-pull-up-machine': '발판이 받쳐 주는 턱걸이',
+  'lateral-raise-machine': '팔을 옆으로 들기 · 어깨 옆',
+  'hip-thrust-machine': '엉덩이 들어 올리기',
+  'incline-chest-press-machine': '비스듬히 위로 밀기 · 윗가슴',
+  'high-row-machine': '위에서 비스듬히 당기기 · 등',
+  'rear-delt-machine': '팔을 뒤로 벌리기 · 어깨 뒤',
+  'v-squat-machine': '어깨에 메고 앉기 · 허벅지',
+  'dip-machine': '앉아서 아래로 밀기 · 팔 뒤쪽',
+  'preacher-curl-machine': '팔을 얹고 당기기 · 팔 앞쪽',
+  kettlebells: '손잡이 달린 쇠공',
+  'trap-bar': '육각 틀 안에 서서 들기',
+  'bench-decline': '머리 쪽이 낮은 의자',
+  'ab-bench': '발을 걸고 윗몸 일으키기',
+  ghd: '발목을 걸고 몸 펴기 · 뒤허벅지',
+  'captains-chair': '팔로 버티고 다리 들기 · 복근',
+  'hip-abduction-machine': '다리 벌리기 · 엉덩이 옆',
+  'hip-adduction-machine': '다리 모으기 · 허벅지 안쪽',
+  'glute-kickback-machine': '다리를 뒤로 차기 · 엉덩이',
+  'pendulum-squat-machine': '시계추처럼 앉기 · 허벅지',
+  'belt-squat-machine': '허리 벨트로 앉기 · 허벅지',
+  'ab-crunch-machine': '앉아서 몸 말기 · 복근',
+  'torso-rotation-machine': '상체 돌리기 · 옆구리',
+  'triceps-extension-machine': '아래로 팔 펴기 · 팔 뒤쪽',
+  'plyo-box': '올라서기 · 뛰어오르기',
+  'resistance-bands': '당기면 늘어나는 고무줄',
+  'medicine-ball': '무게가 든 공',
+  'battle-rope': '굵은 밧줄 흔들기',
+  'suspension-trainer': '몸을 기울여 당기기 · 밀기',
+  'foam-roller': '굴려서 근육 풀기',
+  treadmill: '걷기 · 달리기',
+  'stationary-bike': '앉아서 페달 밟기',
+  'rowing-machine': '앉아서 줄 당기며 미끄러지기',
+  'stair-climber': '돌아 올라오는 계단 오르기',
+  'elliptical-machine': '발판 밀며 타원 그리기',
+  'smith-machine': '레일 따라 움직이는 바벨',
+};
+
+export function equipmentShort(id: string): string | undefined {
+  return EQUIPMENT_SHORT[id];
+}
+
+/* ── 고르는 화면의 묶음 ─────────────────────────── */
+
+/**
+ * 기구 고르는 화면의 묶음 — 헬스장에서 서 있는 자리대로.
+ *
+ * 예전에는 "머신" 한 묶음에 기구 28개가 들어 있었다. 핵 스쿼트를 찾는 사람이 리어델트 · 토르소 사이를
+ * 뒤져야 했다. 헬스장은 대개 하체 기계 줄 · 상체 기계 줄이 따로 있고, 사람도 "다리 기계"로 기억한다.
+ * 그래서 기계를 하체와 상체(복근 기계 포함)로 가르고, 유산소를 따로 둔다.
+ * 맨몸 · 소도구를 맨 뒤에 — 헬스장 기구를 다 고른 뒤 남는 작은 것들이다.
+ */
+export type EquipmentGroupKey = 'free' | 'frame' | 'cable' | 'lower' | 'upper' | 'cardio' | 'etc';
+
+export interface EquipmentGroup {
+  key: EquipmentGroupKey;
+  label: string;
+}
+
+export const EQUIPMENT_GROUPS: readonly EquipmentGroup[] = [
+  { key: 'free', label: '프리웨이트 (바벨 · 덤벨)' },
+  { key: 'frame', label: '랙 · 벤치' },
+  { key: 'cable', label: '케이블 (줄 당기는 기구)' },
+  { key: 'lower', label: '하체 머신' },
+  { key: 'upper', label: '상체 · 복근 머신' },
+  { key: 'cardio', label: '유산소' },
+  { key: 'etc', label: '맨몸 · 소도구' },
+];
+
+const LOWER_MUSCLES: ReadonlySet<MuscleGroup> = new Set<MuscleGroup>(['quads', 'hamstrings', 'glutes', 'calves']);
+const AREA_CACHE = new Map<string, 'lower' | 'upper'>();
+
+/**
+ * 기계가 하체 쪽인가 상체 쪽인가 — 그 기계로 하는 종목의 근육 비율로 정한다(손으로 적어 두면 새 기계에서 빠뜨린다).
+ * 하체 근육(앞 · 뒤허벅지 · 엉덩이 · 종아리) 몫이 더 크면 하체, 아니면 상체(복근 기계도 상체 쪽 줄에 있다).
+ */
+export function machineArea(id: string): 'lower' | 'upper' {
+  const cached = AREA_CACHE.get(id);
+  if (cached) return cached;
+  let lower = 0;
+  let upper = 0;
+  for (const exerciseId of exercisesUsing(id)) {
+    const exercise = EXERCISES.find((item) => item.id === exerciseId);
+    for (const [muscle, value] of Object.entries(exercise?.contribution ?? {}) as [MuscleGroup, number][]) {
+      if (LOWER_MUSCLES.has(muscle)) lower += value;
+      else upper += value;
+    }
+  }
+  const area = lower > upper ? 'lower' : 'upper';
+  AREA_CACHE.set(id, area);
+  return area;
+}
+
+/** 기구가 들어갈 묶음 */
+export function equipmentGroupOf(item: Pick<EquipmentItem, 'id' | 'category'>): EquipmentGroupKey {
+  switch (item.category) {
+    case 'freeweight': return 'free';
+    case 'rack':
+    case 'bench': return 'frame';
+    case 'cable': return 'cable';
+    case 'machine': return machineArea(item.id);
+    case 'cardio': return 'cardio';
+    default: return 'etc';
+  }
+}
+
+/**
  * 이름을 몰라도 찾을 수 있게 — 정식 이름과 별명, 생김새를 모두 뒤진다.
  * "굽은 봉"으로도 "EZ 바"로도 같은 것이 나와야 한다.
  */
@@ -916,7 +1076,8 @@ export function findEquipment(query: string, pool: readonly EquipmentItem[] = EQ
 
   return pool.filter((item) => {
     const guide = EQUIPMENT_GUIDE[item.id];
-    const haystack = [item.name, ...(guide?.aka ?? []), guide?.look ?? '']
+    // 칸의 한 줄(EQUIPMENT_SHORT)도 뒤진다 — "가슴" · "종아리"처럼 부위로 찾는 사람이 많다
+    const haystack = [item.name, ...(guide?.aka ?? []), guide?.look ?? '', EQUIPMENT_SHORT[item.id] ?? '']
       .join(' ')
       .toLowerCase()
       .replace(/[\s·()]/g, '');

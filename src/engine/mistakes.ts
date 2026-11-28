@@ -157,6 +157,9 @@ const SJ_STIFF = m('stiff-land', '무릎을 편 채로 쿵 내려앉아요', '�
 const BEAR_HIPS = m('hips-up', '엉덩이가 높이 솟아요', '등을 바닥과 나란하게 두세요', '등은 평평하게', '어깨와 배가 일을 덜 합니다');
 const BEAR_KNEES = m('knees-down', '무릎이 바닥에 닿아요', '무릎을 한 뼘 띄운 채로 움직이세요', '무릎 띄우고', '몸통을 잡는 힘이 빠집니다');
 const CRUNCH_SITUP = m('sit-up', '허리까지 들어 윗몸일으키기가 돼요', '어깨만 띄우고 허리는 바닥에 붙이세요', '어깨만', '배 대신 고관절 앞 근육이 당깁니다');
+/* ── 6차 — 덤벨 풀오버 ─────────────────────────── */
+const PULLOVER_BEND = m('elbow-bend', '머리 뒤로 갈 때 팔꿈치를 접어요', '팔꿈치 각도는 고정하고 어깨로 크게 반원을 그리세요', '팔꿈치는 고정하고', '가슴 · 등 대신 팔 뒤쪽이 일합니다');
+const PULLOVER_ARCH = m('arch', '내릴 때 허리가 벤치에서 떠요', '배에 힘을 주고 허리를 벤치에 붙인 채 내리세요', '허리는 벤치에', '허리가 꺾이고 어깨가 과하게 늘어납니다', true);
 
 /**
  * 종목별 흔한 실수. 앞에 둘수록 더 흔하고 더 위험하다.
@@ -311,6 +314,12 @@ export const MISTAKES: Record<string, readonly CommonMistake[]> = {
   'step-back-burpee': [HIPS_SAG, BURPEE_ROUND],
   'squat-jump': [SJ_STIFF, KNEE_CAVE],
   'bear-crawl': [BEAR_HIPS, BEAR_KNEES],
+  // 6차
+  'trx-row': [HIPS_SAG, PULL_SHRUG],
+  'trx-chest-press': [HIPS_SAG, ELBOW_FLARE],
+  'smith-hip-thrust': [THRUST_ARCH, THRUST_CHIN],
+  'smith-split-squat': [LUNGE_KNEE, LUNGE_BACK],
+  'dumbbell-pullover': [PULLOVER_BEND, PULLOVER_ARCH],
 };
 
 /** 종목별 목록이 없을 때 동작 패턴의 기본. */

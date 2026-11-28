@@ -26,6 +26,12 @@ export const EX = {
   'triceps-pushdown': { zoom: 1.3 },
   'inverted-row': { zoom: 1.3 },
   'machine-high-row': { zoom: 1.2 },
+  // 6차 — 끝 자세(거의 선 몸)보다 당기는 중간이 TRX답다: 몸을 뒤로 기울여 띠를 잡은 모습
+  'trx-row': { t: 0.14 },
+  'trx-chest-press': { t: 0.3 },
+  'smith-split-squat': { view: [128, 14] },
+  // 머리 뒤로 넘어가는 반원의 가운데 — 끝까지 내리면 팔과 덤벨이 머리 뒤로 숨는다
+  'dumbbell-pullover': { t: 0.27, view: [64, 24] },
 };
 
 export const EQ = {
@@ -50,4 +56,5 @@ export const EQ = {
   'elliptical-machine': { cardio: 'elliptical', t: 0.5, view: [42, 14] },
   'medicine-ball': { ex: 'goblet-squat', t: 0, extra: 'ball', focus: 'hands', zoom: 1.3 },
   'battle-rope': { ex: 'kettlebell-swing', extra: 'rope' },
+  'suspension-trainer': { ex: 'trx-row', t: 0.1 },
 };

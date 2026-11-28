@@ -456,6 +456,7 @@
         repOverrides: state.repOverrides,
         topSet: state.topSet,
         repSuggestSkip: state.repSuggestSkip,
+        plateauFixes: state.plateauFixes,
         mobility: state.mobility,
         // PT 몸 풀기를 어디까지 했는지 — 오늘만(날짜가 붙어 있다). 다시 켜도 목록이 "3/7 하다 멈춤"을 말하고 그 동작부터 잇는다
         ptPrep: state.ptPrep,
@@ -576,6 +577,7 @@
       state.repOverrides = settings.repOverrides || {};
       state.topSet = Boolean(settings.topSet);
       state.repSuggestSkip = settings.repSuggestSkip || {};
+      state.plateauFixes = settings.plateauFixes && typeof settings.plateauFixes === 'object' ? settings.plateauFixes : {};
       state.mobility = settings.mobility || null;
       state.ptPrep = settings.ptPrep || null;
       state.skipToday = settings.skipToday || null;
@@ -1012,6 +1014,8 @@
     foodMeal: null,
     // 1이면 어제 것을 적는 중 (저장하지 않는다 — 다시 열면 오늘)
     foodBack: 0,
+    // 오늘 목표의 "자세히"(탄수화물 · 지방 · 정한 법)를 펼쳤는가 — 저장하지 않는다
+    foodMore: false,
     // 휴식 끝 알림 — 처음 설문에서 정하고 내 정보에서 바꾼다
     restAlerts: true,
     restSound: true,
@@ -1020,6 +1024,8 @@
     repOverrides: {},
     topSet: false,
     repSuggestSkip: {},
+    // 멈춘 종목에 한 처방 { 종목id: { kind, date } } — 그날부터 다시 센다. 운동 기록으로 계산한 것이라 이 폰에만
+    plateauFixes: {},
     friendName: null,
     friendCode: null,
     friends: [],
@@ -1629,16 +1635,19 @@
    * 초보에게 1주차부터 RIR 2를 주면 자세가 먼저 무너진다.
    */
   function liveRir(styleRir) {
-    if (!LIVE || !state.block) return styleRir;
+    // 건강 유지만 고른 사람은 과정 끝 주에도 2개는 남긴다(E.goalRirFloor)
+    var floor = E.goalRirFloor((state.answers && state.answers.goals) || []);
+    if (!LIVE || !state.block) return Math.max(styleRir, floor);
     var start = E.levelProfile(state.block.level).startingRir;
-    return Math.max(styleRir, start - (state.plan.weekInBlock - 1));
+    return Math.max(styleRir, start - (state.plan.weekInBlock - 1), floor);
   }
 
   /** 블록 몇 주차의 목표 여유(RIR) — liveRir와 같은 일정. 0주차는 지난 블록의 덜어내는 주. */
   function plannedRirFor(week) {
     if (week <= 0) return E.DELOAD_RIR;
     var start = E.levelProfile(state.block.level).startingRir;
-    return Math.max(E.targetRirFor(state.style, week, state.lifter && state.lifter.level), start - (week - 1));
+    var floor = E.goalRirFloor((state.answers && state.answers.goals) || []);
+    return Math.max(E.targetRirFor(state.style, week, state.lifter && state.lifter.level), start - (week - 1), floor);
   }
 
   /**
@@ -1822,6 +1831,29 @@
               var scaled = item.loading
                 ? E.nearestLoadable(set.weightKg * factor, item.loading, 'down')
                 : E.roundToIncrement(set.weightKg * factor, item.exercise.increment);
+              return Object.assign({}, set, { weightKg: scaled });
+            }),
+          });
+        }),
+      });
+    }
+
+    /*
+     * 멈춘 종목에 "10% 내려 다시 쌓기"를 골랐으면 그 뒤 첫 번만 가볍게 — 그다음부터는 그 무게에서 평소처럼 올린다.
+     * 쉬다 돌아온 주(복귀)는 이미 무게를 내렸으니 또 내리지 않는다.
+     */
+    if (!comeback && state.plan.phase !== 'deload') {
+      built = Object.assign({}, built, {
+        exercises: built.exercises.map(function (item) {
+          if (!plateauResetFor(item.exercise.id)) return item;
+          return Object.assign({}, item, {
+            note: '몇 주째 늘지 않아 이번에는 10% 가볍게 하고, 여기서 다시 올립니다.',
+            sets: item.sets.map(function (set) {
+              if (set.weightKg == null || set.weightKg <= 0) return set;
+              var kg = set.weightKg * E.RESET_FACTOR;
+              var scaled = item.loading
+                ? E.nearestLoadable(kg, item.loading, 'down')
+                : item.exercise.increment > 0 ? E.floorToIncrement(kg, item.exercise.increment) : kg;
               return Object.assign({}, set, { weightKg: scaled });
             }),
           });
@@ -5322,6 +5354,174 @@
     ]);
   }
 
+  /* ── 멈춘 종목 — 몇 주째 늘지 않는 종목에 처방 하나 ─────────── */
+
+  /** 지금 프로그램에서 멈춘 종목(오래 멈춘 순). 내 루틴이어도 본다 — 종목 바꾸기만 권하지 않는다. */
+  function currentPlateaus() {
+    if (!state.program || !state.program.templates || !state.todayDate) return [];
+    try {
+      var entry = currentGymEntry();
+      var ids = (entry && entry.equipmentIds) || (state.answers && state.answers.gym && state.answers.gym.equipmentIds) || [];
+      return E.findPlateaus({
+        history: state.history, templates: state.program.templates, index: index, today: state.todayDate,
+        fixes: state.plateauFixes, repOverrides: state.repOverrides,
+        available: E.availableExercises(ids), level: state.lifter && state.lifter.level,
+        // 처방 문장의 무게를 오늘 화면(이 헬스장 기구로 들 수 있는 무게)과 같게
+        snapDown: function (kg, exercise) {
+          var spec = state.gym ? E.loadingFor(exercise, state.gym) : null;
+          if (spec) return E.nearestLoadable(kg, spec, 'down');
+          return exercise.increment > 0 ? E.floorToIncrement(kg, exercise.increment) : kg;
+        },
+      });
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function notePlateauFix(exerciseId, kind) {
+    state.plateauFixes = Object.assign({}, state.plateauFixes);
+    state.plateauFixes[exerciseId] = { kind: kind, date: state.todayDate };
+  }
+
+  /**
+   * 처방을 적용한다 — 내려 다시 쌓기(다음 번 한 번만 10% 가볍게), 반복 범위 바꾸기(종목별 반복),
+   * 비슷한 종목으로 바꾸기(프로그램에서 그 종목 자리를 바꾼다 · 세트와 반복은 그대로).
+   */
+  function applyPlateauFix(plateau) {
+    var fix = plateau.fix;
+    var exercise = index.get(plateau.exerciseId);
+    if (!exercise) return;
+    if (fix.kind === 'reps' && fix.repRange) {
+      notePlateauFix(exercise.id, 'reps');
+      setRepOverride(exercise, fix.repRange);
+      return;
+    }
+    if (fix.kind === 'swap' && fix.swapTo && index.get(fix.swapTo)) {
+      var to = index.get(fix.swapTo);
+      state.program = Object.assign({}, state.program, {
+        templates: state.program.templates.map(function (template) {
+          return Object.assign({}, template, {
+            slots: template.slots.map(function (slot) {
+              return slot.exerciseId === exercise.id ? Object.assign({}, slot, { exerciseId: to.id }) : slot;
+            }),
+          });
+        }),
+      });
+      notePlateauFix(exercise.id, 'swap');
+      // 바꾼 종목이 또 멈추면 다음 처방(반복 범위)으로 간다
+      notePlateauFix(to.id, 'swap');
+      pushLog('멈춘 종목', '<b>' + exercise.name + '</b> 대신 <b>' + to.name + '</b>' + particleOf(to.name, '을/를') + ' 합니다.');
+    } else {
+      notePlateauFix(exercise.id, 'reset');
+      pushLog('멈춘 종목', '<b>' + exercise.name + '</b> — 다음 번에 10% 가볍게 시작해 다시 올립니다.');
+    }
+    rebuildSession();
+    persist();
+    render();
+  }
+
+  function keepPlateau(plateau) {
+    notePlateauFix(plateau.exerciseId, 'keep');
+    persist();
+    render();
+  }
+
+  /** 내려 다시 쌓기를 골랐고 아직 그 뒤로 이 종목을 안 했다 — 오늘 이 종목은 10% 가볍게. */
+  function plateauResetFor(exerciseId) {
+    var fix = state.plateauFixes && state.plateauFixes[exerciseId];
+    if (!fix || fix.kind !== 'reset') return false;
+    return !state.history.some(function (session) {
+      return session.date >= fix.date && (session.sets || []).some(function (set) {
+        return set.exerciseId === exerciseId && !set.warmup && set.reps > 0;
+      });
+    });
+  }
+
+  /** 멈춘 종목 카드 — 처방 하나와 "그대로 두기". 안 누르면 아무것도 안 바뀐다. */
+  function plateauCard(plateau) {
+    return el('div', { class: 'notice plateau-card', 'data-exercise': plateau.exerciseId }, [
+      el('div', { class: 'label', text: '늘지 않는 종목' }),
+      el('div', { class: 'plateau-head', text: plateau.headline }),
+      el('p', { class: 'hint-line', text: plateau.fix.text }),
+      el('div', { class: 'chip-row' }, [
+        el('button', {
+          type: 'button', class: 'pick plateau-yes', text: plateau.fix.action,
+          onclick: function () { applyPlateauFix(plateau); },
+        }),
+        el('button', {
+          type: 'button', class: 'pick plateau-no', text: '그대로 두기',
+          onclick: function () { keepPlateau(plateau); },
+        }),
+      ]),
+    ]);
+  }
+
+  /** 오늘 › 자세히 — 오늘 하는 종목 중 멈춘 것 하나. 시작한 뒤에는 묻지 않는다. */
+  function todayPlateauCard() {
+    if (state.started || !state.lifts || !state.lifts.length) return null;
+    var today = {};
+    state.lifts.forEach(function (lift) { today[lift.exercise.id] = true; });
+    var found = currentPlateaus().filter(function (plateau) { return today[plateau.exerciseId]; })[0];
+    return found ? plateauCard(found) : null;
+  }
+
+  /* ── 내 프로그램 — 지금 몇 번째 과정의 몇째 주인지 ─────────── */
+
+  function currentRoadmap() {
+    if (!state.block || !state.program || !state.todayDate) return null;
+    try {
+      return E.programRoadmap({
+        block: state.block, today: state.todayDate,
+        goals: (state.answers && state.answers.goals) || [], style: state.style,
+        custom: Boolean(state.customRoutine), templates: state.program.templates, history: state.history,
+        availableIds: E.availableExercises((state.answers && state.answers.gym && state.answers.gym.equipmentIds) || [])
+          .map(function (item) { return item.id; }),
+      });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /** 주마다 칸 — 지난 주는 채우고, 이번 주는 굵게, 가볍게 하는 주는 옅게. */
+  function roadmapBar(map) {
+    return el('div', { class: 'roadmap-bar', role: 'img',
+      'aria-label': map.totalWeeks + '주 중 ' + map.week + '주차' }, map.weeks.map(function (week) {
+      return el('span', {
+        class: 'roadmap-week ' + week.kind + (week.done ? ' done' : '') + (week.current ? ' current' : ''),
+        title: week.week + '주차 · ' + week.label,
+      }, [el('b', { text: String(week.week) }), el('i', { text: week.label })]);
+    }));
+  }
+
+  /**
+   * 내 프로그램 카드. compact — 내 정보 › 프로그램 칸(이름 · 칸 · 이번 주만), 아니면 기록 › 자세히(하는 일 · 늘어난 것 · 다음).
+   */
+  function roadmapCard(compact) {
+    var map = currentRoadmap();
+    if (!map) return null;
+    var body = [
+      el('p', { class: 'roadmap-title', text: map.title }),
+      compact ? null : el('p', { class: 'hint-line roadmap-purpose', text: map.purpose }),
+      roadmapBar(map),
+      el('p', { class: 'hint-line roadmap-now', text: map.now }),
+    ];
+    if (!compact && map.gains.length) {
+      body.push(el('div', { class: 'list-label', text: '이번 과정에서 늘어난 것' }));
+      map.gains.forEach(function (line) { body.push(el('p', { class: 'hint-line roadmap-gain', text: line })); });
+    }
+    if (!compact) body.push(el('p', { class: 'hint-line roadmap-next', text: '다음: ' + map.next }));
+    if (compact) {
+      return el('div', { class: 'roadmap compact' }, body);
+    }
+    return el('div', { class: 'sheet roadmap' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '내 프로그램' }),
+        el('span', { class: 'meta', text: map.week + ' / ' + map.totalWeeks + '주' }),
+      ]),
+      el('div', { class: 'sheet-body' }, body),
+    ]);
+  }
+
   /**
    * 반복 · 강도 설정을 한 곳에 — 오늘 화면의 "반복 방식" 줄과 내 정보가 같이 쓴다.
    * 평소 스타일, 주 1회 무거운 세트, 지금 블록, 종목마다 직접 정한 반복을 한눈에.
@@ -6419,6 +6619,9 @@
 
     var repTip = repSuggestionCard();
     if (repTip) screen.appendChild(repTip);
+    // 알림 카드는 한 번에 하나 — 반복 수 제안이 없을 때만 멈춘 종목
+    var plateauTip = repTip ? null : todayPlateauCard();
+    if (plateauTip) screen.appendChild(plateauTip);
     var topNote = topSetNotice();
     if (topNote) screen.appendChild(topNote);
 
@@ -18398,6 +18601,11 @@
         onclick: openEffortHelp,
       }),
     ]));
+    // 내 프로그램 — 몇 번째 과정의 몇째 주 · 이 과정이 하는 일 · 다음에 바뀌는 것. 늘지 않는 종목이 있으면 바로 아래 하나
+    var roadmap = roadmapCard(false);
+    if (roadmap) screen.appendChild(roadmap);
+    var stalled = currentPlateaus()[0];
+    if (stalled) screen.appendChild(plateauCard(stalled));
     var shownWeek = shownReport();
     screen.appendChild(el('button', {
       type: 'button', class: 'report-cta',
@@ -19280,12 +19488,7 @@
       el('span', { class: 'protein-week', text: '이번 주 ' + week.hits + '일 채움' }),
     ]));
     body.appendChild(el('p', { class: 'hint-line', text: E.proteinHint(target) }));
-    var logged = dietLogAllowed() ? E.dayEntries(state.foodLog, today) : [];
-    if (logged.length) {
-      var eaten = Math.round(E.totalsFor(logged).protein);
-      body.appendChild(el('p', { class: 'hint-line', text: '먹은 것 기준 오늘 ' + eaten + 'g — ' +
-        (eaten >= target ? '채웠습니다.' : (target - eaten) + 'g 남았습니다.') }));
-    }
+    // 먹은 것을 적는 사람에게는 바로 위 "오늘 목표"의 단백질 막대가 같은 말을 한다 — 여기서 또 쓰지 않는다
 
     body.appendChild(el('button', {
       type: 'button',
@@ -19366,13 +19569,13 @@
   /**
    * 식단 탭.
    *
-   * 식단표를 짜 주지 않는다. 여기서 하는 건 넷이다 — 먹은 것 적기(선택),
-   * 체중 추세, 단백질 채웠나, 그리고 그 단백질을 **세 끼에 어떻게 담는지의
+   * 식단표를 짜 주지 않는다. 여기서 하는 건 넷이다 — 오늘 목표와 먹은 것 적기(선택),
+   * 체중 추세, 단백질 채웠나, 그리고 그 목표를 **세 끼에 어떻게 담는지의
    * 예시.**
    *
    * 먹은 것 적기는 안 해도 나머지가 다 돈다. 끼니마다 적는 일은 누구에게나
-   * 맞지 않는다 — 적는 사람에게는 칼로리와 탄단지를, 안 적는 사람에게는
-   * 단백질 한 번만 묻는다.
+   * 맞지 않는다 — 적는 사람에게는 하루 칼로리 목표 · 단백질 막대 · 한 주 점검을,
+   * 안 적는 사람에게는 단백질 한 번만 묻는다.
    *
    * 통증은 여기 없다. 통증은 오늘 처방을 바꾸는 것이라 오늘 탭에 있다.
    */
@@ -19441,14 +19644,48 @@
 
   /** 단백질 목표 — 몸 카드와 같은 체중으로 잡는다. 두 카드가 다른 숫자를 말하면 안 된다. */
   function proteinGoalToday() {
+    return E.proteinTargetG(foodWeightToday(), bodyGoal());
+  }
+
+  /** 목표를 잡는 체중 — 오늘 잰 것, 없으면 마지막으로 잰 것, 그것도 없으면 처음 설정에서 적은 것. */
+  function foodWeightToday() {
     var today = foodToday();
     var mine = (state.checkIns || []).filter(function (item) { return item.date === today; })[0];
     var trend = bodyTrend();
-    var weight = (mine && mine.bodyweightKg)
+    return (mine && mine.bodyweightKg)
       || (trend.latest && trend.latest.kg)
       || (state.lifter && state.lifter.bodyweightKg)
       || 70;
-    return E.proteinTargetG(weight, bodyGoal());
+  }
+
+  /**
+   * 오늘 목표 — 칼로리 하나와 단백질(엔진 dietTargets.ts).
+   *
+   * 식단 기록 동의가 있을 때만 낸다. 그 동의가 "칼로리 계산, 체중 변화와 맞춰 내 유지 칼로리 계산"까지를
+   * 받았다. 키 · 나이 · 활동량은 받지 않았으므로 묻지 않고 체중 하나로 어림한다 — 3주쯤 적고 재면
+   * 먹은 양과 체중 변화로 낸 내 유지 칼로리로 저절로 바뀐다.
+   */
+  function dietTargetsToday() {
+    if (!dietLogAllowed() || (state.consent || []).indexOf('healthData') < 0) return null;
+    return E.dailyTargets({
+      bodyweightKg: foodWeightToday(),
+      goal: bodyGoal(),
+      estimate: E.maintenanceEstimate(state.foodLog, weighIns(), foodToday()),
+      trend: bodyTrend(),
+    });
+  }
+
+  /**
+   * 오늘이 운동하는 날인가 — 목표 칼로리는 같고, 언제 먹을지 한 줄만 다르다.
+   * 어제 것을 적는 중이면 말하지 않는다.
+   */
+  function foodDayKind() {
+    if (state.foodBack) return null;
+    var today = foodToday();
+    var did = (state.todayDate === today && (state.todaySets || []).length > 0) ||
+      (state.history || []).some(function (item) { return item.date === today && (item.sets || []).length > 0; });
+    if (did) return 'trained';
+    return todayRestDay() ? 'rest' : 'train';
   }
 
   function addFoodEntries(entries) {
@@ -19510,7 +19747,14 @@
         el('button', { type: 'button', class: 'pick', text: '오늘로', onclick: function () { switchFoodDay(0); } }),
       ]));
     }
-    if (entries.length) body.appendChild(foodTotals(entries, proteinGoalToday(), dayName));
+    /*
+     * 맨 위는 오늘 목표와 지금까지 — 칼로리 막대 하나, 단백질 막대 하나. 탄수화물 · 지방은 "자세히" 뒤에.
+     * 그 아래가 이 카드의 할 일 하나, "먹은 것 적기"다.
+     */
+    var targets = dietTargetsToday();
+    if (targets) body.appendChild(foodGoals(entries, targets));
+    else if (entries.length) body.appendChild(foodTotals(entries, proteinGoalToday(), dayName));
+    if (targets) body.appendChild(el('div', { class: 'food-input-title', text: '먹은 것 적기' }));
     body.appendChild(foodInput());
     if (state.foodDraft) {
       body.appendChild(foodPreview(state.foodDraft));
@@ -19519,7 +19763,7 @@
       if (quick) body.appendChild(quick);
     }
     if (entries.length) body.appendChild(foodMeals(entries));
-    var week = foodWeek(foodToday());
+    var week = foodWeek(foodToday(), targets);
     if (week) body.appendChild(week);
     body.appendChild(el('p', { class: 'hint-line', text:
       '숫자는 흔한 1인분 기준 어림입니다(±10~20%). 한 끼를 정확히 재는 것보다 매일 비슷하게 적는 게 중요합니다. ' +
@@ -19527,10 +19771,84 @@
 
     return el('div', { class: 'sheet food-log' }, [
       el('div', { class: 'sheet-head' }, [
-        el('h3', { text: '먹은 것' }),
+        el('h3', { text: targets ? dayName + ' 목표' : '먹은 것' }),
         el('span', { class: 'meta', text: entries.length ? dayName + ' ' + entries.length + '가지' : '말하듯 적기' }),
       ]),
       body,
+    ]);
+  }
+
+  /**
+   * 오늘 목표 — 칼로리 한 숫자와 단백질, 막대 둘.
+   *
+   * 처음 온 사람에게 "2,081kcal"는 많은지 적은지 모르는 숫자다. 목표 옆에 놓아야 읽힌다. 넘어도
+   * 빨간색을 쓰지 않는다 — 하루 넘긴 것은 한 주 평균에서 묻히고, 혼나면 적는 것을 그만둔다.
+   * 탄수화물 · 지방 막대와 "왜 이 숫자인지"는 자세히 뒤에 둔다. 처음 하는 사람이 지킬 것은 둘이면 된다.
+   */
+  function foodGoals(entries, targets) {
+    var total = E.totalsFor(entries);
+    var eaten = Math.round(total.kcal);
+    var kind = foodDayKind();
+    var tip = kind ? E.dayTip(kind, bodyGoal()) : null;
+    var wrap = el('div', { class: 'food-totals food-goals' }, [
+      el('div', { class: 'food-total' }, [
+        // 머리가 이미 "오늘 목표"다 — 큰 숫자가 무엇인지만 말한다
+        el('span', { class: 'food-total-label', text: '먹은 것' }),
+        el('span', { class: 'food-kcal', text: eaten.toLocaleString('ko-KR') }),
+        el('span', { class: 'food-kcal-unit', text: '/ ' + targets.kcal.toLocaleString('ko-KR') + 'kcal' }),
+        tip ? el('span', { class: 'food-day-kind', text: tip.label }) : null,
+      ]),
+      el('div', { class: 'protein-meter food-kcal-meter' }, [
+        el('div', {
+          class: 'protein-meter-track', role: 'progressbar',
+          'aria-label': '칼로리 목표', 'aria-valuemin': '0', 'aria-valuemax': String(targets.kcal),
+          'aria-valuenow': String(Math.min(eaten, targets.kcal)),
+        }, [
+          el('i', { style: 'width:' + Math.min(100, (eaten / targets.kcal) * 100) + '%' }),
+        ]),
+        el('div', { class: 'protein-meter-head' }, [
+          el('span', { class: 'food-kcal-left', text: E.kcalLeftText(eaten, targets.kcal) }),
+        ]),
+      ]),
+    ]);
+    wrap.appendChild(proteinMeter(total.protein, targets.protein));
+
+    if (state.foodMore) {
+      var more = el('div', { class: 'food-more' }, [
+        macroMeter('carbs', '탄수화물', total.carbs, targets.carbs),
+        macroMeter('fat', '지방', total.fat, targets.fat),
+      ]);
+      if (total.protein + total.fat + total.carbs > 0) more.appendChild(macroBar(total));
+      targets.why.forEach(function (line) {
+        more.appendChild(el('p', { class: 'hint-line food-why', text: line }));
+      });
+      wrap.appendChild(more);
+    }
+    wrap.appendChild(el('button', {
+      type: 'button', class: 'food-browse food-more-toggle', 'aria-expanded': String(Boolean(state.foodMore)),
+      text: state.foodMore ? '접기' : '자세히 — 탄수화물 · 지방 · 이 숫자를 정한 법',
+      onclick: function () { state.foodMore = !state.foodMore; render(); },
+    }));
+    if (tip) wrap.appendChild(el('p', { class: 'hint-line food-day-tip', text: tip.text }));
+    return wrap;
+  }
+
+  /** 탄수화물 · 지방 — 단백질 막대와 같은 모양. 넘으면 막대는 꽉 차고 글로만 알린다. */
+  function macroMeter(key, label, got, target) {
+    var have = Math.round(got);
+    var left = Math.max(0, target - have);
+    return el('div', { class: 'protein-meter macro-meter ' + key }, [
+      el('div', { class: 'protein-meter-head' }, [
+        el('span', { text: label }),
+        el('b', { text: have + ' / ' + target + 'g' }),
+        el('span', { class: 'protein-meter-left', text: left > 0 ? left + 'g 남음' : '목표만큼' }),
+      ]),
+      el('div', {
+        class: 'protein-meter-track', role: 'progressbar',
+        'aria-label': label + ' 목표', 'aria-valuemin': '0', 'aria-valuemax': String(target), 'aria-valuenow': String(Math.min(have, target)),
+      }, [
+        el('i', { style: 'width:' + (target > 0 ? Math.min(100, (have / target) * 100) : 0) + '%' }),
+      ]),
     ]);
   }
 
@@ -19841,6 +20159,28 @@
           ' · ' + Math.round(E.totalsFor(before).kcal).toLocaleString('ko-KR') + 'kcal' }),
       ]));
     }
+    /*
+     * 어제랑 같게 — 하루를 통째로. 평일에 같은 걸 먹는 사람은 아침에 한 번 누르고 바뀐 것만 고친다.
+     * 오늘 아직 아무것도 안 적었고, 어제 두 끼 이상 적었을 때만 보인다.
+     */
+    var todayAll = state.foodLog.filter(function (entry) { return entry.date === day; });
+    var beforeAll = state.foodLog.filter(function (entry) { return entry.date === dayBefore; });
+    var beforeMeals = {};
+    beforeAll.forEach(function (entry) { beforeMeals[entry.meal] = true; });
+    if (todayAll.length === 0 && Object.keys(beforeMeals).length >= 2) {
+      wrap.appendChild(el('button', {
+        type: 'button', class: 'food-copy food-copy-day',
+        onclick: function () {
+          addFoodEntries(beforeAll.map(function (entry) {
+            return Object.assign({}, entry, { id: newFoodId(), date: day });
+          }));
+        },
+      }, [
+        el('span', { text: (state.foodBack ? '그제랑' : '어제랑') + ' 같게' }),
+        el('span', { class: 'food-copy-what', text:
+          '하루 전체 ' + beforeAll.length + '가지 · ' + Math.round(E.totalsFor(beforeAll).kcal).toLocaleString('ko-KR') + 'kcal' }),
+      ]));
+    }
     var recent = E.recentFoods(state.foodLog, 8);
     if (recent.length) {
       wrap.appendChild(el('div', { class: 'food-quick-label', text: '자주 먹는 것 — 누르면 ' + E.MEAL_LABELS[meal] + '에 들어갑니다' }));
@@ -19852,6 +20192,24 @@
           },
         });
       })));
+    } else {
+      /*
+       * 처음이라 "자주 먹는 것"이 비어 있으면 끼니마다 흔한 것 여섯을 보여 준다. 첫 기록이 가장
+       * 느리다 — 그걸 한 번 누르는 것으로 만든다. 누르면 칩에 적힌 양 그대로 들어가고, 줄을 눌러 고친다.
+       */
+      var starters = E.starterFoods(meal).map(function (text) { return E.parseFoodText(text).items[0]; })
+        .filter(Boolean);
+      if (starters.length) {
+        wrap.appendChild(el('div', { class: 'food-quick-label', text: '흔히 먹는 것 — 누르면 ' + E.MEAL_LABELS[meal] + '에 들어갑니다' }));
+        wrap.appendChild(el('div', { class: 'chip-row' }, starters.map(function (item) {
+          return el('button', {
+            type: 'button', class: 'pick food-starter', text: item.food.name + ' ' + item.amount,
+            onclick: function () {
+              addFoodEntries([E.entryFromParsed(item, day, meal, newFoodId())]);
+            },
+          });
+        })));
+      }
     }
     return wrap.childNodes.length ? wrap : null;
   }
@@ -20047,7 +20405,8 @@
    * 틀린다. 먹은 양과 체중이 같이 있으면 몸이 직접 답한다 — 3주 동안 하루
    * 2,400kcal를 먹고 체중이 그대로면 그 사람의 유지량은 2,400이다.
    */
-  function foodWeek(today) {
+  function foodWeek(today, targets) {
+    if (targets) return foodCheckIn(today, targets);
     if (!state.foodLog.length) return null;
     var wrap = el('div', { class: 'food-week' }, []);
     var avg = E.intakeAverage(state.foodLog, today, 7);
@@ -20087,6 +20446,51 @@
   }
 
   /**
+   * 이번 주 점검 — 먹은 양 · 체중 추세 · 목표를 한 곳에서(엔진 weeklyCheckIn).
+   *
+   * 저울이 2주째 그대로면 "150kcal 덜(밥 반 공기) 아니면 하루 3,000보 더", 너무 빨리 빠지면 "더 드세요".
+   * 한 번에 한 가지만 말한다. 목표가 바닥에 닿았으면 덜 먹으라고 하지 않는다.
+   * 아직 적은 것도 없고 저울도 모자라면 이 칸을 띄우지 않는다 — 처음 온 사람에게는 소음이다.
+   */
+  function foodCheckIn(today, targets) {
+    var trend = bodyTrend();
+    var goal = bodyGoal();
+    var check = E.weeklyCheckIn({ entries: state.foodLog, today: today, targets: targets, goal: goal, trend: trend });
+    if (!state.foodLog.length && check.tone === 'wait') return null;
+    var wrap = el('div', { class: 'food-week food-checkin' }, [
+      el('div', { class: 'food-week-title', text: '이번 주 점검' }),
+    ]);
+    if (check.summary) {
+      wrap.appendChild(el('div', { class: 'food-week-row' }, [
+        el('span', { text: '지난 7일 평균' }),
+        el('b', { text: check.avgKcal.toLocaleString('ko-KR') + 'kcal · 단백질 ' + check.avgProtein + 'g' }),
+        el('span', { class: 'food-week-n', text: '다 적은 ' + check.days + '일' }),
+      ]));
+    }
+    if (typeof trend.weeklyKg === 'number') {
+      wrap.appendChild(el('div', { class: 'food-week-row' }, [
+        el('span', { text: '체중' }),
+        el('b', { text: Math.abs(trend.weeklyKg) < 0.05 ? '2주째 거의 그대로'
+          : '주 ' + (trend.weeklyKg > 0 ? '+' : '−') + Math.abs(trend.weeklyKg) + 'kg' }),
+        el('span', { class: 'food-week-n', text: '7일 평균 ' + trend.trendKg + 'kg' }),
+      ]));
+    }
+    if (targets.source === 'log') {
+      wrap.appendChild(el('div', { class: 'food-week-row main' }, [
+        el('span', { text: '내 유지 칼로리' }),
+        el('b', { text: '≈ ' + targets.maintenance.toLocaleString('ko-KR') + 'kcal' }),
+        el('span', { class: 'food-week-n', text: '먹은 양 · 체중으로 계산' }),
+      ]));
+    }
+    wrap.appendChild(el('p', {
+      class: 'portion-advice food-advice ' + (check.tone === 'wait' ? 'keep' : check.tone), text: check.advice,
+    }));
+    if (check.care) wrap.appendChild(el('p', { class: 'hint-line warn', text: check.care }));
+    if (check.protein) wrap.appendChild(el('p', { class: 'hint-line', text: check.protein }));
+    return wrap;
+  }
+
+  /**
    * 끼니 예시.
    *
    * "하루 150g"은 숫자일 뿐이고 사람은 "그래서 점심에 뭘 먹지"에서 멈춘다.
@@ -20098,10 +20502,19 @@
     var trend = bodyTrend();
     var goal = bodyGoal();
     var weight = (trend.latest && trend.latest.kg) || (state.lifter && state.lifter.bodyweightKg) || 70;
-    var target = E.proteinTargetG(weight, goal);
+    /*
+     * 칼로리 목표가 있으면(식단 기록 동의) 그 목표로 — 단백질은 먹은 것 카드와 같은 숫자, 밥은 목표에
+     * 맞춰 반 공기 · 한 공기 반으로 바뀐다. 감량하는 작은 사람과 늘리는 큰 사람에게 같은 "밥 한 공기"를
+     * 보여 주지 않는다. 목표가 없으면 예전처럼 단백질만 맞춘다.
+     */
+    var targets = dietTargetsToday();
+    var target = targets ? targets.protein : E.proteinTargetG(weight, goal);
     var perMeal = E.perMealG(target);
     var today = isoOf(new Date());
-    var day = E.planMeals({ perMeal: perMeal, prefs: state.diet, date: today, goal: goal });
+    var fitted = targets
+      ? E.fitMealsToTarget({ perMeal: perMeal, prefs: state.diet, date: today, goal: goal, kcal: targets.kcal })
+      : null;
+    var day = fitted ? fitted.day : E.planMeals({ perMeal: perMeal, prefs: state.diet, date: today, goal: goal });
     if (day.meals.length === 0) return null;
 
     var body = el('div', { class: 'sheet-body' }, []);
@@ -20121,19 +20534,25 @@
      * 저울이 말하는 양 조정. 칼로리 숫자 대신 "밥 반 공기" 단위로만
      * 말한다 — 공식은 그 사람의 몸을 모르지만 저울은 안다.
      */
-    var advice = E.portionAdvice(trend, goal);
+    // 칼로리 목표가 있으면 같은 말을 먹은 것 카드의 "이번 주 점검"이 kcal로 한다 — 두 번 말하지 않는다
+    var advice = targets ? null : E.portionAdvice(trend, goal);
     if (advice) {
       body.appendChild(el('p', { class: 'portion-advice ' + advice.direction, text: advice.text }));
     }
 
-    day.meals.forEach(function (idea) {
+    day.meals.forEach(function (idea, i) {
       var label = idea.items.map(function (item) {
         return item.amount ? item.food + ' ' + item.amount : item.food;
       }).join(' + ');
       var row = el('div', { class: 'meal-row' + (idea.meal === '간식' ? ' snack' : '') }, [
         el('span', { class: 'meal-name', text: idea.meal }),
         el('span', { class: 'meal-items', text: label }),
-        el('span', { class: 'meal-gram', text: '≈' + idea.gram + 'g' }),
+        fitted
+          ? el('span', { class: 'meal-gram meal-kcal' }, [
+            el('span', { text: '≈' + fitted.kcal[i] + 'kcal' }),
+            el('span', { text: '단 ' + idea.gram + 'g' }),
+          ])
+          : el('span', { class: 'meal-gram', text: '≈' + idea.gram + 'g' }),
       ]);
       if (idea.note || (idea.options && idea.options.length)) {
         var more = el('div', { class: 'meal-more' }, []);
@@ -20147,14 +20566,33 @@
     });
 
     if (day.shortfall) body.appendChild(el('p', { class: 'hint-line warn', text: day.shortfall }));
-    body.appendChild(el('p', { class: 'hint-line', text:
-      '한 끼 단백질 ' + perMeal + 'g 기준입니다. 숫자는 어림이고, 같은 양이면 다른 음식으로 바꿔도 됩니다. ' +
-      '날마다 조합이 바뀝니다.' }));
+    if (fitted && fitted.note) body.appendChild(el('p', { class: 'hint-line', text: fitted.note }));
 
-    return el('div', { class: 'sheet' }, [
+    /*
+     * 바꿔 먹기 두 줄 — "먹지 마세요"가 아니라 같은 자리에 올 수 있는 다른 것. 자주 적는 음식이 있으면
+     * 그것부터(라면을 자주 적었으면 라면 이야기), 없으면 목표별 흔한 것.
+     */
+    var swaps = E.swapIdeas({
+      entries: dietLogAllowed() ? state.foodLog : [], goal: goal, today: today,
+      avoid: (state.diet && state.diet.avoid) || [],
+    });
+    if (swaps.length) {
+      body.appendChild(el('div', { class: 'meal-swaps' }, [
+        el('div', { class: 'food-edit-label', text: '바꿔 먹기' }),
+      ].concat(swaps.map(function (line) { return el('p', { class: 'meal-swap', text: line }); }))));
+    }
+
+    body.appendChild(el('p', { class: 'hint-line', text: (fitted
+      ? '하루 ' + targets.kcal.toLocaleString('ko-KR') + 'kcal · 단백질 ' + target + 'g에 맞춘 예시입니다. '
+      : '한 끼 단백질 ' + perMeal + 'g 기준입니다. ') +
+      '숫자는 어림이고, 같은 양이면 다른 음식으로 바꿔도 됩니다. 날마다 조합이 바뀝니다.' }));
+
+    return el('div', { class: 'sheet meal-card' }, [
       el('div', { class: 'sheet-head' }, [
         el('h3', { text: '끼니 예시' }),
-        el('span', { class: 'meta', text: '단백질 하루 ' + target + 'g · ' + (day.weekday ? '평일' : '주말') }),
+        el('span', { class: 'meta', text: (fitted
+          ? '하루 ' + targets.kcal.toLocaleString('ko-KR') + 'kcal'
+          : '단백질 하루 ' + target + 'g') + ' · ' + (day.weekday ? '평일' : '주말') }),
       ]),
       body,
     ]);
@@ -20176,8 +20614,8 @@
   /**
    * 나에게 맞추기 — 못 먹는 것, 예산, 평일 점심.
    *
-   * 키·나이·활동량은 묻지 않는다. 칼로리 목표를 공식으로 내지 않으니 필요가
-   * 없다 — 유지 칼로리는 먹은 것과 저울로 낸다(foodWeek).
+   * 키·나이·활동량은 묻지 않는다 — 동의받은 항목이 아니다. 칼로리 목표는 체중 하나로 어림하고,
+   * 3주쯤 적고 재면 먹은 것과 저울로 낸 유지 칼로리로 바꾼다(dietTargetsToday · foodCheckIn).
    * 누르면 바로 바뀌고 저장된다 — "저장" 버튼을 따로 두면 누르는 걸 잊는다.
    */
   function openDietSettings() {
@@ -20228,8 +20666,8 @@
     });
 
     body.push(el('p', { class: 'asset-note', text:
-      '키·나이는 묻지 않습니다. 칼로리를 정하지 않고, 체중 추세를 보고 ' +
-      '"밥 반 공기" 단위로만 조정합니다.' }));
+      '키 · 나이는 묻지 않습니다. 칼로리 목표는 체중으로 어림하고(식단 기록에 동의했을 때), ' +
+      '체중 추세를 보고 "밥 반 공기" 단위로 고칩니다.' }));
     openModal('나에게 맞추기', '끼니 예시', body);
   }
 
@@ -20376,6 +20814,9 @@
   function programCard() {
     var answers = state.answers || {};
     var body = [el('p', { class: 'hint-line', text: programSummaryLine() })];
+    // 지금 과정 · 이번 주 칸 — 자세한 것(하는 일 · 늘어난 것 · 다음)은 기록 › 자세히에
+    var roadmap = roadmapCard(true);
+    if (roadmap) body.push(roadmap);
 
     if (state.customRoutine) {
       var review = routineReview(state.customRoutine);
@@ -24810,14 +25251,11 @@
    *
    * 흔한 기구만 먼저 보여 주고 나머지는 묶음마다 접어 둔다. 고르는 수가 줄면
    * 끝까지 가는 사람이 는다.
+   *
+   * 묶음은 헬스장에서 서 있는 자리대로(엔진 EQUIPMENT_GROUPS) — 머신을 하체 · 상체로 가르고 유산소를 따로 둔다.
+   * "머신" 한 묶음에 28개가 들어 있을 때는 핵 스쿼트를 찾으려면 리어델트 · 토르소 사이를 뒤져야 했다.
    */
-  var EQUIP_GROUPS = [
-    { key: 'free', label: '바벨 · 덤벨', categories: ['freeweight'] },
-    { key: 'frame', label: '랙 · 벤치', categories: ['rack', 'bench'] },
-    { key: 'cable', label: '케이블 (줄 당기는 기구)', categories: ['cable'] },
-    { key: 'machine', label: '머신 (앉아서 미는 · 당기는 기구)', categories: ['machine'] },
-    { key: 'etc', label: '맨몸 · 소도구 · 유산소', categories: ['bodyweight', 'cardio'] },
-  ];
+  var EQUIP_GROUPS = E.EQUIPMENT_GROUPS.map(function (group) { return { key: group.key, label: group.label }; });
 
   /*
    * 집에서는 맨몸 · 소도구가 먼저다. 바벨 · 랙 · 머신부터 늘어놓으면 집에 흔한 밴드 ·
@@ -24889,6 +25327,15 @@
     }).slice(0, limit || 2).join(' · ');
   }
 
+  /**
+   * 칸의 한 줄 — 부위(" · 등")가 줄 끝에 홀로 떨어지지 않게 가운뎃점 양옆을 붙인다.
+   * 좁은 화면(360px)에서 "앉아서 당기기 ·" 다음 줄에 "등" 한 글자만 남던 것.
+   */
+  function equipWhat(id) {
+    var text = E.equipmentShort(id);
+    return text ? text.replace(/ · /g, '\u00a0·\u00a0') : '';
+  }
+
   function closeEquipZoom() {
     var open = document.getElementById('equip-zoom');
     if (open && open.parentNode) open.parentNode.removeChild(open);
@@ -24926,6 +25373,7 @@
       el('div', { class: 'equip-zoom-card', role: 'group', 'aria-label': item.name + ' 크게 보기' }, [
         el('div', { class: 'equip-zoom-art' }, [equipArt(item.id, item.name, 300)]),
         el('div', { class: 'equip-zoom-name', text: item.name }),
+        equipWhat(item.id) ? el('div', { class: 'equip-zoom-what', text: equipWhat(item.id) }) : null,
         aka ? el('div', { class: 'equip-zoom-aka', text: '이렇게도 부릅니다 — ' + aka }) : null,
         el('div', { class: 'list-label', text: '이렇게 생겼습니다' }),
         look ? el('p', { class: 'equip-zoom-text', text: look }) : null,
@@ -24951,7 +25399,13 @@
     var guide = E.equipmentGuide(item.id);
     var unlocks = has ? [] : E.wouldEnable(item.id, selected);
     var note = equipTileNote(item, unlocks);
-    var aka = equipAkaLine(item, 2);
+    /*
+     * 이름 아래 한 줄은 "무엇을 하는 기구인지 · 어디 운동인지"(앉아서 무릎 펴기 · 앞허벅지) — 이름이 외국어인 사람도
+     * 칸만 보고 고른다. 별명은 칸에서 뺐다 — "다리 접는 기계"처럼 이 한 줄과 같은 말을 한 번 더 하는 것이 대부분이었다.
+     * 별명은 크게 보기("이렇게도 부릅니다")와 찾기에 그대로 있다.
+     */
+    var what = equipWhat(item.id);
+    var aka = what ? '' : equipAkaLine(item, 2);
     /*
      * 칸 전체가 있음/없음 버튼이고, 모서리의 "크게"만 따로 눌린다. 버튼 안에
      * 버튼을 넣을 수 없어서 둘을 한 칸(equip-cell)에 나란히 겹쳐 둔다.
@@ -24967,6 +25421,7 @@
         el('span', { class: 'mark', 'aria-hidden': 'true', text: has ? '✓' : '' }),
         equipArt(item.id, item.name, 104),
         el('span', { class: 'name', text: item.name }),
+        what ? el('span', { class: 'what', text: what }) : null,
         aka ? el('span', { class: 'aka', text: aka }) : null,
         note ? el('span', { class: 'detail' + (note.none ? ' none' : ''), text: note.text }) : null,
       ]),
@@ -25002,7 +25457,7 @@
         var items = group.ids
           ? group.ids.map(function (id) { return E.equipmentItem(id); }).filter(Boolean)
           : E.EQUIPMENT_CATALOG.filter(function (item) {
-            return group.categories.indexOf(item.category) >= 0 && (!group.skip || group.skip.indexOf(item.id) < 0);
+            return E.equipmentGroupOf(item) === group.key && (!group.skip || group.skip.indexOf(item.id) < 0);
           });
         if (items.length === 0) return;
         var on = items.filter(function (item) { return selected.indexOf(item.id) >= 0; });

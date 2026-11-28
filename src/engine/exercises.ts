@@ -984,6 +984,43 @@ export const EXERCISES: readonly Exercise[] = [
     contribution: { abs: 0.55, frontDelt: 0.4, quads: 0.35, triceps: 0.2 },
     jointStress: { wrist: 0.45, shoulder: 0.35, knee: 0.2 },
   },
+  /*
+   * 6차 — 한국 헬스장 · PT 스튜디오에 흔한데 빠져 있던 것.
+   * TRX(매달린 띠)는 PT 스튜디오 · 회사 헬스장의 단골이다. 몸을 기울인 각도로 세기를 정한다 — 발을 앞으로
+   * 옮길수록(몸을 더 눕힐수록) 무겁다. 맨몸 종목처럼 무게 숫자가 없다.
+   * 스미스 힙 쓰러스트 · 스플릿 스쿼트는 바벨 · 랙이 없고 스미스만 있는 아파트 헬스장의 엉덩이 · 하체 종목이다.
+   * 덤벨 풀오버는 "그거 없어요?" 소리를 가장 많이 듣던 덤벨 종목 — 가슴과 등 옆을 같이 늘였다 모은다.
+   */
+  {
+    id: 'trx-row', name: 'TRX 로우', nameEn: 'TRX Row',
+    equipment: 'bodyweight', pattern: 'horizontalPull', increment: 0,
+    contribution: { back: 0.85, biceps: 0.5, rearDelt: 0.45, abs: 0.2 },
+    jointStress: { shoulder: 0.25, elbow: 0.3, wrist: 0.15 },
+  },
+  {
+    id: 'trx-chest-press', name: 'TRX 체스트 프레스', nameEn: 'TRX Chest Press',
+    equipment: 'bodyweight', pattern: 'horizontalPush', increment: 0,
+    contribution: { chest: 0.8, triceps: 0.5, frontDelt: 0.45, abs: 0.3 },
+    jointStress: { shoulder: 0.5, elbow: 0.3, wrist: 0.25 },
+  },
+  {
+    id: 'smith-hip-thrust', name: '스미스 힙 쓰러스트', nameEn: 'Smith Machine Hip Thrust',
+    equipment: 'smith', pattern: 'hinge', increment: 2.5,
+    contribution: { glutes: 1, hamstrings: 0.45, quads: 0.2 },
+    jointStress: { hip: 0.35, lowBack: 0.2, knee: 0.2 },
+  },
+  {
+    id: 'smith-split-squat', name: '스미스 스플릿 스쿼트', nameEn: 'Smith Machine Split Squat',
+    equipment: 'smith', pattern: 'lunge', increment: 2.5, unilateral: true,
+    contribution: { quads: 0.9, glutes: 0.8, hamstrings: 0.3 },
+    jointStress: { knee: 0.55, hip: 0.4, ankle: 0.35, lowBack: 0.2 },
+  },
+  {
+    id: 'dumbbell-pullover', name: '덤벨 풀오버', nameEn: 'Dumbbell Pullover',
+    equipment: 'dumbbell', pattern: 'isolation', increment: 2,
+    contribution: { chest: 0.65, back: 0.6, triceps: 0.25 },
+    jointStress: { shoulder: 0.6, elbow: 0.2, lowBack: 0.1 },
+  },
 ]
 
 /** 시간을 재는 마무리 운동에만 쓰는 맨몸 동작 — 근력 프로그램 · 대체 종목 후보에는 넣지 않는다. */
@@ -1129,6 +1166,12 @@ export const EXERCISE_AKA: Record<string, readonly string[]> = {
   'squat-jump': ['점프 스쿼트', '스쿼트점프'],
   'bear-crawl': ['베어크롤', '곰걸음', '곰 기어가기'],
   'plank': ['엘보 플랭크', '팔꿈치 플랭크'],
+  // 6차
+  'trx-row': ['티알엑스 로우', '서스펜션 로우', '스트랩 로우'],
+  'trx-chest-press': ['TRX 푸시업', '서스펜션 체스트 프레스', '스트랩 체스트 프레스'],
+  'smith-hip-thrust': ['스미스 힙쓰러스트', '스미스 힙쓰', '스미스머신 힙 쓰러스트'],
+  'smith-split-squat': ['스미스 런지', '스미스 스플릿', '스미스머신 런지'],
+  'dumbbell-pullover': ['풀오버', '덤벨 풀 오버', '덤벨풀오버'],
 };
 
 /** 띄어쓰기 · 가운뎃점 · 괄호 · 줄표를 지우고 소문자로 — '덤벨 컬'과 '덤벨컬'이 같은 말이다. */

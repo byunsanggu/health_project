@@ -870,6 +870,18 @@
           place(line, item.p, item.y, item.x, cableR, item.size[1], cableR);
           return;
         }
+        case 'strapLine': {
+          // TRX 같은 넓적한 띠 — 폭(item.y) 4cm, 두께 6mm. 넓은 면이 옆을 본다
+          var strap = movers.take('strapLine', function () {
+            var m = new THREE.Mesh(kit.box1, kit.dark);
+            m.matrixAutoUpdate = false;
+            m.castShadow = true;
+            movers.group.add(m);
+            return m;
+          });
+          place(strap, item.p, item.y, item.x, item.size[0] * 2, item.size[1], Math.max(0.006, kit.thin || 0));
+          return;
+        }
         default: {
           // 붙은 패드 · 회전 팔
           var key = item.kind + ':' + item.size.join(',');
@@ -1305,8 +1317,8 @@
       ctx.fill();
 
       frame.moving.forEach(function (item) {
-        if (item.kind === 'cableLine') {
-          line(sub3(item.p, mul3(item.x, item.size[1] / 2)), add3(item.p, mul3(item.x, item.size[1] / 2)), 1.5, hex(colors.cable));
+        if (item.kind === 'cableLine' || item.kind === 'strapLine') {
+          line(sub3(item.p, mul3(item.x, item.size[1] / 2)), add3(item.p, mul3(item.x, item.size[1] / 2)), item.kind === 'strapLine' ? 3 : 1.5, hex(colors.cable));
         } else if (item.kind === 'barbell' || item.kind === 'smith' || item.kind === 'ez') {
           var c = project(item.p);
           ctx.fillStyle = hex(colors.plate);

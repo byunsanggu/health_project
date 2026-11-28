@@ -242,6 +242,17 @@ const UPPER_A: DayBlueprint = {
   ],
 };
 
+/*
+ * 주 5회의 상체 날. 같은 주에 푸시 날(가슴 메인 · 어깨 메인 · 가슴 보조)이 따로 있어서, 상체 A의 가슴 보조 자리를 그대로 두면
+ * 미는 운동이 당기는 운동의 1.5배를 넘었다(15세트 : 9세트). 가슴 보조 자리를 로우로 바꿔 미는 쪽 · 당기는 쪽을 맞춘다.
+ */
+const UPPER_FIVE: DayBlueprint = {
+  name: '상체 A',
+  slots: UPPER_A.slots.map((slot): SlotSpec => (slot.muscle === 'chest' && slot.role === 'accessory'
+    ? { muscle: 'back', role: 'accessory', patterns: ['horizontalPull'] }
+    : slot)),
+};
+
 const UPPER_B: DayBlueprint = {
   name: '상체 B',
   slots: [
@@ -362,7 +373,7 @@ const SPLITS: Record<number, DayBlueprint[]> = {
   2: [FULL_A, FULL_B_TWICE],
   3: [FULL_A, FULL_B, FULL_C],
   4: [UPPER_A, LOWER_A, UPPER_B, LOWER_B],
-  5: [UPPER_A, LOWER_A, PUSH, PULL, LEGS],
+  5: [UPPER_FIVE, LOWER_A, PUSH, PULL, LEGS],
   6: [PUSH, PULL, LEGS, PUSH, PULL, LEGS],
   7: [PUSH, PULL, LEGS, PUSH, PULL, LEGS, ACCESSORY_DAY],
 };
@@ -467,11 +478,14 @@ const BEGINNER_EASIER: Readonly<Record<string, string>> = { 'push-up': 'incline-
  * 워킹 런지 뒤 덤벨 리버스 런지). 푸시업 뒤의 인클라인 푸시업도 같은 동작을 쉽게 한 번 더 하는 것이다.
  */
 const SAME_MOVEMENT: readonly (readonly string[])[] = [
-  ['bodyweight-reverse-lunge', 'dumbbell-reverse-lunge', 'walking-lunge'],
-  // 무릎 푸시업도 같은 푸시업의 쉬운 판이다
-  ['push-up', 'incline-push-up', 'knee-push-up'],
-  // 힙 쓰러스트 세 판(바벨 · 덤벨 · 머신) — 둔근 자리가 둘인 날 메인 덤벨 힙 쓰러스트 뒤에 바벨 · 머신 힙 쓰러스트가 또 들어갔다
-  ['hip-thrust', 'dumbbell-hip-thrust', 'machine-hip-thrust'],
+  // 스미스 스플릿 스쿼트도 같은 런지를 바에 메고 하는 것이다
+  ['bodyweight-reverse-lunge', 'dumbbell-reverse-lunge', 'walking-lunge', 'smith-split-squat'],
+  // 무릎 푸시업도 같은 푸시업의 쉬운 판이다. TRX 체스트 프레스는 띠를 잡고 하는 푸시업이다
+  ['push-up', 'incline-push-up', 'knee-push-up', 'trx-chest-press'],
+  // 힙 쓰러스트 네 판(바벨 · 덤벨 · 머신 · 스미스) — 둔근 자리가 둘인 날 메인 덤벨 힙 쓰러스트 뒤에 바벨 · 머신 힙 쓰러스트가 또 들어갔다
+  ['hip-thrust', 'dumbbell-hip-thrust', 'machine-hip-thrust', 'smith-hip-thrust'],
+  // TRX 로우와 인버티드 로우는 같은 몸 기울여 당기기다
+  ['inverted-row', 'trx-row'],
 ];
 /**
  * 기구가 거의 없어 자리가 비는 날을 채우는 쉬운 맨몸 종목 — 누구나 첫날부터 할 수 있는 것.
@@ -783,6 +797,21 @@ function hardness(exercise: Exercise): number {
   return LIGHT_BODYWEIGHT.has(exercise.id) ? 0 : 1;
 }
 
+/**
+ * 과정이 바뀔 때 지난 종목(previous) 대신 넣기에 모자란 종목인가.
+ *   · 큰 운동 자리를 한 근육 운동으로(핵 스쿼트 → 레그 익스텐션)
+ *   · 그 부위를 덜 쓰는 종목으로(루마니안 데드리프트 뒤허벅지 1.0 → 백 익스텐션 0.7)
+ *   · 무게를 싣던 것을 맨몸으로, 맨몸을 더 쉬운 판으로(초보가 아니면 — 시티드 덤벨 숄더프레스 → 파이크 푸시업,
+ *     푸시업 → 인클라인 푸시업)
+ */
+function weakerSwap(candidate: Exercise, previous: Exercise, slot: SlotSpec, level: TrainingLevel): boolean {
+  if (candidate.id === previous.id) return false;
+  const small = (exercise: Exercise) => exercise.pattern === 'isolation' || exercise.pattern === 'core';
+  if (!small(previous) && small(candidate)) return true;
+  if ((candidate.contribution[slot.muscle] ?? 0) < (previous.contribution[slot.muscle] ?? 0) - 0.15) return true;
+  return level !== 'beginner' && hardness(candidate) < hardness(previous);
+}
+
 function pickExercise(
   slot: SlotSpec,
   pool: readonly Exercise[],
@@ -984,6 +1013,18 @@ export function buildProgram(
       .filter((slot) => (slot.role ?? (slot.repRange.min >= 8 ? 'accessory' : 'primary')) !== 'primary')
       .map((slot) => slot.exerciseId),
   );
+  /*
+   * 지난 블록의 메인 종목 — 바꿔 끼우는 보조 자리가 가져가지 않는다. 상체 A 보조 가슴 자리가 인클라인 덤벨프레스로 바뀌면서
+   * 상체 B의 메인(인클라인 덤벨프레스)이 플로어 프레스로 밀렸다 — 메인은 블록이 바뀌어도 그대로여야 기록이 이어진다.
+   */
+  const previousIds = new Set((options.previous?.templates ?? []).flatMap((template) => template.slots.map((slot) => slot.exerciseId)));
+  const previousMains = new Set(
+    (options.previous?.templates ?? [])
+      .flatMap((template) => template.slots)
+      .filter((slot) => (slot.role ?? (slot.repRange.min >= 8 ? 'accessory' : 'primary')) === 'primary')
+      .map((slot) => slot.exerciseId)
+      .filter((id) => !rotateOut.has(id)),
+  );
 
   // 부위별로 주에 몇 개의 슬롯이 배정되는지 먼저 센다 — 세트 수 계산의 분모다.
   const slotCount = new Map<MuscleGroup, number>();
@@ -1068,15 +1109,60 @@ export function buildProgram(
     };
 
     const usedBeforeToday = new Set(usedThisWeek);
+    /*
+     * 지난 블록 같은 날, 같은 역할로 이 부위를 가장 많이 쓰던 종목 — 이 자리의 "지난 종목". 바꿔 끼울 때 이것보다 못한 종목으로는
+     * 바꾸지 않는다(weakerSwap). 날 수가 달라졌거나 오늘 이미 쓴 종목이면 없다.
+     */
+    const previousDay = options.previous && options.previous.templates.length === blueprints.length
+      ? options.previous.templates[dayIndex] : undefined;
+    const previousMainInSlot = (slot: SlotSpec, today: ReadonlySet<string>): Exercise | undefined => {
+      let best: Exercise | undefined;
+      for (const old of previousDay?.slots ?? []) {
+        if (old.role !== 'primary' || today.has(old.exerciseId) || reserved.has(old.exerciseId)) continue;
+        const exercise = pool.find((item) => item.id === old.exerciseId);
+        if (!exercise || (slot.patterns && !slot.patterns.includes(exercise.pattern))) continue;
+        const value = exercise.contribution[slot.muscle] ?? 0;
+        if (value >= 0.5 && value > (best?.contribution[slot.muscle] ?? 0)) best = exercise;
+      }
+      return best;
+    };
+    const previousInSlot = (slot: SlotSpec, today: ReadonlySet<string>): Exercise | undefined => {
+      let best: Exercise | undefined;
+      for (const old of previousDay?.slots ?? []) {
+        if ((old.role ?? 'accessory') !== slot.role || !rotateOut.has(old.exerciseId) || today.has(old.exerciseId)) continue;
+        const exercise = pool.find((item) => item.id === old.exerciseId);
+        const value = exercise?.contribution[slot.muscle] ?? 0;
+        if (exercise && value >= 0.5 && value > (best?.contribution[slot.muscle] ?? 0)) best = exercise;
+      }
+      return best;
+    };
     // 주 안에서 종목이 겹치지 않게 하되, 후보가 마르면 재사용을 허용한다.
     // 보조 · 고립 자리는 지난 블록 종목을 먼저 피한다.
     const chooseFor = (slot: SlotSpec, repeatable: readonly string[], also: readonly string[] = []): Exercise | undefined => {
       const today = new Set([...usedToday, ...also]);
       const base = new Set([...today, ...repeatable, ...reserved]);
-      const fresh = slot.role === 'primary' ? base : new Set([...base, ...rotateOut]);
-      const first = pickExercise(slot, pool, fresh, context) ??
+      const fresh = slot.role === 'primary' ? base : new Set([...base, ...rotateOut, ...previousMains]);
+      /*
+       * 과정이 바뀌어 보조 · 고립을 바꿔 끼울 때, 바꾼 쪽이 지난 종목보다 못하면 지난 종목을 그대로 둔다 — 바꾸는 이유는
+       * 새 자극이지 약한 종목이 아니다. 루마니안 데드리프트가 백 익스텐션이, 핵 스쿼트가 레그 익스텐션이, 집의 시티드 덤벨
+       * 숄더프레스가 파이크 푸시업이 되던 것. 비슷한 종목이 있으면 그쪽으로 바꾼다.
+       */
+      const keepInstead = slot.role === 'primary' ? undefined : previousInSlot(slot, today);
+      const rotated = keepInstead
+        ? pickExercise(slot, pool.filter((item) => !weakerSwap(item, keepInstead, slot, level)), fresh, context) ?? keepInstead
+        : pickExercise(slot, pool, fresh, context);
+      const first = rotated ??
         pickExercise(slot, pool, base, context) ??
         pickExercise(slot, pool, today, context);
+      /*
+       * 메인 자리는 지난 블록 메인을 그대로 — 다른 날 보조에서 빠진 워킹 런지가 점수가 높다고 전신 C의 메인(스텝업)을
+       * 가져가면, 블록마다 기록이 끊긴다. 이번 블록에 새로 배우는 바벨 종목(초보에서 올라오는 중)만 메인을 바꾼다.
+       */
+      if (slot.role === 'primary' && first) {
+        const before = previousMainInSlot(slot, today);
+        const learning = introduced?.includes(first.id) && !previousIds.has(first.id);
+        if (before && before.id !== first.id && !learning) return before;
+      }
       if (!first || !discouraged(first, slot, context)) return first;
       /*
        * 이번 주에 아직 안 쓴 종목을 먼저 고르다 보면 초보에게 미루는 종목(케틀벨 스윙)이나 덤벨 스쿼트 둘째 판만 남는다 —
@@ -1309,7 +1395,16 @@ export function buildProgram(
      * 매트 · 케틀벨 집의 상체 B가 채우기 순서대로 푸시업 → 인클라인 푸시업 → 데드버그 → 파이크 푸시업이 됐다.
      */
     const isCore = (item: Picked) => item.exercise.pattern === 'core';
-    return [...picked.filter((item) => !isCore(item)), ...picked.filter(isCore)];
+    /*
+     * 한 근육만 쓰는 작은 운동(펙덱 · 레그 익스텐션 · 레터럴 레이즈)은 큰 운동을 다 한 뒤에 — 보조 가슴 자리에 펙덱이 들어간 날
+     * 펙덱 → 머신 숄더프레스 순서가 됐다(어깨 앞 · 삼두가 먼저 지친 채로 프레스). 약점으로 고른 자리는 일부러 앞에 둔 것이라 그대로.
+     */
+    const isSmall = (item: Picked) => item.exercise.pattern === 'isolation' && !item.slot.priority;
+    return [
+      ...picked.filter((item) => !isCore(item) && !isSmall(item)),
+      ...picked.filter((item) => !isCore(item) && isSmall(item)),
+      ...picked.filter(isCore),
+    ];
   });
 
   const all = week.flat();

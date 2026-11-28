@@ -34,10 +34,12 @@ export default async function ({ page, url, shot, out }) {
   const box = await page.locator('.equip-tile svg.equip-art').first().boundingBox();
   check(box.width >= 96, '그림이 작습니다: ' + box.width);
 
-  // 이름 아래 별명
+  // 이름 아래 한 줄 — 무엇을 하는 기구인지 · 어디 운동인지 (별명은 크게 보기에)
   const lat = cellNamed(page, '랫 풀다운');
-  check((await lat.locator('.aka').textContent()).includes('위에서 당기는 기계'), '랫 풀다운 별명: ' + await lat.locator('.aka').textContent());
-  check((await cellNamed(page, '펙덱 \\(플라이 머신\\)').locator('.aka').textContent()).includes('나비'), '펙덱 별명이 없습니다');
+  const latWhat = await lat.locator('.what').textContent();
+  check(latWhat.includes('위에서') && latWhat.includes('등'), '랫 풀다운 한 줄: ' + latWhat);
+  check((await cellNamed(page, '펙덱 \\(플라이 머신\\)').locator('.what').textContent()).includes('가슴'), '펙덱 한 줄에 부위가 없습니다');
+  check(await page.locator('.equip-tile .what').count() === total, '한 줄 설명이 없는 칸이 있습니다');
   await fullShot(page, out, 'grid-light');
 
   // 크게 — 켜고 끄지 않고 그림만 커진다
@@ -47,7 +49,7 @@ export default async function ({ page, url, shot, out }) {
   await zoom.waitFor();
   check(await lat.locator('.equip-tile').getAttribute('aria-pressed') === before, '크게를 눌렀는데 있음/없음이 바뀌었습니다');
   const text = (await zoom.innerText()).replace(/\s+/g, ' ');
-  for (const need of ['랫 풀다운', '이렇게 생겼습니다', '허벅지', '이 기구로 하는 운동', '랫 풀다운']) {
+  for (const need of ['랫 풀다운', '위에서 당겨 내리기', '이렇게도 부릅니다', '위에서 당기는 기계', '이렇게 생겼습니다', '허벅지', '이 기구로 하는 운동']) {
     check(text.includes(need), '크게 보기에 "' + need + '"가 없습니다: ' + text);
   }
   const big = await zoom.locator('svg.equip-art').boundingBox();

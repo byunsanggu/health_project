@@ -149,6 +149,15 @@ export function repRangeForGoals(
   return { min: 6, max: 10 };
 }
 
+/**
+ * 세트마다 적어도 이만큼은 남긴다(RIR) — 건강 유지만 고른 사람은 2개. 과정 끝 주에 "1개 남기고"까지 가는 것은
+ * 근육 · 근력을 늘리려는 사람의 일이고, "무리 없이 꾸준히"를 고른 사람에게는 다칠 위험만 늘린다. 다른 목표는 0(제한 없음).
+ */
+export function goalRirFloor(goals: readonly TrainingGoal[]): number {
+  const plan = planGoals(goals);
+  return plan.goals.length === 1 && plan.primary === 'general' ? 2 : 0;
+}
+
 /** 고른 목표를 한 줄로. */
 export function describeGoals(goals: readonly TrainingGoal[]): string {
   const plan = planGoals(goals);

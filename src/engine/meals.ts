@@ -164,6 +164,8 @@ export interface MealItem {
   /** "1.5덩이", "150g", "3개" */
   amount: string;
   gram: number;
+  /** 음식표 한 번 분량(PROTEIN_FOODS.serving)의 몇 배인가. 사 먹는 점심 · 구내식당 줄에는 없다 */
+  servings?: number;
 }
 
 export interface MealIdea {
@@ -189,7 +191,7 @@ function amountOf(name: string, servings: number): string {
     case '연어':
     case '소고기': return `${Math.round(n * 100)}g`;
     case '두부': return n === 1 ? '반 모' : n === 2 ? '한 모' : `${n / 2}모`;
-    case '밥': return n === 1 ? '한 공기' : `${n}공기`;
+    case '밥': return n === 0.5 ? '반 공기' : n === 1 ? '한 공기' : n === 1.5 ? '한 공기 반' : n === 2 ? '두 공기' : `${n}공기`;
     case '우유':
     case '두유': return `${Math.round(n * 200)}ml`;
     case '그릭요거트': return `${n}개`;
@@ -203,12 +205,15 @@ function amountOf(name: string, servings: number): string {
 }
 
 function item(name: string, servings: number): MealItem {
-  return { food: name, amount: amountOf(name, servings), gram: Math.round(food(name).gram * servings) };
+  return { food: name, amount: amountOf(name, servings), gram: Math.round(food(name).gram * servings), servings };
 }
 
-/** 주재료 양만 목표에 맞춘다. 0.5 단위 — "계란 2.7개"는 지킬 수 없는 말이다. */
-function buildMeal(meal: MealIdea['meal'], option: MealOption, perMeal: number): MealIdea {
-  const sides = option.sides.map(([name, servings]) => item(name, servings));
+/**
+ * 주재료 양만 목표에 맞춘다. 0.5 단위 — "계란 2.7개"는 지킬 수 없는 말이다.
+ * rice: 밥 공기 수(기본 한 공기). 하루 칼로리 목표에 맞춰 반 공기 · 한 공기 반으로 바뀐다(dietTargets.ts).
+ */
+function buildMeal(meal: MealIdea['meal'], option: MealOption, perMeal: number, rice = 1): MealIdea {
+  const sides = option.sides.map(([name, servings]) => item(name, name === '밥' ? servings * rice : servings));
   const sideGram = sides.reduce((sum, one) => sum + one.gram, 0);
   const raw = (perMeal - sideGram) / food(option.main).gram;
   const servings = Math.min(option.maxMain, Math.max(1, Math.round(raw * 2) / 2));
@@ -328,6 +333,11 @@ export interface DayMealsInput {
   /** 오늘 (YYYY-MM-DD) */
   date: string;
   goal: BodyGoal;
+  /**
+   * 밥 몇 공기씩인가(0.5 단위, 기본 1). 칼로리 목표가 있으면 그에 맞춰 dietTargets.ts가 정한다 —
+   * 감량하는 작은 사람과 늘리는 큰 사람에게 똑같이 "밥 한 공기"를 보여 주지 않게.
+   */
+  rice?: number;
 }
 
 export interface DayMeals {
@@ -351,7 +361,8 @@ export function planMeals(input: DayMealsInput): DayMeals {
   };
 
   const breakfast = pickFrom(BREAKFAST);
-  if (breakfast) meals.push(buildMeal('아침', breakfast, input.perMeal));
+  const rice = input.rice && input.rice > 0 ? Math.round(input.rice * 2) / 2 : 1;
+  if (breakfast) meals.push(buildMeal('아침', breakfast, input.perMeal, rice));
 
   // 평일만 점심 방식을 따른다. 주말 점심은 집에서 먹는 사람이 대부분이다.
   let lunchMain: string | undefined;
@@ -364,13 +375,13 @@ export function planMeals(input: DayMealsInput): DayMeals {
     const lunch = pickFrom(LUNCH_COOK);
     if (lunch) {
       lunchMain = lunch.main;
-      meals.push(buildMeal('점심', lunch, input.perMeal));
+      meals.push(buildMeal('점심', lunch, input.perMeal, rice));
     }
   }
 
   // 점심과 같은 주재료를 저녁에 또 내지 않는다.
   const dinner = pickFrom(DINNER, lunchMain) ?? pickFrom(DINNER);
-  if (dinner) meals.push(buildMeal('저녁', dinner, input.perMeal));
+  if (dinner) meals.push(buildMeal('저녁', dinner, input.perMeal, rice));
 
   const snack = SNACKS.find((items) => items.every(([name]) => allowedFood(name, blocked)));
   if (snack) {

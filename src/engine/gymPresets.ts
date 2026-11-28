@@ -83,6 +83,22 @@ export const GYM_PRESETS: readonly GymPreset[] = [
     visibility: 'public',
   },
   {
+    id: 'pt-studio',
+    label: 'PT 스튜디오',
+    hint: '1:1 PT샵 · 작은 스튜디오. 스미스 · 케이블 · 덤벨 · TRX 위주',
+    /*
+     * 국내 PT샵은 좁은 곳에 "한 대로 여러 가지"를 하는 기구를 둔다 — 스미스(또는 하프랙), 듀얼 케이블,
+     * 덤벨과 조절식 벤치, 랫풀다운 겸 로우, 레그프레스 하나. 기능성 존에 TRX · 케틀벨 · 밴드 · 박스 · 폼롤러.
+     * 부위별 전용 머신은 거의 없다.
+     */
+    equipmentIds: [
+      ...BASE, 'dumbbells', 'bench-incline', 'smith-machine', 'cable-station', 'lat-pulldown-machine', 'seated-row-machine',
+      'leg-press-machine', 'pull-up-bar', 'suspension-trainer', 'kettlebells', 'resistance-bands', 'plyo-box',
+      'foam-roller', 'medicine-ball', ...CARDIO_BASICS,
+    ],
+    visibility: 'public',
+  },
+  {
     id: 'crossfit',
     label: '크로스핏 박스',
     hint: '바벨과 랙 위주, 머신은 거의 없는 곳',

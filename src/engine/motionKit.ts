@@ -83,6 +83,11 @@ export interface Cable {
   from: Vec3 | 'L' | 'R';
   /** footL · footR — 발목에 찬 스트랩 (케이블 킥백). 발목 관절에서 발끝 쪽으로 3cm */
   to: 'L' | 'R' | 'mid' | 'bar' | 'pelvis' | 'footL' | 'footR';
+  /**
+   * 가는 쇠줄이 아니라 넓적한 띠(TRX 줄). 옆에서 보면 넓은 면이 보이게 눕힌다 — 4mm 줄로 그리면
+   * 작은 그림에서 매달린 줄이 안 보인다. 그리는 쪽은 'strapLine'으로 받는다
+   */
+  strap?: boolean;
 }
 
 export interface Key {
@@ -153,7 +158,7 @@ export function effortAt(clip: Clip, t: number): number {
 }
 
 export interface Placed {
-  kind: PrimKind | Implement | BarKind | 'cableLine';
+  kind: PrimKind | Implement | BarKind | 'cableLine' | 'strapLine';
   p: Vec3;
   size: number[];
   x: Vec3;
@@ -269,6 +274,11 @@ export function clipFrame(clip: Clip, t: number): ClipFrame {
     const from = cable.from === 'L' || cable.from === 'R' ? solved.hands[cable.from].grip : cable.from;
     const along = normalize(sub(end, from));
     const len = distance(end, from);
+    if (cable.strap) {
+      // 띠의 넓은 면이 옆(x)을 보게 — y는 띠 폭 방향(줄과 x축 둘 다에 수직)
+      moving.push({ kind: 'strapLine', p: madd(from, along, len / 2), size: [0.019, len], x: along, y: normalize(cross(along, [1, 0, 0]), [0, 0, 1]) });
+      continue;
+    }
     moving.push({ kind: 'cableLine', p: madd(from, along, len / 2), size: [0.004, len], x: along, y: normalize(perpendicular(up, along), [0, 0, 1]) });
   }
 
@@ -296,7 +306,7 @@ export function clipPoints(clip: Clip): Vec3[] {
       points.push(madd(headCenter, headUp, s * 0.12), madd(headCenter, normalize(head.f), s * 0.12));
     }
     for (const item of frame.moving) {
-      if (item.kind === 'cableLine') continue;
+      if (item.kind === 'cableLine' || item.kind === 'strapLine') continue;
       // 바는 원판 끝까지가 아니라 손 바깥 조금까지만 — 바 끝을 다 넣으면 사람이 작아진다
       const reach = item.kind === 'barbell' || item.kind === 'smith' ? 0.75 : item.kind === 'landmine' || item.kind === 'tbar' ? 0.2 : 0.1;
       points.push(madd(item.p, item.x, reach), madd(item.p, item.x, -reach));
