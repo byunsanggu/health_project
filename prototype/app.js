@@ -368,6 +368,24 @@
     return copy;
   }
 
+  /*
+   * 키 · 출생 연도 · 활동량을 받아도 되는가 — 식단 기록 동의를 **지금 판 문구로** 했을 때만.
+   * 예전 판(키 · 나이가 없던 문구)에 동의한 채 바뀐 내용을 거절했으면 받지 않는다(엔진 agreedToCurrent).
+   * 처음 설정 중에는 지금 문구를 보고 켠 것이다 — 동의 기록은 설정을 마칠 때 남긴다. 다시 설정하는 중에
+   * 체중 장에서 새로 켰으면(dietAgreed) 그것도 지금 문구다.
+   */
+  function bodyInfoAllowed() {
+    if ((state.consent || []).indexOf('dietLog') < 0) return false;
+    var ob = state.onboarding;
+    if (ob && ob.active && (!ob.redo || ob.dietAgreed)) return true;
+    return E.agreedToCurrent(state.consentRecord, 'dietLog');
+  }
+
+  /** 저장할 키 · 출생 연도 · 활동량. 동의 전 · 동의가 예전 판이면 남기지 않는다. */
+  function bodyInfoToStore() {
+    return bodyInfoAllowed() ? state.bodyInfo : null;
+  }
+
   function persist() {
     if (wiping) return;
     // 화면 상태와 별개로, 오늘 기록은 저장소의 세션으로도 남겨야 서버에 간다.
@@ -389,6 +407,8 @@
         dayBudget: state.dayBudget,
         // 먹은 것 — 이 폰에만 둔다(서버 설정 묶음에 안 싣는다. 하루 수십 줄이라 금방 커진다)
         foodLog: state.foodLog,
+        // 키 · 출생 연도 · 활동량 — 이 폰에만, 식단 기록 동의(지금 판)가 있을 때만
+        bodyInfo: bodyInfoToStore(),
         promise: state.promise,
         // 5분만 하기 — 오늘만(날짜가 붙어 있다). 이 폰에만 둔다
         fiveMin: state.fiveMin,
@@ -519,8 +539,13 @@
     /*
      * 동의 문구가 바뀌었으면 다시 묻는다. 사용자는 이전 판에 동의했을 뿐,
      * 바뀐 내용에 동의한 적이 없다. 필수 동의가 빠져도 마찬가지다.
+     *
+     * 바뀐 것이 동의했던 선택 항목뿐이면(엔진 reconsentPlan 'gentle') 앱은 그대로 열고, 오늘 화면 위에
+     * 바뀐 것만 한 번 묻는다(openReconsent). 처음 설정으로 돌려보내면 몇 달 치 설정을 다시 하라는 말이 된다.
+     * 필수 항목이 바뀌었거나 기록이 없으면 예전처럼 동의 화면부터.
      */
-    if (E.needsReconsent(settings.consentRecord) || !E.canUseService(settings.consent || [])) {
+    var plan = E.reconsentPlan(settings.consentRecord);
+    if (plan.kind === 'full' || !E.canUseService(settings.consent || [])) {
       return false;
     }
 
@@ -608,6 +633,10 @@
       state.consent = settings.consent || [];
       state.consentRecord = settings.consentRecord || null;
       if (!E.allows(state.consent, 'dietLog')) state.foodLog = [];
+      // 키 · 출생 연도 · 활동량 — 식단 기록 동의가 지금 판일 때만 되살린다
+      state.bodyInfo = E.normalizeBodyInfo(settings.bodyInfo, todayISO());
+      if (!bodyInfoAllowed()) state.bodyInfo = null;
+      state.reconsent = plan.kind === 'gentle' ? plan : null;
       state.blockHistory = settings.blockHistory || ['hypertrophy'];
       state.block = settings.block || null;
       state.blockNews = settings.blockNews || null;
@@ -1025,6 +1054,14 @@
     foodBack: 0,
     // 오늘 목표의 "자세히"(탄수화물 · 지방 · 정한 법)를 펼쳤는가 — 저장하지 않는다
     foodMore: false,
+    /*
+     * 키 · 출생 연도 · 평소 활동량 — 식단 목표 칼로리를 계산하는 데만 쓴다(엔진 dietTargets.ts).
+     * 식단 기록 동의 2026-11-28 판 문구에 동의했을 때만 받고 저장한다(bodyInfoAllowed). 이 폰에만 —
+     * 서버 설정 묶음(SHARED_SETTINGS)에 넣지 않는다. 동의를 철회하거나 전부 삭제하면 같이 지운다.
+     */
+    bodyInfo: null,
+    // 바뀐 동의 내용을 한 번 묻는 중(엔진 reconsentPlan) — 저장하지 않는다
+    reconsent: null,
     // 휴식 끝 알림 — 처음 설문에서 정하고 내 정보에서 바꾼다
     restAlerts: true,
     restSound: true,
@@ -3287,6 +3324,8 @@
    */
   function openModal(title, tag, body) {
     disposeDemo();
+    // 다른 창으로 바뀌면 "바뀐 동의 내용" 창은 더 떠 있지 않다(openReconsent가 연 뒤에 다시 켠다)
+    reconsentShowing = false;
     modal.textContent = '';
     modal.appendChild(el('div', { class: 'modal-head' }, [
       el('h3', { id: 'modal-title', text: title }),
@@ -15971,6 +16010,8 @@
     reconcileRoutine();
     // 다른 폰에서 식단 기록 동의를 철회했으면 이 폰의 기록도 지운다. 동의 없이 남겨 두면 안 된다.
     if (!E.allows(state.consent, 'dietLog') && state.foodLog.length) purgeFor('dietLog');
+    // 키 · 나이 · 활동량도 — 식단 기록 동의가 없거나 예전 판 문구로 남았으면 이 폰에서도 지운다
+    if (!bodyInfoAllowed()) state.bodyInfo = null;
     /*
      * 받은 박자가 예전 판(예전 앱이 올린 것)이면 받은 값만 옮긴다. 이 폰의
      * 값은 이미 옮겼다 — 한 번 더 옮기면 '빠르게'가 '보통'이 된다.
@@ -19694,17 +19735,23 @@
   /**
    * 오늘 목표 — 칼로리 하나와 단백질(엔진 dietTargets.ts).
    *
-   * 식단 기록 동의가 있을 때만 낸다. 그 동의가 "칼로리 계산, 체중 변화와 맞춰 내 유지 칼로리 계산"까지를
-   * 받았다. 키 · 나이 · 활동량은 받지 않았으므로 묻지 않고 체중 하나로 어림한다 — 3주쯤 적고 재면
-   * 먹은 양과 체중 변화로 낸 내 유지 칼로리로 저절로 바뀐다.
+   * 식단 기록 동의가 있을 때만 낸다. 그 동의(2026-11-28 판)가 "식단 목표 칼로리 계산"과 키 · 출생 연도 ·
+   * 활동량까지 받는다. 적어 두었으면 키 · 나이 · 성별 · 활동량으로 계산하고, 안 적었거나 동의가 예전 판이면
+   * 체중 하나로 어림한다 — 어느 쪽이든 3주쯤 적고 재면 먹은 양과 체중 변화로 낸 내 유지 칼로리로 저절로 바뀐다.
    */
   function dietTargetsToday() {
     if (!dietLogAllowed() || (state.consent || []).indexOf('healthData') < 0) return null;
+    var allowed = bodyInfoAllowed();
     return E.dailyTargets({
       bodyweightKg: foodWeightToday(),
       goal: bodyGoal(),
       estimate: E.maintenanceEstimate(state.foodLog, weighIns(), foodToday()),
       trend: bodyTrend(),
+      body: allowed ? state.bodyInfo : null,
+      // 성별 · 운동 횟수는 키 · 나이와 같이 있을 때만 계산식에 들어간다(그 동의 판이 칼로리에 쓴다고 적었다)
+      sex: allowed ? ((state.lifter && state.lifter.sex) || (state.answers && state.answers.sex) || null) : null,
+      trainingDays: (state.program && state.program.daysPerWeek) || (state.answers && state.answers.daysPerWeek) || 3,
+      today: foodToday(),
     });
   }
 
@@ -19845,6 +19892,8 @@
       ]),
     ]);
     wrap.appendChild(proteinMeter(total.protein, targets.protein));
+    // 키에 비해 많이 가벼우면 — 덜 먹는 목표를 내지 않았다는 말은 자세히 뒤에 숨기지 않는다
+    if (targets.note) wrap.appendChild(el('p', { class: 'hint-line food-bmi-note', text: targets.note }));
 
     if (state.foodMore) {
       var more = el('div', { class: 'food-more' }, [
@@ -19852,9 +19901,22 @@
         macroMeter('fat', '지방', total.fat, targets.fat),
       ]);
       if (total.protein + total.fat + total.carbs > 0) more.appendChild(macroBar(total));
+      // 이 숫자를 정한 법 — 어느 방법인지 한 줄(체중 어림 · 키와 나이로 계산 · 내 기록으로 계산)
+      more.appendChild(el('p', { class: 'hint-line food-method', text: targets.method }));
       targets.why.forEach(function (line) {
         more.appendChild(el('p', { class: 'hint-line food-why', text: line }));
       });
+      // 체중으로만 어림했으면 — 키 · 나이 · 활동량을 적는 길(동의가 예전 판이면 바뀐 내용부터)
+      if (targets.source === 'weight') {
+        more.appendChild(el('button', {
+          type: 'button', class: 'pick food-body-open',
+          text: bodyInfoAllowed() ? '키 · 나이 · 활동량 적기' : '키 · 나이 · 활동량으로 계산하기',
+          onclick: function () {
+            if (bodyInfoAllowed()) openBodyInfo();
+            else openReconsent(E.pendingUpdates(state.consentRecord));
+          },
+        }));
+      }
       wrap.appendChild(more);
     }
     wrap.appendChild(el('button', {
@@ -20544,8 +20606,10 @@
     var target = targets ? targets.protein : E.proteinTargetG(weight, goal);
     var perMeal = E.perMealG(target);
     var today = isoOf(new Date());
+    // 감량을 골랐어도 키에 비해 가벼워 유지로 잡았으면(BMI) 끼니 · 바꿔 먹기도 유지 쪽으로
+    var planGoal = targets ? targets.planGoal : goal;
     var fitted = targets
-      ? E.fitMealsToTarget({ perMeal: perMeal, prefs: state.diet, date: today, goal: goal, kcal: targets.kcal })
+      ? E.fitMealsToTarget({ perMeal: perMeal, prefs: state.diet, date: today, goal: planGoal, kcal: targets.kcal })
       : null;
     var day = fitted ? fitted.day : E.planMeals({ perMeal: perMeal, prefs: state.diet, date: today, goal: goal });
     if (day.meals.length === 0) return null;
@@ -20606,7 +20670,7 @@
      * 그것부터(라면을 자주 적었으면 라면 이야기), 없으면 목표별 흔한 것.
      */
     var swaps = E.swapIdeas({
-      entries: dietLogAllowed() ? state.foodLog : [], goal: goal, today: today,
+      entries: dietLogAllowed() ? state.foodLog : [], goal: planGoal, today: today,
       avoid: (state.diet && state.diet.avoid) || [],
     });
     if (swaps.length) {
@@ -20647,8 +20711,9 @@
   /**
    * 나에게 맞추기 — 못 먹는 것, 예산, 평일 점심.
    *
-   * 키·나이·활동량은 묻지 않는다 — 동의받은 항목이 아니다. 칼로리 목표는 체중 하나로 어림하고,
-   * 3주쯤 적고 재면 먹은 것과 저울로 낸 유지 칼로리로 바꾼다(dietTargetsToday · foodCheckIn).
+   * 키 · 나이 · 활동량은 여기서 묻지 않는다 — 내 정보 › 키 · 나이 · 활동량(식단 기록 동의 2026-11-28 판)에서
+   * 적는다. 적었으면 그것으로, 아니면 체중 하나로 목표를 잡고, 3주쯤 적고 재면 먹은 것과 저울로 낸 유지
+   * 칼로리로 바꾼다(dietTargetsToday · foodCheckIn).
    * 누르면 바로 바뀌고 저장된다 — "저장" 버튼을 따로 두면 누르는 걸 잊는다.
    */
   function openDietSettings() {
@@ -20699,8 +20764,8 @@
     });
 
     body.push(el('p', { class: 'asset-note', text:
-      '키 · 나이는 묻지 않습니다. 칼로리 목표는 체중으로 어림하고(식단 기록에 동의했을 때), ' +
-      '체중 추세를 보고 "밥 반 공기" 단위로 고칩니다.' }));
+      '칼로리 목표는 식단 기록에 동의했을 때만 냅니다. 키 · 나이 · 활동량을 적었으면 그것으로, 아니면 체중으로 ' +
+      '어림하고(내 정보에서 적거나 고칩니다), 체중 추세를 보고 "밥 반 공기" 단위로 고칩니다.' }));
     openModal('나에게 맞추기', '끼니 예시', body);
   }
 
@@ -21521,6 +21586,9 @@
       ]));
     }
     screen.appendChild(restSettingsCard());
+    // 키 · 나이 · 활동량 — 식단 기록에 동의한 사람에게만(식단 목표 칼로리 계산용)
+    var bodyCardNode = bodyInfoCard();
+    if (bodyCardNode) screen.appendChild(bodyCardNode);
     renderAppStatus();
     renderPrivacy();
     /*
@@ -21572,11 +21640,264 @@
   /** 동의 하나를 추가로 받는다. 기록도 같이 갱신한다. */
   function grantConsent(id) {
     if (state.consent.indexOf(id) < 0) state.consent = state.consent.concat([id]);
-    state.consentRecord = E.recordConsent(state.consent, todayISO());
+    /*
+     * 이 항목만 지금 문구를 보고 동의한 것이다. 예전 판 문구로 남아 있는 다른 항목(바뀐 식단 기록 문구를
+     * 거절한 경우)까지 새 문구로 적으면 거짓 증빙이 된다 — 엔진 agreeToCurrent가 그대로 둔다.
+     */
+    state.consentRecord = E.agreeToCurrent(state.consentRecord, id, state.consent, todayISO());
     var item = E.consentItem(id);
     pushLog('동의', '<b>' + (item ? item.label : id) + '</b>에 동의했습니다.');
     rebuildSession();
     render();
+  }
+
+  /* ── 바뀐 동의 내용 · 키 · 나이 · 활동량 ───────────── */
+
+  /**
+   * 바뀐 동의 내용을 한 번 묻는다 — 동의했던 선택 항목의 문구가 바뀌었을 때(엔진 reconsentPlan 'gentle').
+   *
+   * 앱은 그대로 쓰게 두고 무엇이 새로 생겼는지만 말한다. 처음 설정으로 돌려보내지 않는다. 동의하지 않아도
+   * 아무것도 지우지 않는다 — 식단 기록은 그대로, 목표는 예전처럼 체중으로. 닫기(×)도 "지금은 안 함"으로
+   * 친다: 같은 것을 다음에 또 묻지 않는다. 마음이 바뀌면 내 정보 › 키 · 나이 · 활동량에서 다시 연다(plan을
+   * 넘겨 연다 — 그때는 사용자가 누른 것이라 묻는 횟수와 상관없다).
+   */
+  var reconsentWatch = null;
+  var reconsentShowing = false;
+
+  function openReconsent(plan) {
+    plan = plan || state.reconsent;
+    if (!plan || plan.kind !== 'gentle' || !plan.items.length) return;
+    var firstAsk = Boolean(state.reconsent);
+    var full = false;
+    var lines = [];
+    plan.changes.forEach(function (change) { lines = lines.concat(change.lines); });
+    var title = plan.changes.length === 1 ? plan.changes[0].title : '동의 내용이 바뀌었습니다';
+    var fullBox = el('div', { class: 'reconsent-full', hidden: '' }, plan.items.map(function (item) {
+      return el('div', { class: 'consent-card' }, [
+        el('div', { class: 'consent-head' }, [
+          el('span', { class: 'consent-title', text: item.label }),
+          el('span', { class: 'consent-tag opt', text: '선택' }),
+          item.sensitive ? el('span', { class: 'consent-tag sensitive', text: '민감정보' }) : null,
+        ]),
+        consentBody(item),
+      ]);
+    }));
+    var fullToggle = el('button', {
+      type: 'button', class: 'linkish reconsent-more', 'aria-expanded': 'false', text: '바뀐 문구 전체 보기 ›',
+      onclick: function () {
+        full = !full;
+        if (full) fullBox.removeAttribute('hidden'); else fullBox.setAttribute('hidden', '');
+        fullToggle.setAttribute('aria-expanded', String(full));
+        fullToggle.textContent = full ? '전체 문구 접기' : '바뀐 문구 전체 보기 ›';
+      },
+    });
+    openModal(title, '선택', [
+      el('div', { class: 'reconsent-sheet' }, [
+        el('p', { class: 'asset-note', text: firstAsk
+          ? '동의 내용이 바뀌어 한 번만 여쭙니다. 동의하지 않으셔도 지금처럼 쓰실 수 있습니다.'
+          : '바뀐 내용에 동의하시면 키 · 나이 · 활동량을 적을 수 있습니다.' }),
+        el('ul', { class: 'reconsent-new' }, lines.map(function (line) { return el('li', { text: line }); })),
+        el('p', { class: 'hint-line', text:
+          '적어 주시면 하루 칼로리 목표를 키 · 나이 · 활동량으로 더 정확하게 계산합니다. ' +
+          '이 폰에만 저장하고, 동의를 철회하거나 전부 삭제하면 같이 지웁니다.' }),
+        el('p', { class: 'hint-line reconsent-decline-note', text:
+          '동의하지 않으면: 적어 두신 식단 기록은 그대로 두고, 목표 칼로리는 지금처럼 체중으로 계산합니다.' }),
+        fullToggle,
+        fullBox,
+        el('div', { class: 'reconsent-actions' }, [
+          el('button', { type: 'button', class: 'finish reconsent-agree', text: '동의합니다', onclick: function () { acceptReconsent(plan); } }),
+          el('button', {
+            type: 'button', class: 'finish quiet reconsent-decline', text: firstAsk ? '동의하지 않고 계속' : '그대로 두기',
+            onclick: function () { declineReconsent(); modal.close(); },
+          }),
+        ]),
+      ]),
+    ]);
+    /*
+     * 고르지 않고 닫으면(× · 뒤로 · Esc) "지금은 안 함"으로 친다 — 처음 묻는 것일 때만. 닫히는 순간에도
+     * 이 내용이 떠 있었을 때만이다(동의한 뒤 키 · 나이 칸으로 바뀐 창이 닫힐 때는 아니다 — openModal이
+     * 다른 창을 열면 reconsentShowing을 끈다). 닫힘 이벤트는 늦게 오고 그 전에 창 내용이 지워지므로 내용이
+     * 아니라 이 표시로 본다.
+     */
+    reconsentShowing = true;
+    if (reconsentWatch) modal.removeEventListener('close', reconsentWatch);
+    reconsentWatch = function () {
+      if (modal.open) return;
+      var still = reconsentShowing;
+      reconsentShowing = false;
+      modal.removeEventListener('close', reconsentWatch);
+      reconsentWatch = null;
+      if (still && state.reconsent) declineReconsent();
+    };
+    modal.addEventListener('close', reconsentWatch);
+  }
+
+  /** 바뀐 내용에 동의 — 그 항목만 지금 문구로. 이어서 키 · 나이 · 활동량을 바로 적을 수 있게 한다. */
+  function acceptReconsent(plan) {
+    var today = todayISO();
+    plan.items.forEach(function (item) {
+      state.consentRecord = E.agreeToCurrent(state.consentRecord, item.id, state.consent, today);
+    });
+    state.reconsent = null;
+    pushLog('동의', '바뀐 <b>식단 기록 동의</b> 내용에 동의했습니다.');
+    persist();
+    if (bodyInfoAllowed()) openBodyInfo(true);
+    else { modal.close(); render(); }
+  }
+
+  /** 바뀐 내용에 "지금은 안 함" — 처음 묻는 것이면 그렇게 적어 다시 묻지 않는다. 아무것도 지우지 않는다. */
+  function declineReconsent() {
+    if (!state.reconsent) return;
+    state.consentRecord = E.declineUpdate(state.consentRecord, todayISO());
+    state.reconsent = null;
+    pushLog('동의', '바뀐 식단 기록 동의 내용에는 동의하지 않았습니다. 식단 기록은 그대로이고, 목표는 체중으로 계산합니다.');
+    persist();
+    render();
+  }
+
+  /**
+   * 키 · 출생 연도 · 활동량 칸 — 처음 설정 체중 장, 내 정보, 식단 자세히에서 같이 쓴다.
+   *
+   * 모두 선택이다. 칸을 비우면 그 값은 지운다. 고친 값은 바로 state.bodyInfo에 들어가고, 저장은
+   * persist가 동의를 보고 한다(bodyInfoToStore). 화면 전체를 다시 그리지 않는다 — 키를 적고 출생 연도
+   * 칸으로 옮기는 사이에 다시 그리면 커서가 사라진다. onChange로 바뀐 것만 알린다.
+   * compact: 처음 설정용 — 활동량 칸에 설명 줄을 빼고 짧게.
+   */
+  function bodyInfoFields(options) {
+    options = options || {};
+    var info = state.bodyInfo || { heightCm: null, birthYear: null, activity: null };
+    var year = Number(todayISO().slice(0, 4));
+    var warn = el('p', { class: 'hint-line warn body-warn', role: 'status' }, []);
+    function current() {
+      return Object.assign({ heightCm: null, birthYear: null, activity: null }, state.bodyInfo || {});
+    }
+    function save(next) {
+      state.bodyInfo = E.normalizeBodyInfo(next, todayISO());
+      if (options.onChange) options.onChange();
+    }
+    function numberField(key, label, unit, min, max, placeholder, id) {
+      var input = el('input', {
+        type: 'number', inputmode: 'numeric', class: 'text-input body-input', id: id,
+        min: String(min), max: String(max), step: '1', placeholder: placeholder, 'aria-label': label,
+        value: info[key] == null ? '' : String(info[key]),
+      });
+      function read(loud) {
+        var raw = input.value.trim();
+        var next = current();
+        if (raw === '') {
+          warn.textContent = '';
+          next[key] = null;
+          save(next);
+          return;
+        }
+        var value = Number(raw);
+        if (!(value >= min && value <= max)) {
+          if (loud) warn.textContent = label + '는 ' + min + '~' + max + (unit === '년' ? '' : unit) + ' 사이로 적어 주세요.';
+          return;
+        }
+        warn.textContent = '';
+        next[key] = key === 'heightCm' ? Math.round(value * 10) / 10 : Math.round(value);
+        save(next);
+      }
+      // 치는 동안은 맞는 값만 조용히 담고, 칸을 떠날 때 틀린 값을 알린다
+      input.addEventListener('input', function () { read(false); });
+      input.addEventListener('change', function () { read(true); });
+      return el('label', { class: 'body-field', for: id }, [
+        el('span', { class: 'body-field-name', text: label }),
+        el('span', { class: 'body-field-box' }, [input, el('span', { class: 'unit', text: unit })]),
+      ]);
+    }
+    var chips = E.ACTIVITY_OPTIONS.map(function (option) {
+      return el('button', {
+        type: 'button', class: 'body-act', 'data-activity': option.id,
+        'aria-pressed': String(info.activity === option.id),
+        onclick: function () {
+          var next = current();
+          next.activity = next.activity === option.id ? null : option.id;
+          chips.forEach(function (chip) {
+            chip.setAttribute('aria-pressed', String(chip.getAttribute('data-activity') === next.activity));
+          });
+          save(next);
+        },
+      }, [
+        el('b', { text: option.label }),
+        options.compact ? null : el('span', { class: 'body-act-hint', text: option.hint }),
+      ]);
+    });
+    return el('div', { class: 'body-info' + (options.compact ? ' compact' : '') }, [
+      el('div', { class: 'body-pair' }, [
+        numberField('heightCm', '키', 'cm', E.HEIGHT_RANGE.min, E.HEIGHT_RANGE.max, '예: 170', (options.idPrefix || 'body') + '-height'),
+        numberField('birthYear', '출생 연도', '년', year - E.INPUT_AGE.max, year - E.INPUT_AGE.min, '예: 1995', (options.idPrefix || 'body') + '-year'),
+      ]),
+      warn,
+      el('div', { class: 'body-act-label', text: '평소 활동량 — 운동하는 시간은 빼고' }),
+      el('div', { class: 'body-acts', role: 'group', 'aria-label': '평소 활동량' }, chips),
+    ]);
+  }
+
+  /** 지금 목표가 어떻게 정해지는지 한 줄 — 키 · 나이 칸을 고칠 때 바로 바뀐다 */
+  function bodyInfoPreview() {
+    var targets = dietTargetsToday();
+    if (!targets) return '';
+    return '지금 목표: 하루 ' + targets.kcal.toLocaleString('ko-KR') + 'kcal — ' + (targets.source === 'body'
+      ? '키 · 나이 · 활동량으로 계산'
+      : targets.source === 'log' ? '먹은 양과 체중 변화로 계산(계산식보다 우선)' : '체중으로 어림');
+  }
+
+  /**
+   * 키 · 나이 · 활동량 창 — 식단 자세히에서, 그리고 바뀐 동의 내용에 동의한 바로 뒤에.
+   * afterConsent: 방금 동의했다 — "나중에" 단추를 두고, 내 정보에서 고칠 수 있다고 말한다.
+   */
+  function openBodyInfo(afterConsent) {
+    var preview = el('p', { class: 'hint-line body-preview', text: bodyInfoPreview() });
+    openModal('키 · 나이 · 활동량', '선택', [
+      el('div', { class: 'reconsent-body-info' }, [
+        el('p', { class: 'asset-note', text: afterConsent
+          ? '동의했습니다. 지금 적어 두시면 오늘 목표부터 바뀝니다. 비워 두셔도 됩니다.'
+          : '적으면 하루 칼로리 목표를 키 · 나이 · 활동량으로 계산합니다. 모두 선택입니다.' }),
+        bodyInfoFields({ idPrefix: 'modal-body', onChange: function () { preview.textContent = bodyInfoPreview(); } }),
+        preview,
+        el('p', { class: 'hint-line', text: '식단 목표 칼로리 계산에만 씁니다. 이 폰에만 저장하고, 내 정보에서 언제든 고치거나 지웁니다.' }),
+        el('div', { class: 'reconsent-actions' }, [
+          el('button', { type: 'button', class: 'finish body-save', text: '저장', onclick: function () { persist(); modal.close(); render(); } }),
+          afterConsent ? el('button', { type: 'button', class: 'finish quiet body-later', text: '나중에', onclick: function () { modal.close(); render(); } }) : null,
+        ]),
+      ]),
+    ]);
+  }
+
+  /**
+   * 내 정보 › 키 · 나이 · 활동량. 식단 기록에 동의한 사람에게만 보인다 — 쓰는 곳이 식단 목표 하나뿐이라
+   * 안 쓰는 사람에게는 칸만 하나 늘어난다.
+   */
+  function bodyInfoCard() {
+    if ((state.consent || []).indexOf('dietLog') < 0) return null;
+    var body;
+    if (!bodyInfoAllowed()) {
+      body = [
+        el('p', { class: 'hint-line', text:
+          '식단 기록 동의에 키 · 출생 연도 · 활동량과 "식단 목표 칼로리 계산"이 더해졌습니다. ' +
+          '바뀐 내용에 동의하시면 적을 수 있습니다. 지금은 목표 칼로리를 체중으로 계산합니다.' }),
+        el('button', {
+          type: 'button', class: 'pick body-reconsent', text: '바뀐 내용 보고 동의하기',
+          onclick: function () { openReconsent(E.pendingUpdates(state.consentRecord)); },
+        }),
+      ];
+    } else {
+      var preview = el('p', { class: 'hint-line body-preview', text: bodyInfoPreview() });
+      body = [
+        bodyInfoFields({ idPrefix: 'me-body', onChange: function () { persist(); preview.textContent = bodyInfoPreview(); } }),
+        preview,
+        el('p', { class: 'hint-line', text: '식단 목표 칼로리 계산에만 씁니다. 이 폰에만 저장합니다. 칸을 비우면 지웁니다.' }),
+      ];
+    }
+    return el('div', { class: 'sheet body-info-card' }, [
+      el('div', { class: 'sheet-head' }, [
+        el('h3', { text: '키 · 나이 · 활동량' }),
+        el('span', { class: 'meta', text: '식단 목표 계산용 · 선택' }),
+      ]),
+      el('div', { class: 'sheet-body' }, body),
+    ]);
   }
 
   /**
@@ -21643,6 +21964,14 @@
     if (state.consentRecord) {
       rows.appendChild(el('p', { class: 'hint-line', text:
         dateText(state.consentRecord.at) + '에 ' + dateText(state.consentRecord.version) + ' 판 문구로 동의했습니다.' }));
+      // 바뀐 내용을 거절해 예전 판 문구로 남은 항목 — 증빙 그대로 보여 준다
+      var older = state.consentRecord.olderText || {};
+      Object.keys(older).forEach(function (id) {
+        var item = E.consentItem(id);
+        if (!item || state.consent.indexOf(id) < 0) return;
+        rows.appendChild(el('p', { class: 'hint-line consent-older', text:
+          item.label.replace(/ \(민감정보\)$/, '') + '는 ' + dateText(older[id]) + ' 판 문구 그대로입니다(바뀐 내용에는 동의하지 않음).' }));
+      });
     }
 
     renderPainHistory();
@@ -21662,6 +21991,9 @@
     if (id === 'dietLog') {
       state.foodLog = [];
       state.foodDraft = null;
+      // 키 · 출생 연도 · 활동량도 식단 기록 동의로 받은 것이다
+      state.bodyInfo = null;
+      state.reconsent = null;
     }
     if (id === 'painData') {
       state.pain = JOINTS.map(function (joint) { return { joint: joint, score: 0 }; });
@@ -21743,6 +22075,8 @@
       ),
       체크인: state.checkIns,
       식단기록: state.foodLog,
+      // 키 · 출생 연도 · 평소 활동량 — 열람권(제35조): 받은 것은 내려받을 수 있어야 한다. 불러오기에서는 읽지 않는다
+      식단목표정보: bodyInfoToStore(),
       // 블록 몇 주차인지 · 코치 말투 · 쉬는 시간 같은 것. 이게 없으면 불러온 날 블록을 처음부터 센다
       설정: backupSettings(),
     };
@@ -24580,8 +24914,11 @@
     state.onboarding = {
       active: true, step: 0, account: null, redo: true,
       gymName: gym ? gym.name : '',
-      // 그만두면 이대로 되돌린다
-      before: JSON.stringify({ answers: state.answers, coach: state.coach, restAlerts: state.restAlerts }),
+      // 그만두면 이대로 되돌린다(체중 장에서 식단 기록에 동의하고 키 · 나이를 적었어도 되돌린다)
+      before: JSON.stringify({
+        answers: state.answers, coach: state.coach, restAlerts: state.restAlerts,
+        consent: state.consent, bodyInfo: state.bodyInfo,
+      }),
     };
     render();
   }
@@ -24591,14 +24928,26 @@
     state.answers = before.answers;
     state.coach = before.coach;
     state.restAlerts = before.restAlerts;
+    if (before.consent) state.consent = before.consent;
+    state.bodyInfo = before.bodyInfo || null;
     state.onboarding = { active: false, step: 0 };
     persist();
     render();
   }
 
   function completeOnboarding() {
-    // 언제 · 어느 판 문구에 동의했는지 남긴다. 증빙이 없으면 동의가 아니다.
-    state.consentRecord = E.recordConsent(state.consent, todayISO());
+    /*
+     * 언제 · 어느 판 문구에 동의했는지 남긴다. 증빙이 없으면 동의가 아니다.
+     * 다시 설정할 때는 동의 장이 없다 — 예전 판 문구로 남아 있는 항목(바뀐 식단 기록 문구를 거절한 것)은
+     * 그대로 둔다. 체중 장에서 식단 기록의 지금 문구를 보고 "동의하고 적기"를 눌렀으면 그것만 지금 문구로.
+     */
+    var redoing = Boolean(state.onboarding.redo);
+    state.consentRecord = E.recordConsent(state.consent, todayISO(), redoing ? state.consentRecord : null);
+    if (state.onboarding.dietAgreed && state.consent.indexOf('dietLog') >= 0) {
+      state.consentRecord = E.agreeToCurrent(state.consentRecord, 'dietLog', state.consent, todayISO());
+    }
+    // 동의 장에서 식단 기록을 다시 껐으면 체중 장에서 적은 키 · 나이도 남기지 않는다
+    if (!E.agreedToCurrent(state.consentRecord, 'dietLog')) state.bodyInfo = null;
 
     var result = E.runOnboarding(state.answers);
     // 처음 시작한 날 — 다시 설정해도 바뀌지 않는다
@@ -24886,6 +25235,7 @@
         onclick: function () {
           state.consent = everything ? [] : E.CONSENT_ITEMS.map(function (item) { return item.id; });
           state.onboarding.alerts = !everything;
+          if (everything) state.bodyInfo = null;
           render();
         },
       }));
@@ -24919,6 +25269,8 @@
             state.consent = on
               ? state.consent.filter(function (id) { return id !== item.id; })
               : state.consent.concat([item.id]);
+            // 식단 기록을 끄면 체중 장에서 적은 키 · 나이 · 활동량도 버린다(그 동의로 받는 것이다)
+            if (on && item.id === 'dietLog') state.bodyInfo = null;
             render();
           },
         }),
@@ -25166,6 +25518,62 @@
       }),
     ]));
     screen.appendChild(el('p', { class: 'hint-line ob-later', text: '모르면 그대로 두셔도 됩니다.' }));
+    screen.appendChild(obBodyInfo());
+  }
+
+  /*
+   * 체중 장 아래 — 키 · 출생 연도 · 활동량(모두 선택). 식단 목표 칼로리를 더 정확하게 잡는 데만 쓴다.
+   *
+   * 이 셋은 식단 기록 동의(선택 · 민감정보)에 들어 있다. 동의 장에서 이미 켰으면 칸 셋을 바로 보여 주고,
+   * 아니면 글자 링크 하나만 둔다 — 대부분은 그냥 "다음"을 누른다. 링크를 펼치면 식단 기록 동의 한 줄
+   * (내용 보기 · 동의하고 적기)이 먼저 나오고, 동의한 뒤에야 칸이 열린다. 동의 전에는 아무것도 받지 않는다.
+   */
+  function obBodyInfo() {
+    var ob = state.onboarding;
+    var wrap = el('div', { class: 'ob-q ob-body' }, [
+      el('h3', { class: 'ob-q-title', text: '식단 목표도 정확하게 (선택)' }),
+    ]);
+    if (bodyInfoAllowed()) {
+      wrap.appendChild(bodyInfoFields({ compact: true, idPrefix: 'ob-body' }));
+      wrap.appendChild(el('p', { class: 'hint-line', text: '하루 칼로리 목표를 계산하는 데만 씁니다. 이 폰에만 저장합니다.' }));
+      return wrap;
+    }
+    if (!ob.bodyOpen) {
+      wrap.appendChild(el('button', {
+        type: 'button', class: 'linkish ob-body-open', 'aria-expanded': 'false',
+        text: '키 · 나이 · 활동량도 적기 ›',
+        onclick: function () { ob.bodyOpen = true; render(); },
+      }));
+      wrap.appendChild(el('p', { class: 'hint-line', text: '적으면 하루 칼로리 목표가 더 정확해집니다. 안 적어도 됩니다.' }));
+      return wrap;
+    }
+    var item = E.consentItem('dietLog');
+    var open = Boolean(ob.dietTermsOpen);
+    wrap.appendChild(el('p', { class: 'hint-line', text:
+      '이 셋은 식단 기록 동의(선택)에 들어 있습니다. 동의하시면 칸이 열립니다. 동의하지 않으면 목표는 체중으로 어림합니다.' }));
+    wrap.appendChild(el('div', { class: 'consent-card consent-line ob-diet-consent' + (open ? ' open' : ''), 'data-consent': 'dietLog' }, [
+      el('div', { class: 'consent-head' }, [
+        el('span', { class: 'consent-tag opt', text: '선택' }),
+        el('span', { class: 'consent-title', text: item.label }),
+        el('button', {
+          type: 'button', class: 'consent-view', 'aria-expanded': String(open),
+          'aria-label': item.label + ' 내용 ' + (open ? '접기' : '보기'),
+          text: open ? '접기' : '내용 보기 ›',
+          onclick: function () { ob.dietTermsOpen = !open; render(); },
+        }),
+      ]),
+      open ? consentBody(item) : null,
+    ]));
+    wrap.appendChild(el('button', {
+      type: 'button', class: 'pick ob-diet-agree', text: '동의하고 적기',
+      onclick: function () {
+        if (state.consent.indexOf('dietLog') < 0) state.consent = state.consent.concat(['dietLog']);
+        // 지금 문구를 보고 눌렀다 — 다시 설정하는 중이면 마칠 때 식단 기록만 지금 문구로 적는다
+        ob.dietAgreed = true;
+        render();
+      },
+    }));
+    return wrap;
   }
 
   /** 질문 하나 — 제목 한 줄과 고르는 칸. */
@@ -25603,6 +26011,9 @@
   // 코치 목소리를 쓰는 사람이면 이 폰에 받아 둔다 (처음 한 번, 약 9MB)
   if (ptOn() || state.voiceOn) fetchCoachVoice();
   render();
+  // 동의 문구가 바뀌었고 동의했던 선택 항목이 그 안에 있으면 — 오늘 화면 위에 한 번만 묻는다
+  // (알림의 "바로 운동 시작"으로 열렸으면 운동이 먼저다 — 다음에 열 때 묻는다)
+  if (state.reconsent && !state.onboarding.active && !state.authOpen && !E.wantsQuickStart(location.search)) openReconsent();
   /*
    * 알림이나 앱 아이콘의 "바로 운동 시작"으로 열렸다(?go=start). 주소에서 지우고(새로 고쳐도 또 시작하지 않게)
    * 곧장 오늘 운동으로 — 쉬는 날 · 마친 날 · 아픈 날은 오늘 화면 그대로(quickStart).

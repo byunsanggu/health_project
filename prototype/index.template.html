@@ -3411,6 +3411,38 @@ button.focus-progress:active { background: var(--surface-2); }
 .ob-goals .pick { min-height: 44px; }
 .ob-goals .pick[aria-pressed="true"] { background: var(--accent-soft); }
 .ob-later { margin-top: 4px; font-size: 13px; }
+/* 키 · 출생 연도 · 활동량(식단 목표용, 모두 선택) — 처음 설정 체중 장 · 내 정보 · 식단 자세히에서 같이 쓴다 */
+.ob-body { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.ob-body .ob-body-open { display: block; min-height: 44px; font-size: 13px; }
+.ob-body .ob-diet-agree { min-height: 44px; margin-top: 8px; padding: 6px 16px; font-size: 13px; color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.body-info { display: grid; gap: 8px; }
+.body-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.body-field { display: grid; gap: 4px; min-width: 0; font-size: 12.5px; color: var(--muted); }
+.body-field-box { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.body-field-box:focus-within { border-color: var(--accent); }
+.body-field-box .unit { flex: none; font-size: 12px; color: var(--muted); }
+.body-input.text-input { flex: 1 1 auto; min-width: 0; border: 0; background: none; padding: 10px 0 10px 12px; font-family: var(--sans); font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.body-input::placeholder { font-weight: 400; color: var(--muted); }
+.body-input::-webkit-outer-spin-button, .body-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.body-act-label { margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.body-acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.body-act { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 44px; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.body-act b { font-size: 13px; font-weight: 600; }
+.body-act-hint { font-size: 11px; color: var(--muted); line-height: 1.35; }
+.body-act[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.body-act[aria-pressed="true"] b { color: var(--accent); }
+.body-warn:empty { display: none; }
+.body-preview { font-size: 12.5px; color: var(--ink); }
+/* 바뀐 동의 내용을 한 번 묻는 창 */
+.reconsent-sheet, .reconsent-body-info { display: grid; gap: 10px; }
+.reconsent-new { margin: 0; padding: 10px 12px 10px 28px; display: grid; gap: 6px; border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.55; }
+.reconsent-more { justify-self: start; min-height: 44px; font-size: 13px; }
+.reconsent-full { display: grid; gap: 8px; }
+.reconsent-full[hidden] { display: none; }
+.reconsent-actions { display: grid; gap: 6px; margin-top: 2px; }
+.food-method { color: var(--ink); font-weight: 500; }
+.food-bmi-note { margin: 2px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink); }
+.food-body-open { justify-self: start; min-height: 40px; padding: 6px 14px; font-size: 12.5px; color: var(--accent); border-color: var(--accent); }
 /* 처음 설정 첫 장 — 목표 그림 카드 다섯(한 줄에 하나: 그림 · 이름 · 한 줄 설명) */
 .goal-cards { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; }
 .goal-card { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 58px; padding: 6px 12px 6px 6px; border: 1.5px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); text-align: left; font: inherit; cursor: pointer; }

@@ -2,20 +2,24 @@
  * 하루 목표 — 칼로리 하나, 단백질 하나.
  *
  * 처음 온 사람이 식단 탭에서 가장 먼저 묻는 것은 "그래서 오늘 얼마나 먹어요?"다. 먹은 것을
- * 적으면 "2,081kcal"가 나오는데, 기준이 없으면 그 숫자는 많은지 적은지 알 수 없다. 그렇다고
- * 키 · 나이 · 활동량을 물어 공식을 돌릴 수는 없다 — 그 셋은 동의받은 항목이 아니다(consent.ts:
- * 식단 기록 동의는 "먹은 음식과 양, 끼니"로 칼로리를 계산하고 "체중 변화와 맞춰 내 유지 칼로리"를
- * 내는 데까지다. 성별은 운동 계획에만 쓰기로 받았다).
+ * 적으면 "2,081kcal"가 나오는데, 기준이 없으면 그 숫자는 많은지 적은지 알 수 없다.
  *
- * 그래서 **체중 하나로** 어림하고, 저울과 기록이 모이면 그 사람 몸에 맞춰 고친다.
+ * 유지 칼로리를 셋 중 하나로 잡는다.
  *
- *   1. 처음: 체중으로 어림한 유지 칼로리 ± 목표(감량은 주에 체중의 0.5%쯤, 늘리기는 조금 더)
- *   2. 2주 뒤: 체중이 목표대로 안 움직이면 한 번에 150kcal씩(밥 반 공기) 고친다
- *   3. 3주쯤 적고 재면: 먹은 양과 체중 변화로 낸 "내 유지 칼로리"로 바꾼다(foodLog.ts)
+ *   1. 키 · 나이 · 성별을 알면: 기초대사량(Mifflin–St Jeor) × 활동량 계수. 키 · 출생 연도 · 활동량은
+ *      식단 기록 동의 2026-11-28 판이 받은 항목이고 적는 것은 선택이다(consent.ts). 성별은 그 판에서
+ *      칼로리 계산에도 쓴다고 적었다. 동의가 예전 판이면 앱이 키 · 나이를 넘기지 않는다.
+ *   2. 모르면: **체중 하나로** 어림한다(22 × 체중 + 650).
+ *   3. 3주쯤 적고 재면: 먹은 양과 체중 변화로 낸 "내 유지 칼로리"가 위 둘을 이긴다(foodLog.ts).
+ *
+ * 거기서 목표(감량은 주에 체중의 0.5%쯤, 늘리기는 조금 더)를 더하고, 2주 뒤 체중이 목표대로 안
+ * 움직이면 한 번에 150kcal씩(밥 반 공기) 고친다(1 · 2일 때만 — 3에는 이미 저울이 들어 있다).
  *
  * 그리고 바닥을 둔다. 감량 목표는 하루 1,200kcal(큰 사람은 체중 × 20) 아래로 내려가지 않고,
  * 처음에는 500kcal보다 크게 빼지 않으며, 저울을 보고 고친 뒤에도 주에 체중의 1%(하루 체중 × 11kcal,
  * 많아야 750kcal)를 넘게 빼지 않는다. 숫자가 바닥에 닿으면 더 줄이라고 하지 않고 걷기를 말한다.
+ * 키를 알고 BMI가 18.5 아래면 감량 폭을 주지 않고 지금 몸을 지키는 목표로, 17 아래면 전문가와
+ * 상의하라는 말을 같이 한다 — 어느 쪽이든 유지 칼로리 아래로는 잡지 않는다.
  */
 import type { BodyGoal, BodyTrend } from './bodyTrend.ts';
 import {
@@ -65,8 +69,160 @@ export function goalOffset(bodyweightKg: number, goal: BodyGoal): number {
   return 0;
 }
 
+/* ── 키 · 나이 · 활동량으로 계산하기 ───────────────── */
+
+/** 평소 활동량 — 운동하는 시간을 뺀 하루. 운동은 주 몇 번(프로그램)으로 따로 더한다 */
+export type ActivityLevel = 'sitting' | 'light' | 'moving' | 'physical';
+
+export interface ActivityOption {
+  id: ActivityLevel;
+  /** 고르는 칸 글 */
+  label: string;
+  /** 어떤 사람인지 한 줄 */
+  hint: string;
+  /** 운동을 뺀 하루의 활동 계수(기초대사량에 곱한다) */
+  factor: number;
+}
+
+/*
+ * 계수. 흔히 쓰는 1.2 · 1.375 · 1.55 · 1.725(앉아서 · 가볍게 · 보통 · 많이)는 "운동 포함" 값이라,
+ * 여기에 운동을 또 더하면 두 번 센다. 그래서 운동을 뺀 하루를 고르게 하고(아래 넷), 근력 운동은
+ * 주 1회마다 +0.025씩 따로 더한다(TRAINING_FACTOR_PER_DAY). 그러면 흔한 값과 맞아떨어진다 —
+ * 앉아서 일하고 주 3회면 1.275, 조금 움직이고 주 4회면 1.4, 많이 움직이고 주 4회면 1.55(보통과 같다),
+ * 몸 쓰는 일에 주 5회면 1.725(많이와 같다). 흔한 표의 "가볍게"(1.375)는 실제보다 높게 나온다는 보고가
+ * 많아서 앉아서 일하는 사람은 그보다 조금 낮게 둔다.
+ */
+export const ACTIVITY_OPTIONS: readonly ActivityOption[] = [
+  { id: 'sitting', label: '주로 앉아 있음', hint: '사무실 · 공부 · 운전', factor: 1.2 },
+  { id: 'light', label: '조금 움직임', hint: '걸어서 출퇴근 · 집안일', factor: 1.3 },
+  { id: 'moving', label: '많이 움직임', hint: '서서 일함 · 매장 · 돌봄', factor: 1.45 },
+  { id: 'physical', label: '몸 쓰는 일', hint: '건설 · 택배 · 이사 · 농사', factor: 1.6 },
+];
+
+/** 근력 운동 주 1회마다 더하는 계수 — 한 시간 운동과 회복을 한 주에 나눈 몫(70kg 남성이면 한 번에 약 290kcal) */
+export const TRAINING_FACTOR_PER_DAY = 0.025;
+
+/** 활동량을 안 골랐을 때 — 가운데쯤 */
+export const DEFAULT_ACTIVITY: ActivityLevel = 'light';
+
+/** 받는 키 · 출생 연도 범위. 나이는 공식이 맞는 어른(18~90세)일 때만 계산에 쓴다 */
+export const HEIGHT_RANGE = { min: 130, max: 220 } as const;
+export const FORMULA_AGE = { min: 18, max: 90 } as const;
+/** 출생 연도 칸이 받는 나이 — 14세 아래는 받지 않는다 */
+export const INPUT_AGE = { min: 14, max: 90 } as const;
+
+export function activityOption(id: ActivityLevel | null | undefined): ActivityOption | undefined {
+  return ACTIVITY_OPTIONS.find((option) => option.id === id);
+}
+
 /**
- * 저울이 목표대로 안 움직일 때 한 번에 고치는 양. 체중으로 어림한 목표에만 쓴다 —
+ * 활동 계수 = 평소 활동량 + 근력 운동 주 몇 번(×0.025, 6번까지).
+ * 운동하는 날은 여기서 이미 세었으므로, 운동하는 날 목표를 따로 올리지 않는다(dayTip과 같은 원칙).
+ */
+export function activityFactor(activity: ActivityLevel | null | undefined, trainingDays: number | null | undefined): number {
+  const base = (activityOption(activity) ?? activityOption(DEFAULT_ACTIVITY)!).factor;
+  const days = Number.isFinite(trainingDays) ? Math.max(0, Math.min(6, Math.round(trainingDays as number))) : 3;
+  return Math.round((base + days * TRAINING_FACTOR_PER_DAY) * 1000) / 1000;
+}
+
+/** 출생 연도로 센 나이 — 생일은 받지 않으므로 올해 생일이 지났다고 본다(±1살) */
+export function ageFromBirthYear(birthYear: number | null | undefined, today: string): number | null {
+  if (typeof birthYear !== 'number' || !Number.isFinite(birthYear)) return null;
+  const year = Number(today.slice(0, 4));
+  if (!Number.isFinite(year)) return null;
+  return year - Math.round(birthYear);
+}
+
+/**
+ * 기초대사량(하루 kcal) — Mifflin–St Jeor(1990).
+ * 남성 10 × 체중 + 6.25 × 키 − 5 × 나이 + 5, 여성은 마지막이 −161.
+ * 어른 기준으로 실제 잰 값과 ±10% 안에 드는 경우가 가장 많은 식이다.
+ */
+export function mifflinBmr(input: { kg: number; heightCm: number; age: number; sex: 'male' | 'female' }): number {
+  const base = 10 * input.kg + 6.25 * input.heightCm - 5 * input.age;
+  return Math.round(base + (input.sex === 'female' ? -161 : 5));
+}
+
+/** BMI(소수 한 자리). 키를 모르면 null */
+export function bmiOf(kg: number, heightCm: number | null | undefined): number | null {
+  if (!(kg > 0) || typeof heightCm !== 'number' || !(heightCm > 0)) return null;
+  const m = heightCm / 100;
+  return Math.round((kg / (m * m)) * 10) / 10;
+}
+
+/** 키 · 출생 연도 · 평소 활동량 — 이 폰에만 둔다(식단 기록 동의 2026-11-28 판) */
+export interface BodyInfo {
+  heightCm: number | null;
+  birthYear: number | null;
+  activity: ActivityLevel | null;
+}
+
+/**
+ * 저장소에서 읽은 값을 고른다 — 범위를 벗어난 칸은 버리고, 셋 다 없으면 null.
+ * today가 있으면 출생 연도를 그해 기준 14~90세로 본다.
+ */
+export function normalizeBodyInfo(raw: unknown, today?: string): BodyInfo | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Record<string, unknown>;
+  const height = typeof value.heightCm === 'number' && Number.isFinite(value.heightCm)
+    && value.heightCm >= HEIGHT_RANGE.min && value.heightCm <= HEIGHT_RANGE.max
+    ? Math.round(value.heightCm * 10) / 10 : null;
+  const year = today ? Number(today.slice(0, 4)) : new Date().getFullYear();
+  const birth = typeof value.birthYear === 'number' && Number.isInteger(value.birthYear)
+    && year - value.birthYear >= INPUT_AGE.min && year - value.birthYear <= INPUT_AGE.max
+    ? value.birthYear : null;
+  const activity = activityOption(value.activity as ActivityLevel) ? value.activity as ActivityLevel : null;
+  if (height === null && birth === null && activity === null) return null;
+  return { heightCm: height, birthYear: birth, activity };
+}
+
+export interface BodyMaintenance {
+  /** 유지 칼로리(50 단위) */
+  kcal: number;
+  bmr: number;
+  factor: number;
+  age: number;
+  activity: ActivityLevel;
+  /** 활동량을 안 골라 가운데로 봤는가 */
+  assumedActivity: boolean;
+  trainingDays: number;
+}
+
+/**
+ * 키 · 나이 · 성별로 계산한 유지 칼로리. 하나라도 모르거나 나이가 18~90세 밖이면 null(체중으로 어림한다).
+ */
+export function bodyMaintenance(input: {
+  kg: number; body?: BodyInfo | null; sex?: 'male' | 'female' | null; trainingDays?: number | null; today?: string;
+}): BodyMaintenance | null {
+  const body = input.body;
+  if (!body || !(input.kg > 0) || !input.today) return null;
+  if (input.sex !== 'male' && input.sex !== 'female') return null;
+  const height = body.heightCm;
+  if (typeof height !== 'number' || height < HEIGHT_RANGE.min || height > HEIGHT_RANGE.max) return null;
+  const age = ageFromBirthYear(body.birthYear, input.today);
+  if (age === null || age < FORMULA_AGE.min || age > FORMULA_AGE.max) return null;
+  const activity = activityOption(body.activity)?.id ?? DEFAULT_ACTIVITY;
+  const trainingDays = Number.isFinite(input.trainingDays) ? Math.max(0, Math.min(6, Math.round(input.trainingDays as number))) : 3;
+  const bmr = mifflinBmr({ kg: input.kg, heightCm: height, age, sex: input.sex });
+  const factor = activityFactor(activity, trainingDays);
+  return {
+    kcal: round50(bmr * factor), bmr, factor, age, activity,
+    assumedActivity: !activityOption(body.activity), trainingDays,
+  };
+}
+
+/** BMI가 낮을 때 — 'low' 18.5 아래(감량 폭을 주지 않는다) · 'veryLow' 17 아래(전문가와 상의) */
+export type BmiGuard = 'low' | 'veryLow';
+
+export function bmiGuardOf(bmi: number | null): BmiGuard | null {
+  if (bmi === null) return null;
+  if (bmi < 17) return 'veryLow';
+  if (bmi < 18.5) return 'low';
+  return null;
+}
+
+/**
+ * 저울이 목표대로 안 움직일 때 한 번에 고치는 양. 공식으로 잡은 목표(체중 어림 · 키 · 나이)에만 쓴다 —
  * 먹은 양과 체중으로 낸 유지 칼로리에는 이미 저울이 들어 있다.
  */
 export function trendAdjust(trend: BodyTrend | null | undefined, goal: BodyGoal): number {
@@ -89,7 +245,8 @@ export function trendAdjust(trend: BodyTrend | null | undefined, goal: BodyGoal)
 
 /* ── 하루 목표 ──────────────────────────────────── */
 
-export type TargetSource = 'weight' | 'log';
+/** weight: 체중으로 어림 · body: 키 · 나이 · 성별 · 활동량으로 계산 · log: 먹은 양과 체중 변화로 계산 */
+export type TargetSource = 'weight' | 'body' | 'log';
 
 export interface DailyTargets {
   /** 하루 칼로리 목표(50 단위) */
@@ -112,31 +269,72 @@ export interface DailyTargets {
   floor: number;
   /** 바닥에 걸려서 올렸는가 */
   floored: boolean;
-  /** 적은 양이 실제보다 적어 보이는가(먹은 양으로 낸 유지량이 체중 어림의 80%도 안 된다) */
+  /** 적은 양이 실제보다 적어 보이는가(먹은 양으로 낸 유지량이 공식 어림의 80%도 안 된다) */
   underLogged: boolean;
+  /** "이 숫자를 정한 법" — 어느 방법으로 정했는지 한 줄 */
+  method: string;
   /** "자세히"에 쓰는 설명 — 두세 줄 */
   why: string[];
+  /** 키를 알 때의 BMI(소수 한 자리), 모르면 null */
+  bmi: number | null;
+  /** BMI가 낮아 감량 폭을 주지 않았는가 */
+  bmiGuard: BmiGuard | null;
+  /** 막대 아래에 바로 보이는 한마디(BMI가 낮을 때) — 자세히 뒤에 숨기지 않는다 */
+  note: string | null;
+  /** 실제로 잡은 방향 — 감량을 골랐어도 BMI가 낮으면 'hold'. 끼니 예시 · 바꿔 먹기 · 한 주 점검이 따른다 */
+  planGoal: BodyGoal;
 }
 
 export interface TargetInput {
   bodyweightKg: number;
   goal: BodyGoal;
-  /** 먹은 양과 체중으로 낸 유지 칼로리(foodLog.maintenanceEstimate). 없으면 체중으로 어림한다 */
+  /** 먹은 양과 체중으로 낸 유지 칼로리(foodLog.maintenanceEstimate). 없으면 공식으로 잡는다 */
   estimate?: MaintenanceEstimate | null;
-  /** 체중 추세 — 체중 어림일 때 목표를 고치는 데 쓴다 */
+  /** 체중 추세 — 공식으로 잡은 목표를 고치는 데 쓴다 */
   trend?: BodyTrend | null;
+  /** 키 · 출생 연도 · 활동량 — 식단 기록 동의가 지금 판일 때만 넘긴다 */
+  body?: BodyInfo | null;
+  /** 성별 — 키 · 나이를 알 때만 공식에 쓴다 */
+  sex?: 'male' | 'female' | null;
+  /** 주 몇 번 근력 운동을 하는가(프로그램). 없으면 3 */
+  trainingDays?: number | null;
+  /** 오늘(YYYY-MM-DD) — 출생 연도로 나이를 센다 */
+  today?: string;
+}
+
+/** 공식에 무엇이 모자란지 — "출생 연도를 적으면 …". 키 · 출생 연도가 다 있으면 null(나이가 범위 밖) */
+function missingBodyWords(input: TargetInput): string | null {
+  const body = input.body;
+  const noHeight = !body || typeof body.heightCm !== 'number';
+  const noYear = !body || typeof body.birthYear !== 'number';
+  if (noHeight && noYear) return '키 · 출생 연도 · 활동량';
+  if (noHeight) return '키';
+  if (noYear) return '출생 연도';
+  return null;
 }
 
 export function dailyTargets(input: TargetInput): DailyTargets | null {
   const kg = input.bodyweightKg;
   if (!Number.isFinite(kg) || kg <= 0) return null;
   const goal = input.goal;
-  const guess = startingMaintenance(kg);
+  const formula = bodyMaintenance({
+    kg, body: input.body, sex: input.sex, trainingDays: input.trainingDays, today: input.today,
+  });
+  const guess = formula ? formula.kcal : startingMaintenance(kg);
   const estimate = input.estimate && input.estimate.kcal > 0 ? input.estimate : null;
-  const source: TargetSource = estimate ? 'log' : 'weight';
+  const source: TargetSource = estimate ? 'log' : formula ? 'body' : 'weight';
   const maintenance = estimate ? estimate.kcal : guess;
-  const offset = goalOffset(kg, goal);
-  let adjust = source === 'weight' ? trendAdjust(input.trend, goal) : 0;
+
+  // BMI가 낮으면 감량을 골랐어도 지금 몸을 지키는 쪽으로 — 유지 칼로리 아래로는 잡지 않는다
+  const bmi = bmiOf(kg, input.body?.heightCm);
+  const bmiGuard = bmiGuardOf(bmi);
+  const planGoal: BodyGoal = bmiGuard && goal === 'cut' ? 'hold' : goal;
+  let offset = goalOffset(kg, planGoal);
+  let adjust = source !== 'log' ? trendAdjust(input.trend, planGoal) : 0;
+  if (bmiGuard) {
+    offset = Math.max(0, offset);
+    adjust = Math.max(0, adjust);
+  }
   // 고친 뒤에도 주에 체중의 1%보다 빠르게 빼는 숫자는 내지 않는다
   const maxCut = Math.min(750, round50(Math.min(kg, 120) * 11));
   if (offset + adjust < -maxCut) adjust = Math.min(0, -maxCut - offset);
@@ -149,33 +347,62 @@ export function dailyTargets(input: TargetInput): DailyTargets | null {
   const fat = round5(Math.max(0.6 * Math.min(kg, 100), (kcal * 0.25) / 9));
   const carbs = Math.max(0, round5((kcal - protein * 4 - fat * 9) / 4));
 
+  const activity = formula ? activityOption(formula.activity)! : null;
+  const missing = missingBodyWords(input);
+  const method = source === 'log'
+    ? `정한 법: ${estimate!.days}일 동안 먹은 양과 체중 변화로 계산했습니다 — 계산식보다 내 몸에 더 맞습니다.`
+    : source === 'body'
+      ? `정한 법: 키 · 나이 · 성별 · 체중으로 기초대사량을 내고, 평소 활동량(${activity!.label}${formula!.assumedActivity ? ' — 안 고르셔서 가운데로 봄' : ''})과 주 ${formula!.trainingDays}회 운동만큼 늘렸습니다.`
+      : missing
+        ? `정한 법: 체중만으로 어림했습니다 — ${missing}${/량$/.test(missing) ? '을' : '를'} 적으면 더 정확해집니다.`
+        : '정한 법: 체중만으로 어림했습니다 — 키 · 나이로 계산하는 식은 18~90세 어른에게 맞춘 것이라 쓰지 않았습니다.';
+
   const why: string[] = [];
-  const offsetWords = goal === 'cut'
+  const offsetWords = offset < 0
     ? `${-offset}kcal 덜 — 일주일에 체중의 0.5%쯤 빠지는 속도입니다.`
-    : goal === 'grow'
+    : offset > 0
       ? `${offset}kcal 더 — 근육이 붙는 만큼만 더합니다.`
-      : '그대로 — 지금 몸을 지킵니다.';
+      : bmiGuard && goal === 'cut'
+        ? '그대로 — 체중이 키에 비해 가벼운 편이라 줄이지 않습니다.'
+        : '그대로 — 지금 몸을 지킵니다.';
   why.push(source === 'log'
     ? `${estimate!.days}일 먹은 양과 체중 변화로 계산한 내 유지 칼로리 ${kcalText(maintenance)}에서 ${offsetWords}`
-    : `체중 ${Math.round(kg * 10) / 10}kg으로 어림한 유지 칼로리 ${kcalText(maintenance)}에서 ${offsetWords}`);
+    : source === 'body'
+      ? `키 · 나이 · 활동량으로 계산한 유지 칼로리 ${kcalText(maintenance)}(기초대사량 ${kcalText(formula!.bmr)} × ${formula!.factor})에서 ${offsetWords}`
+      : `체중 ${Math.round(kg * 10) / 10}kg으로 어림한 유지 칼로리 ${kcalText(maintenance)}에서 ${offsetWords}`);
   if (adjust !== 0) {
     const size = Math.abs(adjust);
-    const reason = goal === 'cut'
+    const reason = planGoal === 'cut'
       ? (adjust < 0 ? '체중이 2주째 그대로이거나 늘어서' : '너무 빨리 빠져서')
-      : goal === 'grow'
+      : planGoal === 'grow'
         ? (adjust < 0 ? '너무 빨리 늘어서' : '체중이 늘지 않아서')
         : (adjust < 0 ? '조금씩 늘고 있어서' : '조금씩 빠지고 있어서');
     why.push(adjust < 0
       ? `${reason} ${size}kcal 낮췄습니다(밥 반 공기쯤).`
       : `${reason} ${size}kcal 올렸습니다.`);
   }
-  if (floored) why.push(`건강하게 빼려면 하루 ${kcalText(floor)} 아래로는 잡지 않습니다.`);
-  if (goal === 'cut' && kg < 50) why.push('체중이 가벼운 편이라 감량 폭을 작게 잡았습니다. 빼기보다 근육을 붙이는 쪽이 몸매에 더 큰 차이를 냅니다.');
-  if (source === 'weight') why.push('키 · 나이를 묻지 않고 체중으로 어림한 숫자라 ±10% 틀릴 수 있습니다. 3주쯤 적고 재면 내 몸에 맞춰 다시 계산합니다.');
+  if (floored) {
+    why.push(goal === 'cut'
+      ? `건강하게 빼려면 하루 ${kcalText(floor)} 아래로는 잡지 않습니다.`
+      : `건강을 지키려면 하루 ${kcalText(floor)} 아래로는 잡지 않습니다.`);
+  }
+  // 키를 모를 때만 — 키를 알면 BMI로 가볍다 · 아니다를 가린다
+  if (goal === 'cut' && kg < 50 && bmi === null) why.push('체중이 가벼운 편이라 감량 폭을 작게 잡았습니다. 빼기보다 근육을 붙이는 쪽이 몸매에 더 큰 차이를 냅니다.');
+  if (source === 'weight') why.push('체중으로만 어림한 숫자라 ±10~15% 틀릴 수 있습니다. 3주쯤 적고 재면 내 몸에 맞춰 다시 계산합니다.');
+  if (source === 'body') why.push('계산식도 사람마다 ±10%쯤 다릅니다. 3주쯤 적고 재면 내 몸에 맞춰 다시 계산합니다.');
   const underLogged = source === 'log' && maintenance < guess * 0.8;
   if (underLogged) why.push('적은 양이 실제보다 적어 보입니다. 소스 · 음료 · 간식까지 적으면 더 맞습니다.');
 
-  return { kcal, protein, carbs, fat, maintenance, source, offset, adjust, floor, floored, underLogged, why };
+  const note = bmiGuard === 'veryLow'
+    ? `키에 비해 체중이 많이 가벼운 편입니다(BMI ${bmi}). 먹는 양은 줄이지 마시고, 식단은 의사나 영양사 같은 전문가와 상의해 보세요.`
+    : bmiGuard === 'low' && goal === 'cut'
+      ? `키에 비해 체중이 가벼운 편이라(BMI ${bmi}) 줄이지 않고 지금 몸을 지키는 목표로 잡았습니다. 근육을 붙이면 몸매가 더 달라집니다.`
+      : null;
+
+  return {
+    kcal, protein, carbs, fat, maintenance, source, offset, adjust, floor, floored, underLogged,
+    method, why, bmi, bmiGuard, note, planGoal,
+  };
 }
 
 /* ── 오늘 막대에 쓰는 말 ─────────────────────────── */
@@ -260,7 +487,21 @@ function dayNumber(date: string): number {
  * 하루 3,000보 더"처럼 **한 번에 한 가지, 작게** 말한다. 바닥에 닿으면 덜 먹으라는 말을 하지 않는다.
  */
 export function weeklyCheckIn(input: CheckInInput): WeeklyCheckIn {
-  const { targets, goal } = input;
+  const check = weeklyCheckInRaw(input);
+  /*
+   * BMI가 낮아 지금 몸을 지키는 목표면 덜 먹으라는 말을 하지 않는다 — 늘고 있어도 괜찮은 몸이다.
+   * 목표에서 이미 낮추는 것을 뺐으므로(dailyTargets) "150kcal 낮췄습니다"도 거짓말이 된다.
+   */
+  if (input.targets.bmiGuard && check.tone === 'less') {
+    return { ...check, tone: 'keep', advice: '체중이 키에 비해 가벼운 편이라 더 줄이지 않습니다. 지금처럼 드세요.' };
+  }
+  return check;
+}
+
+function weeklyCheckInRaw(input: CheckInInput): WeeklyCheckIn {
+  const { targets } = input;
+  // 감량을 골랐어도 BMI가 낮아 유지로 잡았으면 유지 쪽 말을 한다
+  const goal = targets.planGoal ?? input.goal;
   const avg = intakeAverage(input.entries, input.today, 7);
   const days = avg?.days ?? 0;
 
@@ -297,7 +538,7 @@ export function weeklyCheckIn(input: CheckInInput): WeeklyCheckIn {
 
   // 너무 빨리 빠지는 것이 무엇보다 먼저다
   if (pace === 'fastDown' && goal !== 'grow') {
-    return result('more', targets.source === 'weight' && targets.adjust > 0
+    return result('more', targets.source !== 'log' && targets.adjust > 0
       ? `너무 빨리 빠지고 있어 목표를 ${targets.adjust}kcal 올렸습니다. 근육을 지키는 쪽입니다.`
       : '너무 빨리 빠지고 있습니다. 하루 200kcal쯤 더 드세요 — 근육을 지키는 쪽입니다.');
   }
@@ -314,7 +555,7 @@ export function weeklyCheckIn(input: CheckInInput): WeeklyCheckIn {
     return result('more', `목표보다 ${kcalText(round50(-diff))} 적게 드십니다. 너무 적게 먹으면 오래 못 갑니다 — 목표만큼은 드세요.`);
   }
 
-  // 체중으로 어림한 목표 — 저울이 2주 쌓여야 맞는지 안다
+  // 공식으로 잡은 목표(체중 어림 · 키 · 나이) — 저울이 2주 쌓여야 맞는지 안다
   if (!pace) {
     return result('wait', days < 3
       ? '두 끼 이상 적은 날이 3일, 체중이 2주쯤 모이면 먹는 양이 맞는지 점검해 드립니다.'

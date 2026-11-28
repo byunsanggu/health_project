@@ -3,8 +3,9 @@ import { describe, it } from 'node:test';
 
 import { buildBodyTrend, type BodyGoal } from '../bodyTrend.ts';
 import {
-  dailyTargets, dayTip, fitMealsToTarget, goalOffset, kcalLeftText, startingMaintenance, swapIdeas,
-  trendAdjust, weeklyCheckIn,
+  ACTIVITY_OPTIONS, activityFactor, ageFromBirthYear, bmiOf, bodyMaintenance, dailyTargets, dayTip,
+  fitMealsToTarget, goalOffset, kcalLeftText, mifflinBmr, normalizeBodyInfo, startingMaintenance, swapIdeas,
+  trendAdjust, weeklyCheckIn, type ActivityLevel, type BodyInfo,
 } from '../dietTargets.ts';
 import {
   intakeGuide, minDailyKcal, parseFoodText, portion, foodById, type FoodEntry, type MaintenanceEstimate,
@@ -375,5 +376,250 @@ describe('고친 까닭을 목표에 맞게 말한다', () => {
     assert.ok(grow.why.some((line) => line.includes('늘지 않아서 150kcal 올렸습니다')), grow.why.join(' / '));
     const fast = dailyTargets({ bodyweightKg: 70, goal: 'cut', trend: trendOf('cut', -1.4, 70) })!;
     assert.ok(fast.why.some((line) => line.includes('너무 빨리 빠져서 200kcal 올렸습니다')), fast.why.join(' / '));
+  });
+});
+
+/* ── 키 · 나이 · 활동량 (식단 기록 동의 2026-11-28 판) ── */
+
+const body = (heightCm: number | null, birthYear: number | null, activity: ActivityLevel | null = null): BodyInfo =>
+  ({ heightCm, birthYear, activity });
+
+describe('키 · 나이 · 성별로 계산 — Mifflin–St Jeor × 활동량', () => {
+  it('기초대사량 공식 값 — 남성 +5, 여성 −161', () => {
+    // 10 × 70 + 6.25 × 175 − 5 × 30 + 5 = 1,648.75
+    assert.equal(mifflinBmr({ kg: 70, heightCm: 175, age: 30, sex: 'male' }), 1649);
+    // 10 × 58 + 6.25 × 162 − 5 × 30 − 161 = 1,281.5
+    assert.equal(mifflinBmr({ kg: 58, heightCm: 162, age: 30, sex: 'female' }), 1282);
+    assert.equal(mifflinBmr({ kg: 70, heightCm: 175, age: 30, sex: 'male' }) - mifflinBmr({ kg: 70, heightCm: 175, age: 30, sex: 'female' }), 166);
+    assert.equal(ageFromBirthYear(1996, TODAY), 30);
+    assert.equal(ageFromBirthYear(null, TODAY), null);
+  });
+
+  it('활동 계수 — 평소 활동량 + 근력 운동 주 1회마다 0.025 (운동하는 날은 여기서 이미 센다)', () => {
+    assert.deepEqual(ACTIVITY_OPTIONS.map((option) => option.label), ['주로 앉아 있음', '조금 움직임', '많이 움직임', '몸 쓰는 일']);
+    assert.equal(activityFactor('sitting', 3), 1.275);
+    assert.equal(activityFactor('light', 4), 1.4);
+    assert.equal(activityFactor('moving', 4), 1.55, '많이 움직이고 주 4회 = 흔한 "보통"(1.55)');
+    assert.equal(activityFactor('physical', 5), 1.725, '몸 쓰는 일에 주 5회 = 흔한 "많이"(1.725)');
+    assert.equal(activityFactor('sitting', 0), 1.2);
+    assert.equal(activityFactor('physical', 7), activityFactor('physical', 6), '운동은 6회까지만 센다');
+    assert.equal(activityFactor(null, 4), activityFactor('light', 4), '안 고르면 가운데(조금 움직임)');
+    assert.equal(activityFactor('light', undefined), activityFactor('light', 3));
+    // 계수는 늘 1.2~1.75 — 앉아만 있는 사람보다 낮거나 운동선수보다 높게 잡지 않는다
+    for (const option of ACTIVITY_OPTIONS) {
+      for (let days = 0; days <= 7; days += 1) {
+        const factor = activityFactor(option.id, days);
+        assert.ok(factor >= 1.2 && factor <= 1.75, `${option.id} ${days}회 ${factor}`);
+      }
+    }
+  });
+
+  it('남성 70kg · 175cm · 30세 · 조금 움직임 · 주 4회 → 유지 2,300, 감량 1,900', () => {
+    const m = bodyMaintenance({ kg: 70, body: body(175, 1996, 'light'), sex: 'male', trainingDays: 4, today: TODAY })!;
+    assert.equal(m.bmr, 1649);
+    assert.equal(m.factor, 1.4);
+    assert.equal(m.kcal, 2300);
+    const t = dailyTargets({ bodyweightKg: 70, goal: 'cut', body: body(175, 1996, 'light'), sex: 'male', trainingDays: 4, today: TODAY })!;
+    assert.equal(t.source, 'body');
+    assert.equal(t.maintenance, 2300);
+    assert.equal(t.kcal, 1900);
+    assert.equal(t.protein, proteinTargetG(70, 'cut'), '단백질은 그대로 체중으로');
+    assert.match(t.method, /키 · 나이 · 성별 · 체중으로 기초대사량/);
+    assert.match(t.method, /조금 움직임/);
+    assert.match(t.method, /주 4회/);
+    assert.ok(t.why[0]!.includes('키 · 나이 · 활동량으로 계산한 유지 칼로리 2,300kcal'), t.why[0]);
+  });
+
+  it('여성 58kg · 162cm · 30세 · 앉아서 일함 · 주 3회 → 유지 1,650 (체중 어림 1,950보다 300 낮다)', () => {
+    const input = { bodyweightKg: 58, body: body(162, 1996, 'sitting'), sex: 'female' as const, trainingDays: 3, today: TODAY };
+    const hold = dailyTargets({ ...input, goal: 'hold' })!;
+    assert.equal(hold.source, 'body');
+    assert.equal(hold.kcal, 1650);
+    assert.equal(startingMaintenance(58), 1950);
+    const cut = dailyTargets({ ...input, goal: 'cut' })!;
+    assert.equal(cut.kcal, 1350);
+    const grow = dailyTargets({ ...input, goal: 'grow' })!;
+    assert.equal(grow.kcal, 1650 + goalOffset(58, 'grow'));
+  });
+
+  it('활동량이 많을수록, 운동을 자주 할수록 목표가 올라간다', () => {
+    let last = 0;
+    for (const option of ACTIVITY_OPTIONS) {
+      const t = dailyTargets({ bodyweightKg: 75, goal: 'hold', body: body(178, 1990, option.id), sex: 'male', trainingDays: 3, today: TODAY })!;
+      assert.ok(t.kcal > last, `${option.label} ${t.kcal}`);
+      last = t.kcal;
+    }
+    const two = dailyTargets({ bodyweightKg: 75, goal: 'hold', body: body(178, 1990, 'light'), sex: 'male', trainingDays: 2, today: TODAY })!;
+    const five = dailyTargets({ bodyweightKg: 75, goal: 'hold', body: body(178, 1990, 'light'), sex: 'male', trainingDays: 5, today: TODAY })!;
+    assert.ok(five.kcal > two.kcal);
+  });
+
+  it('활동량을 안 고르면 가운데로 보고 그렇게 말한다', () => {
+    const t = dailyTargets({ bodyweightKg: 70, goal: 'hold', body: body(175, 1996, null), sex: 'male', trainingDays: 4, today: TODAY })!;
+    assert.equal(t.source, 'body');
+    assert.equal(t.kcal, 2300);
+    assert.match(t.method, /안 고르셔서 가운데/);
+  });
+});
+
+describe('모자라면 체중으로 — 예전 그대로', () => {
+  const base = { bodyweightKg: 70, goal: 'cut' as const, sex: 'male' as const, trainingDays: 4, today: TODAY };
+  const weightOnly = dailyTargets({ bodyweightKg: 70, goal: 'cut' })!;
+
+  it('키 · 나이 · 활동량이 없으면 예전 숫자와 같다', () => {
+    assert.equal(weightOnly.source, 'weight');
+    assert.equal(weightOnly.kcal, 1800);
+    assert.match(weightOnly.method, /체중만으로 어림/);
+    assert.match(weightOnly.method, /키 · 출생 연도 · 활동량을 적으면/);
+    assert.equal(dailyTargets({ ...base, body: null })!.kcal, 1800);
+  });
+
+  it('키나 출생 연도가 빠지면 체중으로, 무엇을 적으면 되는지 말한다', () => {
+    const noYear = dailyTargets({ ...base, body: body(175, null, 'light') })!;
+    assert.equal(noYear.source, 'weight');
+    assert.equal(noYear.kcal, weightOnly.kcal);
+    assert.match(noYear.method, /출생 연도를 적으면/);
+    const noHeight = dailyTargets({ ...base, body: body(null, 1996, 'light') })!;
+    assert.equal(noHeight.source, 'weight');
+    assert.match(noHeight.method, /키를 적으면/);
+  });
+
+  it('성별이나 오늘 날짜를 모르면 계산식을 쓰지 않는다', () => {
+    assert.equal(dailyTargets({ ...base, sex: null, body: body(175, 1996, 'light') })!.source, 'weight');
+    assert.equal(dailyTargets({ ...base, today: undefined, body: body(175, 1996, 'light') })!.source, 'weight');
+  });
+
+  it('18세 아래 · 90세 위는 계산식이 맞지 않아 체중으로', () => {
+    const teen = dailyTargets({ ...base, body: body(170, 2010, 'light') })!;
+    assert.equal(teen.source, 'weight');
+    assert.match(teen.method, /18~90세/);
+    assert.equal(dailyTargets({ ...base, body: body(170, 2008, 'light') })!.source, 'body', '18세는 계산식');
+  });
+
+  it('3주쯤 적고 재서 낸 내 유지 칼로리가 계산식을 이긴다', () => {
+    const estimate: MaintenanceEstimate = { kcal: 2500, days: 18, weeklyKg: 0, intakeKcal: 2500 };
+    const t = dailyTargets({ ...base, body: body(175, 1996, 'light'), estimate, trend: trendOf('cut', 0, 70) })!;
+    assert.equal(t.source, 'log');
+    assert.equal(t.maintenance, 2500);
+    assert.equal(t.adjust, 0, '먹은 양으로 낸 유지량은 저울로 또 고치지 않는다');
+    assert.match(t.method, /18일 동안 먹은 양과 체중 변화로/);
+  });
+
+  it('계산식으로 잡은 목표도 2주째 그대로면 150kcal 고친다', () => {
+    const t = dailyTargets({ ...base, body: body(175, 1996, 'light'), trend: trendOf('cut', 0, 70) })!;
+    assert.equal(t.source, 'body');
+    assert.equal(t.adjust, -150);
+    assert.equal(t.kcal, 1900 - 150);
+  });
+
+  it('저장소 값 고르기 — 범위 밖은 버리고, 셋 다 없으면 null', () => {
+    assert.deepEqual(normalizeBodyInfo({ heightCm: 172.36, birthYear: 1990, activity: 'moving' }, TODAY), { heightCm: 172.4, birthYear: 1990, activity: 'moving' });
+    assert.deepEqual(normalizeBodyInfo({ heightCm: 90, birthYear: 2020, activity: 'fly' }, TODAY), null);
+    assert.deepEqual(normalizeBodyInfo({ heightCm: 160 }, TODAY), { heightCm: 160, birthYear: null, activity: null });
+    assert.equal(normalizeBodyInfo(null), null);
+    assert.equal(normalizeBodyInfo('170'), null);
+  });
+});
+
+describe('BMI가 낮으면 감량 폭을 주지 않는다', () => {
+  const lean = { sex: 'female' as const, trainingDays: 3, today: TODAY };
+
+  it('BMI 계산', () => {
+    assert.equal(bmiOf(70, 175), 22.9);
+    assert.equal(bmiOf(50, 170), 17.3);
+    assert.equal(bmiOf(70, null), null);
+  });
+
+  it('18.5 아래: 감량을 골라도 유지 칼로리 그대로, 부드러운 한마디', () => {
+    const t = dailyTargets({ ...lean, bodyweightKg: 50, goal: 'cut', body: body(170, 1998, 'light') })!;
+    assert.equal(t.bmiGuard, 'low');
+    assert.equal(t.planGoal, 'hold');
+    assert.equal(t.offset, 0);
+    assert.equal(t.kcal, t.maintenance);
+    assert.ok(t.note && t.note.includes('가벼운 편') && t.note.includes('지금 몸을 지키는'), String(t.note));
+    assert.doesNotMatch(t.note!, /전문가/);
+    assert.ok(t.why[0]!.includes('줄이지 않습니다'), t.why[0]);
+    assert.doesNotMatch(t.why.join(' '), /0kcal 덜/);
+    // 유지 · 늘리기는 따로 말하지 않는다
+    assert.equal(dailyTargets({ ...lean, bodyweightKg: 50, goal: 'grow', body: body(170, 1998, 'light') })!.note, null);
+  });
+
+  it('17 아래: 어떤 목표든 유지 아래로 잡지 않고, 전문가와 상의하라고', () => {
+    for (const goal of ['cut', 'hold', 'grow'] as const) {
+      for (const pct of [-1, 0, 0.5, 1.2]) {
+        const t = dailyTargets({ ...lean, bodyweightKg: 45, goal, body: body(170, 1998, 'sitting'), trend: trendOf(goal, pct, 45) })!;
+        assert.equal(t.bmiGuard, 'veryLow');
+        assert.ok(t.kcal >= t.maintenance, `${goal} ${pct}%: ${t.kcal} < 유지 ${t.maintenance}`);
+        assert.ok(t.offset >= 0 && t.adjust >= 0);
+        assert.match(t.note ?? '', /전문가와 상의/);
+        assert.doesNotMatch(t.note ?? '', SHAMING);
+      }
+    }
+  });
+
+  it('나이를 몰라도 키만 있으면 BMI로 가린다(체중 어림이어도)', () => {
+    const t = dailyTargets({ ...lean, bodyweightKg: 50, goal: 'cut', body: body(170, null, null) })!;
+    assert.equal(t.source, 'weight');
+    assert.equal(t.bmiGuard, 'low');
+    assert.equal(t.kcal, startingMaintenance(50));
+  });
+
+  it('BMI 18.5 이상이면 예전처럼 감량 — 가벼운 체중이라도 키가 작으면', () => {
+    const t = dailyTargets({ ...lean, bodyweightKg: 48, goal: 'cut', body: body(155, 1998, 'light') })!;
+    assert.equal(t.bmi, 20);
+    assert.equal(t.bmiGuard, null);
+    assert.ok(t.offset < 0);
+    assert.equal(t.note, null);
+  });
+
+  it('한 주 점검도 덜 먹으라고 하지 않는다', () => {
+    const trend = trendOf('cut', 0.4, 50);
+    const t = dailyTargets({ ...lean, bodyweightKg: 50, goal: 'cut', body: body(170, 1998, 'light'), trend })!;
+    const c = weeklyCheckIn({ entries: [], today: TODAY, targets: t, goal: 'cut', trend });
+    assert.notEqual(c.tone, 'less');
+    assert.doesNotMatch(c.advice, /낮췄습니다|줄이면/);
+    const estimate: MaintenanceEstimate = { kcal: 1800, days: 14, weeklyKg: 0, intakeKcal: 1800 };
+    const logged = dailyTargets({ ...lean, bodyweightKg: 50, goal: 'cut', body: body(170, 1998, 'light'), estimate })!;
+    const over = [0, 1, 2, 3].flatMap((i) => [entry(day(i), 'lunch', 1100), entry(day(i), 'dinner', 1100)]);
+    const c2 = weeklyCheckIn({ entries: over, today: TODAY, targets: logged, goal: 'cut', trend: null });
+    assert.equal(c2.tone, 'keep');
+  });
+});
+
+describe('키 · 나이로 계산해도 바닥은 그대로', () => {
+  it('작고 나이 든 사람이 감량을 골라도 1,200kcal 아래로 내려가지 않는다', () => {
+    // 45kg · 150cm(BMI 20) · 75세 여성 · 앉아서 · 주 2회: 기초대사량 812 × 1.25 ≈ 1,000
+    const t = dailyTargets({ bodyweightKg: 45, goal: 'cut', body: body(150, 1951, 'sitting'), sex: 'female', trainingDays: 2, today: TODAY })!;
+    assert.equal(t.source, 'body');
+    assert.ok(t.maintenance < 1200, String(t.maintenance));
+    assert.equal(t.kcal, 1200);
+    assert.ok(t.floored);
+    assert.ok(t.why.some((line) => line.includes('1,200kcal 아래로는')));
+  });
+
+  it('어떤 키 · 나이 · 성별 · 활동량 · 목표 · 추세에서도 바닥 아래로, 주 1%보다 빠르게 빼지 않는다', () => {
+    for (const kg of [42, 55, 70, 95, 140]) {
+      for (const heightCm of [148, 165, 185]) {
+        for (const birthYear of [2006, 1985, 1950]) {
+          for (const sex of ['male', 'female'] as const) {
+            for (const option of ACTIVITY_OPTIONS) {
+              for (const goal of ['cut', 'hold', 'grow'] as const) {
+                for (const pct of [-1.5, 0, 1]) {
+                  const t = dailyTargets({
+                    bodyweightKg: kg, goal, body: body(heightCm, birthYear, option.id), sex, trainingDays: 4,
+                    today: TODAY, trend: trendOf(goal, pct, kg),
+                  })!;
+                  const label = `${kg}kg ${heightCm}cm ${birthYear} ${sex} ${option.id} ${goal} ${pct}%`;
+                  assert.ok(t.kcal >= minDailyKcal(kg), `${label} → ${t.kcal}`);
+                  assert.ok(t.kcal >= t.maintenance - Math.min(750, kg * 11 + 25), `${label}: 유지 ${t.maintenance}에서 ${t.kcal}`);
+                  if (t.bmiGuard) assert.ok(t.kcal >= t.maintenance, `${label}: BMI ${t.bmi}인데 유지 아래`);
+                  assert.equal(t.kcal % 50, 0);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   });
 });
